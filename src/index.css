@@ -1,0 +1,226 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================================================
+   BASE (Tema CRM)
+   - Fundo frio clean (igual ao concept)
+   - Texto e rendering mais “SaaS”
+   ========================================================= */
+
+html, body {
+  height: 100%;
+}
+
+body {
+@apply bg-background text-foreground antialiased font-sans;
+}
+
+/* Melhor renderização (fica mais “premium”) */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* =========================================================
+   INPUTS
+   - Cursor e foco alinhados com o verde do concept
+   ========================================================= */
+
+input, textarea, select {
+  caret-color: #50C070; /* crm.primary */
+}
+
+/* =========================================================
+   SCROLLBAR (clean e discreta)
+   ========================================================= */
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.25); /* slate-500/25 */
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.38);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25); /* dark muted */
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.40);
+}
+
+/* =========================================================
+   COMPONENT CLASSES (tokens prontos p/ usar no CRM)
+   ========================================================= */
+
+/* Card padrão (Opportunity Details / panels) */
+.crm-card {
+  @apply bg-crm-surface border border-crm-border rounded-xl shadow-soft2;
+}
+
+/* Card “elevado” (sidebar/painéis importantes) */
+.crm-card-elevated {
+  @apply bg-crm-surface border border-crm-border rounded-xl shadow-soft;
+}
+
+/* Pills roxas (secondary) */
+.crm-pill {
+  background: rgba(112, 48, 224, 0.10);
+  color: #7030E0;
+  border: 1px solid rgba(112, 48, 224, 0.20);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+/* Badge verde (primary) */
+.crm-badge-green {
+  background: rgba(80, 192, 112, 0.12);
+  color: #1f7a3c;
+  border: 1px solid rgba(80, 192, 112, 0.25);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+/* Tabs do conceito (underline verde) */
+.crm-tab {
+  @apply text-crm-muted border-b-2 border-transparent px-1 pb-3 text-sm font-bold transition-colors;
+}
+
+.crm-tab-active {
+  @apply text-crm-text border-b-2;
+  border-color: #50C070; /* crm.primary */
+}
+
+/* Seções com título/label (typography do concept) */
+.crm-section-label {
+  @apply text-xs font-extrabold uppercase tracking-widest text-crm-muted;
+}
+
+/* Divisor sutil */
+.crm-divider {
+  @apply border-t border-crm-border;
+}
+
+/* Botão primary (verde) */
+.crm-btn-primary {
+  background: #50C070;
+  color: #0B1220;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-weight: 800;
+  transition: filter 200ms ease;
+}
+.crm-btn-primary:hover { filter: brightness(0.96); }
+
+/* Botão ghost */
+.crm-btn-ghost {
+  @apply rounded-xl px-4 py-3 font-bold text-crm-muted hover:bg-black/5 hover:text-crm-text transition-colors;
+}
+.dark .crm-btn-ghost {
+  @apply hover:bg-white/10;
+}
+
+/* =========================================================
+   OPTIONAL: reduzir “cara de template” em botões/inputs
+   ========================================================= */
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+input:disabled, textarea:disabled, select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 10% 3.9%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+

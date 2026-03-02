@@ -1,0 +1,798 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import heic2any from 'heic2any';
+import { supabase } from '../lib/supabase';
+import { Icons } from '../components/Icons';
+import { useAuth } from '../contexts/AuthContext';
+import GamificationModal from '../components/GamificationModal';
+
+interface Profile {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: 'admin' | 'corretor';
+  avatar_url?: string;
+  level?: number;
+  xp?: number;
+  active: boolean;
+  distribution_rules?: { enabled: boolean; types: string[] };
+  last_seen?: string;
+}
+
+
+const compressAvatar = (file: File | Blob, maxSize = 512): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let { width, height } = img;
+
+      if (width > height) {
+        if (width > maxSize) {
+          height = Math.round((height * maxSize) / width);
+          width = maxSize;
+        }
+      } else if (height > maxSize) {
+        width = Math.round((width * maxSize) / height);
+        height = maxSize;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('Falha no contexto do Canvas'));
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Falha ao gerar Blob'));
+      }, 'image/webp', 0.85);
+    };
+    img.onerror = () => reject(new Error('Falha ao carregar imagem para compressão'));
+  });
+};
+
+const getPresenceStatus = (lastSeen?: string) => {
+  if (!lastSeen) return { isOnline: false, text: 'Nunca acessou' };
+
+  const lastSeenDate = new Date(lastSeen);
+  const now = new Date();
+  const diffInMinutes = Math.floor((now.getTime() - lastSeenDate.getTime()) / (1000 * 60));
+
+  if (diffInMinutes < 5) {
+    return { isOnline: true, text: 'Online agora' };
+  }
+
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const isToday = lastSeenDate.toDateString() === today.toDateString();
+  const isYesterday = lastSeenDate.toDateString() === yesterday.toDateString();
+
+  const timeString = lastSeenDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  if (isToday) return { isOnline: false, text: `Visto hoje às ${timeString}` };
+  if (isYesterday) return { isOnline: false, text: `Visto ontem às ${timeString}` };
+
+  return {
+    isOnline: false,
+    text: `Visto em ${lastSeenDate.toLocaleDateString('pt-BR')} às ${timeString}`,
+  };
+};
+
+const AdminConfig: React.FC = () => {
+  const { user, refreshUser } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isAdmin = user?.role === 'admin';
+
+  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'team' | 'traffic'>('profile');
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [distRules, setDistRules] = useState<{ enabled: boolean; types: string[] }>({ enabled: false, types: [] });
+  const [profileForm, setProfileForm] = useState({ name: '', phone: '', email: '' });
+  const [passwordForm, setPasswordForm] = useState({ password: '', confirmPassword: '' });
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [isXpModalOpen, setIsXpModalOpen] = useState(false);
+  const [siteSettings, setSiteSettings] = useState({ route_to_central: true, central_whatsapp: '', central_user_id: '' });
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem('trimoveis-sound') !== 'disabled');
+
+  const fetchSettings = async () => {
+    const { data } = await supabase.from('settings').select('*').eq('id', 1).single();
+    if (data) {
+      setSiteSettings({
+        route_to_central: data.route_to_central ?? true,
+        central_whatsapp: data.central_whatsapp ?? '',
+        central_user_id: data.central_user_id ?? '',
+      });
+    }
+  };
+
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchProfiles();
+      fetchSettings();
+    }
+  }, [isAdmin, user?.id]);
+
+  useEffect(() => {
+    setProfileForm({
+      name: user?.name ?? '',
+      phone: user?.phone ?? '',
+      email: user?.email ?? '',
+    });
+  }, [user?.name, user?.phone, user?.email]);
+
+  const fetchProfiles = async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('name');
+
+    if (data) {
+      const normalizedProfiles = (data as Partial<Profile>[]).map((profile) => ({
+        ...profile,
+        role: profile.role === 'admin' ? 'admin' : 'corretor',
+      })) as Profile[];
+      setProfiles(normalizedProfiles);
+      const myProfile = normalizedProfiles.find((p) => p.id === user?.id);
+      if (myProfile?.distribution_rules) setDistRules(myProfile.distribution_rules);
+    }
+  };
+
+  const canManageTeamMember = (targetProfileId: string) => {
+    if (!isAdmin) {
+      alert('Apenas administradores podem gerenciar a equipe.');
+      return false;
+    }
+
+    const targetProfile = profiles.find((profile) => profile.id === targetProfileId);
+
+    if (!targetProfile) {
+      alert('Usuário não encontrado.');
+      return false;
+    }
+
+    return true;
+  };
+
+  const updateDistRules = async (updates: Partial<{ enabled: boolean; types: string[] }>) => {
+    if (!user?.id || !isAdmin) return;
+
+    const myProfile = profiles.find((profile) => profile.id === user.id);
+    if (!myProfile) return;
+
+    const newRules = { ...distRules, ...updates };
+    setDistRules(newRules);
+    await supabase.from('profiles').update({ distribution_rules: newRules }).eq('id', user.id);
+  };
+
+  const togglePropertyType = (type: string) => {
+    const newTypes = distRules.types.includes(type)
+      ? distRules.types.filter((t) => t !== type)
+      : [...distRules.types, type];
+    updateDistRules({ types: newTypes });
+  };
+
+  const updateProfileStatus = async (id: string, active: boolean) => {
+    if (!canManageTeamMember(id)) return;
+
+    const updates: Partial<Profile> = { active };
+
+    if (active) {
+      updates.role = 'corretor';
+    }
+
+    await supabase.from('profiles').update(updates).eq('id', id);
+    await fetchProfiles();
+  };
+
+
+  const toggleRole = async (id: string, currentRole: Profile['role']) => {
+    if (!user?.id || !canManageTeamMember(id)) return;
+
+    if (id === user.id) {
+      alert('Você não pode alterar o próprio cargo.');
+      return;
+    }
+
+    const newRole: Profile['role'] = currentRole === 'admin' ? 'corretor' : 'admin';
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', id);
+
+    if (error) {
+      console.error('Erro ao atualizar cargo:', error);
+      alert(`Não foi possível atualizar o cargo: ${error.message}`);
+      return;
+    }
+
+    await fetchProfiles();
+  };
+
+  const deleteUser = async (id: string) => {
+    if (!canManageTeamMember(id)) return;
+
+    if (!window.confirm('Tem certeza? Isso apagará o usuário e todo o acesso dele permanentemente.')) return;
+
+    const { error } = await supabase.rpc('delete_user_complete', { target_user_id: id });
+
+    if (error) {
+      console.error(error);
+      alert(`Erro ao excluir: ${error.message}`);
+    } else {
+      await fetchProfiles();
+      alert('Usuário excluído com sucesso.');
+    }
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id) return;
+
+    setSavingProfile(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ name: profileForm.name, phone: profileForm.phone })
+      .eq('id', user.id);
+
+    if (!error) {
+      await refreshUser();
+      if (isAdmin) await fetchProfiles();
+    }
+
+    setSavingProfile(false);
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !user) return;
+    const file = e.target.files[0];
+
+    setUploadingAvatar(true);
+
+    try {
+      let processedFile: File | Blob = file;
+      if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
+        const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
+        processedFile = Array.isArray(converted) ? converted[0] : converted;
+      }
+
+      const compressedBlob = await compressAvatar(processedFile);
+      const fileName = `${user.id}-${Date.now()}.webp`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, compressedBlob, {
+          upsert: true,
+          contentType: 'image/webp',
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: data.publicUrl })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      await refreshUser();
+      alert('Foto de perfil atualizada com sucesso!');
+    } catch (error: any) {
+      console.error('Erro no upload da foto:', error);
+      alert('Não foi possível atualizar a foto: ' + error.message);
+    } finally {
+      setUploadingAvatar(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordForm.password || passwordForm.password !== passwordForm.confirmPassword) return;
+
+    setSavingPassword(true);
+    await supabase.auth.updateUser({ password: passwordForm.password });
+    setPasswordForm({ password: '', confirmPassword: '' });
+    setSavingPassword(false);
+  };
+
+  const handleSaveTrafficSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingSettings(true);
+
+    const cleanNumber = siteSettings.central_whatsapp.replace(/\D/g, '');
+
+    const { error } = await supabase
+      .from('settings')
+      .update({
+        route_to_central: siteSettings.route_to_central,
+        central_whatsapp: cleanNumber,
+        central_user_id: siteSettings.central_user_id || null,
+      })
+      .eq('id', 1);
+
+    if (error) {
+      alert('Erro ao salvar configurações de tráfego: ' + error.message);
+    } else {
+      alert('Configurações de tráfego salvas com sucesso!');
+      setSiteSettings(prev => ({ ...prev, central_whatsapp: cleanNumber }));
+    }
+    setSavingSettings(false);
+  };
+
+
+  const currentLevel = Math.max(1, Number(user?.level ?? 1));
+  const currentXP = Math.max(0, Number(user?.xp_points ?? 0));
+  const progressMax = 100;
+  const progressCurrent = currentXP % progressMax;
+  const pointsToNext = progressMax - progressCurrent;
+
+  const roleLabel = useMemo(() => {
+    if (user?.role === 'admin') return 'Administrador';
+    if (!user?.role) return 'Corretor';
+    return `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)}`;
+  }, [user?.role]);
+
+  const pendingProfiles = useMemo(() => profiles.filter((profile) => !profile.active), [profiles]);
+  const activeProfiles = useMemo(() => profiles.filter((profile) => profile.active), [profiles]);
+
+  const toggleSound = () => {
+    const newValue = !soundEnabled;
+    setSoundEnabled(newValue);
+
+    if (newValue) {
+      localStorage.removeItem('trimoveis-sound');
+    } else {
+      localStorage.setItem('trimoveis-sound', 'disabled');
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-2xl font-serif font-bold text-slate-800 dark:text-white">Configurações</h1>
+        <p className="text-sm text-gray-500 dark:text-slate-400">Gerencie seu perfil, segurança e equipe.</p>
+      </div>
+
+      <div className="flex gap-6 border-b border-gray-200 dark:border-slate-700 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('profile')}
+          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'profile' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+        >
+          <Icons.User size={18} /> Perfil
+        </button>
+
+        <button
+          onClick={() => setActiveTab('security')}
+          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'security' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+        >
+          <Icons.Lock size={18} /> Segurança
+        </button>
+
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab('team')}
+            className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'team' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+          >
+            <Icons.Users size={18} /> Equipe
+          </button>
+        )}
+
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab('traffic')}
+            className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'traffic' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+          >
+            <Icons.Globe size={18} /> Tráfego
+          </button>
+        )}
+      </div>
+
+      {activeTab === 'profile' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 bg-white dark:bg-dark-card p-6 rounded-2xl border border-gray-200 dark:border-dark-border space-y-6">
+            <div className="flex items-center gap-5">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="relative w-20 h-20 rounded-full bg-brand-100 dark:bg-slate-700 text-brand-700 dark:text-white overflow-hidden flex items-center justify-center"
+                title="Clique para alterar avatar"
+              >
+                {user?.avatar_url ? (
+                  <img src={user.avatar_url} alt="Avatar do usuário" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="font-bold text-2xl">{(user?.name?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase()}</span>
+                )}
+                <span className="absolute inset-x-0 bottom-0 text-[10px] py-0.5 bg-black/50 text-white">{uploadingAvatar ? 'Enviando...' : 'Alterar'}</span>
+              </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                accept="image/*"
+                onChange={handleAvatarUpload}
+              />
+
+              <div>
+                <p className="font-bold text-slate-800 dark:text-white">{user?.name || 'Usuário'}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">{roleLabel}</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
+                  value={profileForm.name}
+                  onChange={e => setProfileForm(prev => ({ ...prev, name: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Telefone</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
+                  value={profileForm.phone}
+                  onChange={e => setProfileForm(prev => ({ ...prev, phone: e.target.value }))}
+                  placeholder="(00) 00000-0000"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">E-mail</label>
+                <input
+                  type="email"
+                  className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 outline-none opacity-70 cursor-not-allowed"
+                  value={profileForm.email}
+                  disabled
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingProfile}
+                className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 disabled:opacity-60"
+              >
+                {savingProfile ? 'Salvando...' : 'Salvar Perfil'}
+              </button>
+            </form>
+
+
+          <div className="bg-white dark:bg-dark-card p-6 rounded-2xl border border-gray-200 dark:border-dark-border mt-6">
+            <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-6">
+              <Icons.Settings size={20} className="text-brand-600" /> Preferências do Sistema
+            </h2>
+
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-700">
+              <div>
+                <p className="font-bold text-slate-700 dark:text-slate-100">Sons de Notificação</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Tocar um som suave quando uma notificação chegar em tempo real.</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={soundEnabled}
+                onClick={toggleSound}
+                className={`${soundEnabled ? 'bg-brand-600' : 'bg-slate-200 dark:bg-slate-600'} relative inline-flex h-6 w-11 items-center flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none`}
+              >
+                <span className={`${soundEnabled ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`} />
+              </button>
+            </div>
+          </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsXpModalOpen(true)}
+            className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-6 rounded-2xl border border-slate-700 h-fit text-left cursor-pointer hover:shadow-md transition-all"
+          >
+            <p className="text-xs uppercase tracking-widest text-brand-300">Gamificação</p>
+            <h3 className="text-xl font-bold mt-2">Seu Nível: {currentLevel}</h3>
+            <p className="text-sm text-slate-300 mt-1">XP Total: {currentXP}</p>
+
+            <div className="mt-6">
+              <div className="flex justify-between text-xs text-slate-300 mb-1">
+                <span>Progresso para o próximo nível</span>
+                <span>{progressCurrent}/{progressMax}</span>
+              </div>
+              <div className="w-full h-3 rounded-full bg-slate-700 overflow-hidden">
+                <div className="h-full bg-brand-500 rounded-full transition-all" style={{ width: `${(progressCurrent / progressMax) * 100}%` }} />
+              </div>
+              <p className="text-xs text-slate-300 mt-2">Faltam {pointsToNext} pontos para o próximo nível.</p>
+            </div>
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'security' && (
+        <div className="max-w-2xl bg-white dark:bg-dark-card p-6 rounded-2xl border border-gray-200 dark:border-dark-border">
+          <h3 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+            <Icons.Lock size={18} /> Alterar Senha
+          </h3>
+
+          <form onSubmit={handleUpdatePassword} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nova Senha</label>
+              <input
+                type="password"
+                className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
+                value={passwordForm.password}
+                onChange={(e) => setPasswordForm((prev) => ({ ...prev, password: e.target.value }))}
+                required
+                minLength={6}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Confirmar Nova Senha</label>
+              <input
+                type="password"
+                className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
+                value={passwordForm.confirmPassword}
+                onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                required
+                minLength={6}
+              />
+            </div>
+
+            {passwordForm.confirmPassword && passwordForm.password !== passwordForm.confirmPassword && (
+              <p className="text-xs text-red-500">As senhas não coincidem.</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={savingPassword || passwordForm.password !== passwordForm.confirmPassword}
+              className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 disabled:opacity-60"
+            >
+              {savingPassword ? 'Atualizando...' : 'Atualizar Senha'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {activeTab === 'team' && isAdmin && (
+        <div className="space-y-6">
+          <div className={`p-6 rounded-2xl border shadow-sm transition-all ${distRules.enabled ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-white border-gray-200 dark:bg-dark-card dark:border-dark-border'}`}>
+            <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+              <div>
+                <h3 className="font-bold text-slate-800 dark:text-white">Distribuição dos MEUS Imóveis</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Transfira automaticamente leads interessados nos seus imóveis para a equipe.
+                </p>
+              </div>
+              <button
+                onClick={() => updateDistRules({ enabled: !distRules.enabled })}
+                className={`px-5 py-2 rounded-xl font-bold transition-colors ${distRules.enabled ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-900 hover:bg-slate-800 text-white'}`}
+              >
+                {distRules.enabled ? 'Desativar Distribuição' : 'Ativar Distribuição'}
+              </button>
+            </div>
+
+            {distRules.enabled && (
+              <div className="pt-4 border-t border-emerald-200/50 dark:border-emerald-800/50">
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Quais categorias deseja distribuir?</p>
+                <div className="flex flex-wrap gap-2">
+                  {['Casa', 'Apartamento', 'Terreno', 'Chácara', 'Comercial', 'Aluguel'].map((type) => (
+                    <label key={type} className="flex items-center gap-2 bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-brand-400 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={distRules.types.includes(type)}
+                        onChange={() => togglePropertyType(type)}
+                        className="rounded text-brand-600 focus:ring-brand-500"
+                      />
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{type}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-200 dark:border-dark-border overflow-hidden">
+              <div className="p-4 border-b border-gray-100 dark:border-slate-800">
+                <h3 className="font-bold text-slate-800 dark:text-white">Pendentes ({pendingProfiles.length})</h3>
+              </div>
+              {pendingProfiles.map((profile) => (
+                <div key={profile.id} className="p-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800 last:border-0">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-slate-800 dark:text-white">{profile.name || 'Sem nome'}</p>
+                      {getPresenceStatus(profile.last_seen).isOnline && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          Online
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{profile.email}</p>
+                    {!getPresenceStatus(profile.last_seen).isOnline && (
+                      <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                        <Icons.Clock size={10} /> {getPresenceStatus(profile.last_seen).text}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => updateProfileStatus(profile.id, true)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200">Aprovar</button>
+                    <button onClick={() => deleteUser(profile.id)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-100 text-red-700 hover:bg-red-200">Rejeitar</button>
+                  </div>
+                </div>
+              ))}
+              {pendingProfiles.length === 0 && <p className="p-5 text-sm text-gray-400">Sem usuários pendentes.</p>}
+            </div>
+
+            <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-200 dark:border-dark-border overflow-hidden">
+              <div className="p-4 border-b border-gray-100 dark:border-slate-800">
+                <h3 className="font-bold text-slate-800 dark:text-white">Ativos ({activeProfiles.length})</h3>
+              </div>
+              {activeProfiles.map((profile) => (
+                <div key={profile.id} className="p-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800 last:border-0">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-slate-800 dark:text-white">{profile.name || 'Sem nome'}</p>
+                      {getPresenceStatus(profile.last_seen).isOnline && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          Online
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{profile.email}</p>
+                    {!getPresenceStatus(profile.last_seen).isOnline && (
+                      <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                        <Icons.Clock size={10} /> {getPresenceStatus(profile.last_seen).text}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {profile.role === 'admin' ? (
+                      <button
+                        onClick={() => toggleRole(profile.id, profile.role ?? 'user')}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200"
+                      >
+                        ADMIN
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => toggleRole(profile.id, profile.role ?? 'user')}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg border border-purple-200 text-purple-700 hover:bg-purple-50"
+                      >
+                        Tornar Admin
+                      </button>
+                    )}
+                    <button onClick={() => updateProfileStatus(profile.id, false)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200">Pausar</button>
+                    <button onClick={() => deleteUser(profile.id)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-100 text-red-700 hover:bg-red-200">Excluir</button>
+                  </div>
+                </div>
+              ))}
+              {activeProfiles.length === 0 && <p className="p-5 text-sm text-gray-400">Sem usuários ativos.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'traffic' && isAdmin && (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white">Roteamento de Leads</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Defina para qual fila ou usuário os leads de cada canal de tráfego devem ser enviados.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white dark:bg-dark-card rounded-2xl border border-brand-200 dark:border-brand-900/30 overflow-hidden shadow-sm">
+              <div className="bg-brand-50 dark:bg-brand-900/10 p-4 border-b border-brand-100 dark:border-brand-900/20 flex items-center gap-3">
+                <div className="w-10 h-10 bg-white dark:bg-dark-bg rounded-full flex items-center justify-center text-brand-600 shadow-sm">
+                  <Icons.Globe size={20} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 dark:text-white">Tráfego Orgânico (Site)</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Leads gerados pela página dos imóveis.</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveTrafficSettings} className="p-6 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-bold text-sm text-slate-800 dark:text-white">Pré-atendimento Centralizado</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Se ativo, leads vão para o gestor abaixo. Se inativo, vão para o corretor dono do imóvel.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={siteSettings.route_to_central}
+                      onChange={(e) => setSiteSettings(prev => ({ ...prev, route_to_central: e.target.checked }))}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-500"></div>
+                  </label>
+                </div>
+
+                {siteSettings.route_to_central && (
+                  <div className="space-y-4 animate-fade-in pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Responsável pelos Leads (Admin)</label>
+                      <select
+                        value={siteSettings.central_user_id}
+                        onChange={(e) => setSiteSettings(prev => ({ ...prev, central_user_id: e.target.value }))}
+                        className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                      >
+                        <option value="">Ninguém (Fica na fila geral)</option>
+                        {profiles.filter(p => p.role === 'admin').map(admin => (
+                          <option key={admin.id} value={admin.id}>{admin.name} (Admin)</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">WhatsApp da Recepção/Central</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: 11999999999"
+                        className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                        value={siteSettings.central_whatsapp}
+                        onChange={(e) => setSiteSettings(prev => ({ ...prev, central_whatsapp: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={savingSettings}
+                  className="w-full bg-brand-600 text-white py-2.5 rounded-xl font-bold hover:bg-brand-700 disabled:opacity-60 transition-colors"
+                >
+                  {savingSettings ? 'Salvando...' : 'Salvar Regras do Site'}
+                </button>
+              </form>
+            </div>
+
+            <div className="space-y-4">
+              {[
+                { title: 'Meta Ads (Facebook & Instagram)', icon: Icons.Share2, color: 'text-blue-600', bg: 'bg-blue-50' },
+                { title: 'Google Ads', icon: Icons.Search, color: 'text-red-500', bg: 'bg-red-50' },
+              ].map((platform, i) => (
+                <div key={i} className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-4 flex items-center justify-between opacity-70 grayscale-[30%]">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 ${platform.bg} rounded-full flex items-center justify-center ${platform.color}`}>
+                      <platform.icon size={20} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 dark:text-white">{platform.title}</h4>
+                      <p className="text-xs text-slate-500">Integração nativa</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 px-2 py-1 rounded-md">
+                    Em Breve
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      <GamificationModal
+        isOpen={isXpModalOpen}
+        onClose={() => setIsXpModalOpen(false)}
+        xpPoints={Number(user?.xp_points || 0)}
+      />
+    </div>
+  );
+};
+
+export default AdminConfig;
