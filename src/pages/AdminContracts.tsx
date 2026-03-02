@@ -3,9 +3,16 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Icons } from '../components/Icons';
 import SaleContractModal from '../components/SaleContractModal';
 import RentContractModal from '../components/RentContractModal';
+import UpgradePromo from '../components/UpgradePromo';
+import { PLAN_CONFIG, PlanType } from '../config/plans';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 const AdminContracts: React.FC = () => {
+  const { user } = useAuth();
+  const userPlan = (user?.company?.plan as PlanType) || 'free';
+  const canAccessContracts = PLAN_CONFIG[userPlan].features.contractsAndFinance;
+
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const currentTab = searchParams.get('tab') || 'geral';
@@ -19,6 +26,23 @@ const AdminContracts: React.FC = () => {
   const [installments, setInstallments] = useState<any[]>([]);
   const [showOverdue, setShowOverdue] = useState(false);
   const [contractTab, setContractTab] = useState<'pending' | 'active' | 'archived'>('active');
+
+  if (!canAccessContracts) {
+    return (
+      <div className="pb-10 animate-fade-in">
+        <div className="mb-6">
+          <h1 className="text-2xl font-serif font-bold text-slate-800">Contratos e Recebíveis</h1>
+          <p className="text-sm text-slate-500">Gestão de vendas, locações e acompanhamento de parcelas.</p>
+        </div>
+        <UpgradePromo
+          title="Módulo de Contratos e Finanças"
+          description="Automatize as suas vendas, gira comissões, emita faturas e acompanhe a inadimplência num painel inteligente exclusivo."
+          minPlan="Business"
+          icon="FileSignature"
+        />
+      </div>
+    );
+  }
 
 
   const fetchContracts = async () => {

@@ -5,6 +5,7 @@ import { Lead, Property } from '../types';
 import { Icons } from '../components/Icons';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../contexts/AuthContext';
+import { PLAN_CONFIG, PlanType } from '../config/plans';
 import { TOOLTIPS } from '../constants/tooltips';
 import PropertyPreviewModal from '../components/PropertyPreviewModal';
 import {
@@ -43,6 +44,7 @@ const InfoTooltip = ({ text }: { text: string }) => (
 
 const AdminProperties: React.FC = () => {
   const { user } = useAuth();
+  const userPlan = (user?.company?.plan as PlanType) || 'free';
   const isAdmin = user?.role === 'admin';
 
   const [properties, setProperties] = useState<Property[]>([]);
@@ -75,6 +77,9 @@ const AdminProperties: React.FC = () => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importPreview, setImportPreview] = useState<any[]>([]);
+  const maxProperties = PLAN_CONFIG[userPlan].maxProperties;
+  const currentPropertiesCount = properties.length;
+  const canAddProperty = currentPropertiesCount < maxProperties;
 
   const fetchProperties = async () => {
     const shouldShowInitialLoading = properties.length === 0;
@@ -495,6 +500,16 @@ const AdminProperties: React.FC = () => {
             
             <Link
               to="/admin/imoveis/novo"
+              onClick={(event) => {
+                if (!canAddProperty) {
+                  event.preventDefault();
+                  alert(`LIMITE ATINGIDO!
+
+O seu plano atual (${userPlan.toUpperCase()}) permite gerir até ${maxProperties} imóveis simultaneamente. Tem atualmente ${currentPropertiesCount} imóveis.
+
+Por favor, faça um upgrade para adicionar mais propriedades.`);
+                }
+              }}
               className="bg-brand-600 text-white px-5 py-3 rounded-xl font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-200 flex items-center gap-2"
             >
               <Icons.Plus size={20} /> Novo Imóvel

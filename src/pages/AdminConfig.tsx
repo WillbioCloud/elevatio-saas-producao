@@ -10,6 +10,7 @@ interface Profile {
   name: string;
   email: string;
   phone?: string;
+  company_id?: string;
   role: 'admin' | 'corretor';
   avatar_url?: string;
   level?: number;
@@ -19,6 +20,13 @@ interface Profile {
   last_seen?: string;
 }
 
+interface Contract {
+  id: string;
+  plan_name: string;
+  status: string;
+  start_date: string;
+  end_date: string;
+}
 
 const compressAvatar = (file: File | Blob, maxSize = 512): Promise<Blob> => {
   return new Promise((resolve, reject) => {
@@ -88,7 +96,7 @@ const AdminConfig: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isAdmin = user?.role === 'admin';
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'team' | 'traffic'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'team' | 'traffic' | 'subscription'>('profile');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [distRules, setDistRules] = useState<{ enabled: boolean; types: string[] }>({ enabled: false, types: [] });
   const [profileForm, setProfileForm] = useState({ name: '', phone: '', email: '' });
@@ -100,6 +108,9 @@ const AdminConfig: React.FC = () => {
   const [siteSettings, setSiteSettings] = useState({ route_to_central: true, central_whatsapp: '', central_user_id: '' });
   const [savingSettings, setSavingSettings] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem('trimoveis-sound') !== 'disabled');
+  const [contract, setContract] = useState<Contract | null>(null);
+  const [loadingContract, setLoadingContract] = useState(false);
+  const [isGeneratingCheckout, setIsGeneratingCheckout] = useState(false);
 
   const fetchSettings = async () => {
     const { data } = await supabase.from('settings').select('*').eq('id', 1).single();
@@ -112,11 +123,24 @@ const AdminConfig: React.FC = () => {
     }
   };
 
+  const fetchContract = async () => {
+    setLoadingContract(true);
+    const { data } = await supabase
+      .from('saas_contracts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    setContract(data as Contract | null);
+    setLoadingContract(false);
+  };
 
   useEffect(() => {
     if (isAdmin) {
       fetchProfiles();
       fetchSettings();
+      fetchContract();
     }
   }, [isAdmin, user?.id]);
 
@@ -129,9 +153,12 @@ const AdminConfig: React.FC = () => {
   }, [user?.name, user?.phone, user?.email]);
 
   const fetchProfiles = async () => {
+    if (!user?.company_id) return;
+
     const { data } = await supabase
       .from('profiles')
       .select('*')
+      .eq('company_id', user.company_id)
       .order('name');
 
     if (data) {
@@ -146,15 +173,15 @@ const AdminConfig: React.FC = () => {
   };
 
   const canManageTeamMember = (targetProfileId: string) => {
-    if (!isAdmin) {
+    if (!isAdmin || !user?.company_id) {
       alert('Apenas administradores podem gerenciar a equipe.');
       return false;
     }
 
     const targetProfile = profiles.find((profile) => profile.id === targetProfileId);
 
-    if (!targetProfile) {
-      alert('Usuário não encontrado.');
+    if (!targetProfile || targetProfile.company_id !== user.company_id) {
+      alert('Você só pode alterar usuários da sua própria empresa.');
       return false;
     }
 
@@ -162,10 +189,10 @@ const AdminConfig: React.FC = () => {
   };
 
   const updateDistRules = async (updates: Partial<{ enabled: boolean; types: string[] }>) => {
-    if (!user?.id || !isAdmin) return;
+    if (!user?.id || !isAdmin || !user.company_id) return;
 
     const myProfile = profiles.find((profile) => profile.id === user.id);
-    if (!myProfile) return;
+    if (!myProfile || myProfile.company_id !== user.company_id) return;
 
     const newRules = { ...distRules, ...updates };
     setDistRules(newRules);
@@ -326,6 +353,56 @@ const AdminConfig: React.FC = () => {
     setSavingSettings(false);
   };
 
+  const handleCheckout = async () => {
+    const companyId = user?.company_id;
+
+    if (!companyId) {
+      alert('Não foi possível identificar a empresa.');
+      return;
+    }
+
+    setIsGeneratingCheckout(true);
+    try {
+      // 1. Pegamos a sessão e as chaves de ambiente
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      console.log("🚀 Enviando requisição direta para a Edge Function...");
+
+      // 2. Chamada Direta e à prova de falhas (Ignora os bugs do supabase-js)
+      const response = await fetch(`${supabaseUrl}/functions/v1/create-asaas-checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey': supabaseKey
+        },
+        body: JSON.stringify({ company_id: companyId })
+      });
+
+      // 3. Lemos a resposta REAL do servidor
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `Erro HTTP ${response.status}`);
+      }
+
+      if (!data?.checkoutUrl) {
+        throw new Error('O Asaas não retornou o link. Verifique os logs da Edge Function.');
+      }
+
+      // 4. Redirecionamento com Sucesso!
+      console.log("✅ Link gerado com sucesso! Redirecionando...");
+      window.location.href = data.checkoutUrl;
+
+    } catch (error: any) {
+      console.error("🔥 ERRO FATAL:", error);
+      alert('Erro ao gerar pagamento: ' + (error.message || error));
+    } finally {
+      setIsGeneratingCheckout(false);
+    }
+  };
 
   const currentLevel = Math.max(1, Number(user?.level ?? 1));
   const currentXP = Math.max(0, Number(user?.xp_points ?? 0));
@@ -390,6 +467,15 @@ const AdminConfig: React.FC = () => {
             className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'traffic' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
           >
             <Icons.Globe size={18} /> Tráfego
+          </button>
+        )}
+
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab('subscription')}
+            className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'subscription' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+          >
+            <Icons.CreditCard size={18} /> Assinatura
           </button>
         )}
       </div>
@@ -785,6 +871,85 @@ const AdminConfig: React.FC = () => {
         </div>
       )}
 
+      {activeTab === 'subscription' && isAdmin && (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white">Meu Plano</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Consulte o status da sua assinatura e acesse as opções de pagamento.
+            </p>
+          </div>
+
+          {loadingContract ? (
+            <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-200 dark:border-dark-border p-6">
+              <p className="text-sm text-slate-500 dark:text-slate-400">Carregando detalhes do plano...</p>
+            </div>
+          ) : contract ? (
+            <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-200 dark:border-dark-border p-6 md:p-8 space-y-6 shadow-sm">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">Plano Atual</p>
+                  <h4 className="text-2xl font-bold text-slate-800 dark:text-white mt-1">{contract.plan_name}</h4>
+                </div>
+
+                <span
+                  className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
+                    contract.status === 'active'
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                      : contract.status === 'pending'
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                  }`}
+                >
+                  {contract.status === 'active'
+                    ? 'Ativo'
+                    : contract.status === 'pending'
+                      ? 'Aguardando Pagamento'
+                      : 'Expirado'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-slate-200 dark:border-dark-border p-4 bg-slate-50 dark:bg-dark-bg">
+                  <p className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">Início</p>
+                  <p className="text-base font-semibold text-slate-800 dark:text-white mt-1">
+                    {new Date(contract.start_date).toLocaleDateString('pt-BR')}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 dark:border-dark-border p-4 bg-slate-50 dark:bg-dark-bg">
+                  <p className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">Vencimento</p>
+                  <p className="text-base font-semibold text-slate-800 dark:text-white mt-1">
+                    {new Date(contract.end_date).toLocaleDateString('pt-BR')}
+                  </p>
+                </div>
+              </div>
+
+              {['pending', 'expired', 'canceled'].includes(contract.status) ? (
+                <button
+                  onClick={handleCheckout}
+                  disabled={isGeneratingCheckout}
+                  className="w-full bg-brand-600 hover:bg-brand-700 text-white py-3 rounded-xl font-bold transition-colors"
+                >
+                  {isGeneratingCheckout ? 'A gerar ambiente seguro...' : 'Pagar Assinatura'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => alert('Redirecionar para Asaas')}
+                  className="w-full border border-brand-300 text-brand-600 dark:text-brand-400 dark:border-brand-700 py-3 rounded-xl font-bold hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors"
+                >
+                  Gerenciar Assinatura (Faturas e Cartão)
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-200 dark:border-dark-border p-6">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Nenhum plano ativo encontrado. Entre em contato com o suporte.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       <GamificationModal
         isOpen={isXpModalOpen}

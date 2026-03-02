@@ -5,7 +5,6 @@ import { Lead, LeadMatch, LeadStatus, Task, TimelineEvent, Property } from '../t
 import { Icons } from './Icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { useNotification } from '../contexts/NotificationContext';
 import { findSmartMatches, mapPropertyToCandidate, SmartMatchResult } from '../services/ai';
 
 interface Template {
@@ -59,7 +58,6 @@ type InfoTabId = 'profile' | 'smart_match';
 const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, onStatusChange, onLeadUpdate, onRequestTransfer }) => {
   const { user } = useAuth();
   const { addToast } = useToast();
-  const { addNotification } = useNotification();
   const Maps = useNavigate();
   const isAdmin = user?.role === 'admin';
   const [activeTab, setActiveTab] = useState(() => {
@@ -272,12 +270,6 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
       setEvents((prev) => [data as any, ...prev]);
       setNewNote('');
 
-      addNotification({
-        title: 'Nota Adicionada',
-        message: `Nova nota registrada no lead ${lead.name}.`,
-        type: 'lead'
-      });
-
       // Atualiza o relógio de "Atualizado" do lead
       const now = new Date().toISOString();
       await supabase.from('leads').update({ updated_at: now }).eq('id', lead.id);
@@ -299,16 +291,8 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
   const toggleTask = async (id: string, completed: boolean) => {
     const { error } = await supabase.from('tasks').update({ completed: !completed }).eq('id', id);
     if (!error) {
-      const taskTitle = tasks.find((t) => t.id === id)?.title || 'Tarefa';
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, completed: !completed } : t)));
-      if (!completed) {
-        await addTimelineLog('system', `Concluiu a tarefa: ${taskTitle}`);
-        addNotification({
-          title: 'Tarefa Concluída',
-          message: `A tarefa "${taskTitle}" do lead ${lead.name} foi concluída.`,
-          type: 'task'
-        });
-      }
+      if (!completed) await addTimelineLog('system', `Concluiu a tarefa: ${tasks.find((t) => t.id === id)?.title}`);
     }
   };
 

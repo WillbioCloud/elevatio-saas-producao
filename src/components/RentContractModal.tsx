@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Icons } from './Icons';
 import { Lead, Property } from '../types';
-import { useNotification } from '../contexts/NotificationContext';
 
 interface RentContractModalProps {
   isOpen: boolean;
@@ -12,7 +11,6 @@ interface RentContractModalProps {
 }
 
 const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, onSuccess, contractData: _contractData }) => {
-  const { addNotification } = useNotification();
   const [loading, setLoading] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -179,12 +177,6 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
           .update({ status: 'Alugado' })
           .eq('id', formData.property_id);
       }
-
-      addNotification({
-        title: 'Contrato Gerado',
-        message: 'Novo contrato de aluguel gerado com sucesso.',
-        type: 'property'
-      });
 
       onSuccess();
       onClose();

@@ -18,6 +18,11 @@ type ProfileData = {
   level?: number;
   xp_points?: number;
   active?: boolean;
+  company_id?: string;
+  company?: {
+    name: string;
+    plan: 'free' | 'starter' | 'basic' | 'profissional' | 'business' | 'premium' | 'elite';
+  };
   [key: string]: unknown;
 };
 
@@ -29,6 +34,11 @@ export type UserWithRole = User & {
   level?: number;
   xp_points?: number;
   active?: boolean;
+  company_id?: string;
+  company?: {
+    name: string;
+    plan: 'free' | 'starter' | 'basic' | 'profissional' | 'business' | 'premium' | 'elite';
+  };
   profile?: ProfileData | null;
 };
 
@@ -65,6 +75,8 @@ const buildFallbackUser = (supabaseUser: User): UserWithRole => {
     level: toNumber(metadata.level, 1),
     xp_points: toNumber(metadata.xp_points ?? metadata.xp, 0),
     active: true,
+    company_id: undefined,
+    company: undefined,
     profile: null,
   };
 };
@@ -80,6 +92,8 @@ const mergeUserWithProfile = (supabaseUser: User, profile: ProfileData | null): 
     level: toNumber(profile.level, 1),
     xp_points: toNumber(profile.xp_points ?? profile.xp, 0),
     active: profile.active ?? true,
+    company_id: profile.company_id,
+    company: profile.company,
     profile,
   };
 };
@@ -120,12 +134,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('*, company:companies(name, plan)')
         .eq('id', currentSession.user.id)
         .maybeSingle();
 
       if (error) {
-        console.error('ERRO DO SUPABASE:', error);
         return buildFallbackUser(currentSession.user);
       }
 
@@ -296,7 +309,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!error && authData?.user) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('*')
+        .select('*, company:companies(name, plan)')
         .eq('id', authData.user.id)
         .single();
 

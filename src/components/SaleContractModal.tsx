@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Icons } from './Icons';
 import { Lead, Property } from '../types';
-import { useNotification } from '../contexts/NotificationContext';
 
 interface SaleContractModalProps {
   isOpen: boolean;
@@ -12,7 +11,6 @@ interface SaleContractModalProps {
 }
 
 const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, onSuccess, contractData }) => {
-  const { addNotification } = useNotification();
   const [loading, setLoading] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -289,12 +287,6 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
       if (formData.property_id) {
         await supabase.from('properties').update({ status: 'Vendido' }).eq('id', formData.property_id);
       }
-
-      addNotification({
-        title: 'Contrato Gerado',
-        message: 'Novo contrato de venda gerado com sucesso.',
-        type: 'property'
-      });
 
       onSuccess();
       onClose();

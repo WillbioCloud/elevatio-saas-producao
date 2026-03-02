@@ -8,7 +8,6 @@ import { TOOLTIPS } from '../constants/tooltips';
 import Loading from '../components/Loading';
 import { addXp } from '../services/gamification';
 import { useSearchParams } from 'react-router-dom';
-import { useNotification } from '../contexts/NotificationContext';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -264,7 +263,6 @@ const DraggableCardWrapper = ({
 
 const AdminLeads: React.FC = () => {
   const { user } = useAuth();
-  const { addNotification } = useNotification();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentFunnel = searchParams.get('funnel') || 'atendimento';
   const isAdmin = (user as any)?.role === 'admin';
@@ -569,14 +567,6 @@ const AdminLeads: React.FC = () => {
         .from('leads')
         .update({ status: targetStatus, funnel_step: newFunnel, stage_updated_at: now })
         .eq('id', leadId);
-
-      if (!error) {
-        addNotification({
-          title: 'Lead Atualizado',
-          message: `O lead ${lead.name} avançou para a etapa ${targetStatus}.`,
-          type: 'lead'
-        });
-      }
 
       if (!error && lead.assigned_to && lead.assigned_to !== user?.id) {
         await supabase.from('notifications').insert([

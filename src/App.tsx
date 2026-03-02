@@ -10,6 +10,7 @@ import {
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { TenantProvider, useTenant } from './contexts/TenantContext';
 import { useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AnimatePresence } from 'framer-motion';
@@ -105,6 +106,9 @@ const AppRoutes: React.FC = () => {
   const location = useLocation();
   const routeKey = useMemo(() => location.pathname, [location.pathname]);
 
+  // 🧠 O CÉREBRO: Descobre de quem é o domínio acessado
+  const { isMasterDomain } = useTenant();
+
   return (
     <>
       <ScrollToTop />
@@ -115,17 +119,25 @@ const AppRoutes: React.FC = () => {
           {/* === 1. A ROTA RAIZ (A REGRA DE OURO) === */}
           <Route 
             path="/" 
-            element={<PageWrapper><Home /></PageWrapper>}
+            element={
+              isMasterDomain 
+                ? <Navigate to="/admin/login" replace /> // Se for localhost/master, VAI PARA O LOGIN
+                : <PageWrapper><Home /></PageWrapper>    // Se for subdomínio/cliente, VAI PARA A VITRINE
+            } 
           />
 
-          {/* === 2. AS ROTAS DA VITRINE === */}
-          <Route path="/imoveis" element={<PageWrapper><Properties /></PageWrapper>} />
-          <Route path="/imoveis/:slug" element={<PageWrapper><PropertyDetail /></PageWrapper>} />
-          <Route path="/bairros/:slug" element={<PageWrapper><Properties /></PageWrapper>} />
-          <Route path="/servicos" element={<PageWrapper><Services /></PageWrapper>} />
-          <Route path="/sobre" element={<PageWrapper><About /></PageWrapper>} />
-          <Route path="/contato" element={<PageWrapper><div className="pt-20 text-center dark:text-white">Contato</div></PageWrapper>} />
-          <Route path="/financiamentos" element={<AnimatedPage><Financiamentos /></AnimatedPage>} />
+          {/* === 2. AS ROTAS DA VITRINE (SÓ EXISTEM PARA OS CLIENTES) === */}
+          {!isMasterDomain && (
+            <>
+              <Route path="/imoveis" element={<PageWrapper><Properties /></PageWrapper>} />
+              <Route path="/imoveis/:slug" element={<PageWrapper><PropertyDetail /></PageWrapper>} />
+              <Route path="/bairros/:slug" element={<PageWrapper><Properties /></PageWrapper>} />
+              <Route path="/servicos" element={<PageWrapper><Services /></PageWrapper>} />
+              <Route path="/sobre" element={<PageWrapper><About /></PageWrapper>} />
+              <Route path="/contato" element={<PageWrapper><div className="pt-20 text-center dark:text-white">Contato</div></PageWrapper>} />
+              <Route path="/financiamentos" element={<AnimatedPage><Financiamentos /></AnimatedPage>} />
+            </>
+          )}
 
           {/* === 3. A ROTA DE LOGIN DO CRM (COMUM A TODOS) === */}
           <Route path="/admin/login" element={<AnimatedPage><Login /></AnimatedPage>} />
@@ -169,17 +181,19 @@ const App: React.FC = () => {
 
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <ThemeProvider>
-          <ToastProvider>
-            <SessionManager />
-            <SessionEnforcer />
-            <PageTracker />
-            <UserPresenceTracker />
-            <AppRoutes />
-          </ToastProvider>
-        </ThemeProvider>
-      </AuthProvider>
+      <TenantProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            <ToastProvider>
+              <SessionManager />
+              <SessionEnforcer />
+              <PageTracker />
+              <UserPresenceTracker />
+              <AppRoutes />
+            </ToastProvider>
+          </ThemeProvider>
+        </AuthProvider>
+      </TenantProvider>
     </BrowserRouter>
   );
 };

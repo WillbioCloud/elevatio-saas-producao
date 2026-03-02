@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, LabelList, XAxis } from "recharts";
 import {
   ChartConfig,
@@ -11,6 +12,7 @@ import { useLeads } from '../hooks/useLeads';
 import { useProperties } from '../hooks/useProperties';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
+import { PLAN_CONFIG, PlanType } from '../config/plans';
 import Loading from '../components/Loading';
 import DashboardCalendar from '../components/DashboardCalendar';
 import {
@@ -61,6 +63,10 @@ const WIDGET_CONFIG = [
 
 const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const userPlan = (user?.company?.plan as PlanType) || 'free';
+  const canAccessFinance = PLAN_CONFIG[userPlan].features.contractsAndFinance;
+  const canAccessGamification = PLAN_CONFIG[userPlan].features.gamification;
   const { leads, loading: leadsLoading } = useLeads();
   const { properties, loading: propsLoading } = useProperties();
 
@@ -89,6 +95,8 @@ const AdminDashboard: React.FC = () => {
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [draggedWidget, setDraggedWidget] = useState<string | null>(null);
   const [dragOverWidget, setDragOverWidget] = useState<string | null>(null);
+  const [contractStatus, setContractStatus] = useState<string | null>(null);
+  const [trialDaysLeft, setTrialDaysLeft] = useState(0);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -180,6 +188,72 @@ const AdminDashboard: React.FC = () => {
     };
   }, [user?.id, isAdmin]); // DEPENDÊNCIAS BLINDADAS
 
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let isMounted = true;
+
+    const fetchTrialStatus = async () => {
+      try {
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('company_id')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError || !profile?.company_id) {
+          if (isMounted) {
+            setContractStatus(null);
+            setTrialDaysLeft(0);
+          }
+          return;
+        }
+
+        const { data: contract, error: contractError } = await supabase
+          .from('saas_contracts')
+          .select('status, created_at')
+          .eq('company_id', profile.company_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (contractError || !contract) {
+          if (isMounted) {
+            setContractStatus(null);
+            setTrialDaysLeft(0);
+          }
+          return;
+        }
+
+        if (!isMounted) return;
+
+        setContractStatus(contract.status);
+
+        if (contract.status === 'pending') {
+          const trialEnd = new Date(contract.created_at);
+          trialEnd.setDate(trialEnd.getDate() + 7);
+          const msLeft = trialEnd.getTime() - Date.now();
+          const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
+          setTrialDaysLeft(daysLeft);
+          return;
+        }
+
+        setTrialDaysLeft(0);
+      } catch (error) {
+        console.error('Erro ao buscar status do contrato:', error);
+        if (isMounted) {
+          setContractStatus(null);
+          setTrialDaysLeft(0);
+        }
+      }
+    };
+
+    fetchTrialStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
 
   const stats = useMemo(() => {
     const myLeads = isAdmin ? leads : leads.filter((l: any) => l.assigned_to === user?.id);
@@ -191,16 +265,8 @@ const AdminDashboard: React.FC = () => {
     const annualLeads = closedLeads.filter((l) => new Date(l.updated_at || new Date()).getFullYear() === currentYear);
     const vgvAnnual = annualLeads.reduce((acc, lead) => acc + (lead.deal_value || 0), 0);
 
-    const salePortfolioCount = myProperties.filter((p) => {
-      const normalizedStatus = p.status?.toLowerCase() || '';
-      const isActive = !['vendido', 'alugado', 'inativo', 'suspenso'].includes(normalizedStatus);
-      return p.listing_type === 'sale' && isActive;
-    }).length;
-    const rentPortfolioCount = myProperties.filter((p) => {
-      const normalizedStatus = p.status?.toLowerCase() || '';
-      const isActive = !['vendido', 'alugado', 'inativo', 'suspenso'].includes(normalizedStatus);
-      return p.listing_type === 'rent' && isActive;
-    }).length;
+    const salePortfolioCount = myProperties.filter((p) => p.listing_type === 'sale' && p.status === 'active').length;
+    const rentPortfolioCount = myProperties.filter((p) => p.listing_type === 'rent' && p.status === 'active').length;
 
     const funnel = {
       pre_atendimento: myLeads.filter((l) => l.funnel_step === 'pre_atendimento').length,
@@ -261,6 +327,16 @@ const AdminDashboard: React.FC = () => {
       return newLayout;
     });
     setDraggedWidget(null);
+  };
+
+  const handleActivatePlan = () => {
+    navigate('/admin/config');
+  };
+
+  const handleStartTour = () => {
+    localStorage.setItem('trimoveis-product-tour-pending', 'true');
+    localStorage.removeItem('trimoveis-product-tour-completed');
+    window.dispatchEvent(new Event('trimoveis:start-product-tour'));
   };
 
   // RENDERIZADOR DE COMPONENTES
@@ -352,7 +428,19 @@ const AdminDashboard: React.FC = () => {
       case 'financeiroAdmin': return (
         <div className="h-full grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
           <div className="bg-white p-5 md:p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col">
-            <div className="flex-1 flex flex-col justify-between">
+            {!canAccessGamification && (
+              <div className="absolute inset-0 bg-white/60 backdrop-blur-[4px] z-20 flex flex-col items-center justify-center text-center p-6">
+                <div className="w-12 h-12 md:w-16 md:h-16 bg-white border border-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-3 md:mb-4 shadow-md">
+                  <Icons.Lock size={24} className="md:w-8 md:h-8" />
+                </div>
+                <h3 className="text-base md:text-lg font-bold text-slate-800 mb-2">Gamificação de Equipe</h3>
+                <p className="text-xs md:text-sm text-slate-500 max-w-[250px]">
+                  Disponível a partir do plano <span className="font-bold text-amber-500 uppercase">Profissional</span>.
+                </p>
+              </div>
+            )}
+
+            <div className={!canAccessGamification ? 'opacity-30 pointer-events-none select-none flex-1 flex flex-col justify-between' : 'flex-1 flex flex-col justify-between'}>
               <div>
                 <div className="flex items-center gap-2 mb-2 text-slate-400"><Icons.Trophy size={18} className="text-amber-500" /> <h3 className="font-bold text-slate-700 uppercase text-[10px] md:text-xs tracking-wider">Top Corretor (VGV)</h3></div>
                 <p className="text-2xl md:text-3xl font-bold text-slate-800 mt-1 md:mt-2 truncate" title={adminStats.topBroker.name}>{adminStats.topBroker.name}</p>
@@ -368,7 +456,19 @@ const AdminDashboard: React.FC = () => {
             </div>
           </div>
           <div className="bg-white p-5 md:p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col">
-            <div className="flex-1 flex flex-col justify-between">
+            {!canAccessFinance && (
+              <div className="absolute inset-0 bg-white/60 backdrop-blur-[4px] z-20 flex flex-col items-center justify-center text-center p-6">
+                <div className="w-12 h-12 md:w-16 md:h-16 bg-white border border-slate-100 rounded-full flex items-center justify-center text-slate-400 mb-3 md:mb-4 shadow-md">
+                  <Icons.Lock size={24} className="md:w-8 md:h-8" />
+                </div>
+                <h3 className="text-base md:text-lg font-bold text-slate-800 mb-2">Módulo Financeiro</h3>
+                <p className="text-xs md:text-sm text-slate-500 max-w-[250px]">
+                  Disponível a partir do plano <span className="font-bold text-brand-600 uppercase">Business</span>.
+                </p>
+              </div>
+            )}
+
+            <div className={!canAccessFinance ? 'opacity-30 pointer-events-none select-none flex-1 flex flex-col justify-between' : 'flex-1 flex flex-col justify-between'}>
               <div>
                 <div className="flex items-center gap-2 mb-2 text-slate-400"><Icons.Wallet size={18} className="text-emerald-500" /> <h3 className="font-bold text-slate-700 uppercase text-[10px] md:text-xs tracking-wider">Recebimentos do Mês</h3></div>
                 <div className="flex flex-wrap items-end gap-2 mt-1 md:mt-2">
@@ -442,6 +542,67 @@ const AdminDashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      {contractStatus === 'pending' && (
+        <div className="relative overflow-hidden rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-500 to-orange-600 p-5 shadow-xl shadow-orange-950/20">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.35),transparent_45%)]" />
+          <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-amber-100">
+                <Icons.AlertTriangle size={16} className="text-amber-100" />
+                Você está no período de teste
+              </p>
+              <h2 className="mt-1 text-lg font-bold text-white">
+                {trialDaysLeft > 0
+                  ? `Faltam ${trialDaysLeft} dias para o seu teste gratuito terminar.`
+                  : 'O seu período de teste acabou hoje!'}
+              </h2>
+              <p className="mt-1 text-sm text-amber-100/90">Ative o plano definitivo para manter o acesso completo ao CRM sem interrupções.</p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={handleActivatePlan}
+                className="inline-flex items-center justify-center rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-orange-700 shadow-lg shadow-orange-950/20 transition hover:bg-orange-50"
+              >
+                Ativar Plano Definitivo
+              </button>
+              <button
+                type="button"
+                onClick={handleStartTour}
+                className="inline-flex items-center justify-center rounded-xl border border-amber-100/80 bg-orange-500/30 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-orange-500/40"
+              >
+                Iniciar Tour
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(contractStatus === 'expired' || contractStatus === 'canceled') && (
+        <div className="relative overflow-hidden rounded-2xl border border-red-400/60 bg-red-900/90 p-5 shadow-xl shadow-red-950/30">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(248,113,113,0.2),transparent_45%)]" />
+          <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-red-200">
+                <Icons.AlertCircle size={16} className="text-red-200" />
+                Assinatura Inativa
+              </p>
+              <h2 className="mt-1 text-lg font-bold text-white">Assinatura Inativa</h2>
+              <p className="mt-1 text-sm text-red-100">A sua assinatura expirou ou foi cancelada. Regularize o seu plano para continuar a usar o CRM.</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleActivatePlan}
+              className="inline-flex items-center justify-center rounded-xl bg-red-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-red-950/30 transition hover:bg-red-400"
+            >
+              Regularizar Pagamento
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* GRID DE WIDGETS INTELIGENTE (TETRIS) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-6" style={{ gridAutoFlow: 'dense' }}>

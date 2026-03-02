@@ -1,61 +1,6 @@
 import { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-
-const DEVICE_ID_KEY = 'trimoveis_device_id';
-const SESSION_ID_KEY = 'trimoveis_session_id';
-const VISITED_PAGES_KEY = 'trimoveis_visited_pages';
-const MAX_VISITED_PAGES = 20;
-
-type VisitedPage = {
-  url: string;
-  timestamp: string;
-  title: string;
-};
-
-const generateId = () => Math.random().toString(36).substring(2);
-
-const getOrCreateStorageId = (storage: Storage, key: string) => {
-  const existing = storage.getItem(key);
-  if (existing) return existing;
-
-  const created = generateId();
-  storage.setItem(key, created);
-  return created;
-};
-
-const updateVisitedPagesHistory = (url: string) => {
-  const nextEntry: VisitedPage = {
-    url,
-    timestamp: new Date().toISOString(),
-    title: document.title,
-  };
-
-  const rawHistory = sessionStorage.getItem(VISITED_PAGES_KEY);
-  let parsedHistory: VisitedPage[] = [];
-
-  if (rawHistory) {
-    try {
-      const candidate = JSON.parse(rawHistory) as unknown;
-      if (Array.isArray(candidate)) {
-        parsedHistory = candidate.filter((item): item is VisitedPage => {
-          if (!item || typeof item !== 'object') return false;
-          const typedItem = item as Partial<VisitedPage>;
-          return (
-            typeof typedItem.url === 'string' &&
-            typeof typedItem.timestamp === 'string' &&
-            typeof typedItem.title === 'string'
-          );
-        });
-      }
-    } catch {
-      parsedHistory = [];
-    }
-  }
-
-  const updatedHistory = [...parsedHistory, nextEntry].slice(-MAX_VISITED_PAGES);
-  sessionStorage.setItem(VISITED_PAGES_KEY, JSON.stringify(updatedHistory));
-};
+import { useLocation } from 'react-router-dom';
 
 export const useTrackVisit = () => {
   const location = useLocation();
@@ -63,29 +8,37 @@ export const useTrackVisit = () => {
   useEffect(() => {
     const trackVisit = async () => {
       try {
+        // 1. Não rastreia o Admin/Corretor (Impede que você mesmo suje as métricas)
         if (location.pathname.startsWith('/admin')) return;
-
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
+        
+        // Impede rastreamento se o usuário estiver logado no sistema
+        const { data: { session } } = await supabase.auth.getSession();
         if (session) return;
 
-        const deviceId = getOrCreateStorageId(localStorage, DEVICE_ID_KEY);
-        const sessionId = getOrCreateStorageId(sessionStorage, SESSION_ID_KEY);
+        // 2. Lógica de Visitante Único por Dia (Local Storage)
+        const todayDate = new Date().toISOString().split('T')[0]; // Ex: 2026-02-27
+        const lastVisitDate = localStorage.getItem('trimoveis_last_visit_date');
 
-        await supabase.from('site_visits').insert({
-          page: location.pathname,
-          device_id: deviceId,
-          session_id: sessionId,
-        });
+        // Se a última visita registrada não foi hoje, consideramos um "Novo Visitante Diário"
+        if (lastVisitDate !== todayDate) {
+          // Atualiza a data no navegador do usuário
+          localStorage.setItem('trimoveis_last_visit_date', todayDate);
 
-        updateVisitedPagesHistory(`${location.pathname}${location.search}`);
+          // Registra a visita no banco de dados (Apenas 1x por dia por dispositivo)
+          await supabase.rpc('increment_page_view', {
+            page_path: location.pathname || '/'
+          });
+        }
       } catch (error) {
         console.error('Erro ao registrar visita:', error);
       }
     };
 
-    void trackVisit();
-  }, [location.pathname, location.search]);
+    // Pequeno delay para garantir que bots super-rápidos não sejam contabilizados instantaneamente
+    const timer = setTimeout(() => {
+      trackVisit();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [location.pathname]);
 };

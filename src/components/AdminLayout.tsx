@@ -7,6 +7,8 @@ import { supabase } from '../lib/supabase';
 import NotificationsMenu from './NotificationsMenu';
 import { useInstallmentReminders } from '../hooks/useInstallmentReminders';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
+import ProductTour from './ProductTour';
+import SetupWizardModal from './SetupWizardModal';
 
 const AdminLayout: React.FC = () => {
   const { user, signOut } = useAuth();
@@ -35,6 +37,9 @@ const AdminLayout: React.FC = () => {
     if (!user?.role) return 'Corretor';
     return `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)}`;
   }, [user?.role]);
+
+  // 👇 ADICIONE ESTA LINHA AQUI 👇
+  console.log('🚨 [DEBUG WIZARD] Usuário:', user?.email, '| CompanyID:', user?.company_id, '| Wizard vai abrir?', !user?.company_id);
 
   const handleRefresh = async () => {
     if (isRefreshing) return;
@@ -93,6 +98,13 @@ const AdminLayout: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-slate-900 overflow-hidden font-sans">
+      {/* 🚨 O GUARDA-COSTAS (WIZARD) 🚨 */}
+      {/* Se o utilizador não tem empresa, trava a tela e obriga a criar */}
+      {!user?.company_id && (
+        <SetupWizardModal onComplete={handleRefresh} />
+      )}
+
+      <ProductTour isSidebarCollapsed={isSidebarCollapsed} />
       <aside
         className={`hidden md:flex flex-col bg-slate-900 text-white shadow-xl relative z-20 transition-all duration-300 ${
           isSidebarCollapsed ? 'w-20' : 'w-64'
@@ -133,8 +145,10 @@ const AdminLayout: React.FC = () => {
             <React.Fragment key={item.path}>
               <NavLink
                 to={item.path}
+                id={item.path === '/admin/imoveis' ? 'tour-imoveis' : item.path === '/admin/config' ? 'tour-config' : undefined}
+                data-tour-anchor={item.path === '/admin/imoveis' || item.path === '/admin/config' ? 'true' : undefined}
                 className={({ isActive }) => `
-                  flex items-center gap-3 py-3 rounded-xl transition-all duration-200 group ${
+                  flex items-center gap-3 py-3 rounded-xl transition-all duration-200 group ${item.path === '/admin/imoveis' ? 'tour-imoveis' : ''} ${item.path === '/admin/config' ? 'tour-config' : ''} ${
                     isSidebarCollapsed ? 'justify-center px-0' : 'px-4'
                   }
                   ${isActive ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}
@@ -229,7 +243,7 @@ const AdminLayout: React.FC = () => {
           ))}
 
           {/* Menu Dropdown - Funil de Vendas */}
-          <div className="space-y-1">
+          <div className="space-y-1" id="tour-kanban">
             <div
               className={`flex items-center justify-between rounded-xl transition-all ${
                 location.pathname.includes('/admin/leads')
@@ -239,7 +253,8 @@ const AdminLayout: React.FC = () => {
             >
               <NavLink
                 to="/admin/leads?funnel=geral"
-                className={`flex-1 flex items-center gap-3 py-2.5 font-medium text-sm ${
+                data-tour-anchor="true"
+                className={`tour-kanban flex-1 flex items-center gap-3 py-2.5 font-medium text-sm ${
                   isSidebarCollapsed ? 'justify-center px-0' : 'px-4'
                 }`}
               >
@@ -515,6 +530,7 @@ const AdminLayout: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
           <div className="max-w-7xl mx-auto pb-10">
+            
             <Outlet key={refreshKey} />
           </div>
         </div>

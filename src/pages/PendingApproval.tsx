@@ -40,7 +40,7 @@ const PendingApproval: React.FC = () => {
             onClick={handleSignOut}
             className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
           >
-            <Icons.LogOut size={16} className="mr-3" />
+            <Icons.LogOut size={16} className="mr-2" />
             Sair da Conta
           </button>
         </div>

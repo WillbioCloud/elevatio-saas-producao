@@ -96,7 +96,7 @@ const AdminAnalytics: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!allVisits.length) return;
+    if (!allVisits.length || !allProperties.length) return;
 
     const now = new Date();
     let limitDate = new Date();
@@ -108,30 +108,15 @@ const AdminAnalytics: React.FC = () => {
 
     const filteredVisits = allVisits.filter((v) => new Date(v.created_at) >= limitDate);
 
-    const inferPropertyTypeFromPage = (page: string): string | null => {
-      const normalizedPage = page.toLowerCase();
-
-      if (normalizedPage.includes('terreno') || normalizedPage.includes('lote')) return 'Terreno';
-      if (normalizedPage.includes('apartamento') || normalizedPage.includes('apto')) return 'Apartamento';
-      if (normalizedPage.includes('casa') || normalizedPage.includes('sobrado')) return 'Casa';
-      if (normalizedPage.includes('comercial') || normalizedPage.includes('loja')) return 'Comercial';
-      if (normalizedPage.includes('cobertura')) return 'Cobertura';
-
-      return null;
-    };
-
     // Agrupar por Sessão
     const sessionsMap: Record<string, string[]> = {};
     filteredVisits.forEach((visit) => {
-      const sessionId = visit.session_id || visit.device_id || visit.id;
-      if (!sessionId) return;
-
+      if (!visit.session_id) return;
       const prop = allProperties.find((p) => visit.page.includes(p.id) || (p.slug && visit.page.includes(p.slug)));
-      const propertyType = prop?.type || inferPropertyTypeFromPage(visit.page || '');
-      if (!propertyType) return;
-
-      if (!sessionsMap[sessionId]) sessionsMap[sessionId] = [];
-      sessionsMap[sessionId].push(propertyType);
+      if (prop && prop.type) {
+        if (!sessionsMap[visit.session_id]) sessionsMap[visit.session_id] = [];
+        sessionsMap[visit.session_id].push(prop.type);
+      }
     });
 
     // Determinar o interesse principal de cada sessão
