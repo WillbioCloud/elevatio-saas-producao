@@ -29,40 +29,48 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     try {
       if (!user?.id) throw new Error('Sessão inválida. Faça login novamente.');
 
-      // 1. Formata os dados
-      const slug = formData.companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-      const finalDomain = formData.hasDomain === 'sim' ? formData.domain : `${formData.domain}.elevatiovendas.com.br`;
+      const trialEnds = new Date();
+      trialEnds.setDate(trialEnds.getDate() + 7);
 
-      // 2. Cria a Empresa no Supabase (Sem o telefone, pois não existe na tabela companies)
+      const slug = formData.companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+
       const { data: newCompany, error: companyError } = await supabase
         .from('companies')
-        .insert([{ 
-          name: formData.companyName, 
-          slug: slug, 
-          domain: finalDomain,
-          plan: formData.plan
+        .insert([{
+          name: formData.companyName,
+          subdomain: slug,
+          document: formData.document,
+          phone: formData.phone,
+          plan_status: 'trial',
+          trial_ends_at: trialEnds.toISOString(),
         }])
         .select()
         .single();
 
       if (companyError) throw new Error('Erro ao criar imobiliária: ' + companyError.message);
 
-      // 3. Atualiza o Perfil do utilizador (Aqui sim salvamos o telefone, vinculamos a empresa e ativamos)
       if (newCompany) {
         const { error: profileError } = await supabase
           .from('profiles')
-          .update({ 
-            company_id: newCompany.id, 
-            role: 'admin', 
+          .update({
+            company_id: newCompany.id,
+            role: 'admin',
             active: true,
-            phone: formData.phone // Salvando no lugar correto!
+            phone: formData.phone,
           })
           .eq('id', user.id);
 
         if (profileError) throw new Error('Erro ao vincular perfil: ' + profileError.message);
       }
 
-      // Sucesso! Recarrega a página para liberar o CRM
+      try {
+        await supabase.functions.invoke('create-asaas-checkout', {
+          body: { company_id: newCompany.id, plan: formData.plan },
+        });
+      } catch (asaasError) {
+        console.warn('Aviso: Falha ao integrar Asaas. Empresa criada.', asaasError);
+      }
+
       onComplete();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Erro inesperado ao configurar a sua conta.';
