@@ -215,7 +215,7 @@ const AdminDashboard: React.FC = () => {
           .eq('company_id', profile.company_id)
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (contractError || !contract) {
           if (isMounted) {

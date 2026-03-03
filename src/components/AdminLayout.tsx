@@ -12,7 +12,7 @@ import ProductTour from './ProductTour';
 import SetupWizardModal from './SetupWizardModal';
 
 const AdminLayout: React.FC = () => {
-  const { user, signOut } = useAuth();
+  const { user, signOut, refreshUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -50,7 +50,7 @@ const AdminLayout: React.FC = () => {
     try {
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000));
 
-      await Promise.race([supabase.auth.refreshSession(), timeoutPromise]);
+      await Promise.race([refreshUser(), timeoutPromise]);
       setRefreshKey((prev) => prev + 1);
     } catch (error) {
       console.warn('Conexão lenta. Recarregando a página para restaurar...', error);

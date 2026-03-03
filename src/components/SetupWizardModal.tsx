@@ -66,6 +66,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
           document: formData.document,
           phone: formData.phone,
           plan_status: 'trial',
+          plan: formData.plan,
           trial_ends_at: trialEnds.toISOString(),
         }])
         .select()
@@ -85,6 +86,19 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
           .eq('id', user.id);
 
         if (profileError) throw new Error('Erro ao vincular perfil: ' + profileError.message);
+
+        // Criar contrato de teste para exibir a barra de Trial no Dashboard
+        try {
+          await supabase.from('saas_contracts').insert([{
+            company_id: newCompany.id,
+            plan_name: formData.plan,
+            status: 'pending',
+            start_date: new Date().toISOString(),
+            end_date: trialEnds.toISOString(),
+          }]);
+        } catch (contractError) {
+          console.warn('Aviso: Falha ao criar contrato de teste.', contractError);
+        }
       }
 
       try {
