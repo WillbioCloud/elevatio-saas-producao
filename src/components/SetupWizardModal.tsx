@@ -31,6 +31,7 @@ const normalizePlanFromNav = (value: unknown): PlanType | undefined => {
 export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) {
   const { user } = useAuth();
   const location = useLocation();
+  const initialPlan = (location.state as { plan?: string } | null)?.plan || 'professional';
   const planFromNav = normalizePlanFromNav((location.state as { plan?: unknown } | null)?.plan);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -42,7 +43,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     domain: '',
     hasDomain: 'nao',
     template: 'professional',
-    plan: planFromNav ?? 'profissional',
+    plan: initialPlan,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
