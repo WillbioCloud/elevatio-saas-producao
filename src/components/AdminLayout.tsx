@@ -39,8 +39,7 @@ const AdminLayout: React.FC = () => {
     return `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)}`;
   }, [user?.role]);
 
-  // 👇 ADICIONE ESTA LINHA AQUI 👇
-  console.log('🚨 [DEBUG WIZARD] Usuário:', user?.email, '| CompanyID:', user?.company_id, '| Wizard vai abrir?', !user?.company_id);
+  const shouldShowWizard = !user?.company_id && user?.role !== 'super_admin';
 
   const handleRefresh = async () => {
     if (isRefreshing) return;
@@ -100,8 +99,8 @@ const AdminLayout: React.FC = () => {
   return (
     <div className="flex h-screen bg-slate-900 overflow-hidden font-sans">
       {/* 🚨 O GUARDA-COSTAS (WIZARD) 🚨 */}
-      {/* Se o utilizador não tem empresa, trava a tela e obriga a criar */}
-      {!user?.company_id && (
+      {/* Só exibe se não tiver empresa e NÃO for super_admin (dono do SaaS não tem company_id) */}
+      {shouldShowWizard && (
         <SetupWizardModal onComplete={handleRefresh} />
       )}
 
