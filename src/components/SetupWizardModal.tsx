@@ -31,7 +31,6 @@ const normalizePlanFromNav = (value: unknown): PlanType | undefined => {
 export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) {
   const { user } = useAuth();
   const location = useLocation();
-  const planFromNav = normalizePlanFromNav((location.state as { plan?: unknown } | null)?.plan);
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -42,7 +41,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     domain: '',
     hasDomain: 'nao',
     template: 'professional',
-    plan: planFromNav ?? 'profissional',
+    plan: location.state?.plan || 'profissional',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -109,11 +108,12 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       }
 
       try {
-        await supabase.functions.invoke('create-asaas-checkout', {
-          body: { company_id: newCompany.id, plan: formData.plan },
+        const { error: asaasError } = await supabase.functions.invoke('create-asaas-checkout', {
+          body: { company_id: newCompany.id, plan: formData.plan }
         });
-      } catch (asaasError) {
-        console.warn('Aviso: Falha ao integrar Asaas. Empresa criada.', asaasError);
+        if (asaasError) console.error('Erro na integração Asaas:', asaasError);
+      } catch (e) {
+        console.error('Falha ao chamar webhook Asaas:', e);
       }
 
       onComplete();
@@ -138,6 +138,19 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
               <h3 className="text-brand-400 font-bold flex items-center gap-2">
                 <Building2 className="w-5 h-5" /> Dados da Imobiliária
               </h3>
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-400 mb-1">Confirme seu Plano</label>
+                <select
+                  value={formData.plan}
+                  onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
+                  className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500"
+                >
+                  <option value="starter">Starter</option>
+                  <option value="profissional">Profissional</option>
+                  <option value="business">Business</option>
+                  <option value="elite">Elite</option>
+                </select>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Nome da Imobiliária</label>

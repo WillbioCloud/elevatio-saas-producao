@@ -79,13 +79,26 @@ export default function SiteSignup() {
 
       const supabase = createClient(supabaseUrl, anonKey);
 
-      const { error: authError } = await supabase.auth.signUp({
+      const { data, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: { data: { full_name: formData.fullName } },
       });
 
       if (authError) throw new Error(`Erro ao criar conta: ${authError.message}`);
+
+      // Inserir manualmente o perfil para garantir que o nome seja salvo
+      if (data.user) {
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          name: formData.fullName,
+          email: formData.email,
+          role: 'corretor',
+          active: false
+        });
+
+        Maps('/admin/pendente', { state: { plan: selectedPlan } });
+      }
 
       setSignupSuccess(true);
     } catch (error: any) {
