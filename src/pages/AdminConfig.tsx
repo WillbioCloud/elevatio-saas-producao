@@ -23,7 +23,8 @@ interface Profile {
 
 interface Contract {
   id: string;
-  plan_name: string;
+  plan_name?: string;
+  plan?: string;
   status: string;
   start_date: string;
   end_date: string;
@@ -406,6 +407,10 @@ const AdminConfig: React.FC = () => {
 
   const pendingProfiles = useMemo(() => profiles.filter((profile) => !profile.active), [profiles]);
   const activeProfiles = useMemo(() => profiles.filter((profile) => profile.active), [profiles]);
+
+  const activePlanId = (contract?.plan_name || contract?.plan || '').toLowerCase();
+  const currentPlanDetails = PLANS.find(p => p.id === activePlanId);
+  const displayPlanName = currentPlanDetails?.name || activePlanId.toUpperCase() || 'CARREGANDO...';
 
   const toggleSound = () => {
     const newValue = !soundEnabled;
@@ -933,7 +938,7 @@ const AdminConfig: React.FC = () => {
                             : 'Inativo'}
                       </span>
                     </div>
-                    <h2 className="text-4xl font-serif font-bold uppercase tracking-tight">{contract.plan_name}</h2>
+                    <h2 className="text-4xl font-serif font-bold uppercase tracking-tight">{displayPlanName}</h2>
                     <div className="flex items-center gap-6 mt-6 opacity-80 text-sm">
                       <div>
                         <p className="text-brand-300 text-xs uppercase mb-0.5">Renovação em</p>
@@ -982,7 +987,7 @@ const AdminConfig: React.FC = () => {
               <div>
                 <h4 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Opções de Upgrade</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {PLANS.filter((p) => p.id !== (contract?.plan_name || '').toLowerCase()).map((plan) => (
+                  {PLANS.filter((p) => p.id !== activePlanId).map((plan) => (
                     <div
                       key={plan.id}
                       className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 flex flex-col h-full hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
