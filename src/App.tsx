@@ -71,11 +71,18 @@ const SessionEnforcer: React.FC = () => {
   const location = useLocation();
 
   useEffect(() => {
-    console.log(`🚨 [DEBUG SessionEnforcer] Analisando rota: ${location.pathname} | Loading: ${loading} | User: ${user?.email}`);
-    
-    if (!loading && user && (location.pathname === '/' || location.pathname === '/admin/login')) {
-      console.log('🚨 [DEBUG SessionEnforcer] ACIONADO: Tirando o usuário do login e mandando para /admin/dashboard');
-      navigate('/admin/dashboard', { replace: true });
+    const role = user?.role ?? (user?.user_metadata as { role?: string } | undefined)?.role;
+    const isSuperAdmin = role === 'super_admin';
+
+    if (!loading && user) {
+      // 1. Se for Super Admin e tentar acessar a raiz, o login ou qualquer tela do CRM (/admin)
+      if (isSuperAdmin && (location.pathname === '/' || location.pathname.startsWith('/admin'))) {
+        navigate('/saas/dashboard', { replace: true });
+      }
+      // 2. Se for Corretor/Admin de imobiliária e estiver no login ou na raiz
+      else if (!isSuperAdmin && (location.pathname === '/' || location.pathname === '/admin/login')) {
+        navigate('/admin/dashboard', { replace: true });
+      }
     }
   }, [loading, user, location.pathname, navigate]);
 
