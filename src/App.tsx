@@ -13,10 +13,12 @@ import { ToastProvider } from './contexts/ToastContext';
 import { TenantProvider, useTenant } from './contexts/TenantContext';
 import { useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import SuperAdminRoute from './components/SuperAdminRoute';
 import { AnimatePresence } from 'framer-motion';
 
 import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
+import SaasLayout from './components/SaasLayout';
 import AnimatedPage from './components/AnimatedPage';
 import AdminContextWrapper from './components/AdminContextWrapper';
 import SessionManager from './components/SessionManager';
@@ -43,6 +45,15 @@ import AdminConfig from './pages/AdminConfig';
 import AdminContracts from './pages/AdminContracts';
 import AdminContractDetails from './pages/AdminContractDetails';
 import PendingApproval from './pages/PendingApproval';
+
+// Super Admin (SaaS) Pages
+import SaasDashboard from './pages/saas/SaasDashboard';
+import SaasClients from './pages/saas/SaasClients';
+import SaasPlans from './pages/saas/SaasPlans';
+import SaasPayments from './pages/saas/SaasPayments';
+import SaasContracts from './pages/saas/SaasContracts';
+import SaasSettings from './pages/saas/SaasSettings';
+import SaasSupport from './pages/saas/SaasSupport';
 
 const ScrollToTop = () => {
   const { pathname } = useLocation();
@@ -159,6 +170,27 @@ const AppRoutes: React.FC = () => {
               <Route path="analytics" element={<AdminAnalytics />} />
               <Route path="config" element={<AdminConfig />} />
             </Route>
+          </Route>
+
+          {/* === 5. ROTAS SUPER ADMIN (PAINEL SaaS) === */}
+          <Route
+            path="/saas"
+            element={
+              <ProtectedRoute>
+                <SuperAdminRoute>
+                  <SaasLayout />
+                </SuperAdminRoute>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<SaasDashboard />} />
+            <Route path="clientes" element={<SaasClients />} />
+            <Route path="planos" element={<SaasPlans />} />
+            <Route path="pagamentos" element={<SaasPayments />} />
+            <Route path="contratos" element={<SaasContracts />} />
+            <Route path="definicoes" element={<SaasSettings />} />
+            <Route path="suporte" element={<SaasSupport />} />
           </Route>
 
           {/* Fallback */}

@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
       'react-joyride': fileURLToPath(new URL('./src/vendor/react-joyride.tsx', import.meta.url)),
     },
   },

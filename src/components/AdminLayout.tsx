@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Shield } from 'lucide-react';
 import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -346,6 +347,20 @@ const AdminLayout: React.FC = () => {
               </div>
             )}
           </div>
+
+          {user?.role === 'super_admin' && (
+            <NavLink
+              to="/saas/dashboard"
+              className={({ isActive }) => `
+                flex items-center gap-3 py-3 rounded-xl transition-all duration-200 group
+                ${isSidebarCollapsed ? 'justify-center px-0' : 'px-4'}
+                ${isActive ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-violet-400 hover:bg-slate-800 hover:text-violet-300'}
+              `}
+            >
+              <Shield size={20} className="group-hover:scale-110 transition-transform" />
+              {!isSidebarCollapsed && <span className="font-medium text-sm whitespace-nowrap">Painel SaaS</span>}
+            </NavLink>
+          )}
         </nav>
 
         <div className="p-4 border-t border-slate-800 bg-slate-900/50 transition-all">
@@ -500,6 +515,20 @@ const AdminLayout: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {user?.role === 'super_admin' && (
+              <NavLink
+                to="/saas/dashboard"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={({ isActive }) => `
+                  flex items-center gap-3 px-4 py-3 rounded-lg
+                  ${isActive ? 'bg-violet-50 text-violet-700 font-bold' : 'text-violet-600 hover:bg-violet-50'}
+                `}
+              >
+                <Shield size={20} />
+                Painel SaaS
+              </NavLink>
+            )}
 
             {/* 4. Rodapé Mobile (Usuário e Sair) */}
             <div className="pt-4 border-t border-slate-100 mt-2 space-y-2 pb-4">
