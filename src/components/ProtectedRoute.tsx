@@ -27,8 +27,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowInactive = false, 
     return <Navigate to="/admin/login" replace />;
   }
 
-  // Se o utilizador está inativo e não é o super_admin, e AINDA NÃO ESTÁ na tela de pendente
-  if (!allowInactive && !user.active && location.pathname !== '/admin/pendente') {
+  // Identifica se é um novo cliente SaaS que acabou de se cadastrar (ainda não tem empresa)
+  const isNewSaaSClient = !user.company_id && user.role !== 'super_admin';
+
+  // Se o utilizador está inativo, NÃO é um novo cliente configurando a conta, e não está na tela de pendente
+  if (!allowInactive && !user.active && !isNewSaaSClient && location.pathname !== '/admin/pendente') {
     console.log('🚨 [DEBUG ProtectedRoute] BLOQUEADO: Usuário inativo. Redirecionando para /admin/pendente');
     return <Navigate to="/admin/pendente" replace />;
   }
