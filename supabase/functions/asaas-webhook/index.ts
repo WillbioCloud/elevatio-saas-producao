@@ -38,12 +38,19 @@ serve(async (req) => {
           .update({ plan_status: 'active', trial_ends_at: null })
           .eq('id', company.id);
 
-        // Atualiza o Contrato para ATIVO
+        const today = new Date();
+        const nextRenewal = new Date(today);
+        nextRenewal.setMonth(nextRenewal.getMonth() + 1);
+
+        // Atualiza o Contrato para ATIVO e estende a data de vencimento
         await supabaseAdmin
           .from('saas_contracts')
-          .update({ status: 'active' })
-          .eq('company_id', company.id)
-          .eq('status', 'pending'); // Só atualiza se estava pendente/trial
+          .update({ 
+            status: 'active',
+            start_date: today.toISOString(),
+            end_date: nextRenewal.toISOString()
+          })
+          .eq('company_id', company.id);
           
         console.log(`Empresa ${company.id} ativada com sucesso!`);
       }

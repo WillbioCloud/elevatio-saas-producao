@@ -1004,14 +1004,23 @@ const AdminConfig: React.FC = () => {
                           <h5 className="text-xl font-bold text-slate-800 dark:text-white uppercase">{plan.name}</h5>
                           <p className="text-sm text-slate-500 mt-1 line-clamp-2">{plan.description}</p>
                         </div>
-                        <div className="mb-6 flex items-baseline gap-1">
-                          <span className="text-3xl font-bold text-slate-900 dark:text-white">
-                            R${' '}
-                            {billingCycle === 'monthly'
-                              ? plan.priceMensal.toFixed(2).replace('.', ',')
-                              : plan.priceAnual.toFixed(2).replace('.', ',')}
-                          </span>
-                          <span className="text-sm text-slate-500">/mês</span>
+                        <div className="mb-6 flex flex-col">
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-3xl font-bold text-slate-900 dark:text-white">
+                              R${' '}
+                              {billingCycle === 'monthly'
+                                ? plan.priceMensal.toFixed(2).replace('.', ',')
+                                : plan.priceAnual.toFixed(2).replace('.', ',')}
+                            </span>
+                            <span className="text-sm text-slate-500">/mês</span>
+                          </div>
+                          <div className="h-4 mt-1">
+                            {billingCycle === 'yearly' && (
+                              <span className="text-xs text-brand-600 dark:text-brand-400 font-medium">
+                                Faturado R$ {(plan.priceAnual * 12).toFixed(2).replace('.', ',')} / ano
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <ul className="space-y-3 mb-8 flex-grow">
                           {plan.features.slice(0, 4).map((feature, i) => (
