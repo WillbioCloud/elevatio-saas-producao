@@ -34,6 +34,10 @@ import About from './pages/About';
 import Services from './pages/Services';
 import Financiamentos from './pages/Financiamentos';
 
+// Website Landing Pages (Master Domain Only)
+import SiteHome from './pages/website/SiteHome';
+import SiteSignup from './pages/website/SiteSignup';
+
 // Admin Pages
 import AdminDashboard from './pages/AdminDashboard';
 import AdminProperties from './pages/AdminProperties';
@@ -139,8 +143,8 @@ const AppRoutes: React.FC = () => {
             path="/" 
             element={
               isMasterDomain 
-                ? <Navigate to="/admin/login" replace /> // Se for localhost/master, VAI PARA O LOGIN
-                : <PageWrapper><Home /></PageWrapper>    // Se for subdomínio/cliente, VAI PARA A VITRINE
+                ? <AnimatedPage><SiteHome /></AnimatedPage> // Se for localhost/master, VAI PARA A LANDING PAGE
+                : <PageWrapper><Home /></PageWrapper>       // Se for subdomínio/cliente, VAI PARA A VITRINE
             } 
           />
 
@@ -157,10 +161,15 @@ const AppRoutes: React.FC = () => {
             </>
           )}
 
-          {/* === 3. A ROTA DE LOGIN DO CRM (COMUM A TODOS) === */}
+          {/* === 3. ROTAS DA LANDING PAGE (MASTER DOMAIN ONLY) === */}
+          {isMasterDomain && (
+            <Route path="/registro" element={<AnimatedPage><SiteSignup /></AnimatedPage>} />
+          )}
+
+          {/* === 4. A ROTA DE LOGIN DO CRM (COMUM A TODOS) === */}
           <Route path="/admin/login" element={<AnimatedPage><Login /></AnimatedPage>} />
 
-          {/* === 4. ROTAS PROTEGIDAS DO CRM (COMUNS A TODOS) === */}
+          {/* === 5. ROTAS PROTEGIDAS DO CRM (COMUNS A TODOS) === */}
           <Route path="/admin/pendente" element={<ProtectedRoute allowInactive={true}><PendingApproval /></ProtectedRoute>} />
 
           <Route path="/admin" element={<ProtectedRoute><AdminContextWrapper /></ProtectedRoute>}>
@@ -179,7 +188,7 @@ const AppRoutes: React.FC = () => {
             </Route>
           </Route>
 
-          {/* === 5. ROTAS SUPER ADMIN (PAINEL SaaS) === */}
+          {/* === 6. ROTAS SUPER ADMIN (PAINEL SaaS) === */}
           <Route
             path="/saas"
             element={

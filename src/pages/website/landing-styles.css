@@ -1,0 +1,91 @@
+/* Estilos customizados para a Landing Page */
+
+.glass-nav {
+  background: rgba(5, 5, 5, 0.8);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.border-gradient {
+  background: rgba(17, 17, 17, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  transition: all 0.3s ease;
+}
+
+.border-gradient:hover {
+  border-color: rgba(139, 92, 246, 0.3);
+  background: rgba(17, 17, 17, 0.8);
+}
+
+.highlight-card {
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  background: rgba(17, 10, 31, 0.5);
+}
+
+.glow-effect {
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.5);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.7);
+}
+
+/* Mobile Compare Table */
+@media (max-width: 1023px) {
+  .mobile-compare-table th:not(:first-child),
+  .mobile-compare-table td:not(:first-child) {
+    display: none;
+  }
+  
+  .mobile-compare-table.show-p1 th:nth-child(2),
+  .mobile-compare-table.show-p1 td:nth-child(2) {
+    display: table-cell;
+  }
+  
+  .mobile-compare-table.show-p2 th:nth-child(3),
+  .mobile-compare-table.show-p2 td:nth-child(3) {
+    display: table-cell;
+  }
+  
+  .mobile-compare-table.show-p3 th:nth-child(4),
+  .mobile-compare-table.show-p3 td:nth-child(4) {
+    display: table-cell;
+  }
+  
+  .mobile-compare-table.show-p4 th:nth-child(5),
+  .mobile-compare-table.show-p4 td:nth-child(5) {
+    display: table-cell;
+  }
+  
+  .mobile-compare-table.show-p5 th:nth-child(6),
+  .mobile-compare-table.show-p5 td:nth-child(6) {
+    display: table-cell;
+  }
+  
+  .mobile-compare-table.show-p6 th:nth-child(7),
+  .mobile-compare-table.show-p6 td:nth-child(7) {
+    display: table-cell;
+  }
+}
