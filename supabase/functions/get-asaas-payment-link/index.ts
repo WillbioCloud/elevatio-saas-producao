@@ -32,7 +32,7 @@ serve(async (req) => {
     }
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
-    const ASAAS_URL = 'https://sandbox.asaas.com/v3' // Mude para api.asaas.com/v3 para produção
+    const ASAAS_URL = 'https://sandbox.asaas.com/api/v3' // Mude para api.asaas.com/v3 para produção
 
     // 2. Busca pagamentos PENDENTES deste cliente no Asaas
     const payRes = await fetch(`${ASAAS_URL}/payments?customer=${company.asaas_customer_id}&status=PENDING`, {

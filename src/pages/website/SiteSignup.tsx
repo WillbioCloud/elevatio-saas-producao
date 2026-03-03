@@ -95,7 +95,8 @@ export default function SiteSignup() {
       if (data.user) {
         Maps('/admin/pendente', { state: { plan: selectedPlan } });
       }
-      }
+      
+      // A CHAVE EXTRA ESTAVA AQUI, FOI REMOVIDA!
 
       setSignupSuccess(true);
     } catch (error: any) {

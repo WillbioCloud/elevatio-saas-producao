@@ -40,7 +40,7 @@ serve(async (req) => {
     // 🛑 ESCOLHA A URL CORRETA AQUI:
     // Se a chave for de teste, a URL TEM QUE SER sandbox.asaas.com
     // Se a chave for real/produção, a URL TEM QUE SER api.asaas.com
-    const ASAAS_URL = 'https://sandbox.asaas.com/v3' // Mude para api.asaas.com/v3 se for chave real
+    const ASAAS_URL = 'https://sandbox.asaas.com/api/v3' // Mude para api.asaas.com/v3 se for chave real
 
     // 3. Cadastra o Cliente no Asaas (Com leitura segura)
     const customerRes = await fetch(`${ASAAS_URL}/customers`, {
