@@ -113,7 +113,7 @@ const AdminConfig: React.FC = () => {
   const [isGeneratingCheckout, setIsGeneratingCheckout] = useState(false);
 
   const fetchSettings = async () => {
-    const { data } = await supabase.from('settings').select('*').eq('id', 1).single();
+    const { data } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
     if (data) {
       setSiteSettings({
         route_to_central: data.route_to_central ?? true,
@@ -128,9 +128,10 @@ const AdminConfig: React.FC = () => {
     const { data } = await supabase
       .from('saas_contracts')
       .select('*')
+      .eq('company_id', user?.company_id)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     setContract(data as Contract | null);
     setLoadingContract(false);
