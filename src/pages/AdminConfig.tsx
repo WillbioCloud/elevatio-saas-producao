@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
 import GamificationModal from '../components/GamificationModal';
+import { PLANS } from '../config/plans';
 
 interface Profile {
   id: string;
@@ -111,6 +112,8 @@ const AdminConfig: React.FC = () => {
   const [contract, setContract] = useState<Contract | null>(null);
   const [loadingContract, setLoadingContract] = useState(false);
   const [isGeneratingCheckout, setIsGeneratingCheckout] = useState(false);
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [isUpgrading, setIsUpgrading] = useState<string | null>(null);
 
   const fetchSettings = async () => {
     const { data } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
@@ -857,75 +860,171 @@ const AdminConfig: React.FC = () => {
       )}
 
       {activeTab === 'subscription' && isAdmin && (
-        <div className="space-y-6">
-          <div>
-            <h3 className="text-lg font-bold text-slate-800 dark:text-white">Meu Plano</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Consulte o status da sua assinatura e acesse as opções de pagamento.
-            </p>
+        <div className="space-y-8 animate-fade-in">
+          {/* Cabeçalho da Assinatura */}
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+            <div>
+              <h3 className="text-2xl font-serif font-bold text-slate-800 dark:text-white">Sua Assinatura</h3>
+              <p className="text-slate-500 dark:text-slate-400 mt-1">
+                Gerencie seu plano, faturas e métodos de pagamento.
+              </p>
+            </div>
+            <div className="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl flex items-center w-fit">
+              <button
+                onClick={() => setBillingCycle('monthly')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                  billingCycle === 'monthly'
+                    ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                }`}
+              >
+                Mensal
+              </button>
+              <button
+                onClick={() => setBillingCycle('yearly')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
+                  billingCycle === 'yearly'
+                    ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                }`}
+              >
+                Anual
+                <span className="bg-brand-100 text-brand-700 text-[10px] px-1.5 py-0.5 rounded-md">-20%</span>
+              </button>
+            </div>
           </div>
 
           {loadingContract ? (
-            <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-200 dark:border-dark-border p-6">
-              <p className="text-sm text-slate-500 dark:text-slate-400">Carregando detalhes do plano...</p>
+            <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-200 dark:border-dark-border p-8 flex justify-center items-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
             </div>
           ) : contract ? (
-            <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-200 dark:border-dark-border p-6 md:p-8 space-y-6 shadow-sm">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">Plano Atual</p>
-                  <h4 className="text-2xl font-bold text-slate-800 dark:text-white mt-1">{contract.plan_name}</h4>
+            <>
+              {/* Card do Plano Atual */}
+              <div className="bg-gradient-to-br from-brand-900 to-slate-900 rounded-3xl p-1 shadow-xl">
+                <div className="bg-white/10 backdrop-blur-md rounded-[22px] p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-8">
+                  <div className="text-white w-full md:w-auto">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="bg-brand-500/20 text-brand-200 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border border-brand-400/30">
+                        Plano Atual
+                      </span>
+                      <span
+                        className={`flex items-center gap-1.5 text-xs font-bold ${
+                          contract.status === 'active'
+                            ? 'text-emerald-400'
+                            : contract.status === 'pending'
+                              ? 'text-amber-400'
+                              : 'text-red-400'
+                        }`}
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            contract.status === 'active'
+                              ? 'bg-emerald-400'
+                              : contract.status === 'pending'
+                                ? 'bg-amber-400 animate-pulse'
+                                : 'bg-red-400'
+                          }`}
+                        ></span>
+                        {contract.status === 'active'
+                          ? 'Ativo'
+                          : contract.status === 'pending'
+                            ? 'Aguardando Pagamento'
+                            : 'Inativo'}
+                      </span>
+                    </div>
+                    <h2 className="text-4xl font-serif font-bold uppercase tracking-tight">{contract.plan_name}</h2>
+                    <div className="flex items-center gap-6 mt-6 opacity-80 text-sm">
+                      <div>
+                        <p className="text-brand-300 text-xs uppercase mb-0.5">Renovação em</p>
+                        <p className="font-medium">{new Date(contract.end_date).toLocaleDateString('pt-BR')}</p>
+                      </div>
+                      <div className="w-px h-8 bg-white/20"></div>
+                      <div>
+                        <p className="text-brand-300 text-xs uppercase mb-0.5">Ciclo Atual</p>
+                        <p className="font-medium">Mensal</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="w-full md:w-auto flex flex-col gap-3 min-w-[240px]">
+                    {['pending', 'expired', 'canceled'].includes(contract.status) ? (
+                      <button
+                        onClick={handleCheckout}
+                        disabled={isGeneratingCheckout}
+                        className="w-full bg-white text-brand-900 hover:bg-brand-50 py-4 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 text-lg shadow-lg"
+                      >
+                        {isGeneratingCheckout ? (
+                          <Icons.RefreshCw className="animate-spin" size={20} />
+                        ) : (
+                          <Icons.CreditCard size={20} />
+                        )}
+                        {isGeneratingCheckout ? 'Gerando link...' : 'Pagar Agora'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => alert('Abrir portal do Asaas')}
+                        className="w-full bg-white/10 hover:bg-white/20 border border-white/20 text-white py-3 rounded-xl font-medium transition-all"
+                      >
+                        Gerenciar Cartão / Faturas
+                      </button>
+                    )}
+                    <button
+                      onClick={() => alert('Abrir modal de cancelamento')}
+                      className="w-full text-white/50 hover:text-red-400 text-sm font-medium transition-colors"
+                    >
+                      Cancelar assinatura
+                    </button>
+                  </div>
                 </div>
-
-                <span
-                  className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
-                    contract.status === 'active'
-                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                      : contract.status === 'pending'
-                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                  }`}
-                >
-                  {contract.status === 'active'
-                    ? 'Ativo'
-                    : contract.status === 'pending'
-                      ? 'Aguardando Pagamento'
-                      : 'Expirado'}
-                </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="rounded-xl border border-slate-200 dark:border-dark-border p-4 bg-slate-50 dark:bg-dark-bg">
-                  <p className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">Início</p>
-                  <p className="text-base font-semibold text-slate-800 dark:text-white mt-1">
-                    {new Date(contract.start_date).toLocaleDateString('pt-BR')}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-slate-200 dark:border-dark-border p-4 bg-slate-50 dark:bg-dark-bg">
-                  <p className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">Vencimento</p>
-                  <p className="text-base font-semibold text-slate-800 dark:text-white mt-1">
-                    {new Date(contract.end_date).toLocaleDateString('pt-BR')}
-                  </p>
+              {/* Grade de Upgrades */}
+              <div>
+                <h4 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Opções de Upgrade</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {PLANS.filter((p) => p.id !== contract.plan_name.toLowerCase()).map((plan) => (
+                    <div
+                      key={plan.id}
+                      className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 flex flex-col h-full hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
+                    >
+                      <div className="mb-4">
+                        <h5 className="text-xl font-bold text-slate-800 dark:text-white uppercase">{plan.name}</h5>
+                        <p className="text-sm text-slate-500 mt-1 line-clamp-2">{plan.description}</p>
+                      </div>
+                      <div className="mb-6 flex items-baseline gap-1">
+                        <span className="text-3xl font-bold text-slate-900 dark:text-white">
+                          R${' '}
+                          {billingCycle === 'monthly'
+                            ? plan.priceMensal.toFixed(2).replace('.', ',')
+                            : plan.priceAnual.toFixed(2).replace('.', ',')}
+                        </span>
+                        <span className="text-sm text-slate-500">/mês</span>
+                      </div>
+                      <ul className="space-y-3 mb-8 flex-grow">
+                        {plan.features.slice(0, 4).map((feature, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+                            <Icons.Check size={16} className="text-brand-500 shrink-0 mt-0.5" />
+                            <span>{feature}</span>
+                          </li>
+                        ))}
+                        {plan.features.length > 4 && (
+                          <li className="text-xs text-brand-600 font-medium pl-6">
+                            + {plan.features.length - 4} outras vantagens
+                          </li>
+                        )}
+                      </ul>
+                      <button
+                        onClick={() => setIsUpgrading(plan.id)}
+                        disabled={isUpgrading === plan.id}
+                        className="w-full bg-slate-100 hover:bg-brand-50 text-slate-700 hover:text-brand-700 dark:bg-slate-800 dark:hover:bg-brand-900/30 dark:text-slate-300 dark:hover:text-brand-400 py-2.5 rounded-xl font-bold transition-colors"
+                      >
+                        {isUpgrading === plan.id ? 'Processando...' : 'Fazer Upgrade'}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
-
-              {['pending', 'expired', 'canceled'].includes(contract.status) ? (
-                <button
-                  onClick={handleCheckout}
-                  disabled={isGeneratingCheckout}
-                  className="w-full bg-brand-600 hover:bg-brand-700 text-white py-3 rounded-xl font-bold transition-colors"
-                >
-                  {isGeneratingCheckout ? 'A gerar ambiente seguro...' : 'Pagar Assinatura'}
-                </button>
-              ) : (
-                <button
-                  onClick={() => alert('Redirecionar para Asaas')}
-                  className="w-full border border-brand-300 text-brand-600 dark:text-brand-400 dark:border-brand-700 py-3 rounded-xl font-bold hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors"
-                >
-                  Gerenciar Assinatura (Faturas e Cartão)
-                </button>
-              )}
-            </div>
+            </>
           ) : (
             <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-200 dark:border-dark-border p-6">
               <p className="text-sm text-slate-500 dark:text-slate-400">
