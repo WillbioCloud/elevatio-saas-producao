@@ -77,6 +77,11 @@ export default function SiteSignup() {
 
       if (!supabaseUrl || !anonKey) throw new Error('Chaves do servidor em falta.');
 
+      // Salvar o plano no localStorage antes do signup
+      if (selectedPlan) {
+        localStorage.setItem('trimoveis_selected_plan', selectedPlan);
+      }
+
       const supabase = createClient(supabaseUrl, anonKey);
 
       const { data, error: authError } = await supabase.auth.signUp({
@@ -87,17 +92,9 @@ export default function SiteSignup() {
 
       if (authError) throw new Error(`Erro ao criar conta: ${authError.message}`);
 
-      // Inserir manualmente o perfil para garantir que o nome seja salvo
       if (data.user) {
-        await supabase.from('profiles').upsert({
-          id: data.user.id,
-          name: formData.fullName,
-          email: formData.email,
-          role: 'corretor',
-          active: false
-        });
-
         Maps('/admin/pendente', { state: { plan: selectedPlan } });
+      }
       }
 
       setSignupSuccess(true);

@@ -41,7 +41,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     domain: '',
     hasDomain: 'nao',
     template: 'professional',
-    plan: location.state?.plan || 'profissional',
+    plan: location.state?.plan || localStorage.getItem('trimoveis_selected_plan') || 'profissional',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -116,6 +116,9 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
         console.error('Falha ao chamar webhook Asaas:', e);
       }
 
+      // Limpar o plano do localStorage após sucesso
+      localStorage.removeItem('trimoveis_selected_plan');
+
       onComplete();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Erro inesperado ao configurar a sua conta.';
@@ -146,8 +149,10 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                   className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500"
                 >
                   <option value="starter">Starter</option>
+                  <option value="basic">Basic</option>
                   <option value="profissional">Profissional</option>
                   <option value="business">Business</option>
+                  <option value="premium">Premium</option>
                   <option value="elite">Elite</option>
                 </select>
               </div>
