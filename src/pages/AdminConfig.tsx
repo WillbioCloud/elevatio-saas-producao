@@ -25,9 +25,11 @@ interface Contract {
   id: string;
   plan_name?: string;
   plan?: string;
+  plan_id?: string;
   status: string;
   start_date: string;
   end_date: string;
+  companies?: { plan?: string };
 }
 
 const compressAvatar = (file: File | Blob, maxSize = 512): Promise<Blob> => {
@@ -131,7 +133,7 @@ const AdminConfig: React.FC = () => {
     setLoadingContract(true);
     const { data } = await supabase
       .from('saas_contracts')
-      .select('*')
+      .select('*, companies(plan)')
       .eq('company_id', user?.company_id)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -408,9 +410,11 @@ const AdminConfig: React.FC = () => {
   const pendingProfiles = useMemo(() => profiles.filter((profile) => !profile.active), [profiles]);
   const activeProfiles = useMemo(() => profiles.filter((profile) => profile.active), [profiles]);
 
-  const activePlanId = (contract?.plan_name || contract?.plan || '').toLowerCase();
-  const currentPlanDetails = PLANS.find(p => p.id === activePlanId);
-  const displayPlanName = currentPlanDetails?.name || activePlanId.toUpperCase() || 'CARREGANDO...';
+  const rawPlan = contract?.plan_name || contract?.plan || contract?.companies?.plan || '';
+  const activePlanId = rawPlan.toLowerCase();
+  const currentPlanIndex = PLANS.findIndex(p => p.id === activePlanId);
+  const currentPlanDetails = currentPlanIndex !== -1 ? PLANS[currentPlanIndex] : null;
+  const displayPlanName = currentPlanDetails?.name || (rawPlan ? rawPlan.toUpperCase() : 'PLANO PADRÃO');
 
   const toggleSound = () => {
     const newValue = !soundEnabled;
@@ -987,46 +991,55 @@ const AdminConfig: React.FC = () => {
               <div>
                 <h4 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Opções de Upgrade</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {PLANS.filter((p) => p.id !== activePlanId).map((plan) => (
-                    <div
-                      key={plan.id}
-                      className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 flex flex-col h-full hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
-                    >
-                      <div className="mb-4">
-                        <h5 className="text-xl font-bold text-slate-800 dark:text-white uppercase">{plan.name}</h5>
-                        <p className="text-sm text-slate-500 mt-1 line-clamp-2">{plan.description}</p>
-                      </div>
-                      <div className="mb-6 flex items-baseline gap-1">
-                        <span className="text-3xl font-bold text-slate-900 dark:text-white">
-                          R${' '}
-                          {billingCycle === 'monthly'
-                            ? plan.priceMensal.toFixed(2).replace('.', ',')
-                            : plan.priceAnual.toFixed(2).replace('.', ',')}
-                        </span>
-                        <span className="text-sm text-slate-500">/mês</span>
-                      </div>
-                      <ul className="space-y-3 mb-8 flex-grow">
-                        {plan.features.slice(0, 4).map((feature, i) => (
-                          <li key={i} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
-                            <Icons.Check size={16} className="text-brand-500 shrink-0 mt-0.5" />
-                            <span>{feature}</span>
-                          </li>
-                        ))}
-                        {plan.features.length > 4 && (
-                          <li className="text-xs text-brand-600 font-medium pl-6">
-                            + {plan.features.length - 4} outras vantagens
-                          </li>
-                        )}
-                      </ul>
-                      <button
-                        onClick={() => setIsUpgrading(plan.id)}
-                        disabled={isUpgrading === plan.id}
-                        className="w-full bg-slate-100 hover:bg-brand-50 text-slate-700 hover:text-brand-700 dark:bg-slate-800 dark:hover:bg-brand-900/30 dark:text-slate-300 dark:hover:text-brand-400 py-2.5 rounded-xl font-bold transition-colors"
+                  {PLANS.filter((p) => p.id !== activePlanId).map((plan) => {
+                    const planIndex = PLANS.findIndex(p => p.id === plan.id);
+                    const isDowngrade = currentPlanIndex !== -1 && planIndex < currentPlanIndex;
+                    
+                    return (
+                      <div
+                        key={plan.id}
+                        className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 flex flex-col h-full hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
                       >
-                        {isUpgrading === plan.id ? 'Processando...' : 'Fazer Upgrade'}
-                      </button>
-                    </div>
-                  ))}
+                        <div className="mb-4">
+                          <h5 className="text-xl font-bold text-slate-800 dark:text-white uppercase">{plan.name}</h5>
+                          <p className="text-sm text-slate-500 mt-1 line-clamp-2">{plan.description}</p>
+                        </div>
+                        <div className="mb-6 flex items-baseline gap-1">
+                          <span className="text-3xl font-bold text-slate-900 dark:text-white">
+                            R${' '}
+                            {billingCycle === 'monthly'
+                              ? plan.priceMensal.toFixed(2).replace('.', ',')
+                              : plan.priceAnual.toFixed(2).replace('.', ',')}
+                          </span>
+                          <span className="text-sm text-slate-500">/mês</span>
+                        </div>
+                        <ul className="space-y-3 mb-8 flex-grow">
+                          {plan.features.slice(0, 4).map((feature, i) => (
+                            <li key={i} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
+                              <Icons.Check size={16} className="text-brand-500 shrink-0 mt-0.5" />
+                              <span>{feature}</span>
+                            </li>
+                          ))}
+                          {plan.features.length > 4 && (
+                            <li className="text-xs text-brand-600 font-medium pl-6">
+                              + {plan.features.length - 4} outras vantagens
+                            </li>
+                          )}
+                        </ul>
+                        <button
+                          onClick={() => setIsUpgrading(plan.id)}
+                          disabled={isUpgrading === plan.id}
+                          className={`w-full py-2.5 rounded-xl font-bold transition-colors ${
+                            isDowngrade
+                              ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400'
+                              : 'bg-brand-50 hover:bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 dark:text-brand-400'
+                          }`}
+                        >
+                          {isUpgrading === plan.id ? 'Processando...' : isDowngrade ? 'Fazer Downgrade' : 'Fazer Upgrade'}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </>
