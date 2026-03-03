@@ -9,7 +9,6 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, signIn, signUp } = useAuth();
-  const selectedPlan = (location.state as { plan?: string } | null)?.plan;
   
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -42,10 +41,10 @@ const Login: React.FC = () => {
       if (role === 'super_admin') {
         navigate('/saas/dashboard', { replace: true, state: navState });
       } else {
-        navigate('/admin/dashboard', { replace: true, state: { plan: selectedPlan } });
+        navigate('/admin/dashboard', { replace: true, state: navState });
       }
     }
-  }, [user, navigate, selectedPlan]);
+  }, [user, navigate, location.state]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,7 +65,7 @@ const Login: React.FC = () => {
         if (role === 'super_admin') {
           navigate('/saas/dashboard', { replace: true, state: navState });
         } else {
-          navigate('/admin/dashboard', { replace: true, state: { plan: selectedPlan } });
+          navigate('/admin/dashboard', { replace: true, state: navState });
         }
       } else {
         if (!name) throw new Error('Por favor, informe seu nome.');
@@ -79,7 +78,7 @@ const Login: React.FC = () => {
         if (role === 'super_admin') {
           navigate('/saas/dashboard', { replace: true, state: navState });
         } else {
-          navigate('/admin/dashboard', { replace: true, state: { plan: selectedPlan } });
+          navigate('/admin/dashboard', { replace: true, state: navState });
         }
       }
     } catch (err: any) {
