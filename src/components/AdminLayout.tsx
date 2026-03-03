@@ -22,7 +22,10 @@ const AdminLayout: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => localStorage.getItem('trimoveis-sidebar') === 'true');
   const [refreshKey, setRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const isAdmin = user?.role === 'admin';
+
+  const role = user?.role ?? (user?.user_metadata as { role?: string } | undefined)?.role;
+  const isAdmin = role === 'admin';
+  const shouldShowWizard = !user?.company_id && role !== 'super_admin';
 
   const toggleSidebar = () => {
     const newState = !isSidebarCollapsed;
@@ -34,12 +37,10 @@ const AdminLayout: React.FC = () => {
   useInstallmentReminders();
 
   const roleLabel = useMemo(() => {
-    if (user?.role === 'admin') return 'Administrador';
-    if (!user?.role) return 'Corretor';
-    return `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)}`;
-  }, [user?.role]);
-
-  const shouldShowWizard = !user?.company_id && user?.role !== 'super_admin';
+    if (role === 'admin') return 'Administrador';
+    if (!role) return 'Corretor';
+    return `${role.charAt(0).toUpperCase()}${role.slice(1)}`;
+  }, [role]);
 
   const handleRefresh = async () => {
     if (isRefreshing) return;

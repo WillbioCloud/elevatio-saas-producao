@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Icons } from '../components/Icons';
 import { COMPANY_NAME } from '../constants';
+import { supabase } from '../lib/supabase';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -30,7 +31,12 @@ const Login: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      navigate('/admin/dashboard', { replace: true });
+      const role = user.role ?? (user.user_metadata as Record<string, unknown>)?.role;
+      if (role === 'super_admin') {
+        navigate('/saas/dashboard', { replace: true });
+      } else {
+        navigate('/admin/dashboard', { replace: true });
+      }
     }
   }, [user, navigate]);
 
@@ -41,17 +47,28 @@ const Login: React.FC = () => {
 
     try {
       if (isLogin) {
-        // Login: Email, Password
         const { error } = await signIn(email, password);
         if (error) throw error;
-        navigate('/admin/dashboard');
+        const currentUser = (await supabase.auth.getUser()).data.user;
+        const role = (currentUser as { role?: string })?.role ?? (currentUser?.user_metadata as Record<string, unknown>)?.role;
+        if (role === 'super_admin') {
+          navigate('/saas/dashboard', { replace: true });
+        } else {
+          navigate('/admin/dashboard', { replace: true });
+        }
       } else {
         if (!name) throw new Error('Por favor, informe seu nome.');
 
         const { error } = await signUp(name, email.trim(), password);
         if (error) throw error;
 
-        navigate('/admin/dashboard', { replace: true });
+        const currentUser = (await supabase.auth.getUser()).data.user;
+        const role = (currentUser as { role?: string })?.role ?? (currentUser?.user_metadata as Record<string, unknown>)?.role;
+        if (role === 'super_admin') {
+          navigate('/saas/dashboard', { replace: true });
+        } else {
+          navigate('/admin/dashboard', { replace: true });
+        }
       }
     } catch (err: any) {
       console.error(err);
