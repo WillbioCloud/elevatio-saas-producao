@@ -1,14 +1,38 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Building2, CheckCircle, Globe, Loader2, Palette } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import type { PlanType } from '../config/plans';
 import { supabase } from '../lib/supabase';
 
 type SetupWizardModalProps = {
   onComplete: () => void;
 };
 
+const normalizePlanFromNav = (value: unknown): PlanType | undefined => {
+  if (typeof value !== 'string') return undefined;
+
+  const v = value.trim().toLowerCase();
+  if (!v) return undefined;
+
+  // Compatibilidade com slugs antigos/inglês vindos da Landing Page
+  if (v === 'professional' || v === 'profissional') return 'profissional';
+
+  if (v === 'free') return 'free';
+  if (v === 'starter') return 'starter';
+  if (v === 'basic') return 'basic';
+  if (v === 'business') return 'business';
+  if (v === 'premium') return 'premium';
+  if (v === 'elite') return 'elite';
+
+  return undefined;
+};
+
 export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) {
   const { user } = useAuth();
+  const location = useLocation();
+  const planFromNav = normalizePlanFromNav((location.state as { plan?: unknown } | null)?.plan);
+
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [formData, setFormData] = useState({
@@ -18,7 +42,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     domain: '',
     hasDomain: 'nao',
     template: 'professional',
-    plan: 'professional',
+    plan: planFromNav ?? 'profissional',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {

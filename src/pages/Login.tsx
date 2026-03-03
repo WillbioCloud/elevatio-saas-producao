@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Icons } from '../components/Icons';
 import { COMPANY_NAME } from '../constants';
@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, signIn, signUp } = useAuth();
   
   const [isLogin, setIsLogin] = useState(true);
@@ -32,13 +33,18 @@ const Login: React.FC = () => {
   useEffect(() => {
     if (user) {
       const role = user.role ?? (user.user_metadata as Record<string, unknown>)?.role;
+      const navState =
+        location.state && typeof location.state === 'object'
+          ? (location.state as Record<string, unknown>)
+          : undefined;
+
       if (role === 'super_admin') {
-        navigate('/saas/dashboard', { replace: true });
+        navigate('/saas/dashboard', { replace: true, state: navState });
       } else {
-        navigate('/admin/dashboard', { replace: true });
+        navigate('/admin/dashboard', { replace: true, state: navState });
       }
     }
-  }, [user, navigate]);
+  }, [user, navigate, location.state]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,15 +52,20 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
+      const navState =
+        location.state && typeof location.state === 'object'
+          ? (location.state as Record<string, unknown>)
+          : undefined;
+
       if (isLogin) {
         const { error } = await signIn(email, password);
         if (error) throw error;
         const currentUser = (await supabase.auth.getUser()).data.user;
         const role = (currentUser as { role?: string })?.role ?? (currentUser?.user_metadata as Record<string, unknown>)?.role;
         if (role === 'super_admin') {
-          navigate('/saas/dashboard', { replace: true });
+          navigate('/saas/dashboard', { replace: true, state: navState });
         } else {
-          navigate('/admin/dashboard', { replace: true });
+          navigate('/admin/dashboard', { replace: true, state: navState });
         }
       } else {
         if (!name) throw new Error('Por favor, informe seu nome.');
@@ -65,9 +76,9 @@ const Login: React.FC = () => {
         const currentUser = (await supabase.auth.getUser()).data.user;
         const role = (currentUser as { role?: string })?.role ?? (currentUser?.user_metadata as Record<string, unknown>)?.role;
         if (role === 'super_admin') {
-          navigate('/saas/dashboard', { replace: true });
+          navigate('/saas/dashboard', { replace: true, state: navState });
         } else {
-          navigate('/admin/dashboard', { replace: true });
+          navigate('/admin/dashboard', { replace: true, state: navState });
         }
       }
     } catch (err: any) {
