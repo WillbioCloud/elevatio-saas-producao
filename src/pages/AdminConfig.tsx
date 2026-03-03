@@ -982,7 +982,7 @@ const AdminConfig: React.FC = () => {
               <div>
                 <h4 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Opções de Upgrade</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {PLANS.filter((p) => p.id !== contract.plan_name.toLowerCase()).map((plan) => (
+                  {PLANS.filter((p) => p.id !== (contract?.plan_name || '').toLowerCase()).map((plan) => (
                     <div
                       key={plan.id}
                       className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 flex flex-col h-full hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
