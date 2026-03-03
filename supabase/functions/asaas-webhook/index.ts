@@ -1,63 +1,80 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
-}
-
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
-
+serve(async (req) => {
   try {
-    const body = await req.json()
-    console.log("🔔 Webhook Asaas recebido! Evento:", body.event)
+    // 1. Pega a mensagem que o Asaas enviou
+    const body = await req.json();
+    const event = body.event; // Ex: PAYMENT_RECEIVED, PAYMENT_OVERDUE...
+    const payment = body.payment; // Dados da fatura
 
-    if (body.event === 'PAYMENT_RECEIVED' || body.event === 'PAYMENT_CONFIRMED') {
-      const asaasCustomerId = body.payment.customer
-
-      const supabaseAdmin = createClient(
-        Deno.env.get('SUPABASE_URL') ?? '',
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-      )
-
-      // 1. Procurar a empresa
-      const { data: companyData, error: companyErr } = await supabaseAdmin
-        .from('companies')
-        .select('id')
-        .eq('asaas_customer_id', asaasCustomerId)
-        .single()
-
-      if (companyErr || !companyData) {
-        throw new Error(`Empresa com Asaas ID ${asaasCustomerId} não encontrada!`)
-      }
-
-      const companyId = companyData.id
-
-      // 2. Atualizar o Contrato forçadamente (REMOVEMOS O UPDATED_AT)
-      const { data: updatedContract, error: updateErr } = await supabaseAdmin
-        .from('saas_contracts')
-        .update({ status: 'active' }) // <-- AGORA SÓ ATUALIZA O STATUS
-        .eq('company_id', companyId)
-        .select() 
-
-      if (updateErr) {
-        throw new Error(`Erro ao forçar atualização no banco: ${updateErr.message}`)
-      }
-
-      console.log(`✅ SUCESSO REAL! Contrato ativado no banco:`, updatedContract)
+    // Se não for um evento do Asaas, ignora
+    if (!event || !payment) {
+      return new Response("Ignorado: Sem dados de pagamento.", { status: 200 });
     }
 
-    return new Response(JSON.stringify({ received: true }), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200
-    })
+    console.log(`Recebido evento do Asaas: ${event} para o cliente ${payment.customer}`);
+
+    // 2. Conecta no Supabase como Super Admin
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
+
+    // 3. O cliente PAGOU a fatura! (PIX, Boleto ou Cartão)
+    if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
+      
+      // Acha a empresa que tem esse ID do Asaas
+      const { data: company } = await supabaseAdmin
+        .from('companies')
+        .select('id')
+        .eq('asaas_customer_id', payment.customer)
+        .single();
+
+      if (company) {
+        // Atualiza a Empresa para ATIVA
+        await supabaseAdmin
+          .from('companies')
+          .update({ plan_status: 'active', trial_ends_at: null })
+          .eq('id', company.id);
+
+        // Atualiza o Contrato para ATIVO
+        await supabaseAdmin
+          .from('saas_contracts')
+          .update({ status: 'active' })
+          .eq('company_id', company.id)
+          .eq('status', 'pending'); // Só atualiza se estava pendente/trial
+          
+        console.log(`Empresa ${company.id} ativada com sucesso!`);
+      }
+    }
+
+    // 4. O cliente NÃO PAGOU e a fatura VENCEU
+    if (event === 'PAYMENT_OVERDUE') {
+      const { data: company } = await supabaseAdmin
+        .from('companies')
+        .select('id')
+        .eq('asaas_customer_id', payment.customer)
+        .single();
+
+      if (company) {
+        // Bloqueia a empresa por falta de pagamento
+        await supabaseAdmin
+          .from('companies')
+          .update({ plan_status: 'past_due' })
+          .eq('id', company.id);
+          
+        console.log(`Empresa ${company.id} bloqueada por inadimplência.`);
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true }), { 
+      headers: { "Content-Type": "application/json" }, 
+      status: 200 
+    });
 
   } catch (error: any) {
-    console.error("❌ ERRO FATAL NO WEBHOOK:", error.message)
-    return new Response(JSON.stringify({ error: error.message }), { 
-      status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    })
+    console.error("Erro no Webhook:", error.message);
+    return new Response(JSON.stringify({ error: error.message }), { status: 400 });
   }
 })

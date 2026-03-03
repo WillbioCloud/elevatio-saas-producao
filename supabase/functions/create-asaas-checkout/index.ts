@@ -1,35 +1,3 @@
-// Follow this setup guide to integrate the Deno language server with your editor:
-// https://deno.land/manual/getting_started/setup_your_environment
-// This enables autocomplete, go to definition, etc.
-
-// Setup type definitions for built-in Supabase Runtime APIs
-import "@supabase/functions-js/edge-runtime.d.ts"
-
-console.log("Hello from Functions!")
-
-Deno.serve(async (req) => {
-  const { name } = await req.json()
-  const data = {
-    message: `Hello ${name}!`,
-  }
-
-  return new Response(
-    JSON.stringify(data),
-    { headers: { "Content-Type": "application/json" } },
-  )
-})
-
-/* To invoke locally:
-
-  1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
-  2. Make an HTTP request:
-
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/create-asaas-checkout' \
-    --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' \
-    --header 'Content-Type: application/json' \
-    --data '{"name":"Functions"}'
-
-*/
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 
@@ -39,23 +7,25 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // 1. Responde ao navegador para evitar erro de CORS
+  // Responde ao 'pre-flight' do navegador (CORS)
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // 2. Pega os dados que o front-end mandou (Wizard)
-    const { company_id, plan } = await req.json()
+    // 1. Leitura segura do JSON do front-end
+    const reqText = await req.text()
+    if (!reqText) throw new Error("A requisição do CRM veio vazia.")
+    
+    const { company_id, plan } = JSON.parse(reqText)
     if (!company_id || !plan) throw new Error("Faltam parâmetros obrigatórios.")
 
-    // 3. Conecta no Supabase com poderes de Super Admin
+    // 2. Inicializa o Supabase
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // 4. Busca os dados da Imobiliária que acabou de ser criada
     const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
       .select('*')
@@ -64,14 +34,15 @@ serve(async (req) => {
 
     if (companyError || !company) throw new Error('Empresa não encontrada no banco.')
 
-    // Limpa o CPF/CNPJ para mandar pro Asaas
     const cleanDocument = company.document?.replace(/\D/g, '') || ''
-    
-    // Pega a chave que você acabou de criar lá no painel!
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
-    const ASAAS_URL = 'https://api.asaas.com/v3' // Use sandbox.asaas.com se a chave for de testes
+    
+    // 🛑 ESCOLHA A URL CORRETA AQUI:
+    // Se a chave for de teste, a URL TEM QUE SER sandbox.asaas.com
+    // Se a chave for real/produção, a URL TEM QUE SER api.asaas.com
+    const ASAAS_URL = 'https://sandbox.asaas.com/v3' // Mude para api.asaas.com/v3 se for chave real
 
-    // 5. Manda o Asaas criar o cliente
+    // 3. Cadastra o Cliente no Asaas (Com leitura segura)
     const customerRes = await fetch(`${ASAAS_URL}/customers`, {
       method: 'POST',
       headers: {
@@ -86,25 +57,28 @@ serve(async (req) => {
       })
     })
     
-    const customerData = await customerRes.json()
-    if (!customerRes.ok) throw new Error(`Erro Asaas Cliente: ${customerData.errors?.[0]?.description || 'Erro Desconhecido'}`)
+    // Pega a resposta em TEXTO puro primeiro para evitar quebrar o servidor
+    const customerText = await customerRes.text()
+    let customerData
+    try {
+      customerData = JSON.parse(customerText)
+    } catch (e) {
+      throw new Error(`Erro Crítico na API Asaas (Cliente). Status: ${customerRes.status}. Resposta: ${customerText}`)
+    }
 
-    // 6. Define o preço com base no plano escolhido
+    if (!customerRes.ok) throw new Error(`Erro ao criar cliente Asaas: ${customerData.errors?.[0]?.description || customerText}`)
+
+    // 4. Preços dos Planos
     const planPrices: Record<string, number> = {
-      'starter': 54.90,
-      'basic': 74.90,
-      'profissional': 119.90,
-      'professional': 119.90,
-      'business': 179.90,
-      'premium': 249.90,
-      'elite': 349.90
+      'starter': 54.90, 'basic': 74.90, 'profissional': 119.90,
+      'professional': 119.90, 'business': 179.90, 'premium': 249.90, 'elite': 349.90
     }
     const planValue = planPrices[plan.toLowerCase()] || 119.90
 
-    // 7. Manda o Asaas criar a Assinatura (com 7 dias grátis)
     const nextDueDate = new Date()
-    nextDueDate.setDate(nextDueDate.getDate() + 7) 
+    nextDueDate.setDate(nextDueDate.getDate() + 7)
 
+    // 5. Cria a Assinatura (Com leitura segura)
     const subRes = await fetch(`${ASAAS_URL}/subscriptions`, {
       method: 'POST',
       headers: {
@@ -113,18 +87,25 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         customer: customerData.id,
-        billingType: 'UNDEFINED', // O cliente escolhe depois se quer PIX, Boleto ou Cartão
+        billingType: 'UNDEFINED',
         value: planValue,
         nextDueDate: nextDueDate.toISOString().split('T')[0],
         cycle: 'MONTHLY',
-        description: `Assinatura Elevatio Vendas CRM - Plano ${plan.toUpperCase()}`
+        description: `Assinatura Elevatio CRM - Plano ${plan.toUpperCase()}`
       })
     })
 
-    const subData = await subRes.json()
-    if (!subRes.ok) throw new Error(`Erro Asaas Assinatura: ${subData.errors?.[0]?.description || 'Erro Desconhecido'}`)
+    const subText = await subRes.text()
+    let subData
+    try {
+      subData = JSON.parse(subText)
+    } catch (e) {
+      throw new Error(`Erro Crítico na API Asaas (Assinatura). Status: ${subRes.status}. Resposta: ${subText}`)
+    }
 
-    // 8. Salva os IDs gerados pelo Asaas de volta no seu banco de dados
+    if (!subRes.ok) throw new Error(`Erro ao criar assinatura Asaas: ${subData.errors?.[0]?.description || subText}`)
+
+    // 6. Salva no Banco
     await supabaseAdmin
       .from('companies')
       .update({
@@ -139,6 +120,7 @@ serve(async (req) => {
     )
 
   } catch (error: any) {
+    console.error('ERRO EDGE FUNCTION:', error.message)
     return new Response(
       JSON.stringify({ error: error.message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }

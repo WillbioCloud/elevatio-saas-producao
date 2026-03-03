@@ -89,9 +89,16 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
         // Criar contrato de teste para exibir a barra de Trial no Dashboard
         try {
+          // Buscar o ID do plano na tabela saas_plans
+          const { data: planData } = await supabase
+            .from('saas_plans')
+            .select('id')
+            .ilike('name', formData.plan)
+            .single();
+
           await supabase.from('saas_contracts').insert([{
             company_id: newCompany.id,
-            plan_name: formData.plan,
+            plan_id: planData?.id,
             status: 'pending',
             start_date: new Date().toISOString(),
             end_date: trialEnds.toISOString(),
