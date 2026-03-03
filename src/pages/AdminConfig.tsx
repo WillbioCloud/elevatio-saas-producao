@@ -364,42 +364,26 @@ const AdminConfig: React.FC = () => {
 
     setIsGeneratingCheckout(true);
     try {
-      // 1. Pegamos a sessão e as chaves de ambiente
-      const { data: { session } } = await supabase.auth.getSession();
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      console.log("🚀 Buscando link de pagamento...");
 
-      console.log("🚀 Enviando requisição direta para a Edge Function...");
-
-      // 2. Chamada Direta e à prova de falhas (Ignora os bugs do supabase-js)
-      const response = await fetch(`${supabaseUrl}/functions/v1/create-asaas-checkout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
-          'apikey': supabaseKey
-        },
-        body: JSON.stringify({ company_id: companyId })
+      const { data, error } = await supabase.functions.invoke('get-asaas-payment-link', {
+        body: { company_id: companyId }
       });
 
-      // 3. Lemos a resposta REAL do servidor
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || `Erro HTTP ${response.status}`);
+      if (error) {
+        throw new Error(error.message);
       }
 
       if (!data?.checkoutUrl) {
-        throw new Error('O Asaas não retornou o link. Verifique os logs da Edge Function.');
+        throw new Error(data?.error || 'Link não retornado pelo Asaas.');
       }
 
-      // 4. Redirecionamento com Sucesso!
-      console.log("✅ Link gerado com sucesso! Redirecionando...");
+      console.log("✅ Link encontrado! Redirecionando...");
       window.location.href = data.checkoutUrl;
 
     } catch (error: any) {
       console.error("🔥 ERRO FATAL:", error);
-      alert('Erro ao gerar pagamento: ' + (error.message || error));
+      alert('Erro ao buscar pagamento: ' + (error.message || error));
     } finally {
       setIsGeneratingCheckout(false);
     }
