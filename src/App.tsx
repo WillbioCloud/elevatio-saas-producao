@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BrowserRouter,
   Routes,
@@ -58,6 +58,56 @@ import SaasPayments from './pages/saas/SaasPayments';
 import SaasContracts from './pages/saas/SaasContracts';
 import SaasSettings from './pages/saas/SaasSettings';
 import SaasSupport from './pages/saas/SaasSupport';
+
+// ============================================================================
+// 🧠 ROTEADOR INTELIGENTE MULTI-TENANT (Elevatio Vendas SaaS)
+// ============================================================================
+/**
+ * Identifica o tipo de ambiente baseado no hostname:
+ * - 'landing': Domínio principal (elevatiovendas.com) → Landing Page do SaaS
+ * - 'superadmin': Subdomínio admin (admin.elevatiovendas.com) → Painel Super Admin
+ * - 'app': Subdomínio de cliente (imobiliaria.elevatiovendas.com) → CRM da Imobiliária
+ * - 'website': Domínio customizado (www.imobiliariadojoao.com.br) → Site do Cliente
+ */
+const getEnvironment = () => {
+  const hostname = window.location.hostname;
+
+  // Para desenvolvimento local (localhost) - Força o modo app/crm para facilitar o dev
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return { type: 'app', subdomain: 'dev' };
+  }
+
+  // Domínios principais da plataforma SaaS
+  const mainDomains = ['elevatiovendas.com', 'elevatiovendas.vercel.app'];
+  
+  const isMainDomain = mainDomains.some(domain => 
+    hostname === domain || hostname === `www.${domain}`
+  );
+  
+  if (isMainDomain) {
+    return { type: 'landing' }; // Mostra a Landing Page do SaaS (SiteHome)
+  }
+
+  const isAdminDomain = mainDomains.some(domain => 
+    hostname === `admin.${domain}`
+  );
+  
+  if (isAdminDomain) {
+    return { type: 'superadmin' }; // Redireciona para o painel do Dono do SaaS
+  }
+
+  const isSubdomain = mainDomains.some(domain => 
+    hostname.endsWith(`.${domain}`)
+  );
+  
+  if (isSubdomain) {
+    const subdomain = hostname.split('.')[0];
+    return { type: 'app', subdomain }; // CRM da Imobiliária (ex: nomedaimobiliaria.elevatiovendas.com)
+  }
+
+  // Se não caiu em nenhuma regra acima, é um Domínio Customizado de um cliente!
+  return { type: 'website', customDomain: hostname }; // Site do Cliente (ex: www.imobiliariadojoao.com.br)
+};
 
 const ScrollToTop = () => {
   const { pathname } = useLocation();
@@ -218,6 +268,19 @@ const AppRoutes: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  // ============================================================================
+  // 🎯 ESTADO DO AMBIENTE (Multi-tenant Router)
+  // ============================================================================
+  const [env, setEnv] = useState<{ 
+    type: string; 
+    subdomain?: string; 
+    customDomain?: string 
+  }>({ type: 'loading' });
+
+  useEffect(() => {
+    setEnv(getEnvironment());
+  }, []);
+
   useEffect(() => {
     const handleBeforeUnload = () => {
       sessionStorage.removeItem('trimoveis_navigation');
@@ -227,6 +290,60 @@ const App: React.FC = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
+  // ============================================================================
+  // 🔄 LOADING STATE (Enquanto identifica o ambiente)
+  // ============================================================================
+  if (env.type === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 mx-auto mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-400 text-sm">Carregando Elevatio Vendas...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // 🌐 ROTA 1: SITE DO CLIENTE FINAL (Templates White-label)
+  // ============================================================================
+  if (env.type === 'website') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4">
+        <div className="text-center max-w-2xl">
+          <div className="mb-8">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-brand-500/10 border-2 border-brand-500 mb-4">
+              <svg className="w-10 h-10 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            </div>
+          </div>
+          
+          <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-brand-400 to-brand-600 bg-clip-text text-transparent">
+            Site em Construção
+          </h1>
+          
+          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 mb-6 border border-slate-700">
+            <p className="text-slate-300 mb-2">
+              O domínio <strong className="text-brand-400">{env.customDomain}</strong> está apontado corretamente.
+            </p>
+            <p className="text-sm text-slate-400">
+              Seu site personalizado estará disponível em breve.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
+            <span>Powered by</span>
+            <span className="font-semibold text-brand-400">Elevatio Vendas</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // 🚀 ROTA 2: LANDING PAGE DO SAAS + SUPER ADMIN + CRM (Aplicação Principal)
+  // ============================================================================
   return (
     <BrowserRouter>
       <TenantProvider>
