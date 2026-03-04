@@ -1057,9 +1057,18 @@ const AdminConfig: React.FC = () => {
               <div>
                 <h4 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Opções de Upgrade</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {PLANS.filter((p) => p.id !== activePlanId).map((plan) => {
+                  {PLANS.filter((plan) => {
+                    const isCurrentPlan = plan.id === activePlanId;
+                    const isCurrentCycle = contract?.billing_cycle === billingCycle;
+                    // SÓ esconde se for o mesmo plano E o mesmo ciclo que ele já paga
+                    return !(isCurrentPlan && isCurrentCycle);
+                  }).map((plan) => {
                     const planIndex = PLANS.findIndex(p => p.id === plan.id);
                     const isDowngrade = currentPlanIndex !== -1 && planIndex < currentPlanIndex;
+                    
+                    // Verifica se é mudança de ciclo no mesmo plano
+                    const isCycleUpgrade = plan.id === activePlanId && contract?.billing_cycle === 'monthly' && billingCycle === 'yearly';
+                    const isCycleDowngrade = plan.id === activePlanId && contract?.billing_cycle === 'yearly' && billingCycle === 'monthly';
                     
                     return (
                       <div
@@ -1105,12 +1114,20 @@ const AdminConfig: React.FC = () => {
                           onClick={() => handleUpgrade(plan.id)}
                           disabled={isUpgrading === plan.id}
                           className={`w-full py-2.5 rounded-xl font-bold transition-colors ${
-                            isDowngrade
+                            isDowngrade || isCycleDowngrade
                               ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400'
                               : 'bg-brand-50 hover:bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 dark:text-brand-400'
                           }`}
                         >
-                          {isUpgrading === plan.id ? 'Processando...' : isDowngrade ? 'Fazer Downgrade' : 'Fazer Upgrade'}
+                          {isUpgrading === plan.id 
+                            ? 'Processando...' 
+                            : isCycleUpgrade 
+                              ? 'Migrar para Anual' 
+                              : isCycleDowngrade 
+                                ? 'Migrar para Mensal' 
+                                : isDowngrade 
+                                  ? 'Fazer Downgrade' 
+                                  : 'Fazer Upgrade'}
                         </button>
                       </div>
                     );
