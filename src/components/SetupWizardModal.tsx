@@ -42,6 +42,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     hasDomain: 'nao',
     template: 'professional',
     plan: location.state?.plan || localStorage.getItem('trimoveis_selected_plan') || 'profissional',
+    billingCycle: localStorage.getItem('trimoveis_billing_cycle') || 'monthly'
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -109,7 +110,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
       try {
         const { error: asaasError } = await supabase.functions.invoke('create-asaas-checkout', {
-          body: { company_id: newCompany.id, plan: formData.plan }
+          body: { company_id: newCompany.id, plan: formData.plan, cycle: formData.billingCycle }
         });
         if (asaasError) console.error('Erro na integração Asaas:', asaasError);
       } catch (e) {
@@ -141,6 +142,31 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
               <h3 className="text-brand-400 font-bold flex items-center gap-2">
                 <Building2 className="w-5 h-5" /> Dados da Imobiliária
               </h3>
+              <div className="mb-4 flex bg-[#1a1a1a] p-1 rounded-xl w-fit border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setFormData({...formData, billingCycle: 'monthly'})}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                    formData.billingCycle === 'monthly' 
+                      ? 'bg-white text-slate-900' 
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Mensal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({...formData, billingCycle: 'yearly'})}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
+                    formData.billingCycle === 'yearly' 
+                      ? 'bg-brand-600 text-white' 
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Anual
+                  <span className="bg-brand-500/30 text-brand-200 text-[10px] px-1.5 py-0.5 rounded-md border border-brand-400/20">-20%</span>
+                </button>
+              </div>
               <div className="mb-4">
                 <label className="block text-sm font-bold text-gray-400 mb-1">Confirme seu Plano</label>
                 <select

@@ -17,7 +17,7 @@ serve(async (req) => {
     const reqText = await req.text()
     if (!reqText) throw new Error("A requisição do CRM veio vazia.")
     
-    const { company_id, plan } = JSON.parse(reqText)
+    const { company_id, plan, cycle } = JSON.parse(reqText)
     if (!company_id || !plan) throw new Error("Faltam parâmetros obrigatórios.")
 
     // 2. Inicializa o Supabase
@@ -68,12 +68,21 @@ serve(async (req) => {
 
     if (!customerRes.ok) throw new Error(`Erro ao criar cliente Asaas: ${customerData.errors?.[0]?.description || customerText}`)
 
-    // 4. Preços dos Planos
-    const planPrices: Record<string, number> = {
-      'starter': 54.90, 'basic': 74.90, 'profissional': 119.90,
-      'professional': 119.90, 'business': 179.90, 'premium': 249.90, 'elite': 349.90
+    // 4. Preços dos Planos (Mensal e Anual com 20% de desconto)
+    const planPrices: Record<string, { monthly: number, yearly: number }> = {
+      starter: { monthly: 54.90, yearly: 527.04 },
+      basic: { monthly: 74.90, yearly: 719.04 },
+      profissional: { monthly: 119.90, yearly: 1151.04 },
+      professional: { monthly: 119.90, yearly: 1151.04 },
+      business: { monthly: 179.90, yearly: 1727.04 },
+      premium: { monthly: 249.90, yearly: 2399.04 },
+      elite: { monthly: 349.90, yearly: 3359.04 }
     }
-    const planValue = planPrices[plan.toLowerCase()] || 119.90
+
+    const planKey = (plan || 'profissional').toLowerCase()
+    const isYearly = cycle === 'yearly'
+    const planValue = isYearly ? planPrices[planKey].yearly : planPrices[planKey].monthly
+    const asaasCycle = isYearly ? 'YEARLY' : 'MONTHLY'
 
     const nextDueDate = new Date()
     nextDueDate.setDate(nextDueDate.getDate() + 7)
@@ -90,8 +99,8 @@ serve(async (req) => {
         billingType: 'UNDEFINED',
         value: planValue,
         nextDueDate: nextDueDate.toISOString().split('T')[0],
-        cycle: 'MONTHLY',
-        description: `Assinatura Elevatio CRM - Plano ${plan.toUpperCase()}`
+        cycle: asaasCycle,
+        description: `Assinatura Elevatio CRM - Plano ${planKey.toUpperCase()} (${isYearly ? 'Anual' : 'Mensal'})`
       })
     })
 
