@@ -38,9 +38,21 @@ serve(async (req) => {
           .update({ plan_status: 'active', trial_ends_at: null })
           .eq('id', company.id);
 
+        // Busca o ciclo atual do contrato para saber se soma 1 mês ou 1 ano
+        const { data: contractInfo } = await supabaseAdmin
+          .from('saas_contracts')
+          .select('billing_cycle')
+          .eq('company_id', company.id)
+          .single();
+
         const today = new Date();
         const nextRenewal = new Date(today);
-        nextRenewal.setMonth(nextRenewal.getMonth() + 1);
+
+        if (contractInfo?.billing_cycle === 'yearly') {
+          nextRenewal.setFullYear(nextRenewal.getFullYear() + 1); // Soma 1 ano
+        } else {
+          nextRenewal.setMonth(nextRenewal.getMonth() + 1); // Soma 1 mês
+        }
 
         // Atualiza o Contrato para ATIVO e estende a data de vencimento
         await supabaseAdmin

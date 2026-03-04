@@ -29,6 +29,7 @@ interface Contract {
   status: string;
   start_date: string;
   end_date: string;
+  billing_cycle?: string;
   companies?: { plan?: string };
 }
 
@@ -392,6 +393,18 @@ const AdminConfig: React.FC = () => {
       alert('Erro ao buscar pagamento: ' + (error.message || error));
     } finally {
       setIsGeneratingCheckout(false);
+    }
+  };
+
+  const handleUpgrade = async (planId: string) => {
+    setIsUpgrading(planId);
+    try {
+      // Placeholder para a próxima etapa da arquitetura
+      alert(`Ação de Upgrade para o plano ${planId.toUpperCase()} capturada! A conexão com o Asaas será feita na próxima etapa.`);
+    } catch (error: any) {
+      alert('Erro: ' + error.message);
+    } finally {
+      setIsUpgrading(null);
     }
   };
 
@@ -951,7 +964,7 @@ const AdminConfig: React.FC = () => {
                       <div className="w-px h-8 bg-white/20"></div>
                       <div>
                         <p className="text-brand-300 text-xs uppercase mb-0.5">Ciclo Atual</p>
-                        <p className="font-medium">Mensal</p>
+                        <p className="font-medium">{contract.billing_cycle === 'yearly' ? 'Anual' : 'Mensal'}</p>
                       </div>
                     </div>
                   </div>
@@ -1036,7 +1049,7 @@ const AdminConfig: React.FC = () => {
                           )}
                         </ul>
                         <button
-                          onClick={() => setIsUpgrading(plan.id)}
+                          onClick={() => handleUpgrade(plan.id)}
                           disabled={isUpgrading === plan.id}
                           className={`w-full py-2.5 rounded-xl font-bold transition-colors ${
                             isDowngrade

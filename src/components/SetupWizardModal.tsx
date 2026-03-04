@@ -102,6 +102,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
             status: 'pending',
             start_date: new Date().toISOString(),
             end_date: trialEnds.toISOString(),
+            billing_cycle: formData.billingCycle
           }]);
         } catch (contractError) {
           console.warn('Aviso: Falha ao criar contrato de teste.', contractError);
