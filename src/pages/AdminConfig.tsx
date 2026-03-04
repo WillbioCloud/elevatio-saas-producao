@@ -118,6 +118,10 @@ const AdminConfig: React.FC = () => {
   const [isGeneratingCheckout, setIsGeneratingCheckout] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [isUpgrading, setIsUpgrading] = useState<string | null>(null);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [otherReason, setOtherReason] = useState('');
+  const [isCanceling, setIsCanceling] = useState(false);
 
   const fetchSettings = async () => {
     const { data } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
@@ -419,6 +423,33 @@ const AdminConfig: React.FC = () => {
       alert('Erro ao atualizar plano: ' + (error.message || 'Tente novamente mais tarde.'));
     } finally {
       setIsUpgrading(null);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    if (!cancelReason) return alert('Por favor, selecione um motivo.');
+    if (cancelReason === 'Outro' && !otherReason) return alert('Por favor, descreva o motivo.');
+
+    setIsCanceling(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('cancel-asaas-subscription', {
+        body: { 
+          company_id: user?.company_id, 
+          reason: cancelReason, 
+          other_reason: otherReason 
+        }
+      });
+
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+
+      alert('Assinatura cancelada com sucesso. Você terá acesso até o final do período pago.');
+      setIsCancelModalOpen(false);
+      await fetchContract();
+    } catch (error: any) {
+      alert('Erro ao cancelar: ' + error.message);
+    } finally {
+      setIsCanceling(false);
     }
   };
 
@@ -948,7 +979,7 @@ const AdminConfig: React.FC = () => {
                         className={`flex items-center gap-1.5 text-xs font-bold ${
                           contract.status === 'active'
                             ? 'text-emerald-400'
-                            : contract.status === 'pending'
+                            : contract.status === 'canceled'
                               ? 'text-amber-400'
                               : 'text-red-400'
                         }`}
@@ -957,15 +988,15 @@ const AdminConfig: React.FC = () => {
                           className={`w-2 h-2 rounded-full ${
                             contract.status === 'active'
                               ? 'bg-emerald-400'
-                              : contract.status === 'pending'
-                                ? 'bg-amber-400 animate-pulse'
+                              : contract.status === 'canceled'
+                                ? 'bg-amber-400'
                                 : 'bg-red-400'
                           }`}
                         ></span>
                         {contract.status === 'active'
                           ? 'Ativo'
-                          : contract.status === 'pending'
-                            ? 'Aguardando Pagamento'
+                          : contract.status === 'canceled'
+                            ? `Cancela em ${new Date(contract.end_date).toLocaleDateString('pt-BR')}`
                             : 'Inativo'}
                       </span>
                     </div>
@@ -1005,7 +1036,7 @@ const AdminConfig: React.FC = () => {
                       </button>
                     )}
                     <button
-                      onClick={() => alert('Abrir modal de cancelamento')}
+                      onClick={() => setIsCancelModalOpen(true)}
                       className="w-full text-white/50 hover:text-red-400 text-sm font-medium transition-colors"
                     >
                       Cancelar assinatura
@@ -1094,6 +1125,72 @@ const AdminConfig: React.FC = () => {
         onClose={() => setIsXpModalOpen(false)}
         xpPoints={Number(user?.xp_points || 0)}
       />
+
+      {/* Modal de Cancelamento */}
+      {isCancelModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-dark-card w-full max-w-md rounded-2xl p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Cancelar Assinatura</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+              Sentimos muito em ver você partir. Seu acesso continuará liberado até{' '}
+              <strong className="text-brand-500">
+                {new Date(contract?.end_date || '').toLocaleDateString('pt-BR')}
+              </strong>
+              . Conta pra gente, por que está cancelando?
+            </p>
+
+            <div className="space-y-3 mb-6">
+              {['Muito caro', 'Faltam recursos', 'Difícil de usar', 'Mudei de software', 'Outro'].map((reason) => (
+                <label
+                  key={reason}
+                  className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-white/10 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                >
+                  <input
+                    type="radio"
+                    name="cancel_reason"
+                    value={reason}
+                    checked={cancelReason === reason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    className="w-4 h-4 text-brand-500 bg-transparent border-slate-300 focus:ring-brand-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{reason}</span>
+                </label>
+              ))}
+            </div>
+
+            {cancelReason === 'Outro' && (
+              <textarea
+                placeholder="Por favor, conte-nos mais (opcional)..."
+                value={otherReason}
+                onChange={(e) => setOtherReason(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl p-3 text-sm text-slate-800 dark:text-white outline-none focus:border-brand-500 mb-6 min-h-[80px] resize-none"
+              />
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setIsCancelModalOpen(false)}
+                className="flex-1 py-3 rounded-xl font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"
+              >
+                Voltar
+              </button>
+              <button
+                onClick={handleCancelSubscription}
+                disabled={isCanceling || !cancelReason || (cancelReason === 'Outro' && !otherReason)}
+                className="flex-1 py-3 rounded-xl font-bold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                {isCanceling ? (
+                  <>
+                    <Icons.RefreshCw size={18} className="animate-spin" /> Cancelando...
+                  </>
+                ) : (
+                  'Confirmar Cancelamento'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
