@@ -101,7 +101,7 @@ const AdminConfig: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isAdmin = user?.role === 'admin';
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'team' | 'traffic' | 'subscription'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'team' | 'traffic' | 'subscription' | 'site'>('profile');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [distRules, setDistRules] = useState<{ enabled: boolean; types: string[] }>({ enabled: false, types: [] });
   const [profileForm, setProfileForm] = useState({ name: '', phone: '', email: '' });
@@ -123,6 +123,9 @@ const AdminConfig: React.FC = () => {
   const [otherReason, setOtherReason] = useState('');
   const [isCanceling, setIsCanceling] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [siteTemplate, setSiteTemplate] = useState('classic');
+  const [siteDomain, setSiteDomain] = useState('');
+  const [isSavingSite, setIsSavingSite] = useState(false);
 
   const fetchSettings = async () => {
     const { data } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
@@ -149,11 +152,27 @@ const AdminConfig: React.FC = () => {
     setLoadingContract(false);
   };
 
+  const fetchCompanyData = async () => {
+    if (!user?.company_id) return;
+    
+    const { data } = await supabase
+      .from('companies')
+      .select('template, domain')
+      .eq('id', user.company_id)
+      .maybeSingle();
+    
+    if (data) {
+      setSiteTemplate(data.template || 'classic');
+      setSiteDomain(data.domain || '');
+    }
+  };
+
   useEffect(() => {
     if (isAdmin) {
       fetchProfiles();
       fetchSettings();
       fetchContract();
+      fetchCompanyData();
     }
   }, [isAdmin, user?.id]);
 
@@ -454,6 +473,33 @@ const AdminConfig: React.FC = () => {
     }
   };
 
+  const handleSaveSiteConfig = async () => {
+    setIsSavingSite(true);
+    try {
+      if (!user?.company_id) throw new Error("ID da empresa não encontrado.");
+
+      // Limpa o domínio caso o usuário digite com http ou www
+      const cleanDomain = siteDomain.replace(/^(https?:\/\/)?(www\.)?/, '').trim();
+
+      const { error } = await supabase
+        .from('companies')
+        .update({ 
+          template: siteTemplate,
+          domain: cleanDomain
+        })
+        .eq('id', user.company_id);
+
+      if (error) throw error;
+
+      setSiteDomain(cleanDomain);
+      alert('Configurações do site salvas com sucesso!');
+    } catch (error: any) {
+      alert('Erro ao salvar configurações: ' + error.message);
+    } finally {
+      setIsSavingSite(false);
+    }
+  };
+
   const currentLevel = Math.max(1, Number(user?.level ?? 1));
   const currentXP = Math.max(0, Number(user?.xp_points ?? 0));
   const progressMax = 100;
@@ -532,6 +578,15 @@ const AdminConfig: React.FC = () => {
             className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'subscription' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
           >
             <Icons.CreditCard size={18} /> Assinatura
+          </button>
+        )}
+
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab('site')}
+            className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'site' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+          >
+            <Icons.Globe size={18} /> Meu Site
           </button>
         )}
       </div>
@@ -1213,6 +1268,140 @@ const AdminConfig: React.FC = () => {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'site' && (
+        <div className="space-y-8 animate-fade-in">
+          {/* SEÇÃO 1: Escolha do Template */}
+          <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 shadow-sm">
+            <div className="mb-6">
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <Icons.Layout size={24} className="text-brand-500" />
+                Aparência do Site
+              </h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Escolha o design que melhor representa a sua imobiliária.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Opção Clássica */}
+              <div
+                onClick={() => setSiteTemplate('classic')}
+                className={`cursor-pointer rounded-xl border-2 transition-all overflow-hidden ${
+                  siteTemplate === 'classic'
+                    ? 'border-brand-500 ring-4 ring-brand-500/20'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-brand-300'
+                }`}
+              >
+                <div className="h-40 bg-slate-100 dark:bg-slate-800 p-4 flex flex-col items-center justify-center border-b border-slate-200 dark:border-slate-700">
+                  <div className="w-full h-4 bg-white dark:bg-slate-700 rounded mb-2 shadow-sm"></div>
+                  <div className="w-full flex gap-2">
+                    <div className="w-1/3 h-16 bg-white dark:bg-slate-700 rounded shadow-sm"></div>
+                    <div className="w-1/3 h-16 bg-white dark:bg-slate-700 rounded shadow-sm"></div>
+                    <div className="w-1/3 h-16 bg-white dark:bg-slate-700 rounded shadow-sm"></div>
+                  </div>
+                </div>
+                <div className="p-4 bg-white dark:bg-dark-card">
+                  <div className="flex justify-between items-center mb-1">
+                    <h4 className="font-bold text-slate-800 dark:text-white">Classic</h4>
+                    {siteTemplate === 'classic' && <Icons.CheckCircle className="text-brand-500" size={20} />}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Design original, focado em alta conversão e simplicidade. Fundo claro.
+                  </p>
+                </div>
+              </div>
+
+              {/* Opção Luxo */}
+              <div
+                onClick={() => setSiteTemplate('luxury')}
+                className={`cursor-pointer rounded-xl border-2 transition-all overflow-hidden ${
+                  siteTemplate === 'luxury'
+                    ? 'border-brand-500 ring-4 ring-brand-500/20'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-brand-300'
+                }`}
+              >
+                <div className="h-40 bg-slate-900 p-4 flex flex-col items-center justify-center border-b border-slate-800">
+                  <div className="w-3/4 h-8 bg-slate-800 rounded mb-4"></div>
+                  <div className="w-1/2 h-10 bg-brand-600 rounded"></div>
+                </div>
+                <div className="p-4 bg-white dark:bg-dark-card">
+                  <div className="flex justify-between items-center mb-1">
+                    <h4 className="font-bold text-slate-800 dark:text-white">Luxury</h4>
+                    {siteTemplate === 'luxury' && <Icons.CheckCircle className="text-brand-500" size={20} />}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Design premium em tons escuros. Ideal para imóveis de alto padrão e exclusividade.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* SEÇÃO 2: Domínio Customizado */}
+          <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 shadow-sm">
+            <div className="mb-6">
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <Icons.Globe size={24} className="text-brand-500" />
+                Domínio Próprio
+              </h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Conecte o seu domínio (ex: sua-imobiliaria.com.br) para remover a marca da Elevatio Vendas.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                  Seu Domínio
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Icons.Link size={18} className="text-slate-400" />
+                  </div>
+                  <input
+                    type="text"
+                    value={siteDomain}
+                    onChange={(e) => setSiteDomain(e.target.value)}
+                    placeholder="minhaimobiliaria.com.br"
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:border-brand-500 focus:ring-brand-500 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-brand-50 dark:bg-brand-900/20 rounded-xl p-4 border border-brand-100 dark:border-brand-900/50">
+                <h4 className="text-sm font-bold text-brand-800 dark:text-brand-400 mb-2 flex items-center gap-2">
+                  <Icons.Info size={16} />
+                  Como configurar seu domínio:
+                </h4>
+                <ol className="list-decimal list-inside text-xs text-brand-700 dark:text-brand-300 space-y-1">
+                  <li>Acesse o painel onde comprou seu domínio (Registro.br, GoDaddy, etc).</li>
+                  <li>Vá na zona de DNS e crie um apontamento do tipo <strong>CNAME</strong>.</li>
+                  <li>No campo Nome, digite <strong>www</strong>.</li>
+                  <li>No campo Destino/Valor, digite <strong>cname.vercel-dns.com</strong>.</li>
+                  <li>Aguarde a propagação (pode levar até 24 horas).</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
+          {/* Botão de Salvar */}
+          <div className="flex justify-end pt-4">
+            <button
+              onClick={handleSaveSiteConfig}
+              disabled={isSavingSite}
+              className="bg-brand-600 hover:bg-brand-700 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50 transition-colors"
+            >
+              {isSavingSite ? (
+                <Icons.RefreshCw size={20} className="animate-spin" />
+              ) : (
+                <Icons.Save size={20} />
+              )}
+              {isSavingSite ? 'Salvando...' : 'Salvar Configurações do Site'}
+            </button>
           </div>
         </div>
       )}
