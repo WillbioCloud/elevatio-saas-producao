@@ -4,6 +4,7 @@ import { Shield } from 'lucide-react';
 import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTenant } from '../contexts/TenantContext';
 import { supabase } from '../lib/supabase';
 import NotificationsMenu from './NotificationsMenu';
 import { useInstallmentReminders } from '../hooks/useInstallmentReminders';
@@ -14,6 +15,7 @@ import SetupWizardModal from './SetupWizardModal';
 const AdminLayout: React.FC = () => {
   const { user, signOut, refreshUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { tenant } = useTenant();
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -84,9 +86,31 @@ const AdminLayout: React.FC = () => {
     }
   };
 
-  const handleExitToHome = async () => {
-    await signOut();
-    navigate('/');
+  const handleOpenWebsite = (e: React.MouseEvent) => {
+    e.preventDefault();
+
+    if (tenant?.domain) {
+      // Abre o domínio customizado (garantindo que tenha http:// para não bugar o redirecionamento do React)
+      const url = tenant.domain.startsWith('http') ? tenant.domain : `https://${tenant.domain}`;
+      window.open(url, '_blank');
+      return;
+    }
+
+    if (tenant?.subdomain) {
+      const hostname = window.location.hostname;
+      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+
+      if (isLocalhost) {
+        alert(`O seu site em produção ficará no endereço: https://${tenant.subdomain}.elevatiovendas.com`);
+      } else {
+        // Remove o "admin." do domínio base se existir, e monta a URL do cliente
+        const baseDomain = hostname.replace(/^admin\./, '');
+        window.open(`https://${tenant.subdomain}.${baseDomain}`, '_blank');
+      }
+      return;
+    }
+
+    alert('Esta imobiliária ainda não possui um site configurado.');
   };
 
   const menuItems = [
@@ -132,9 +156,9 @@ const AdminLayout: React.FC = () => {
           )}
           {!isSidebarCollapsed && (
             <button
-              onClick={handleExitToHome}
+              onClick={handleOpenWebsite}
               className="text-slate-400 hover:text-brand-400 transition-colors p-1 rounded-md hover:bg-slate-800 shrink-0"
-              title="Ir para o site (Sair)"
+              title="Abrir site da imobiliária"
             >
               <Icons.Globe size={20} />
             </button>
@@ -544,8 +568,8 @@ const AdminLayout: React.FC = () => {
               <div className="flex items-center justify-between px-4 mt-2">
                 <button
                   className="text-slate-400 hover:text-brand-400 transition-colors flex items-center justify-center p-2 rounded-md hover:bg-slate-100"
-                  onClick={handleExitToHome}
-                  title="Ir para o site público"
+                  onClick={handleOpenWebsite}
+                  title="Abrir site da imobiliária"
                 >
                   <Icons.Globe size={20} />
                 </button>
