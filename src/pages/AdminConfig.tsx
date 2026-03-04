@@ -122,6 +122,7 @@ const AdminConfig: React.FC = () => {
   const [cancelReason, setCancelReason] = useState('');
   const [otherReason, setOtherReason] = useState('');
   const [isCanceling, setIsCanceling] = useState(false);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
   const fetchSettings = async () => {
     const { data } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
@@ -1036,6 +1037,13 @@ const AdminConfig: React.FC = () => {
                       </button>
                     )}
                     <button
+                      onClick={() => setIsDetailsModalOpen(true)}
+                      className="w-full bg-transparent hover:bg-white/10 border border-white/20 text-white py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2"
+                    >
+                      <Icons.Info size={18} />
+                      Ver detalhes do plano
+                    </button>
+                    <button
                       onClick={() => setIsCancelModalOpen(true)}
                       className="w-full text-white/50 hover:text-red-400 text-sm font-medium transition-colors"
                     >
@@ -1186,6 +1194,52 @@ const AdminConfig: React.FC = () => {
                 ) : (
                   'Confirmar Cancelamento'
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Detalhes do Plano Atual */}
+      {isDetailsModalOpen && currentPlanDetails && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-dark-card w-full max-w-md rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
+            <div className="bg-brand-900 p-6 text-white relative">
+              <button
+                onClick={() => setIsDetailsModalOpen(false)}
+                className="absolute top-4 right-4 text-white/60 hover:text-white transition-colors"
+              >
+                <Icons.X size={24} />
+              </button>
+              <span className="bg-brand-500/30 text-brand-200 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border border-brand-400/30 mb-3 inline-block">
+                Seu Plano Atual
+              </span>
+              <h3 className="text-3xl font-serif font-bold uppercase">{currentPlanDetails.name}</h3>
+              <p className="text-brand-200 text-sm mt-2">{currentPlanDetails.description}</p>
+            </div>
+
+            <div className="p-6">
+              <h4 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-4">
+                O que está incluído:
+              </h4>
+              <ul className="space-y-3 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
+                {currentPlanDetails.features.map((feature, i) => (
+                  <li key={i} className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300">
+                    <div className="bg-brand-100 dark:bg-brand-900/30 p-1 rounded-full shrink-0 mt-0.5">
+                      <Icons.Check size={14} className="text-brand-600 dark:text-brand-400" />
+                    </div>
+                    <span className="leading-tight">{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="p-4 bg-slate-50 dark:bg-white/5 border-t border-slate-100 dark:border-white/10 flex justify-end">
+              <button
+                onClick={() => setIsDetailsModalOpen(false)}
+                className="px-6 py-2.5 bg-slate-200 hover:bg-slate-300 dark:bg-white/10 dark:hover:bg-white/20 text-slate-800 dark:text-white rounded-xl font-bold transition-colors"
+              >
+                Fechar
               </button>
             </div>
           </div>
