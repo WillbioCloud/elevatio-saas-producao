@@ -480,12 +480,13 @@ const AdminConfig: React.FC = () => {
 
       // Limpa o domínio caso o usuário digite com http ou www
       const cleanDomain = siteDomain.replace(/^(https?:\/\/)?(www\.)?/, '').trim();
+      const finalDomain = cleanDomain === '' ? null : cleanDomain;
 
       const { error } = await supabase
         .from('companies')
         .update({ 
           template: siteTemplate,
-          domain: cleanDomain
+          domain: finalDomain
         })
         .eq('id', user.company_id);
 

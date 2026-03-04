@@ -65,6 +65,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
           subdomain: slug,
           document: formData.document,
           phone: formData.phone,
+          template: 'classic',
           plan_status: 'trial',
           plan: formData.plan,
           trial_ends_at: trialEnds.toISOString(),
