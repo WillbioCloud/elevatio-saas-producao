@@ -399,10 +399,24 @@ const AdminConfig: React.FC = () => {
   const handleUpgrade = async (planId: string) => {
     setIsUpgrading(planId);
     try {
-      // Placeholder para a próxima etapa da arquitetura
-      alert(`Ação de Upgrade para o plano ${planId.toUpperCase()} capturada! A conexão com o Asaas será feita na próxima etapa.`);
+      if (!user?.company_id) throw new Error("ID da empresa não encontrado.");
+
+      const { data, error } = await supabase.functions.invoke('update-asaas-subscription', {
+        body: { 
+          company_id: user.company_id, 
+          new_plan: planId,
+          billing_cycle: billingCycle 
+        }
+      });
+
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+
+      alert(`Sucesso! Sua assinatura foi atualizada para o plano ${planId.toUpperCase()}.`);
+      await fetchContract(); // Recarrega o contrato para atualizar o card na tela
     } catch (error: any) {
-      alert('Erro: ' + error.message);
+      console.error(error);
+      alert('Erro ao atualizar plano: ' + (error.message || 'Tente novamente mais tarde.'));
     } finally {
       setIsUpgrading(null);
     }
