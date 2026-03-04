@@ -16,7 +16,6 @@ import ProtectedRoute from './components/ProtectedRoute';
 import SuperAdminRoute from './components/SuperAdminRoute';
 import { AnimatePresence } from 'framer-motion';
 
-import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
 import SaasLayout from './components/SaasLayout';
 import AnimatedPage from './components/AnimatedPage';
@@ -26,13 +25,13 @@ import { useTrackVisit } from './hooks/useTrackVisit';
 import { supabase } from './lib/supabase';
 
 // Public Pages
-import Login from ./templates/classic/pages/Homein';
-./templates/classic/pages/Properties
-// Website Landing Pages (Ma./templates/classic/pages/PropertyDetail
+import Login from './pages/Login';
+
+// Website Landing Pages (Master Domain Only)
 import SiteHome from './pages/website/SiteHome';
-import SiteSignup f./templates/classic/pages/Aboutwebsite/SiteSignup';
-./templates/classic/pages/Services
-// Template Router./templates/classic/pages/Financiamentos
+import SiteSignup from './pages/website/SiteSignup';
+
+// Template Router
 import TenantRouter from './templates/TenantRouter';
 
 // Admin Pages

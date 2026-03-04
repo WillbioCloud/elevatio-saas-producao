@@ -12,7 +12,7 @@ const MASTER_DOMAINS = [
 export type Company = {
   id: string;
   name: string;
-  slug: string | null;
+  subdomain: string | null;
   domain: string | null;
   logo_url?: string | null;
   logo_white_url?: string | null;
@@ -117,7 +117,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
         // Busca por slug/subdomain (ex: imobilaria.elevatiovendas.com)
         if (hostData.slug) {
-          filters.push(`slug.eq.${hostData.slug}`);
+          filters.push(`subdomain.eq.${hostData.slug}`);
         }
 
         const filterString = filters.join(',');
