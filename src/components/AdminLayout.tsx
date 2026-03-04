@@ -4,7 +4,6 @@ import { Shield } from 'lucide-react';
 import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { useTenant } from '../contexts/TenantContext';
 import { supabase } from '../lib/supabase';
 import NotificationsMenu from './NotificationsMenu';
 import { useInstallmentReminders } from '../hooks/useInstallmentReminders';
@@ -15,7 +14,6 @@ import SetupWizardModal from './SetupWizardModal';
 const AdminLayout: React.FC = () => {
   const { user, signOut, refreshUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { tenant } = useTenant();
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -86,31 +84,46 @@ const AdminLayout: React.FC = () => {
     }
   };
 
-  const handleOpenWebsite = (e: React.MouseEvent) => {
+  const handleOpenWebsite = async (e: React.MouseEvent) => {
     e.preventDefault();
 
-    if (tenant?.domain) {
-      // Abre o domínio customizado (garantindo que tenha http:// para não bugar o redirecionamento do React)
-      const url = tenant.domain.startsWith('http') ? tenant.domain : `https://${tenant.domain}`;
-      window.open(url, '_blank');
+    if (!user?.company_id) {
+      alert('Empresa não identificada.');
       return;
     }
 
-    if (tenant?.subdomain) {
-      const hostname = window.location.hostname;
-      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+    try {
+      // Busca a informação real da empresa direto do banco
+      const { data: company } = await supabase
+        .from('companies')
+        .select('domain, subdomain')
+        .eq('id', user.company_id)
+        .single();
 
-      if (isLocalhost) {
-        alert(`O seu site em produção ficará no endereço: https://${tenant.subdomain}.elevatiovendas.com`);
-      } else {
-        // Remove o "admin." do domínio base se existir, e monta a URL do cliente
-        const baseDomain = hostname.replace(/^admin\./, '');
-        window.open(`https://${tenant.subdomain}.${baseDomain}`, '_blank');
+      if (company?.domain) {
+        const url = company.domain.startsWith('http') ? company.domain : `https://${company.domain}`;
+        window.open(url, '_blank');
+        return;
       }
-      return;
-    }
 
-    alert('Esta imobiliária ainda não possui um site configurado.');
+      if (company?.subdomain) {
+        const hostname = window.location.hostname;
+        const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+
+        if (isLocalhost) {
+          alert(`O seu site em produção ficará no endereço: https://${company.subdomain}.elevatiovendas.com`);
+        } else {
+          const baseDomain = hostname.replace(/^admin\./, '');
+          window.open(`https://${company.subdomain}.${baseDomain}`, '_blank');
+        }
+        return;
+      }
+
+      alert('Esta imobiliária ainda não possui um domínio ou subdomínio configurado. Vá em Configurações > Meu Site.');
+    } catch (error) {
+      console.error('Erro ao buscar dados do site:', error);
+      alert('Não foi possível abrir o site no momento.');
+    }
   };
 
   const menuItems = [
