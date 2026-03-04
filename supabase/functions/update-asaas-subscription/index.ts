@@ -74,19 +74,22 @@ serve(async (req) => {
     }
 
     // 4. Atualiza o banco de dados (companies e saas_contracts)
-    await supabaseAdmin
+    const { error: compError } = await supabaseAdmin
       .from('companies')
       .update({ plan: planKey })
       .eq('id', company_id);
 
-    await supabaseAdmin
+    if (compError) throw new Error(`Falha ao atualizar a empresa: ${compError.message}`);
+
+    const { error: contractError } = await supabaseAdmin
       .from('saas_contracts')
       .update({ 
-        plan_name: planKey,
-        plan: planKey,
+        plan_name: planKey, // Usamos apenas a coluna correta
         billing_cycle: billing_cycle
       })
       .eq('company_id', company_id);
+
+    if (contractError) throw new Error(`Falha ao atualizar o contrato: ${contractError.message}`);
 
     return new Response(
       JSON.stringify({ success: true, plan: planKey }),
