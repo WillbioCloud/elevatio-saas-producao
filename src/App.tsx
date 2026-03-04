@@ -26,17 +26,14 @@ import { useTrackVisit } from './hooks/useTrackVisit';
 import { supabase } from './lib/supabase';
 
 // Public Pages
-import Home from './pages/Home';
-import Properties from './pages/Properties';
-import PropertyDetail from './pages/PropertyDetail';
-import Login from './pages/Login';
-import About from './pages/About';
-import Services from './pages/Services';
-import Financiamentos from './pages/Financiamentos';
-
-// Website Landing Pages (Master Domain Only)
+import Login from ./templates/classic/pages/Homein';
+./templates/classic/pages/Properties
+// Website Landing Pages (Ma./templates/classic/pages/PropertyDetail
 import SiteHome from './pages/website/SiteHome';
-import SiteSignup from './pages/website/SiteSignup';
+import SiteSignup f./templates/classic/pages/Aboutwebsite/SiteSignup';
+./templates/classic/pages/Services
+// Template Router./templates/classic/pages/Financiamentos
+import TenantRouter from './templates/TenantRouter';
 
 // Admin Pages
 import AdminDashboard from './pages/AdminDashboard';
@@ -168,13 +165,9 @@ const UserPresenceTracker: React.FC = () => {
   return null;
 };
 
-const PageWrapper = ({ children }: { children: React.ReactNode }) => (
-  <Layout>
-    <AnimatedPage>{children}</AnimatedPage>
-  </Layout>
-);
 
-const AppRoutes: React.FC = () => {
+
+const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomain?: string } }> = ({ env }) => {
   const location = useLocation();
   const routeKey = useMemo(() => location.pathname, [location.pathname]);
 
@@ -188,32 +181,17 @@ const AppRoutes: React.FC = () => {
       <AnimatePresence mode="wait">
         <Routes location={location} key={routeKey}>
           
-          {/* === 1. A ROTA RAIZ (A REGRA DE OURO) === */}
-          <Route 
-            path="/" 
-            element={
-              isMasterDomain 
-                ? <AnimatedPage><SiteHome /></AnimatedPage> // Se for localhost/master, VAI PARA A LANDING PAGE
-                : <PageWrapper><Home /></PageWrapper>       // Se for subdomínio/cliente, VAI PARA A VITRINE
-            } 
-          />
-
-          {/* === 2. AS ROTAS DA VITRINE (SÓ EXISTEM PARA OS CLIENTES) === */}
-          {!isMasterDomain && (
+          {/* === 1. ROTAS DA LANDING PAGE DO SAAS (MASTER DOMAIN ONLY) === */}
+          {isMasterDomain && (
             <>
-              <Route path="/imoveis" element={<PageWrapper><Properties /></PageWrapper>} />
-              <Route path="/imoveis/:slug" element={<PageWrapper><PropertyDetail /></PageWrapper>} />
-              <Route path="/bairros/:slug" element={<PageWrapper><Properties /></PageWrapper>} />
-              <Route path="/servicos" element={<PageWrapper><Services /></PageWrapper>} />
-              <Route path="/sobre" element={<PageWrapper><About /></PageWrapper>} />
-              <Route path="/contato" element={<PageWrapper><div className="pt-20 text-center dark:text-white">Contato</div></PageWrapper>} />
-              <Route path="/financiamentos" element={<AnimatedPage><Financiamentos /></AnimatedPage>} />
+              <Route path="/" element={<AnimatedPage><SiteHome /></AnimatedPage>} />
+              <Route path="/registro" element={<AnimatedPage><SiteSignup /></AnimatedPage>} />
             </>
           )}
 
-          {/* === 3. ROTAS DA LANDING PAGE (MASTER DOMAIN ONLY) === */}
-          {isMasterDomain && (
-            <Route path="/registro" element={<AnimatedPage><SiteSignup /></AnimatedPage>} />
+          {/* === 2. ROTA DOS SITES DOS CLIENTES (Templates) === */}
+          {!isMasterDomain && (
+            <Route path="/*" element={<TenantRouter customDomain={env.customDomain} />} />
           )}
 
           {/* === 4. A ROTA DE LOGIN DO CRM (COMUM A TODOS) === */}
@@ -304,42 +282,7 @@ const App: React.FC = () => {
     );
   }
 
-  // ============================================================================
-  // 🌐 ROTA 1: SITE DO CLIENTE FINAL (Templates White-label)
-  // ============================================================================
-  if (env.type === 'website') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4">
-        <div className="text-center max-w-2xl">
-          <div className="mb-8">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-brand-500/10 border-2 border-brand-500 mb-4">
-              <svg className="w-10 h-10 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
-            </div>
-          </div>
-          
-          <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-brand-400 to-brand-600 bg-clip-text text-transparent">
-            Site em Construção
-          </h1>
-          
-          <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 mb-6 border border-slate-700">
-            <p className="text-slate-300 mb-2">
-              O domínio <strong className="text-brand-400">{env.customDomain}</strong> está apontado corretamente.
-            </p>
-            <p className="text-sm text-slate-400">
-              Seu site personalizado estará disponível em breve.
-            </p>
-          </div>
 
-          <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
-            <span>Powered by</span>
-            <span className="font-semibold text-brand-400">Elevatio Vendas</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // ============================================================================
   // 🚀 ROTA 2: LANDING PAGE DO SAAS + SUPER ADMIN + CRM (Aplicação Principal)
@@ -354,7 +297,7 @@ const App: React.FC = () => {
               <SessionEnforcer />
               <PageTracker />
               <UserPresenceTracker />
-              <AppRoutes />
+              <AppRoutes env={env} />
             </ToastProvider>
           </ThemeProvider>
         </AuthProvider>

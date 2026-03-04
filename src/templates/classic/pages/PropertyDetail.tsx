@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useProperties } from '../hooks/useProperties';
-import { Icons } from '../components/Icons';
-import Loading from '../components/Loading';
-import { Property } from '../types';
-import { supabase } from '../lib/supabase';
+import { useProperties } from '../../../hooks/useProperties';
+import { Icons } from '../../../components/Icons';
+import Loading from '../../../components/Loading';
+import { Property } from '../../../types';
+import { supabase } from '../../../lib/supabase';
 import { MapContainer, Marker, TileLayer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';

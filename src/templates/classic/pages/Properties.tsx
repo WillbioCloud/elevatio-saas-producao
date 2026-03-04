@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import PropertyCard from '../components/PropertyCard';
-import { Icons } from '../components/Icons';
-import { ListingType, Property, PropertyType } from '../types';
+import { supabase } from '../../../lib/supabase';
+import PropertyCard from '../../../components/PropertyCard';
+import { Icons } from '../../../components/Icons';
+import { ListingType, Property, PropertyType } from '../../../types';
 
 const Properties: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import PropertyCard from '../components/PropertyCard';
-import { Icons } from '../components/Icons';
-import { useProperties } from '../hooks/useProperties';
-import Loading from '../components/Loading';
-import { ListingType } from '../types';
+import PropertyCard from '../../../components/PropertyCard';
+import { Icons } from '../../../components/Icons';
+import { useProperties } from '../../../hooks/useProperties';
+import Loading from '../../../components/Loading';
+import { ListingType } from '../../../types';
 
 const partnerLogos = [
   '/parcerias/LOGO-CIDADE-DAS-FLORES.webp',

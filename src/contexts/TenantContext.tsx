@@ -15,8 +15,12 @@ export type Company = {
   slug: string | null;
   domain: string | null;
   logo_url?: string | null;
+  logo_white_url?: string | null;
   plan?: string | null;
   active?: boolean | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
   [key: string]: unknown;
 };
 
@@ -90,6 +94,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const resolveTenant = async () => {
       const hostname = window.location.hostname;
+      const cleanHostname = hostname.replace('www.', '');
       const hostData = getHostData(hostname);
 
       setIsMasterDomain(hostData.isMasterDomain);
@@ -105,10 +110,12 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         const filters: string[] = [];
 
+        // Busca por domínio customizado (ex: imobiliariadojoao.com.br)
         if (hostData.customDomain) {
-          filters.push(`domain.eq.${hostData.customDomain}`);
+          filters.push(`domain.eq.${cleanHostname}`);
         }
 
+        // Busca por slug/subdomain (ex: imobilaria.elevatiovendas.com)
         if (hostData.slug) {
           filters.push(`slug.eq.${hostData.slug}`);
         }
@@ -119,6 +126,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           .from('companies')
           .select('*')
           .or(filterString)
+          .eq('active', true)
           .limit(1)
           .maybeSingle();
 
