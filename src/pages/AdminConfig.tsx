@@ -30,6 +30,8 @@ interface Contract {
   start_date: string;
   end_date: string;
   billing_cycle?: string;
+  has_fidelity?: boolean;
+  fidelity_end_date?: string;
   companies?: { plan?: string };
 }
 
@@ -117,6 +119,7 @@ const AdminConfig: React.FC = () => {
   const [loadingContract, setLoadingContract] = useState(false);
   const [isGeneratingCheckout, setIsGeneratingCheckout] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [acceptFidelity, setAcceptFidelity] = useState(false);
   const [isUpgrading, setIsUpgrading] = useState<string | null>(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -429,7 +432,8 @@ const AdminConfig: React.FC = () => {
         body: { 
           company_id: user.company_id, 
           new_plan: planId,
-          billing_cycle: billingCycle 
+          billing_cycle: billingCycle,
+          has_fidelity: acceptFidelity
         }
       });
 
@@ -1016,6 +1020,21 @@ const AdminConfig: React.FC = () => {
                 <span className="bg-brand-100 text-brand-700 text-[10px] px-1.5 py-0.5 rounded-md">-20%</span>
               </button>
             </div>
+
+            {/* Checkbox de Fidelidade para o plano Mensal */}
+            {billingCycle === 'monthly' && (
+              <label className="flex items-center gap-2 mt-4 cursor-pointer bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 p-3 rounded-xl w-fit transition-colors hover:bg-brand-100 dark:hover:bg-brand-900/40">
+                <input
+                  type="checkbox"
+                  checked={acceptFidelity}
+                  onChange={(e) => setAcceptFidelity(e.target.checked)}
+                  className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-brand-900 dark:text-brand-100">
+                  Aceito o contrato de fidelidade (12 meses) para ganhar <strong className="text-brand-600 dark:text-brand-400">20% de desconto</strong>
+                </span>
+              </label>
+            )}
           </div>
 
           {loadingContract ? (
@@ -1140,7 +1159,7 @@ const AdminConfig: React.FC = () => {
                             <span className="text-3xl font-bold text-slate-900 dark:text-white">
                               R${' '}
                               {billingCycle === 'monthly'
-                                ? plan.priceMensal.toFixed(2).replace('.', ',')
+                                ? (acceptFidelity ? plan.priceMensal * 0.8 : plan.priceMensal).toFixed(2).replace('.', ',')
                                 : plan.priceAnual.toFixed(2).replace('.', ',')}
                             </span>
                             <span className="text-sm text-slate-500">/mês</span>
@@ -1212,6 +1231,19 @@ const AdminConfig: React.FC = () => {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white dark:bg-dark-card w-full max-w-md rounded-2xl p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Cancelar Assinatura</h3>
+            
+            {contract?.has_fidelity && contract?.fidelity_end_date && new Date() < new Date(contract.fidelity_end_date) && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-xl mb-6">
+                <h4 className="text-red-800 dark:text-red-400 font-bold text-sm flex items-center gap-2 mb-1">
+                  <Icons.AlertTriangle size={16} />
+                  Aviso de Quebra de Contrato
+                </h4>
+                <p className="text-xs text-red-600 dark:text-red-300">
+                  Sua assinatura possui um contrato de fidelidade válido até <strong>{new Date(contract.fidelity_end_date).toLocaleDateString('pt-BR')}</strong>. Ao cancelar agora, será gerada uma fatura de multa rescisória (30% sobre o valor dos meses restantes) conforme os Termos de Uso.
+                </p>
+              </div>
+            )}
+
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
               Sentimos muito em ver você partir. Seu acesso continuará liberado até{' '}
               <strong className="text-brand-500">

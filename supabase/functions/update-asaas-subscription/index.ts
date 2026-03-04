@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { company_id, new_plan, billing_cycle } = await req.json()
+    const { company_id, new_plan, billing_cycle, has_fidelity } = await req.json()
     
     if (!company_id || !new_plan || !billing_cycle) {
       throw new Error("Dados incompletos para atualização.")
@@ -81,11 +81,18 @@ serve(async (req) => {
 
     if (compError) throw new Error(`Falha ao atualizar a empresa: ${compError.message}`);
 
+    // Calcula a data de fim da fidelidade (1 ano a partir de hoje) se o cliente aceitou
+    const fidelityEndDate = has_fidelity 
+      ? new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString() 
+      : null;
+
     const { error: contractError } = await supabaseAdmin
       .from('saas_contracts')
       .update({ 
-        plan_name: planKey, // Usamos apenas a coluna correta
-        billing_cycle: billing_cycle
+        plan_name: planKey,
+        billing_cycle: billing_cycle,
+        has_fidelity: has_fidelity || false,
+        fidelity_end_date: fidelityEndDate
       })
       .eq('company_id', company_id);
 
