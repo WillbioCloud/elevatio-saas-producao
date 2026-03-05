@@ -34,15 +34,20 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  
+  // Normaliza o nome do plano para evitar falhas na busca do banco de dados (ex: professional -> profissional)
+  const initialPlanRaw = location.state?.plan || localStorage.getItem('trimoveis_selected_plan') || localStorage.getItem('elevatio_selected_plan') || 'profissional';
+  const initialPlan = normalizePlanFromNav(initialPlanRaw) || 'profissional';
+  
   const [formData, setFormData] = useState({
     companyName: '',
     document: '',
     phone: '',
     domain: '',
     hasDomain: 'nao',
-    template: 'professional',
-    plan: location.state?.plan || localStorage.getItem('trimoveis_selected_plan') || 'profissional',
-    billingCycle: localStorage.getItem('trimoveis_billing_cycle') || 'monthly'
+    template: 'classic', // Default corrigido para o template oficial
+    plan: initialPlan,
+    billingCycle: location.state?.cycle || localStorage.getItem('trimoveis_billing_cycle') || 'monthly'
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -65,7 +70,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
           subdomain: slug,
           document: formData.document,
           phone: formData.phone,
-          template: 'classic',
+          template: formData.template, // Agora lê o template escolhido nos radio buttons
           plan_status: 'trial',
           plan: formData.plan,
           trial_ends_at: trialEnds.toISOString(),
@@ -88,9 +93,9 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
         if (profileError) throw new Error('Erro ao vincular perfil: ' + profileError.message);
 
-        // Criar contrato de teste para exibir a barra de Trial no Dashboard
+        // Criar contrato de teste (Trial)
         try {
-          // Buscar o ID do plano na tabela saas_plans
+          // Busca o ID do plano na tabela saas_plans (agora funciona porque o formData.plan foi normalizado no início)
           const { data: planData } = await supabase
             .from('saas_plans')
             .select('id')
@@ -100,7 +105,8 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
           await supabase.from('saas_contracts').insert([{
             company_id: newCompany.id,
             plan_id: planData?.id,
-            status: 'pending',
+            plan_name: formData.plan, // Salva o nome também por precaução/facilidade de leitura
+            status: 'trial', // MUDANÇA CRÍTICA: 'trial' informa ao CRM que a conta está liberada
             start_date: new Date().toISOString(),
             end_date: trialEnds.toISOString(),
             billing_cycle: formData.billingCycle
@@ -253,7 +259,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
               <div className="grid grid-cols-2 gap-4">
                 <label
                   className={`cursor-pointer border rounded-xl p-4 transition-all ${
-                    formData.template === 'minimalista'
+                    formData.template === 'classic'
                       ? 'border-brand-500 bg-brand-500/10'
                       : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
                   }`}
@@ -262,14 +268,14 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     type="radio"
                     name="template"
                     className="hidden"
-                    value="minimalista"
+                    value="classic"
                     onChange={(e) => setFormData({ ...formData, template: e.target.value })}
                   />
-                  <div className="font-bold text-white mb-1">Minimalista</div>
+                  <div className="font-bold text-white mb-1">Classic (Padrão)</div>
                 </label>
                 <label
                   className={`cursor-pointer border rounded-xl p-4 transition-all ${
-                    formData.template === 'luxo'
+                    formData.template === 'luxury'
                       ? 'border-brand-500 bg-brand-500/10'
                       : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
                   }`}
@@ -278,7 +284,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     type="radio"
                     name="template"
                     className="hidden"
-                    value="luxo"
+                    value="luxury"
                     onChange={(e) => setFormData({ ...formData, template: e.target.value })}
                   />
                   <div className="font-bold text-yellow-400 mb-1">Padrão Luxo</div>
