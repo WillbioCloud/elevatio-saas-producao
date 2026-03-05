@@ -83,19 +83,26 @@ export default function Clients() {
     setIsCreating(false)
   }
 
-  // Função para Deletar Empresa
+  // Função para Deletar Empresa (Hard Delete via Edge Function)
   const handleDeleteCompany = async (id: string) => {
-    if (!window.confirm("ATENÇÃO: Tem certeza que deseja excluir esta empresa definitivamente? Se houver corretores ou imóveis vinculados, a exclusão poderá falhar pelo banco de dados para evitar perda de dados. Nesses casos, prefira 'Suspender'.")) return
+    if (!window.confirm("ATENÇÃO: Esta é uma exclusão DESTRUTIVA! Todos os imóveis, leads, contratos e logins vinculados a esta imobiliária serão APAGADOS PERMANENTEMENTE. Tem certeza absoluta?")) return
 
     setIsDeleting(true)
-    const { error } = await supabase.from("companies").delete().eq("id", id)
-    setIsDeleting(false)
+    try {
+      const { data, error } = await supabase.functions.invoke('delete-tenant', {
+        body: { company_id: id }
+      })
 
-    if (error) {
-      alert("Erro ao excluir. (Possivelmente existem dados vinculados a esta empresa): " + error.message)
-    } else {
+      if (error) throw new Error(error.message)
+      if (data?.error) throw new Error(data.error)
+
+      alert("Empresa excluída com sucesso!")
       setSelectedClient(null)
       fetchCompanies()
+    } catch (error: any) {
+      alert("Erro ao excluir empresa: " + error.message)
+    } finally {
+      setIsDeleting(false)
     }
   }
 
