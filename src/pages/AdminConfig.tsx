@@ -118,6 +118,7 @@ const AdminConfig: React.FC = () => {
   const [contract, setContract] = useState<Contract | null>(null);
   const [loadingContract, setLoadingContract] = useState(false);
   const [isGeneratingCheckout, setIsGeneratingCheckout] = useState(false);
+  const [isReactivating, setIsReactivating] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [acceptFidelity, setAcceptFidelity] = useState(false);
   const [isUpgrading, setIsUpgrading] = useState<string | null>(null);
@@ -420,6 +421,35 @@ const AdminConfig: React.FC = () => {
       alert('Erro ao buscar pagamento: ' + (error.message || error));
     } finally {
       setIsGeneratingCheckout(false);
+    }
+  };
+
+  const handleReactivate = async (plan: any) => {
+    setIsReactivating(true);
+    try {
+      const priceToPay = billingCycle === 'monthly' ? plan.priceMensal : plan.priceAnual;
+
+      const { data, error } = await supabase.functions.invoke('reactivate-asaas-subscription', {
+        body: { 
+          company_id: user?.company_id,
+          plan_name: plan.id,
+          billing_cycle: billingCycle,
+          price: priceToPay
+        }
+      });
+
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      } else {
+        alert('Assinatura reativada, mas o link de pagamento não foi encontrado.');
+      }
+    } catch (error: any) {
+      alert('Erro ao reativar: ' + error.message);
+    } finally {
+      setIsReactivating(false);
     }
   };
 
@@ -1093,8 +1123,15 @@ const AdminConfig: React.FC = () => {
                   <div className="w-full md:w-auto flex flex-col gap-3 min-w-[240px]">
                     {(contract?.status === 'trial' || contract?.status === 'past_due' || contract?.status === 'canceled') && (
                       <button
-                        onClick={handleCheckout}
-                        disabled={isGeneratingCheckout}
+                        onClick={() => {
+                          if (contract?.status === 'canceled') {
+                            const currentPlanData = PLANS.find(p => p.id === contract.plan_name) || PLANS[0];
+                            handleReactivate(currentPlanData);
+                          } else {
+                            handleCheckout();
+                          }
+                        }}
+                        disabled={isGeneratingCheckout || isReactivating}
                         className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
                           contract?.status === 'past_due'
                             ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20'
@@ -1103,12 +1140,12 @@ const AdminConfig: React.FC = () => {
                             : 'bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-500/20'
                         }`}
                       >
-                        {isGeneratingCheckout ? (
+                        {(isGeneratingCheckout || isReactivating) ? (
                           <Icons.RefreshCw size={20} className="animate-spin" />
                         ) : (
                           <Icons.CreditCard size={20} />
                         )}
-                        {isGeneratingCheckout
+                        {(isGeneratingCheckout || isReactivating)
                           ? 'Processando...'
                           : contract?.status === 'past_due'
                           ? 'Regularizar Pagamento'
@@ -1198,23 +1235,31 @@ const AdminConfig: React.FC = () => {
                           )}
                         </ul>
                         <button
-                          onClick={() => handleUpgrade(plan.id)}
-                          disabled={isUpgrading === plan.id}
+                          onClick={() => {
+                            if (contract?.status === 'canceled' || contract?.status === 'expired') {
+                              handleReactivate(plan);
+                            } else {
+                              handleUpgrade(plan.id);
+                            }
+                          }}
+                          disabled={isUpgrading === plan.id || isGeneratingCheckout || isReactivating}
                           className={`w-full py-2.5 rounded-xl font-bold transition-colors ${
                             isDowngrade || isCycleDowngrade
                               ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400'
                               : 'bg-brand-50 hover:bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 dark:text-brand-400'
                           }`}
                         >
-                          {isUpgrading === plan.id 
+                          {(isUpgrading === plan.id || isReactivating)
                             ? 'Processando...' 
-                            : isCycleUpgrade 
-                              ? 'Migrar para Anual' 
-                              : isCycleDowngrade 
-                                ? 'Migrar para Mensal' 
-                                : isDowngrade 
-                                  ? 'Fazer Downgrade' 
-                                  : 'Fazer Upgrade'}
+                            : (contract?.status === 'canceled' || contract?.status === 'expired')
+                              ? 'Reativar Assinatura'
+                              : isCycleUpgrade 
+                                ? 'Migrar para Anual' 
+                                : isCycleDowngrade 
+                                  ? 'Migrar para Mensal' 
+                                  : isDowngrade 
+                                    ? 'Fazer Downgrade' 
+                                    : 'Fazer Upgrade'}
                         </button>
                       </div>
                     );
