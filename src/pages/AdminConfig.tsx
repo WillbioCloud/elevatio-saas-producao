@@ -1108,25 +1108,31 @@ const AdminConfig: React.FC = () => {
                         className={`flex items-center gap-1.5 text-xs font-bold ${
                           contract.status === 'active'
                             ? 'text-emerald-400'
-                            : contract.status === 'canceled'
-                              ? 'text-amber-400'
-                              : 'text-red-400'
+                            : contract.status === 'pending'
+                              ? 'text-blue-400'
+                              : contract.status === 'canceled'
+                                ? 'text-amber-400'
+                                : 'text-red-400'
                         }`}
                       >
                         <span
                           className={`w-2 h-2 rounded-full ${
                             contract.status === 'active'
                               ? 'bg-emerald-400'
-                              : contract.status === 'canceled'
-                                ? 'bg-amber-400'
-                                : 'bg-red-400'
+                              : contract.status === 'pending'
+                                ? 'bg-blue-400'
+                                : contract.status === 'canceled'
+                                  ? 'bg-amber-400'
+                                  : 'bg-red-400'
                           }`}
                         ></span>
                         {contract.status === 'active'
                           ? 'Ativo'
-                          : contract.status === 'canceled'
-                            ? `Cancela em ${new Date(contract.end_date).toLocaleDateString('pt-BR')}`
-                            : 'Inativo'}
+                          : contract.status === 'pending'
+                            ? 'Aguardando Pagamento'
+                            : contract.status === 'canceled'
+                              ? `Cancela em ${new Date(contract.end_date).toLocaleDateString('pt-BR')}`
+                              : 'Inativo'}
                       </span>
                     </div>
                     <h2 className="text-4xl font-serif font-bold uppercase tracking-tight">{displayPlanName}</h2>
@@ -1144,7 +1150,7 @@ const AdminConfig: React.FC = () => {
                   </div>
                   {/* Ações da Assinatura */}
                   <div className="w-full md:w-auto flex flex-col gap-3 min-w-[240px]">
-                    {(contract?.status === 'trial' || contract?.status === 'past_due' || contract?.status === 'canceled') && (
+                    {(contract?.status === 'trial' || contract?.status === 'past_due' || contract?.status === 'canceled' || contract?.status === 'pending') && (
                       <button
                         onClick={() => {
                           if (contract?.status === 'canceled') {

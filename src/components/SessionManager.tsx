@@ -1,53 +1,61 @@
-import { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useTenant } from '../contexts/TenantContext';
+import { useAuth } from '../contexts/AuthContext';
+import { Icons } from './Icons';
 
-type NavigationEntry = {
-  url: string;
-  timestamp: string;
-};
+const SessionManager: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { tenant, loading: tenantLoading } = useTenant();
+  const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [isChecking, setIsChecking] = useState(true);
 
-const STORAGE_KEY = 'trimoveis_navigation';
-const MAX_ENTRIES = 10;
-
-const SessionManager: React.FC = () => {
-  const { pathname } = useLocation();
-
-  // Limpa o histórico quando o usuário sai ou recarrega a página (F5)
   useEffect(() => {
-    const handleBeforeUnload = () => {
-      sessionStorage.removeItem(STORAGE_KEY);
+    if (authLoading || tenantLoading) return;
+
+    const checkAccess = () => {
+      if (user && user.role !== 'super_admin' && location.pathname.startsWith('/admin')) {
+        // A FONTE DA VERDADE É A TABELA COMPANIES!
+        const status = tenant?.plan_status;
+
+        if (status !== 'active' && status !== 'trial' && status !== 'canceled') {
+          if (location.pathname !== '/admin/config') {
+            navigate('/admin/config', { replace: true });
+            return;
+          }
+        }
+
+        if (status === 'trial' && tenant?.trial_ends_at) {
+          if (new Date() > new Date(tenant.trial_ends_at)) {
+            if (location.pathname !== '/admin/config') {
+              navigate('/admin/config', { replace: true });
+              return;
+            }
+          }
+        }
+      }
+
+      setIsChecking(false);
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, []);
+    checkAccess();
+  }, [user, tenant, location.pathname, navigate, authLoading, tenantLoading]);
 
-  // Registra as páginas visitadas
-  useEffect(() => {
-    if (!pathname.startsWith('/imoveis/')) return;
+  if (authLoading || tenantLoading || isChecking) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-dark-bg flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Icons.RefreshCw className="animate-spin text-brand-500" size={32} />
+          <p className="text-slate-500 dark:text-slate-400 font-medium animate-pulse">
+            A verificar acessos...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
-    const nextEntry: NavigationEntry = {
-      url: pathname,
-      timestamp: new Date().toISOString(),
-    };
-
-    try {
-      const raw = sessionStorage.getItem(STORAGE_KEY);
-      const parsed = raw ? (JSON.parse(raw) as NavigationEntry[]) : [];
-      const navigationHistory = Array.isArray(parsed) ? parsed : [];
-
-      const updatedHistory = [...navigationHistory, nextEntry].slice(-MAX_ENTRIES);
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(updatedHistory));
-      console.log('📍Nova rota visitada:', nextEntry.url);
-      console.log('🗂️Metadados atualizados:', updatedHistory);
-    } catch (error) {
-      console.error('Erro ao registrar navegação:', error);
-    }
-  }, [pathname]);
-
-  return null;
+  return <>{children}</>;
 };
 
 export default SessionManager;
