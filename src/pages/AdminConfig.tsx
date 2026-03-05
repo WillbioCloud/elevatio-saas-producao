@@ -1089,41 +1089,53 @@ const AdminConfig: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                  {/* Ações da Assinatura */}
                   <div className="w-full md:w-auto flex flex-col gap-3 min-w-[240px]">
-                    {['pending', 'expired', 'canceled'].includes(contract.status) ? (
+                    {(contract?.status === 'trial' || contract?.status === 'past_due' || contract?.status === 'canceled') && (
                       <button
                         onClick={handleCheckout}
                         disabled={isGeneratingCheckout}
-                        className="w-full bg-white text-brand-900 hover:bg-brand-50 py-4 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 text-lg shadow-lg"
+                        className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${
+                          contract?.status === 'past_due'
+                            ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20'
+                            : contract?.status === 'canceled'
+                            ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/20'
+                            : 'bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-500/20'
+                        }`}
                       >
                         {isGeneratingCheckout ? (
-                          <Icons.RefreshCw className="animate-spin" size={20} />
+                          <Icons.RefreshCw size={20} className="animate-spin" />
                         ) : (
                           <Icons.CreditCard size={20} />
                         )}
-                        {isGeneratingCheckout ? 'Gerando link...' : 'Pagar Agora'}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => alert('Abrir portal do Asaas')}
-                        className="w-full bg-white/10 hover:bg-white/20 border border-white/20 text-white py-3 rounded-xl font-medium transition-all"
-                      >
-                        Gerenciar Cartão / Faturas
+                        {isGeneratingCheckout
+                          ? 'Processando...'
+                          : contract?.status === 'past_due'
+                          ? 'Regularizar Pagamento'
+                          : contract?.status === 'canceled'
+                          ? 'Reativar Assinatura'
+                          : 'Assinar Agora'}
                       </button>
                     )}
-                    <button
-                      onClick={() => setIsDetailsModalOpen(true)}
-                      className="w-full bg-transparent hover:bg-white/10 border border-white/20 text-white py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2"
-                    >
-                      <Icons.Info size={18} />
-                      Ver detalhes do plano
-                    </button>
-                    <button
-                      onClick={() => setIsCancelModalOpen(true)}
-                      className="w-full text-white/50 hover:text-red-400 text-sm font-medium transition-colors"
-                    >
-                      Cancelar assinatura
-                    </button>
+
+                    {contract?.status === 'active' && (
+                      <>
+                        <button
+                          onClick={() => alert('Para alterar o cartão, acesse o link enviado no seu e-mail pelo Asaas (Em breve painel integrado).')}
+                          className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Icons.CreditCard size={20} />
+                          Faturas e Cartão
+                        </button>
+
+                        <button
+                          onClick={() => setIsCancelModalOpen(true)}
+                          className="w-full bg-transparent hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-500 hover:text-red-500 py-3 rounded-xl font-bold transition-colors"
+                        >
+                          Cancelar Assinatura
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

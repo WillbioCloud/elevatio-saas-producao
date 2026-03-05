@@ -1,38 +1,79 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Icons } from './Icons';
+import { useTenant } from '../contexts/TenantContext';
+import { useNavigate } from 'react-router-dom';
 
-interface UpgradePromoProps {
-  title: string;
-  description: string;
-  minPlan: string;
-  icon: keyof typeof Icons;
-}
+export default function UpgradePromo() {
+  const { tenant } = useTenant();
+  const navigate = useNavigate();
+  const [isVisible, setIsVisible] = useState(true);
 
-const UpgradePromo: React.FC<UpgradePromoProps> = ({ title, description, minPlan, icon }) => {
-  const IconComp = Icons[icon as keyof typeof Icons] || Icons.Lock;
+  if (!isVisible || !tenant) return null;
 
-  return (
-    <div className="flex flex-col items-center justify-center text-center p-10 bg-white rounded-3xl border border-slate-200 shadow-sm max-w-2xl mx-auto mt-10 animate-fade-in relative overflow-hidden">
-      <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none">
-        <IconComp size={200} />
-      </div>
-      <div className="w-20 h-20 bg-brand-50 rounded-full flex items-center justify-center text-brand-600 mb-6 relative z-10">
-        <IconComp size={40} />
-      </div>
-      <h2 className="text-3xl font-bold text-slate-800 mb-4 relative z-10">{title}</h2>
-      <p className="text-slate-500 mb-8 max-w-md relative z-10">{description}</p>
-      <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-8 flex items-center gap-3 relative z-10">
-        <Icons.Unlock className="text-amber-500" size={24} />
-        <div className="text-left">
-          <p className="text-sm font-bold text-slate-700">Recurso Premium</p>
-          <p className="text-xs text-slate-500">Disponível a partir do plano <span className="font-bold text-brand-600 uppercase">{minPlan}</span></p>
+  const contract = tenant as any;
+
+  // Se for ativo ou trial, não mostra banner de alerta
+  if (contract?.status === 'active' || contract?.status === 'trial') return null;
+
+  // CENÁRIO 1: Inadimplente (Fatura Atrasada)
+  if (contract?.status === 'past_due') {
+    return (
+      <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-4 mb-8 rounded-r-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="bg-red-100 dark:bg-red-900/50 p-2 rounded-lg shrink-0 mt-1 md:mt-0">
+            <Icons.AlertCircle className="text-red-600 dark:text-red-400" size={24} />
+          </div>
+          <div>
+            <h4 className="text-red-800 dark:text-red-300 font-bold">Pagamento Pendente</h4>
+            <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">
+              Não conseguimos processar o pagamento da sua assinatura. Regularize agora para evitar a suspensão do acesso.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 w-full md:w-auto shrink-0">
+          <button
+            onClick={() => navigate('/admin/config')}
+            className="flex-1 md:flex-none bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-colors whitespace-nowrap"
+          >
+            Regularizar
+          </button>
         </div>
       </div>
-      <button onClick={() => alert('Em breve: Redirecionar para o Checkout de Upgrade!')} className="bg-brand-600 text-white px-8 py-4 rounded-xl font-bold hover:bg-brand-700 transition-colors shadow-lg flex items-center gap-2 relative z-10">
-        <Icons.ArrowUpCircle size={20} /> Fazer Upgrade Agora
-      </button>
-    </div>
-  );
-};
+    );
+  }
 
-export default UpgradePromo;
+  // CENÁRIO 2: Cancelado mas no Grace Period
+  if (contract?.status === 'canceled') {
+    return (
+      <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 p-4 mb-8 rounded-r-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in shadow-sm">
+        <div className="flex items-start gap-3">
+          <div className="bg-amber-100 dark:bg-amber-900/50 p-2 rounded-lg shrink-0 mt-1 md:mt-0">
+            <Icons.Info className="text-amber-600 dark:text-amber-400" size={24} />
+          </div>
+          <div>
+            <h4 className="text-amber-800 dark:text-amber-300 font-bold">Assinatura Cancelada</h4>
+            <p className="text-sm text-amber-700 dark:text-amber-400 mt-0.5">
+              Você tem acesso garantido até <strong className="font-bold">{contract?.end_date ? new Date(contract.end_date).toLocaleDateString('pt-BR') : 'o final do ciclo'}</strong>. Sentiu saudade?
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 w-full md:w-auto shrink-0">
+          <button
+            onClick={() => navigate('/admin/config')}
+            className="flex-1 md:flex-none bg-amber-500 hover:bg-amber-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-colors whitespace-nowrap"
+          >
+            Reativar Plano
+          </button>
+          <button
+            onClick={() => setIsVisible(false)}
+            className="p-2 text-amber-500 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded-lg transition-colors"
+          >
+            <Icons.X size={20} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
