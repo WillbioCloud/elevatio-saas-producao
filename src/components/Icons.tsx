@@ -97,6 +97,7 @@ import {
   CreditCard,
   Layout,
   Link,
+  Gift,
 } from 'lucide-react';
 
 const Google = (props: ComponentPropsWithoutRef<'svg'>) => (
@@ -226,4 +227,5 @@ export const Icons = {
   CreditCard,
   Layout,
   Link,
+  Gift,
 };

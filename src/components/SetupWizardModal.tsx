@@ -106,7 +106,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
             company_id: newCompany.id,
             plan_id: planData?.id,
             plan_name: formData.plan, // Salva o nome também por precaução/facilidade de leitura
-            status: 'trial', // MUDANÇA CRÍTICA: 'trial' informa ao CRM que a conta está liberada
+            status: 'pending', // VOLTOU PARA O CORRETO (Aguarda pagamento)
             start_date: new Date().toISOString(),
             end_date: trialEnds.toISOString(),
             billing_cycle: formData.billingCycle
@@ -125,8 +125,10 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
         console.error('Falha ao chamar webhook Asaas:', e);
       }
 
-      // Limpar o plano do localStorage após sucesso
+      // Limpar o cache do navegador após sucesso
       localStorage.removeItem('trimoveis_selected_plan');
+      localStorage.removeItem('elevatio_selected_plan');
+      localStorage.removeItem('trimoveis_billing_cycle'); // CORREÇÃO DO BUG ANUAL
 
       onComplete();
     } catch (error: unknown) {
