@@ -1132,7 +1132,7 @@ const AdminConfig: React.FC = () => {
                             ? 'Aguardando Pagamento'
                             : contract.status === 'canceled'
                               ? `Cancela em ${new Date(contract.end_date).toLocaleDateString('pt-BR')}`
-                              : 'Inativo'}
+                              : contract ? 'Inativo' : 'Erro: Contrato não gerado'}
                       </span>
                     </div>
                     <h2 className="text-4xl font-serif font-bold uppercase tracking-tight">{displayPlanName}</h2>

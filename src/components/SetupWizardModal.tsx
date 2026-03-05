@@ -93,26 +93,23 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
         if (profileError) throw new Error('Erro ao vincular perfil: ' + profileError.message);
 
-        // Criar contrato de teste (Trial)
+        // Criar contrato de SaaS (Baseado no plans.ts)
         try {
-          // Busca o ID do plano na tabela saas_plans (agora funciona porque o formData.plan foi normalizado no início)
-          const { data: planData } = await supabase
-            .from('saas_plans')
-            .select('id')
-            .ilike('name', formData.plan)
-            .single();
-
-          await supabase.from('saas_contracts').insert([{
+          const { error: contractError } = await supabase.from('saas_contracts').insert([{
             company_id: newCompany.id,
-            plan_id: planData?.id,
-            plan_name: formData.plan, // Salva o nome também por precaução/facilidade de leitura
-            status: 'pending', // VOLTOU PARA O CORRETO (Aguarda pagamento)
+            plan_id: null, // Ignoramos a tabela saas_plans, usamos o config local
+            plan_name: formData.plan, // Nome oficial do plano (ex: 'profissional', 'elite')
+            status: 'pending', // Status vital para liberar o trial via Front-end
             start_date: new Date().toISOString(),
             end_date: trialEnds.toISOString(),
             billing_cycle: formData.billingCycle
           }]);
+
+          if (contractError) {
+            console.error('Erro do Supabase ao inserir contrato:', contractError);
+          }
         } catch (contractError) {
-          console.warn('Aviso: Falha ao criar contrato de teste.', contractError);
+          console.error('Crash ao tentar criar contrato:', contractError);
         }
       }
 
@@ -131,6 +128,10 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       localStorage.removeItem('trimoveis_billing_cycle'); // CORREÇÃO DO BUG ANUAL
 
       onComplete();
+
+      // Força o recarregamento total da aplicação para o SessionManager 
+      // ler a nova empresa (trial) e o novo contrato (pending) direto do banco!
+      window.location.href = '/admin/dashboard';
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Erro inesperado ao configurar a sua conta.';
       setErrorMsg(message);
