@@ -130,6 +130,7 @@ const AdminConfig: React.FC = () => {
   const [siteTemplate, setSiteTemplate] = useState('classic');
   const [siteDomain, setSiteDomain] = useState('');
   const [isSavingSite, setIsSavingSite] = useState(false);
+  const [isOpeningPortal, setIsOpeningPortal] = useState(false);
 
   const fetchSettings = async () => {
     const { data } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
@@ -421,6 +422,28 @@ const AdminConfig: React.FC = () => {
       alert('Erro ao buscar pagamento: ' + (error.message || error));
     } finally {
       setIsGeneratingCheckout(false);
+    }
+  };
+
+  const handleOpenPortal = async () => {
+    setIsOpeningPortal(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('get-asaas-portal-link', {
+        body: { company_id: user?.company_id }
+      });
+
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+
+      if (data?.portalUrl) {
+        window.open(data.portalUrl, '_blank');
+      } else {
+        alert('Não foi possível gerar o link de acesso no momento.');
+      }
+    } catch (error: any) {
+      alert('Erro ao acessar portal: ' + error.message);
+    } finally {
+      setIsOpeningPortal(false);
     }
   };
 
@@ -1158,11 +1181,16 @@ const AdminConfig: React.FC = () => {
                     {contract?.status === 'active' && (
                       <>
                         <button
-                          onClick={() => alert('Para alterar o cartão, acesse o link enviado no seu e-mail pelo Asaas (Em breve painel integrado).')}
-                          className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+                          onClick={handleOpenPortal}
+                          disabled={isOpeningPortal}
+                          className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                         >
-                          <Icons.CreditCard size={20} />
-                          Faturas e Cartão
+                          {isOpeningPortal ? (
+                            <Icons.RefreshCw size={20} className="animate-spin" />
+                          ) : (
+                            <Icons.CreditCard size={20} />
+                          )}
+                          {isOpeningPortal ? 'Acessando...' : 'Faturas e Cartão'}
                         </button>
 
                         <button
