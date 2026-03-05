@@ -1,26 +1,44 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Icons } from './Icons';
-import { useTenant } from '../contexts/TenantContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 export default function UpgradePromo() {
-  const { tenant } = useTenant();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(true);
+  const [companyData, setCompanyData] = useState<any>(null);
 
-  if (!isVisible || !tenant) return null;
+  useEffect(() => {
+    if (!user?.company_id) return;
 
-  // A fonte da verdade para acesso é a tabela companies!
-  const status = tenant.plan_status;
+    // Busca os dados da empresa independentemente do TenantContext
+    const fetchCompany = async () => {
+      const { data } = await supabase
+        .from('companies')
+        .select('plan_status, trial_ends_at')
+        .eq('id', user.company_id)
+        .single();
+
+      if (data) setCompanyData(data);
+    };
+
+    fetchCompany();
+  }, [user]);
+
+  if (!isVisible || !companyData) return null;
+
+  const status = companyData.plan_status;
 
   if (status === 'active') return null;
 
   // CENÁRIO 1: Período de Teste (Trial)
   if (status === 'trial') {
-    const trialEnds = tenant.trial_ends_at ? new Date(tenant.trial_ends_at) : new Date();
+    const trialEnds = companyData.trial_ends_at ? new Date(companyData.trial_ends_at) : new Date();
     const daysLeft = Math.max(0, Math.ceil((trialEnds.getTime() - new Date().getTime()) / (1000 * 3600 * 24)));
 
-    if (daysLeft < 0) return null; // Já expirou, será bloqueado pelo SessionEnforcer
+    if (daysLeft < 0) return null; // Já expirou
 
     return (
       <div className="bg-brand-50 dark:bg-brand-900/20 border-l-4 border-brand-500 p-4 mb-8 rounded-r-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in shadow-sm">
@@ -31,7 +49,7 @@ export default function UpgradePromo() {
           <div>
             <h4 className="text-brand-800 dark:text-brand-300 font-bold">Período de Teste Grátis</h4>
             <p className="text-sm text-brand-700 dark:text-brand-400 mt-0.5">
-              Você tem <strong>{daysLeft} {daysLeft === 1 ? 'dia' : 'dias'}</strong> restantes do seu teste. Escolha um plano para garantir seu acesso contínuo.
+              Tem <strong>{daysLeft} {daysLeft === 1 ? 'dia' : 'dias'}</strong> restantes do seu teste. Escolha um plano para garantir acesso contínuo.
             </p>
           </div>
         </div>
@@ -58,7 +76,7 @@ export default function UpgradePromo() {
           <div>
             <h4 className="text-red-800 dark:text-red-300 font-bold">Pagamento Pendente</h4>
             <p className="text-sm text-red-600 dark:text-red-400 mt-0.5">
-              Não conseguimos processar o pagamento da sua assinatura. Regularize agora para evitar a suspensão.
+              Não foi possível processar o pagamento. Regularize agora para evitar suspensão.
             </p>
           </div>
         </div>
@@ -85,7 +103,7 @@ export default function UpgradePromo() {
           <div>
             <h4 className="text-amber-800 dark:text-amber-300 font-bold">Assinatura Cancelada</h4>
             <p className="text-sm text-amber-700 dark:text-amber-400 mt-0.5">
-              O seu acesso será interrompido no final do ciclo atual. Sentiu saudade?
+              O seu acesso será interrompido no final do ciclo. Sentiu saudade?
             </p>
           </div>
         </div>

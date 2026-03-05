@@ -115,29 +115,7 @@ const ScrollToTop = () => {
   return null;
 };
 
-const SessionEnforcer: React.FC = () => {
-  const { user, loading } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
 
-  useEffect(() => {
-    const role = user?.role ?? (user?.user_metadata as { role?: string } | undefined)?.role;
-    const isSuperAdmin = role === 'super_admin';
-
-    if (!loading && user) {
-      // 1. Se for Super Admin e tentar acessar a raiz, o login ou qualquer tela do CRM (/admin)
-      if (isSuperAdmin && (location.pathname === '/' || location.pathname.startsWith('/admin'))) {
-        navigate('/saas/dashboard', { replace: true, state: location.state });
-      }
-      // 2. Se for Corretor/Admin de imobiliária e estiver no login ou na raiz
-      else if (!isSuperAdmin && (location.pathname === '/' || location.pathname === '/admin/login')) {
-        navigate('/admin/dashboard', { replace: true, state: location.state });
-      }
-    }
-  }, [loading, user, location.pathname, navigate]);
-
-  return null;
-};
 
 const PageTracker: React.FC = () => {
   useTrackVisit();
@@ -293,7 +271,6 @@ const App: React.FC = () => {
           <ThemeProvider>
             <ToastProvider>
               <SessionManager />
-              <SessionEnforcer />
               <PageTracker />
               <UserPresenceTracker />
               <AppRoutes env={env} />
