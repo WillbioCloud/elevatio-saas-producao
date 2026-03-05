@@ -150,6 +150,32 @@ npm run preview
 # Siga as instruções da plataforma
 ```
 
+## 🔌 Edge Functions (Supabase)
+
+```bash
+# Deploy da função de listagem de pagamentos Asaas
+npx supabase functions deploy list-asaas-payments --no-verify-jwt
+
+# Verificar logs da função
+npx supabase functions logs list-asaas-payments
+
+# Testar função localmente (requer Docker)
+npx supabase functions serve list-asaas-payments
+
+# Listar todas as funções deployadas
+npx supabase functions list
+```
+
+### Variáveis de Ambiente Necessárias (Supabase Dashboard)
+
+```bash
+# Acesse: Supabase Dashboard > Project Settings > Edge Functions > Secrets
+# Adicione as seguintes variáveis:
+
+ASAAS_API_KEY=sua-chave-api-asaas
+SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key
+```
+
 ## 📝 Logs Úteis
 
 ```bash
