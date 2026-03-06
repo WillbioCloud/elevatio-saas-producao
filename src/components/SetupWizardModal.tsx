@@ -256,12 +256,13 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
             </div>
             <hr className="border-white/5" />
             <div className="space-y-4">
-              <h3 className="text-brand-400 font-bold flex items-center gap-2">
-                <Palette className="w-5 h-5" /> Visual do Site
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <span className="w-8 h-8 rounded-full bg-brand-500/20 text-brand-500 flex items-center justify-center text-sm">3</span>
+                Visual do Site
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <label
-                  className={`cursor-pointer border rounded-xl p-4 transition-all ${
+                  className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
                     formData.template === 'classic'
                       ? 'border-brand-500 bg-brand-500/10'
                       : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
@@ -274,10 +275,11 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     value="classic"
                     onChange={(e) => setFormData({ ...formData, template: e.target.value })}
                   />
-                  <div className="font-bold text-white mb-1">Classic (Padrão)</div>
+                  <div className="font-bold text-white mb-1">Classic</div>
+                  <p className="text-xs text-slate-400">Design moderno e focado em conversão.</p>
                 </label>
                 <label
-                  className={`cursor-pointer border rounded-xl p-4 transition-all ${
+                  className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
                     formData.template === 'luxury'
                       ? 'border-brand-500 bg-brand-500/10'
                       : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
@@ -290,7 +292,29 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     value="luxury"
                     onChange={(e) => setFormData({ ...formData, template: e.target.value })}
                   />
-                  <div className="font-bold text-yellow-400 mb-1">Padrão Luxo</div>
+                  <div className="font-bold text-yellow-400 mb-1 flex items-center gap-1">
+                    Luxury <Icons.Crown size={14} />
+                  </div>
+                  <p className="text-xs text-slate-400">Tons escuros e elegantes para alto padrão.</p>
+                </label>
+                <label
+                  className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
+                    formData.template === 'custom'
+                      ? 'border-brand-500 bg-brand-500/10'
+                      : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="template"
+                    className="hidden"
+                    value="custom"
+                    onChange={(e) => setFormData({ ...formData, template: e.target.value })}
+                  />
+                  <div className="font-bold text-purple-400 mb-1 flex items-center gap-1">
+                    Sob Medida <Icons.Code size={14} />
+                  </div>
+                  <p className="text-xs text-slate-400">Design 100% exclusivo feito pela nossa equipe.</p>
                 </label>
               </div>
             </div>

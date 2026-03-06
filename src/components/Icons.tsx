@@ -106,6 +106,7 @@ import {
   Edit2,
   UserMinus,
   BellOff,
+  Code,
 } from 'lucide-react';
 
 const Google = (props: ComponentPropsWithoutRef<'svg'>) => (
@@ -245,4 +246,5 @@ export const Icons = {
   Edit2,
   UserMinus,
   BellOff,
+  Code,
 };
