@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 
 const MASTER_DOMAINS = [
   'localhost', // Para testes locais do CRM Mestre
+  'lvh.me', // Adicionado para testes de subdomínio local
   'app-elevatiovendas.vercel.app', // Para futuro deploy gratuito
   'elevatiovendas.com.br',
   'www.elevatiovendas.com.br',
@@ -57,6 +58,14 @@ const getHostData = (hostname: string): {
     return {
       isMasterDomain: false,
       slug: normalizedHostname.replace(/\.localhost$/, ''),
+      customDomain: null,
+    };
+  }
+
+  if (normalizedHostname.endsWith('.lvh.me')) {
+    return {
+      isMasterDomain: false,
+      slug: normalizedHostname.replace(/\.lvh\.me$/, ''),
       customDomain: null,
     };
   }

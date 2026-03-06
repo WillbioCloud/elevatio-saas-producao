@@ -44,6 +44,7 @@ import AdminAnalytics from './pages/AdminAnalytics';
 import AdminConfig from './pages/AdminConfig';
 import AdminContracts from './pages/AdminContracts';
 import AdminContractDetails from './pages/AdminContractDetails';
+import AdminSiteBuilder from './pages/AdminSiteBuilder';
 import PendingApproval from './pages/PendingApproval';
 
 // Super Admin (SaaS) Pages
@@ -74,7 +75,7 @@ const getEnvironment = () => {
   }
 
   // Domínios principais da plataforma SaaS
-  const mainDomains = ['elevatiovendas.com', 'elevatiovendas.vercel.app'];
+  const mainDomains = ['elevatiovendas.com', 'elevatiovendas.vercel.app', 'lvh.me'];
   
   const isMainDomain = mainDomains.some(domain => 
     hostname === domain || hostname === `www.${domain}`
@@ -189,6 +190,7 @@ const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomai
               <Route path="contratos" element={<AdminContracts />} />
               <Route path="contratos/:id" element={<AdminContractDetails />} />
               <Route path="analytics" element={<AdminAnalytics />} />
+              <Route path="site" element={<AdminSiteBuilder />} />
               <Route path="config" element={<AdminConfig />} />
             </Route>
           </Route>
