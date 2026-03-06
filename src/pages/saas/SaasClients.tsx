@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Download
 } from "lucide-react"
+import { Icons } from "../../components/Icons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -23,6 +24,7 @@ export default function Clients() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedClient, setSelectedClient] = useState<any | null>(null)
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
 
   // Estados para o Modal de Nova Empresa
   const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false)
@@ -184,6 +186,7 @@ export default function Clients() {
             <TableRow className="bg-slate-50 dark:bg-slate-950 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-slate-100 dark:border-slate-800">
               <TableHead className="font-medium text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">Imobiliária</TableHead>
               <TableHead className="font-medium text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">Plano</TableHead>
+              <TableHead className="font-medium text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">Status do Plano</TableHead>
               <TableHead className="font-medium text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">Estado</TableHead>
               <TableHead className="font-medium text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">Data de Adesão</TableHead>
               <TableHead className="w-12"></TableHead>
@@ -228,6 +231,19 @@ export default function Clients() {
                     </Badge>
                   </TableCell>
                   <TableCell>
+                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                      client.plan_status === 'active' 
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
+                        : client.plan_status === 'trial' 
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' 
+                        : client.plan_status === 'past_due' 
+                        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' 
+                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                    }`}>
+                      {client.plan_status === 'active' ? 'Ativo' : client.plan_status === 'trial' ? 'Trial' : client.plan_status === 'past_due' ? 'Inadimplente' : 'Inativo'}
+                    </span>
+                  </TableCell>
+                  <TableCell>
                     <Badge className={client.active ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200" : "bg-red-50 text-red-700 hover:bg-red-100 border-red-200"}>
                       {client.active ? "Ativo" : "Inativo"}
                     </Badge>
@@ -235,10 +251,47 @@ export default function Clients() {
                   <TableCell className="text-slate-500 dark:text-slate-400">
                     {new Date(client.created_at).toLocaleDateString("pt-BR")}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-300" onClick={(e) => e.stopPropagation()}>
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
+                  <TableCell className="relative">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenDropdownId(openDropdownId === client.id ? null : client.id);
+                      }}
+                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                    >
+                      <Icons.MoreHorizontal size={20} />
+                    </button>
+                    {openDropdownId === client.id && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setOpenDropdownId(null)}></div>
+                        <div className="absolute right-8 top-10 w-48 bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border rounded-xl shadow-lg z-20 py-1 overflow-hidden animate-fade-in">
+                          <button
+                            onClick={() => {
+                              setOpenDropdownId(null);
+                              handleToggleStatus(client);
+                            }}
+                            className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-2"
+                          >
+                            {client.active ? (
+                              <Icons.Lock size={16} className="text-amber-500" />
+                            ) : (
+                              <Icons.Unlock size={16} className="text-emerald-500" />
+                            )}
+                            {client.active ? 'Bloquear Acesso' : 'Desbloquear'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setOpenDropdownId(null);
+                              handleDeleteCompany(client.id);
+                            }}
+                            className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400 flex items-center gap-2"
+                          >
+                            <Icons.Trash2 size={16} />
+                            Excluir Empresa
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

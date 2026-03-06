@@ -8,6 +8,7 @@ import {
   X,
   Save
 } from "lucide-react"
+import { Icons } from "../../components/Icons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -46,6 +47,25 @@ export default function Plans() {
   const [isLoading, setIsLoading] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null)
+
+  const renderPlanIcon = (iconName: string) => {
+    switch (iconName?.toLowerCase()) {
+      case 'rocket':
+        return <Icons.Rocket size={24} className="text-brand-500" />;
+      case 'star':
+        return <Icons.Star size={24} className="text-brand-500" />;
+      case 'crown':
+        return <Icons.Crown size={24} className="text-brand-500" />;
+      case 'building':
+        return <Icons.Building2 size={24} className="text-brand-500" />;
+      case 'zap':
+        return <Icons.Zap size={24} className="text-brand-500" />;
+      case 'shield':
+        return <Icons.Shield size={24} className="text-brand-500" />;
+      default:
+        return <Icons.Package size={24} className="text-brand-500" />;
+    }
+  }
 
   const fetchPlans = async () => {
     setIsLoading(true)
@@ -183,7 +203,7 @@ export default function Plans() {
             <CardHeader className="pb-4">
               <div className="flex justify-between items-start">
                 <div className="flex items-center gap-2">
-                  <span className="text-2xl">{plan.icon}</span>
+                  {renderPlanIcon(plan.icon)}
                   <CardTitle className="text-xl text-slate-900 dark:text-slate-50">{plan.name}</CardTitle>
                 </div>
                 <div className="flex gap-1">
