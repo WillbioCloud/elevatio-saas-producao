@@ -51,7 +51,7 @@ export default function AdminSiteBuilder() {
           </p>
         </div>
         <a
-          href={`http://${tenant?.subdomain}.localhost:5173`}
+          href={`http://${tenant?.slug}.localhost:5173`}
           target="_blank"
           rel="noreferrer"
           className="bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors"
