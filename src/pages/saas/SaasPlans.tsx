@@ -1,21 +1,6 @@
-import React, { useEffect, useState } from "react"
-import {
-  Plus,
-  Edit2,
-  Trash2,
-  Check,
-  Star,
-  X,
-  Save
-} from "lucide-react"
-import { Icons } from "../../components/Icons"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { cn } from "@/lib/utils"
-import { supabase } from '@/lib/supabase'
+import React, { useEffect, useState } from "react";
+import { Icons } from "../../components/Icons";
+import { supabase } from '../../lib/supabase';
 
 interface PlanFeature {
   text: string;
@@ -37,90 +22,67 @@ const newPlanTemplate: Plan = {
   name: "",
   price: 0,
   description: "",
-  icon: "🌟",
+  icon: "star",
   is_popular: false,
   features: []
-}
+};
 
-export default function Plans() {
-  const [plans, setPlans] = useState<Plan[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [isEditing, setIsEditing] = useState(false)
-  const [editingPlan, setEditingPlan] = useState<Plan | null>(null)
+export default function SaasPlans() {
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
 
   const renderPlanIcon = (iconName: string) => {
     switch (iconName?.toLowerCase()) {
       case 'rocket':
-        return <Icons.Rocket size={24} className="text-brand-500" />;
+        return <Icons.Rocket size={28} className="text-brand-500" />;
       case 'star':
-        return <Icons.Star size={24} className="text-brand-500" />;
+        return <Icons.Star size={28} className="text-brand-500" />;
       case 'crown':
-        return <Icons.Crown size={24} className="text-brand-500" />;
+        return <Icons.Crown size={28} className="text-brand-500" />;
       case 'building':
-        return <Icons.Building2 size={24} className="text-brand-500" />;
+        return <Icons.Building2 size={28} className="text-brand-500" />;
       case 'zap':
-        return <Icons.Zap size={24} className="text-brand-500" />;
+        return <Icons.Zap size={28} className="text-brand-500" />;
       case 'shield':
-        return <Icons.Shield size={24} className="text-brand-500" />;
+        return <Icons.Shield size={28} className="text-brand-500" />;
       default:
-        return <Icons.Package size={24} className="text-brand-500" />;
+        return <Icons.Package size={28} className="text-brand-500" />;
     }
-  }
+  };
 
   const fetchPlans = async () => {
-    setIsLoading(true)
+    setIsLoading(true);
 
     const { data, error } = await supabase
       .from("saas_plans")
       .select("id, name, price, description, icon, is_popular, features")
-      .order("price", { ascending: true })
+      .order("price", { ascending: true });
 
-    if (error) {
-      console.error("Erro ao buscar planos:", error)
-      setIsLoading(false)
-      return
+    if (!error && data) {
+      setPlans(data as Plan[]);
     }
 
-    const normalizedPlans: Plan[] = (data || []).map((plan) => ({
-      id: String(plan.id || ""),
-      name: plan.name ?? "",
-      price: Number(plan.price ?? 0),
-      description: plan.description ?? "",
-      icon: plan.icon ?? "🌟",
-      is_popular: Boolean(plan.is_popular),
-      features: Array.isArray(plan.features)
-        ? plan.features.map((feature: PlanFeature) => ({
-            text: feature?.text ?? "",
-            highlight: feature?.highlight
-          }))
-        : []
-    }))
-
-    setPlans(normalizedPlans)
-    setIsLoading(false)
-  }
+    setIsLoading(false);
+  };
 
   useEffect(() => {
-    fetchPlans()
-  }, [])
+    fetchPlans();
+  }, []);
 
   const handleEdit = (plan: Plan) => {
-    setEditingPlan({ ...plan, features: [...plan.features] })
-    setIsEditing(true)
-  }
+    setEditingPlan({ ...plan, features: plan.features || [] });
+    setIsEditing(true);
+  };
 
   const handleCreate = () => {
-    setEditingPlan({ ...newPlanTemplate, features: [] })
-    setIsEditing(true)
-  }
-
-  const handleCloseEditor = () => {
-    setIsEditing(false)
-    setEditingPlan(null)
-  }
+    setEditingPlan({ ...newPlanTemplate, features: [] });
+    setIsEditing(true);
+  };
 
   const handleSave = async () => {
-    if (!editingPlan) return
+    if (!editingPlan) return;
 
     const payload = {
       name: editingPlan.name,
@@ -129,232 +91,234 @@ export default function Plans() {
       icon: editingPlan.icon,
       is_popular: editingPlan.is_popular,
       features: editingPlan.features
-    }
+    };
 
     if (!editingPlan.id) {
-      const { error } = await supabase.from("saas_plans").insert(payload)
-      if (error) {
-        console.error("Erro ao criar plano:", error)
-        return
-      }
+      await supabase.from("saas_plans").insert([payload]);
     } else {
-      const { error } = await supabase
-        .from("saas_plans")
-        .update(payload)
-        .eq("id", editingPlan.id)
-
-      if (error) {
-        console.error("Erro ao atualizar plano:", error)
-        return
-      }
+      await supabase.from("saas_plans").update(payload).eq("id", editingPlan.id);
     }
 
-    await fetchPlans()
-    handleCloseEditor()
-  }
+    await fetchPlans();
+    setIsEditing(false);
+    setEditingPlan(null);
+  };
 
   const handleDelete = async (id: string) => {
-    const shouldDelete = window.confirm("Tem certeza que deseja excluir este plano?")
-    if (!shouldDelete) return
+    if (!window.confirm("Tem certeza que deseja excluir este plano?")) return;
 
-    const { error } = await supabase.from("saas_plans").delete().eq("id", id)
-
-    if (error) {
-      console.error("Erro ao excluir plano:", error)
-      return
-    }
-
-    await fetchPlans()
-  }
+    await supabase.from("saas_plans").delete().eq("id", id);
+    await fetchPlans();
+  };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="p-6 max-w-7xl mx-auto space-y-6 animate-fade-in">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Gestão de Planos</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Configure os preços, limites e funcionalidades do seu SaaS.</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Icons.Package className="text-brand-500" />
+            Gestão de Planos
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400">Configure os preços, limites e funcionalidades do seu SaaS.</p>
         </div>
-        <Button onClick={handleCreate} className="bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
-          <Plus className="mr-2 h-4 w-4" /> Novo Plano
-        </Button>
+        <button
+          onClick={handleCreate}
+          className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors shadow-sm shadow-brand-500/20"
+        >
+          <Icons.Plus size={18} />
+          Novo Plano
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {isLoading && (
-          <div className="col-span-full text-sm text-slate-500 dark:text-slate-400">Carregando planos...</div>
-        )}
+      {isLoading ? (
+        <div className="flex items-center justify-center p-12">
+          <Icons.RefreshCw size={32} className="animate-spin text-brand-500" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {plans.map((plan) => (
+            <div
+              key={plan.id}
+              className={`relative flex flex-col bg-white dark:bg-dark-card border rounded-3xl p-6 transition-all shadow-sm hover:shadow-md ${
+                plan.is_popular ? 'border-brand-500 ring-1 ring-brand-500/50' : 'border-slate-200 dark:border-dark-border'
+              }`}
+            >
+              {plan.is_popular && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-brand-500 text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm">
+                  <Icons.Star size={12} className="fill-current" />
+                  Mais Popular
+                </div>
+              )}
 
-        {!isLoading && plans.map((plan) => (
-          <Card
-            key={plan.id}
-            className={cn(
-              "relative flex flex-col bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 transition-all hover:shadow-lg dark:hover:shadow-indigo-500/10",
-              plan.is_popular && "border-indigo-500/50 shadow-md shadow-indigo-500/10 dark:bg-slate-900/80"
-            )}
-          >
-            {plan.is_popular && (
-              <div className="absolute -top-3 left-0 right-0 flex justify-center">
-                <Badge className="bg-indigo-500 hover:bg-indigo-600 text-white border-none flex items-center gap-1 shadow-sm">
-                  <Star className="h-3 w-3 fill-current" /> Mais Popular
-                </Badge>
-              </div>
-            )}
-
-            <CardHeader className="pb-4">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-2">
-                  {renderPlanIcon(plan.icon)}
-                  <CardTitle className="text-xl text-slate-900 dark:text-slate-50">{plan.name}</CardTitle>
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-brand-50 dark:bg-brand-900/20 rounded-xl">
+                    {renderPlanIcon(plan.icon)}
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">{plan.name}</h3>
                 </div>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={() => handleEdit(plan)}>
-                    <Edit2 className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400" onClick={() => handleDelete(plan.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <button
+                    onClick={() => handleEdit(plan)}
+                    className="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors"
+                  >
+                    <Icons.Edit2 size={18} />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(plan.id)}
+                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                  >
+                    <Icons.Trash2 size={18} />
+                  </button>
                 </div>
               </div>
-              <CardDescription className="text-sm text-slate-500 dark:text-slate-400 min-h-[40px] mt-2">
-                {plan.description}
-              </CardDescription>
-              <div className="mt-4 flex items-baseline text-slate-900 dark:text-slate-50">
-                <span className="text-3xl font-bold tracking-tight">R$ {plan.price.toFixed(2).replace('.', ',')}</span>
-                <span className="text-sm font-medium text-slate-500 dark:text-slate-400 ml-1">/mês</span>
-              </div>
-            </CardHeader>
 
-            <CardContent className="flex-1">
-              <div className="space-y-3">
-                {plan.features.map((feature, idx) => (
+              <p className="text-sm text-slate-500 dark:text-slate-400 min-h-[40px] mb-4">
+                {plan.description}
+              </p>
+
+              <div className="flex items-baseline gap-1 mb-6">
+                <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
+                  R$ {plan.price.toFixed(2).replace('.', ',')}
+                </span>
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">/mês</span>
+              </div>
+
+              <div className="space-y-3 flex-1 border-t border-slate-100 dark:border-dark-border pt-4">
+                {plan.features?.map((feature, idx) => (
                   <div key={idx} className="flex items-start gap-3">
-                    <div className="mt-0.5 bg-indigo-50 dark:bg-indigo-500/10 p-1 rounded-full shrink-0">
-                      <Check className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
-                    </div>
-                    <div className="text-sm">
-                      <span className="text-slate-700 dark:text-slate-200 font-medium">{feature.text}</span>
-                      {feature.highlight && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{feature.highlight}</p>
-                      )}
-                    </div>
+                    <Icons.CheckCircle2 size={18} className="text-brand-500 shrink-0 mt-0.5" />
+                    <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{feature.text}</span>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            </div>
+          ))}
+        </div>
+      )}
 
+      {/* EDITOR MODAL LADO DIREITO */}
       {isEditing && editingPlan && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 h-full border-l border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800/50">
-              <h3 className="font-semibold text-lg text-slate-900 dark:text-slate-50 flex items-center gap-2">
-                <Edit2 className="h-4 w-4 text-indigo-500" />
-                {editingPlan.id ? `Editar Plano ${editingPlan.name}` : "Novo Plano"}
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-md bg-white dark:bg-dark-card h-full border-l border-slate-200 dark:border-dark-border shadow-2xl flex flex-col animate-slide-left">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-dark-border">
+              <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                <Icons.Settings size={20} className="text-brand-500" />
+                {editingPlan.id ? `Editar ${editingPlan.name}` : "Novo Plano"}
               </h3>
-              <Button variant="ghost" size="icon" onClick={handleCloseEditor}>
-                <X className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-              </Button>
+              <button
+                onClick={() => setIsEditing(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+              >
+                <Icons.X size={24} />
+              </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              <div className="space-y-4">
-                <div className="grid gap-2">
-                  <Label className="text-slate-700 dark:text-slate-200">Nome do Plano</Label>
-                  <Input
-                    value={editingPlan.name}
-                    onChange={(e) => setEditingPlan({ ...editingPlan, name: e.target.value })}
-                    className="bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 dark:text-white"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label className="text-slate-700 dark:text-slate-200">Preço Mensal (R$)</Label>
-                  <Input
-                    type="number"
-                    value={editingPlan.price}
-                    onChange={(e) => setEditingPlan({ ...editingPlan, price: parseFloat(e.target.value) || 0 })}
-                    className="bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 dark:text-white"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label className="text-slate-700 dark:text-slate-200">Descrição Comercial</Label>
-                  <textarea
-                    value={editingPlan.description}
-                    onChange={(e) => setEditingPlan({ ...editingPlan, description: e.target.value })}
-                    className="w-full min-h-[80px] rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 resize-none"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label className="text-slate-700 dark:text-slate-200">Ícone</Label>
-                  <Input
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Nome do Plano</label>
+                <input
+                  value={editingPlan.name}
+                  onChange={e => setEditingPlan({...editingPlan, name: e.target.value})}
+                  className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Preço (R$)</label>
+                <input
+                  type="number"
+                  value={editingPlan.price}
+                  onChange={e => setEditingPlan({...editingPlan, price: Number(e.target.value)})}
+                  className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Descrição Curta</label>
+                <textarea
+                  value={editingPlan.description}
+                  onChange={e => setEditingPlan({...editingPlan, description: e.target.value})}
+                  className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all resize-none h-20"
+                />
+              </div>
+
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Ícone (Nome)</label>
+                  <input
                     value={editingPlan.icon}
-                    onChange={(e) => setEditingPlan({ ...editingPlan, icon: e.target.value })}
-                    className="bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 dark:text-white"
+                    onChange={e => setEditingPlan({...editingPlan, icon: e.target.value})}
+                    placeholder="Ex: rocket, star, crown"
+                    className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
                   />
                 </div>
-                <div className="flex items-center justify-between rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2">
-                  <Label className="text-slate-700 dark:text-slate-200">Mais Popular</Label>
+                <div className="flex items-center gap-2 mt-7">
                   <input
                     type="checkbox"
+                    id="is_popular"
                     checked={editingPlan.is_popular}
-                    onChange={(e) => setEditingPlan({ ...editingPlan, is_popular: e.target.checked })}
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    onChange={e => setEditingPlan({...editingPlan, is_popular: e.target.checked})}
+                    className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500 cursor-pointer"
                   />
+                  <label htmlFor="is_popular" className="text-sm font-bold text-slate-700 dark:text-slate-300 cursor-pointer">Destaque</label>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-100 dark:border-slate-800/50">
-                <h4 className="font-medium text-sm text-slate-900 dark:text-slate-50 mb-4">Funcionalidades do Plano</h4>
-                <div className="space-y-3">
-                  {editingPlan.features.map((feature, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <Input
-                        value={feature.text}
-                        onChange={(e) => {
-                          const updatedFeatures = [...editingPlan.features]
-                          updatedFeatures[idx] = { ...updatedFeatures[idx], text: e.target.value }
-                          setEditingPlan({ ...editingPlan, features: updatedFeatures })
+              <div className="pt-4 border-t border-slate-100 dark:border-dark-border">
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Funcionalidades</label>
+                <div className="space-y-2">
+                  {editingPlan.features?.map((feat, idx) => (
+                    <div key={idx} className="flex gap-2">
+                      <input
+                        value={feat.text}
+                        onChange={e => {
+                          const newFeats = [...editingPlan.features];
+                          newFeats[idx].text = e.target.value;
+                          setEditingPlan({...editingPlan, features: newFeats});
                         }}
-                        className="bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 dark:text-slate-400"
+                        className="flex-1 bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
                       />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="shrink-0 text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                      <button
                         onClick={() => {
-                          const updatedFeatures = editingPlan.features.filter((_, featureIndex) => featureIndex !== idx)
-                          setEditingPlan({ ...editingPlan, features: updatedFeatures })
+                          const newFeats = editingPlan.features.filter((_, i) => i !== idx);
+                          setEditingPlan({...editingPlan, features: newFeats});
                         }}
+                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        <Icons.Trash2 size={18} />
+                      </button>
                     </div>
                   ))}
-                  <Button
-                    variant="outline"
-                    className="w-full mt-2 border-dashed border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400"
-                    onClick={() => setEditingPlan({ ...editingPlan, features: [...editingPlan.features, { text: "" }] })}
+                  <button
+                    onClick={() => setEditingPlan({...editingPlan, features: [...(editingPlan.features || []), { text: '' }]})}
+                    className="w-full py-2.5 border-2 border-dashed border-slate-200 dark:border-dark-border rounded-xl text-sm font-bold text-slate-500 hover:text-brand-600 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center justify-center gap-2 mt-2"
                   >
-                    <Plus className="mr-2 h-4 w-4" /> Adicionar Funcionalidade
-                  </Button>
+                    <Icons.Plus size={16} />
+                    Adicionar Item
+                  </button>
                 </div>
               </div>
             </div>
 
-            <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
-              <Button variant="outline" onClick={handleCloseEditor} className="border-slate-200 dark:border-slate-700">
+            <div className="p-6 border-t border-slate-100 dark:border-dark-border flex gap-3 bg-slate-50 dark:bg-slate-900/20">
+              <button
+                onClick={() => setIsEditing(false)}
+                className="flex-1 py-3 rounded-xl font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              >
                 Cancelar
-              </Button>
-              <Button onClick={handleSave} className="bg-indigo-600 text-white hover:bg-indigo-700">
-                <Save className="mr-2 h-4 w-4" /> Guardar Alterações
-              </Button>
+              </button>
+              <button
+                onClick={handleSave}
+                className="flex-1 py-3 rounded-xl font-bold text-white bg-brand-600 hover:bg-brand-700 transition-colors flex items-center justify-center gap-2 shadow-sm shadow-brand-500/20"
+              >
+                <Icons.Save size={18} />
+                Salvar
+              </button>
             </div>
-
           </div>
         </div>
       )}
     </div>
-  )
+  );
 }
