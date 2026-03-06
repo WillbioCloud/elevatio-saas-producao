@@ -1,91 +1,166 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNotification } from '../contexts/NotificationContext';
+import React, { useEffect, useState } from 'react';
 import { Icons } from './Icons';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
 
-const formatRelativeTime = (date: Date) => {
-  const now = new Date();
-  const diffInMinutes = Math.max(1, Math.floor((now.getTime() - date.getTime()) / 60000));
+interface SaasNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  is_read: boolean;
+  created_at: string;
+  link?: string;
+}
 
-  if (diffInMinutes < 60) return `${diffInMinutes} min atrás`;
-  const diffInHours = Math.floor(diffInMinutes / 60);
-  if (diffInHours < 24) return `${diffInHours} h atrás`;
-  return date.toLocaleDateString('pt-BR');
-};
-
-const NotificationsMenu: React.FC = () => {
+export default function NotificationsMenu() {
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotification();
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<SaasNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const navigate = useNavigate();
 
-  const visibleNotifications = useMemo(() => notifications.slice(0, 8), [notifications]);
+  const isSuperAdmin = user?.role === 'super_admin';
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
+    if (!user) return;
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    if (isSuperAdmin) {
+      fetchSaasNotifications();
+      subscribeToSaasNotifications();
+    } else {
+      // Futuro: Lógica de notificações do CRM (Corretores)
+      setNotifications([]);
+    }
+  }, [user]);
+
+  const fetchSaasNotifications = async () => {
+    const { data } = await supabase
+      .from('saas_notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (data) {
+      setNotifications(data);
+      setUnreadCount(data.filter(n => !n.is_read).length);
+    }
+  };
+
+  const subscribeToSaasNotifications = () => {
+    supabase
+      .channel('saas_notifications_changes')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'saas_notifications'
+      }, (payload) => {
+        setNotifications(prev => [payload.new as SaasNotification, ...prev]);
+        setUnreadCount(prev => prev + 1);
+      })
+      .subscribe();
+  };
+
+  const markAsRead = async (id: string) => {
+    await supabase.from('saas_notifications').update({ is_read: true }).eq('id', id);
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  const markAllAsRead = async () => {
+    await supabase.from('saas_notifications').update({ is_read: true }).eq('is_read', false);
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    setUnreadCount(0);
+  };
+
+  const getIcon = (type: string) => {
+    switch (type) {
+      case 'payment_received':
+        return <Icons.DollarSign className="text-emerald-500" size={20} />;
+      case 'new_client':
+        return <Icons.Building2 className="text-brand-500" size={20} />;
+      case 'churn':
+        return <Icons.UserMinus className="text-red-500" size={20} />;
+      default:
+        return <Icons.Bell className="text-slate-500" size={20} />;
+    }
+  };
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative">
       <button
-        onClick={() => setIsOpen((previous) => !previous)}
-        className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
-        aria-label="Notificações"
+        onClick={() => setIsOpen(!isOpen)}
+        className="p-2 relative text-slate-500 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-full transition-colors"
       >
-        <Icons.Bell size={18} />
+        <Icons.Bell size={24} />
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
+          <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white dark:ring-dark-card animate-pulse"></span>
         )}
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl z-40">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-            <h3 className="text-sm font-semibold text-slate-800">Notificações</h3>
-            <button
-              onClick={markAllAsRead}
-              className="text-xs font-semibold text-brand-600 transition hover:text-brand-700"
-            >
-              Marcar todas como lidas
-            </button>
-          </div>
-
-          <div className="max-h-80 overflow-y-auto">
-            {visibleNotifications.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-slate-500">Nenhuma notificação por enquanto.</p>
-            ) : (
-              visibleNotifications.map((notification) => (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)}></div>
+          <div className="absolute right-0 mt-2 w-80 md:w-96 bg-white dark:bg-dark-card rounded-2xl shadow-xl border border-slate-200 dark:border-dark-border z-50 overflow-hidden">
+            <div className="p-4 border-b border-slate-200 dark:border-dark-border flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
+              <h3 className="font-bold text-slate-900 dark:text-white">Notificações SaaS</h3>
+              {unreadCount > 0 && (
                 <button
-                  key={notification.id}
-                  type="button"
-                  onClick={() => markAsRead(notification.id)}
-                  className={`w-full text-left border-b border-slate-100 px-4 py-3 last:border-none transition ${
-                    notification.read ? 'bg-white' : 'bg-red-50/30'
-                  }`}
+                  onClick={markAllAsRead}
+                  className="text-xs font-bold text-brand-600 hover:text-brand-700"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">{notification.title}</p>
-                      <p className="mt-1 text-xs text-slate-500">{notification.message}</p>
-                    </div>
-                    {!notification.read && <span className="mt-1 h-2 w-2 rounded-full bg-red-500" />}
-                  </div>
-                  <p className="mt-2 text-[11px] text-slate-400">{formatRelativeTime(notification.date)}</p>
+                  Marcar todas como lidas
                 </button>
-              ))
-            )}
+              )}
+            </div>
+
+            <div className="max-h-[400px] overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="p-8 text-center text-slate-500">
+                  <Icons.BellOff className="mx-auto mb-2 opacity-50" size={32} />
+                  <p>Tudo tranquilo por aqui.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100 dark:divide-dark-border">
+                  {notifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      onClick={() => {
+                        if (!notif.is_read) markAsRead(notif.id);
+                        if (notif.link) {
+                          navigate(notif.link);
+                          setIsOpen(false);
+                        }
+                      }}
+                      className={`p-4 flex gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 transition-colors ${
+                        !notif.is_read ? 'bg-brand-50/50 dark:bg-brand-900/10' : ''
+                      }`}
+                    >
+                      <div className="shrink-0 mt-1">{getIcon(notif.type)}</div>
+                      <div>
+                        <p className={`text-sm ${!notif.is_read ? 'font-bold text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
+                          {notif.title}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{notif.message}</p>
+                        <p className="text-[10px] text-slate-400 mt-2 font-medium">
+                          {new Date(notif.created_at).toLocaleDateString('pt-BR', {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                      {!notif.is_read && <div className="w-2 h-2 bg-brand-500 rounded-full mt-2 shrink-0"></div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
-};
-
-export default NotificationsMenu;
+}
