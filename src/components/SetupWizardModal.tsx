@@ -4,6 +4,7 @@ import { Building2, CheckCircle, Globe, Loader2, Palette } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { PlanType } from '../config/plans';
 import { supabase } from '../lib/supabase';
+import { Icons } from './Icons';
 
 type SetupWizardModalProps = {
   onComplete: () => void;
@@ -45,7 +46,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     phone: '',
     domain: '',
     hasDomain: 'nao',
-    template: 'classic', // Default corrigido para o template oficial
+    template: 'minimalist', // Default para o template minimalista
     plan: initialPlan,
     billingCycle: location.state?.cycle || localStorage.getItem('trimoveis_billing_cycle') || 'monthly'
   });
@@ -260,10 +261,10 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                 <span className="w-8 h-8 rounded-full bg-brand-500/20 text-brand-500 flex items-center justify-center text-sm">3</span>
                 Visual do Site
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label
                   className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
-                    formData.template === 'classic'
+                    formData.template === 'minimalist'
                       ? 'border-brand-500 bg-brand-500/10'
                       : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
                   }`}
@@ -272,16 +273,17 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     type="radio"
                     name="template"
                     className="hidden"
-                    value="classic"
+                    value="minimalist"
+                    checked={formData.template === 'minimalist'}
                     onChange={(e) => setFormData({ ...formData, template: e.target.value })}
                   />
-                  <div className="font-bold text-white mb-1">Classic</div>
-                  <p className="text-xs text-slate-400">Design moderno e focado em conversão.</p>
+                  <div className="font-bold text-white mb-1">Minimalista</div>
+                  <p className="text-xs text-slate-400">Design limpo, claro e focado nos imóveis.</p>
                 </label>
                 <label
                   className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
                     formData.template === 'luxury'
-                      ? 'border-brand-500 bg-brand-500/10'
+                      ? 'border-amber-500 bg-amber-500/10'
                       : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
                   }`}
                 >
@@ -290,17 +292,38 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     name="template"
                     className="hidden"
                     value="luxury"
+                    checked={formData.template === 'luxury'}
                     onChange={(e) => setFormData({ ...formData, template: e.target.value })}
                   />
-                  <div className="font-bold text-yellow-400 mb-1 flex items-center gap-1">
-                    Luxury <Icons.Crown size={14} />
+                  <div className="font-bold text-amber-400 mb-1 flex items-center gap-1">
+                    Luxo <Icons.Crown size={14} />
                   </div>
                   <p className="text-xs text-slate-400">Tons escuros e elegantes para alto padrão.</p>
                 </label>
                 <label
                   className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
+                    formData.template === 'modern'
+                      ? 'border-blue-500 bg-blue-500/10'
+                      : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="template"
+                    className="hidden"
+                    value="modern"
+                    checked={formData.template === 'modern'}
+                    onChange={(e) => setFormData({ ...formData, template: e.target.value })}
+                  />
+                  <div className="font-bold text-blue-400 mb-1 flex items-center gap-1">
+                    Moderno <Icons.Zap size={14} />
+                  </div>
+                  <p className="text-xs text-slate-400">Layout arrojado, cantos arredondados e cores vivas.</p>
+                </label>
+                <label
+                  className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
                     formData.template === 'custom'
-                      ? 'border-brand-500 bg-brand-500/10'
+                      ? 'border-purple-500 bg-purple-500/10'
                       : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
                   }`}
                 >
@@ -309,12 +332,13 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     name="template"
                     className="hidden"
                     value="custom"
+                    checked={formData.template === 'custom'}
                     onChange={(e) => setFormData({ ...formData, template: e.target.value })}
                   />
                   <div className="font-bold text-purple-400 mb-1 flex items-center gap-1">
                     Sob Medida <Icons.Code size={14} />
                   </div>
-                  <p className="text-xs text-slate-400">Design 100% exclusivo feito pela nossa equipe.</p>
+                  <p className="text-xs text-slate-400">Design exclusivo feito pela nossa equipe.</p>
                 </label>
               </div>
             </div>

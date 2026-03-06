@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Icons } from '../components/Icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { useTenant } from '../contexts/TenantContext';
 
 export default function AdminSiteBuilder() {
   const { user } = useAuth();
-  const { tenant } = useTenant();
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [companyData, setCompanyData] = useState<any>(null);
   const [siteData, setSiteData] = useState({
     primaryColor: '#0EA5E9',
     heroTitle: 'Encontre o Imóvel dos Seus Sonhos',
@@ -16,10 +16,27 @@ export default function AdminSiteBuilder() {
   });
 
   useEffect(() => {
-    if (tenant?.site_data) {
-      setSiteData({ ...siteData, ...(tenant.site_data as any) });
-    }
-  }, [tenant]);
+    const fetchCompanyData = async () => {
+      if (!user?.company_id) return;
+
+      const { data } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', user.company_id)
+        .single();
+
+      if (data) {
+        setCompanyData(data);
+        if (data.site_data && Object.keys(data.site_data).length > 0) {
+          setSiteData(prev => ({ ...prev, ...data.site_data }));
+        }
+      }
+
+      setIsLoading(false);
+    };
+
+    fetchCompanyData();
+  }, [user]);
 
   const handleSave = async () => {
     if (!user?.company_id) return;
@@ -39,6 +56,41 @@ export default function AdminSiteBuilder() {
     }
   };
 
+  const previewUrl = companyData 
+    ? `http://${companyData.subdomain || companyData.slug}.localhost:5173` 
+    : '#';
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Icons.RefreshCw size={32} className="animate-spin text-brand-500" />
+      </div>
+    );
+  }
+
+  if (!companyData) {
+    return (
+      <div className="p-6 max-w-2xl mx-auto">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-6">
+          <div className="flex items-start gap-3">
+            <Icons.AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={24} />
+            <div>
+              <h3 className="font-bold text-red-900 dark:text-red-100 mb-2">
+                Empresa não encontrada
+              </h3>
+              <p className="text-sm text-red-700 dark:text-red-300 mb-4">
+                Não foi possível carregar os dados da sua empresa. Verifique se você está vinculado a uma empresa ativa.
+              </p>
+              <p className="text-xs text-red-600 dark:text-red-400">
+                <strong>ID da Empresa:</strong> {user?.company_id || 'Não definido'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6 animate-fade-in">
       <div className="flex justify-between items-end">
@@ -51,7 +103,7 @@ export default function AdminSiteBuilder() {
           </p>
         </div>
         <a
-          href={`http://${tenant?.subdomain || tenant?.slug}.localhost:5173`}
+          href={previewUrl}
           target="_blank"
           rel="noreferrer"
           className="bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors"
@@ -82,7 +134,7 @@ export default function AdminSiteBuilder() {
                   type="text"
                   value={siteData.primaryColor}
                   onChange={e => setSiteData({...siteData, primaryColor: e.target.value})}
-                  className="bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none w-32"
+                  className="bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none w-32 uppercase"
                 />
               </div>
             </div>
@@ -139,15 +191,16 @@ export default function AdminSiteBuilder() {
         {/* Live Preview (Simulação) */}
         <div className="hidden md:block">
           <div className="sticky top-6 bg-slate-900 rounded-3xl overflow-hidden border-4 border-slate-800 shadow-2xl h-[600px] flex flex-col relative">
-            {/* Header Mock */}
             <div className="h-12 bg-white/10 backdrop-blur border-b border-white/10 flex items-center px-4 justify-between z-10">
               <div className="w-24 h-4 rounded bg-white/20"></div>
-              <div className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-[10px] text-white">
+              <div 
+                className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] text-white"
+                style={{ backgroundColor: siteData.primaryColor }}
+              >
                 <Icons.Menu size={14}/>
               </div>
             </div>
 
-            {/* Banner Mock */}
             <div
               className="h-48 relative flex items-center justify-center p-6 text-center"
               style={{ backgroundColor: siteData.primaryColor }}
@@ -163,7 +216,6 @@ export default function AdminSiteBuilder() {
               </div>
             </div>
 
-            {/* Imóveis Mock */}
             <div className="p-4 flex-1 bg-white">
               <div className="w-1/3 h-3 bg-slate-200 rounded mb-4"></div>
               <div className="grid grid-cols-2 gap-3">

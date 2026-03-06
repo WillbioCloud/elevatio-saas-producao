@@ -54,14 +54,6 @@ const getHostData = (hostname: string): {
     return { isMasterDomain: true, slug: null, customDomain: null };
   }
 
-  if (normalizedHostname.endsWith('.localhost')) {
-    return {
-      isMasterDomain: false,
-      slug: normalizedHostname.replace(/\.localhost$/, ''),
-      customDomain: null,
-    };
-  }
-
   // Teste local com lvh.me (Pode ser bloqueado por ISP)
   if (normalizedHostname.endsWith('.lvh.me')) {
     return {
@@ -137,6 +129,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         // Busca por slug/subdomain (ex: imobilaria.elevatiovendas.com)
         if (hostData.slug) {
           filters.push(`subdomain.eq.${hostData.slug}`);
+          filters.push(`slug.eq.${hostData.slug}`); // Blindagem extra
         }
 
         const filterString = filters.join(',');
@@ -145,7 +138,6 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           .from('companies')
           .select('*')
           .or(filterString)
-          .eq('active', true)
           .limit(1)
           .maybeSingle();
 
