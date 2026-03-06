@@ -62,10 +62,20 @@ const getHostData = (hostname: string): {
     };
   }
 
+  // Teste local com lvh.me (Pode ser bloqueado por ISP)
   if (normalizedHostname.endsWith('.lvh.me')) {
     return {
       isMasterDomain: false,
       slug: normalizedHostname.replace(/\.lvh\.me$/, ''),
+      customDomain: null,
+    };
+  }
+
+  // Teste local nativo do Chrome/Edge (*.localhost)
+  if (normalizedHostname.endsWith('.localhost') && normalizedHostname !== 'localhost') {
+    return {
+      isMasterDomain: false,
+      slug: normalizedHostname.replace(/\.localhost$/, ''),
       customDomain: null,
     };
   }
