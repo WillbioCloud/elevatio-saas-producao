@@ -107,6 +107,7 @@ const AdminTasks: React.FC = () => {
       type: 'other',
       completed: false,
       user_id: user.role === 'admin' && assigneeFilter !== 'all' ? (assigneeFilter === 'me' ? user.id : assigneeFilter) : user.id,
+      company_id: user.company_id,
     };
 
     const { error } = await supabase.from('tasks').insert([payload]);

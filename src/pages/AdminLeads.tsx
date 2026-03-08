@@ -575,7 +575,8 @@ const AdminLeads: React.FC = () => {
             title: 'Etapa do Lead Atualizada',
             message: `O lead ${lead.name} foi movido para ${targetStatus}.`,
             type: 'system',
-            read: false
+            read: false,
+            company_id: user.company_id,
           }
         ]);
       }
@@ -610,7 +611,8 @@ const AdminLeads: React.FC = () => {
           {
             lead_id: transferModal.lead.id,
             type: 'note',
-            description: `${transferForm.note}\n\n(Transferido por ${authorName})`
+            description: `${transferForm.note}\n\n(Transferido por ${authorName})`,
+            company_id: user.company_id,
           }
         ]);
       }
@@ -723,7 +725,8 @@ const AdminLeads: React.FC = () => {
       source: newLeadData.source,
       assigned_to: isAdmin && routeToCentral ? null : user.id,
       funnel_step: routeToCentral ? 'pre_atendimento' : 'atendimento',
-      stage_updated_at: new Date().toISOString()
+      stage_updated_at: new Date().toISOString(),
+      company_id: user.company_id,
     };
 
     const { error } = await supabase.from('leads').insert(payload);

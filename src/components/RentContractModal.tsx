@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Icons } from './Icons';
 import { Lead, Property } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 interface RentContractModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface RentContractModalProps {
 }
 
 const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, onSuccess, contractData: _contractData }) => {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -145,7 +147,8 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         rent_guarantee_type: formData.rent_guarantee_type,
         rent_readjustment_index: formData.rent_readjustment_index,
         commission_percentage: Number(formData.commission_percentage) || 0,
-        vistoria_items: defaultVistoria
+        vistoria_items: defaultVistoria,
+        company_id: user.company_id,
       };
 
       const { data: contract, error } = await supabase.from('contracts').insert([payload]).select().single();
@@ -164,7 +167,8 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
             installment_number: i,
             amount: totalMonthly,
             due_date: dueDate.toISOString().split('T')[0],
-            status: 'pending'
+            status: 'pending',
+            company_id: user.company_id,
           });
         }
         await supabase.from('installments').insert(installments);

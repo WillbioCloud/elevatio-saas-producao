@@ -49,6 +49,7 @@ export const useInstallmentReminders = () => {
               type: 'system',
               read: false,
               link: `/admin/contratos/${inst.contract?.id}`,
+              company_id: user.company_id,
             });
 
             await supabase.from('installments').update({ notified_due: true }).eq('id', inst.id);

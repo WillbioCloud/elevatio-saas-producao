@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
+import { useAuth } from '../contexts/AuthContext';
 
 const AdminContractDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   
   const [contract, setContract] = useState<any>(null);
   const [installments, setInstallments] = useState<any[]>([]);
@@ -94,7 +96,8 @@ const AdminContractDetails: React.FC = () => {
       amount: Number(value),
       due_date: dueDate,
       status: 'pending',
-      installment_number: installments.length + 1
+      installment_number: installments.length + 1,
+      company_id: user?.company_id,
     }]);
 
     if (error) alert('Erro ao gerar parcela: ' + error.message);

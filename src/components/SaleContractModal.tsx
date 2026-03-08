@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Icons } from './Icons';
 import { Lead, Property } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 interface SaleContractModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface SaleContractModalProps {
 }
 
 const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, onSuccess, contractData }) => {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -239,6 +241,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         sale_payment_method: formData.sale_is_cash ? formData.sale_payment_method : null,
         commission_percentage: Number(formData.commission_percentage) || 0,
         commission_total: Number(formData.commission_value) || 0,
+        company_id: user.company_id,
       };
 
       const { data: contract, error } = await supabase.from('contracts').insert([payload]).select().single();
@@ -273,7 +276,8 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
             amount: valorAtualParcela,
             due_date: dueDate.toISOString().split('T')[0],
             status: 'pending',
-            notes: `Ano ${Math.ceil(i/12)} - Correção: ${formData.readjustment_index} + ${formData.interest_rate}% a.m.`
+            notes: `Ano ${Math.ceil(i/12)} - Correção: ${formData.readjustment_index} + ${formData.interest_rate}% a.m.`,
+            company_id: user.company_id,
           });
         }
         await supabase.from('installments').insert(installments);

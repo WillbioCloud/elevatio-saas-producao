@@ -592,13 +592,15 @@ const AdminPropertyForm: React.FC = () => {
               message: `Seu imóvel "${formData.title}" foi editado pela administração.`,
               type: 'system',
               read: false,
+              company_id: user.company_id,
             },
           ]);
         }
       } else {
         const { error } = await supabase.from('properties').insert([{ 
           ...basePayload, 
-          status: 'Disponível' 
+          status: 'Disponível',
+          company_id: user.company_id,
         }]);
         if (error) throw error;
 

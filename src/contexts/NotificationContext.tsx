@@ -187,6 +187,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           message: notification.message,
           type: notification.type,
           read: false,
+          company_id: user.company_id,
         })
         .select('id,user_id,title,message,type,read,created_at')
         .single();
@@ -200,7 +201,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const mapped = mapRowToNotification(data as NotificationRow);
       setNotifications((prev) => upsertNotification(prev, mapped));
     })();
-  }, [user?.id]);
+  }, [user?.id, user?.company_id]);
 
   const markAsRead = useCallback((id: string) => {
     if (!user?.id) return;

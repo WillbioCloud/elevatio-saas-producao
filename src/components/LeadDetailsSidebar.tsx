@@ -149,7 +149,12 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
     const authorName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Usuário';
     const fullDescription = `${description} (por ${authorName})`;
 
-    await supabase.from('timeline_events').insert([{ lead_id: lead.id, type, description: fullDescription }]);
+    await supabase.from('timeline_events').insert([{ 
+      lead_id: lead.id, 
+      type, 
+      description: fullDescription,
+      company_id: user.company_id,
+    }]);
     const { data } = await supabase
       .from('timeline_events')
       .select('*')
@@ -253,7 +258,15 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTask.trim()) return;
-    const payload = { title: newTask, lead_id: lead.id, completed: false, type: 'call', due_date: new Date().toISOString() };
+    const payload = { 
+      title: newTask, 
+      lead_id: lead.id, 
+      completed: false, 
+      type: 'call', 
+      due_date: new Date().toISOString(),
+      user_id: user.id,
+      company_id: user.company_id,
+    };
     const { data } = await supabase.from('tasks').insert([payload]).select().single();
     if (data) {
       setTasks((prev) => [...prev, data as any]);
@@ -265,7 +278,12 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newNote.trim()) return;
-    const { data } = await supabase.from('timeline_events').insert([{ type: 'note', description: newNote, lead_id: lead.id }]).select().single();
+    const { data } = await supabase.from('timeline_events').insert([{ 
+      type: 'note', 
+      description: newNote, 
+      lead_id: lead.id,
+      company_id: user.company_id,
+    }]).select().single();
     if (data) {
       setEvents((prev) => [data as any, ...prev]);
       setNewNote('');
@@ -282,7 +300,8 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
           title: 'Nova Nota no Lead',
           message: `O admin adicionou uma nota no lead ${lead.name}`,
           type: 'system',
-          read: false
+          read: false,
+          company_id: user.company_id,
         }]);
       }
     }
@@ -469,7 +488,8 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
         lead_id: lead.id,
         property_id: match.property_id,
         match_score: match.match_score,
-        match_reason: match.match_reason
+        match_reason: match.match_reason,
+        company_id: user.company_id,
       }));
 
       const { error: insertError } = await supabase.from('lead_matches').insert(payload);
