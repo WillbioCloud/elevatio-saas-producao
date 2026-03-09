@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, Outlet } from 'react-router-dom';
 import { Icons } from '../../components/Icons';
 import ContactModal from '../../components/ContactModal';
 import { useTenant } from '../../contexts/TenantContext';
+import { Facebook, Instagram, Linkedin, Twitter, Menu, X, MessageCircle } from 'lucide-react';
 
-const ClassicLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const ClassicLayout: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
-  const [isScrolled, setIsScrolled] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const { tenant } = useTenant();
 
@@ -16,180 +17,384 @@ const ClassicLayout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     document.documentElement.classList.remove('dark');
   }, []);
 
+  // Detecta scroll para mudar estilo do navbar
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 50);
+      setScrolled(window.scrollY > 60);
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   const isAdmin = location.pathname.startsWith('/admin');
-  if (isAdmin) return <>{children}</>;
+  if (isAdmin) return <Outlet />;
 
-  const companyName = tenant?.name || 'Imobiliária';
-  const companyPhone = tenant?.phone || '';
-  const companyEmail = tenant?.email || '';
-  const companyAddress = tenant?.address || '';
-  const companyLogo = tenant?.logo_url || '/img/Logo-horizontal.png';
-  const companyLogoScrolled = tenant?.logo_url || '/img/Logo.png';
-  const companyLogoWhite = tenant?.logo_white_url || '/img/Logo-branca.png';
+  const companyName = tenant?.name || 'Estately';
+  const siteData = tenant?.site_data;
+  const primaryColor = siteData?.primary_color || '#1e293b';
+  const secondaryColor = siteData?.secondary_color || '#3b82f6';
+  const logoUrl = siteData?.logo_url;
+  
+  const contactEmail = siteData?.contact?.email || '';
+  const contactPhone = siteData?.contact?.phone || '';
+  const contactAddress = siteData?.contact?.address || '';
+  const whatsapp = siteData?.social?.whatsapp || '';
+  const instagram = siteData?.social?.instagram || '';
+  const facebook = siteData?.social?.facebook || '';
+
+  const whatsappLink = whatsapp ? `https://wa.me/${whatsapp.replace(/\D/g, '')}` : '';
 
   return (
-    <div className="min-h-screen flex flex-col font-sans text-gray-800 bg-gray-50">
-      {/* Top Bar */}
-      <div className="bg-slate-900 text-white py-2 text-xs md:text-sm">
-        <div className="container mx-auto px-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            {companyPhone && (
-              <Link 
-                to={`https://wa.me/${companyPhone.replace(/\D/g, '')}?text=Gostaria%20de%20anunciar%20meu%20im%C3%B3vel,%20poderia%20me%20passar%20mais%20informa%C3%A7%C3%B5es?`}
-                target="_blank" 
-                className="flex items-center gap-1 hover:text-amber-400 transition-colors"
+    <div className="min-h-screen flex flex-col bg-white">
+      
+      {/* Navbar com Efeito Premium - Pílula Flutuante */}
+      <header 
+        className={`fixed w-full z-50 transition-all duration-300 left-0 right-0 ${
+          scrolled ? 'top-0 bg-white shadow-md py-4' : 'top-0 pt-6 bg-transparent'
+        }`}
+      >
+        <div className="container mx-auto px-4 md:px-8 flex items-center justify-between">
+          
+          {/* ESQUERDA: Logo (Independente) */}
+          <Link to="/" className="flex items-center z-10">
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={companyName}
+                className="h-8 w-auto object-contain"
+              />
+            ) : (
+              <span 
+                className={`text-2xl font-black transition-colors duration-300 ${
+                  scrolled ? 'text-slate-900' : 'text-white'
+                }`}
               >
-                <Icons.House size={14} />
-                Venda seu Imóvel Conosco
-              </Link>
+                {companyName}
+              </span>
             )}
-          </div>
-          <div className="hidden md:flex gap-4">
-            <Link to="/admin/login" className="hover:text-amber-400 transition-colors">Área do Corretor</Link>
-          </div>
-        </div>
-      </div>
-
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          {/* Logo Dinâmica */}
-          <Link to="/" className="flex items-center gap-2 group">
-            <img
-              src={isScrolled ? companyLogoScrolled : companyLogo}
-              alt={companyName}
-              className="h-10 w-auto object-contain transition-all duration-300"
-            />
           </Link>
 
-          {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-8 font-medium text-sm">
-            <Link to="/" className="hover:text-amber-600 transition-colors">Home</Link>
-            <Link to="/imoveis" className="hover:text-amber-600 transition-colors">Imóveis</Link>
-            <Link to="/servicos" className="hover:text-amber-600 transition-colors">Serviços</Link>
-            <Link to="/sobre" className="hover:text-amber-600 transition-colors">Sobre Nós</Link>
-            <button
-              type="button"
-              onClick={() => setIsContactModalOpen(true)}
-              className="rounded-full bg-slate-900 px-5 py-2.5 text-white shadow-md transition-all hover:bg-slate-800 hover:shadow-lg"
-            >
-              Fale Conosco
-            </button>
+          {/* CENTRO: Menu Pílula */}
+          <nav 
+            className={`hidden md:block transition-all duration-300 ${
+              scrolled 
+                ? 'bg-transparent text-slate-800' 
+                : 'bg-black/20 backdrop-blur-md border border-white/20 rounded-full px-8 py-3 text-white'
+            }`}
+          >
+            <ul className="flex items-center space-x-8 font-medium text-sm">
+              <li>
+                <Link 
+                  to="/" 
+                  className={`transition-colors ${
+                    scrolled ? 'hover:text-slate-600' : 'hover:text-white/80'
+                  }`}
+                >
+                  Início
+                </Link>
+              </li>
+              <li>
+                <Link 
+                  to="/imoveis" 
+                  className={`transition-colors ${
+                    scrolled ? 'hover:text-slate-600' : 'hover:text-white/80'
+                  }`}
+                >
+                  Imóveis
+                </Link>
+              </li>
+              <li>
+                <Link 
+                  to="/servicos" 
+                  className={`transition-colors ${
+                    scrolled ? 'hover:text-slate-600' : 'hover:text-white/80'
+                  }`}
+                >
+                  Serviços
+                </Link>
+              </li>
+              <li>
+                <Link 
+                  to="/sobre" 
+                  className={`transition-colors ${
+                    scrolled ? 'hover:text-slate-600' : 'hover:text-white/80'
+                  }`}
+                >
+                  Sobre
+                </Link>
+              </li>
+            </ul>
           </nav>
+
+          {/* DIREITA: Botão Fale Conosco (Independente) */}
+          <div className="hidden md:block z-10">
+            {whatsappLink ? (
+              <a
+                href={whatsappLink}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm font-semibold text-white px-6 py-2.5 rounded-lg transition-all hover:opacity-90 flex items-center gap-2"
+                style={{ backgroundColor: primaryColor }}
+              >
+                <MessageCircle size={18} />
+                Fale Conosco
+              </a>
+            ) : (
+              <button
+                onClick={() => setIsContactModalOpen(true)}
+                className="text-sm font-semibold text-white px-6 py-2.5 rounded-lg transition-all hover:opacity-90"
+                style={{ backgroundColor: primaryColor }}
+              >
+                Fale Conosco
+              </button>
+            )}
+          </div>
 
           {/* Mobile Menu Toggle */}
           <button 
-            className="md:hidden text-slate-900"
+            className={`md:hidden transition-colors ${scrolled ? 'text-slate-900' : 'text-white'}`}
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
-            {isMobileMenuOpen ? <Icons.X /> : <Icons.Menu />}
+            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
         </div>
 
-        {/* Mobile Nav */}
+        {/* Mobile Navigation */}
         {isMobileMenuOpen && (
-          <div className="md:hidden bg-white border-t p-4 flex flex-col gap-4 shadow-xl absolute w-full">
-            <Link to="/" onClick={() => setIsMobileMenuOpen(false)} className="py-2 border-b">Home</Link>
-            <Link to="/imoveis" onClick={() => setIsMobileMenuOpen(false)} className="py-2 border-b">Imóveis</Link>
-            <Link to="/servicos" onClick={() => setIsMobileMenuOpen(false)} className="py-2 border-b">Serviços</Link>
-            <Link to="/admin/login" onClick={() => setIsMobileMenuOpen(false)} className="py-2 text-slate-500">Área do Corretor</Link>
-            <button
-              type="button"
-              onClick={() => {
-                setIsContactModalOpen(true);
-                setIsMobileMenuOpen(false);
-              }}
-              className="rounded-lg bg-amber-500 py-3 text-center font-bold text-white"
-            >
-              Fale Conosco
-            </button>
+          <div className="md:hidden mt-4 mx-4 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+            <div className="py-4 px-6 flex flex-col space-y-4">
+              <Link 
+                to="/" 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="text-sm font-medium text-gray-700 hover:text-gray-900"
+              >
+                Início
+              </Link>
+              <Link 
+                to="/imoveis" 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="text-sm font-medium text-gray-700 hover:text-gray-900"
+              >
+                Imóveis
+              </Link>
+              <Link 
+                to="/servicos" 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="text-sm font-medium text-gray-700 hover:text-gray-900"
+              >
+                Serviços
+              </Link>
+              <Link 
+                to="/sobre" 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="text-sm font-medium text-gray-700 hover:text-gray-900"
+              >
+                Sobre
+              </Link>
+              {whatsappLink ? (
+                <a
+                  href={whatsappLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="text-sm font-semibold text-white px-6 py-2.5 rounded-lg text-center flex items-center justify-center gap-2"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  <MessageCircle size={18} />
+                  Fale Conosco
+                </a>
+              ) : (
+                <button
+                  onClick={() => {
+                    setIsContactModalOpen(true);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="text-sm font-semibold text-white px-6 py-2.5 rounded-lg text-center"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  Fale Conosco
+                </button>
+              )}
+            </div>
           </div>
         )}
       </header>
 
       {/* Main Content */}
       <main className="flex-grow">
-        {children}
+        <Outlet />
       </main>
 
-      {/* Footer */}
-      <footer className="bg-slate-900 text-gray-300 py-12">
-        <div className="container mx-auto px-4 grid grid-cols-1 md:grid-cols-4 gap-8">
-          <div>
-            <Link to="/" className="flex items-center gap-2 group">
-              <img
-                src={companyLogoWhite}
-                alt={companyName}
-                className="h-11 w-auto object-contain transition-all duration-300"
-              />
-            </Link>
-            <p className="text-sm leading-relaxed mb-4 mt-5">
-              Especialistas em imóveis de alto padrão. Encontramos o lar perfeito para sua história.
-            </p>
-          </div>
-          <div>
-            <h4 className="text-white font-bold mb-4">Links Rápidos</h4>
-            <ul className="space-y-2 text-sm">
-              <li><Link to="/imoveis" className="hover:text-amber-400">Comprar Imóvel</Link></li>
-              <li><Link to="/bairros/jardins" className="hover:text-amber-400">Imóveis nos Jardins</Link></li>
-              {companyPhone && (
-                <li>
-                  <Link 
-                    to={`https://wa.me/${companyPhone.replace(/\D/g, '')}?text=Gostaria%20de%20anunciar%20meu%20im%C3%B3vel,%20poderia%20me%20passar%20mais%20informa%C3%A7%C3%B5es?`}
-                    target="_blank" 
-                    className="flex items-center gap-1 hover:text-amber-400 transition-colors"
+      {/* Footer Estilo Estately */}
+      <footer className="bg-gray-50 border-t border-gray-100 py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-8">
+            
+            {/* Coluna 1: Logo e Descrição */}
+            <div className="md:col-span-1">
+              <Link to="/" className="inline-block mb-6">
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt={companyName}
+                    className="h-8 w-auto object-contain"
+                  />
+                ) : (
+                  <span className="text-2xl font-bold" style={{ color: primaryColor }}>
+                    {companyName}
+                  </span>
+                )}
+              </Link>
+              <p className="text-sm text-gray-600 leading-relaxed mb-6">
+                © {new Date().getFullYear()} {companyName}
+              </p>
+              <div className="flex items-center space-x-3">
+                {facebook && (
+                  <a
+                    href={facebook.startsWith('http') ? facebook : `https://facebook.com/${facebook}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-9 h-9 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
                   >
-                    Venda seu Imóvel Conosco
+                    <Facebook size={16} className="text-gray-700" />
+                  </a>
+                )}
+                <a
+                  href="#"
+                  className="w-9 h-9 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Twitter size={16} className="text-gray-700" />
+                </a>
+                {instagram && (
+                  <a
+                    href={instagram.startsWith('http') ? instagram : `https://instagram.com/${instagram.replace('@', '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-9 h-9 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                  >
+                    <Instagram size={16} className="text-gray-700" />
+                  </a>
+                )}
+                <a
+                  href="#"
+                  className="w-9 h-9 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+                >
+                  <Linkedin size={16} className="text-gray-700" />
+                </a>
+              </div>
+            </div>
+
+            {/* Coluna 2: Menu */}
+            <div>
+              <h4 className="text-sm font-bold text-gray-900 mb-4">Menu</h4>
+              <ul className="space-y-3">
+                <li>
+                  <Link to="/sobre" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                    Sobre Nós
                   </Link>
                 </li>
-              )}
-            </ul>
-          </div>
-          <div>
-            <h4 className="text-white font-bold mb-4">Contato</h4>
-            <ul className="space-y-2 text-sm">
-              {companyAddress && (
-                <li className="flex items-center gap-2">
-                  <Icons.MapPin size={16}/>
-                  {companyAddress}
+                <li>
+                  <Link to="/imoveis" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                    Imóveis
+                  </Link>
                 </li>
-              )}
-              {companyPhone && (
-                <li className="flex items-center gap-2">
-                  <Icons.Phone size={16}/>
-                  {companyPhone}
+                <li>
+                  <Link to="/imoveis?type=Casa" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                    Casas
+                  </Link>
                 </li>
-              )}
-              {companyEmail && (
-                <li className="flex items-center gap-2">
-                  <Icons.Mail size={16}/>
-                  {companyEmail}
+                <li>
+                  <Link to="/imoveis?type=Apartamento" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                    Apartamentos
+                  </Link>
                 </li>
-              )}
-            </ul>
-          </div>
-          <div>
-            <h4 className="text-white font-bold mb-4">Newsletter</h4>
-            <div className="flex gap-2">
-              <input 
-                type="email" 
-                placeholder="Seu e-mail" 
-                className="bg-slate-800 border border-slate-700 text-white px-3 py-2 rounded-l-md w-full focus:outline-none focus:border-amber-500"
-              />
-              <button className="bg-amber-500 text-slate-900 px-4 py-2 rounded-r-md font-bold hover:bg-amber-400">OK</button>
+                <li>
+                  <Link to="/imoveis?listing_type=rent" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                    Para Alugar
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Coluna 3: Serviços */}
+            <div>
+              <h4 className="text-sm font-bold text-gray-900 mb-4">Serviços</h4>
+              <ul className="space-y-3">
+                <li>
+                  <Link to="/servicos" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                    Nossos Serviços
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/avaliacao" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                    Avaliação de Imóveis
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/financiamento" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                    Financiamento
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/documentacao" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                    Documentação
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Coluna 4: Contato */}
+            <div>
+              <h4 className="text-sm font-bold text-gray-900 mb-4">Contato</h4>
+              <ul className="space-y-3 mb-6">
+                <li>
+                  <Link to="/suporte" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                    Suporte
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/contato" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                    Fale Conosco
+                  </Link>
+                </li>
+              </ul>
+              <div>
+                <h4 className="text-sm font-bold text-gray-900 mb-4">Informações</h4>
+                {contactPhone && (
+                  <p className="text-sm text-gray-600 mb-2">
+                    <a href={`tel:${contactPhone.replace(/\D/g, '')}`} className="hover:text-gray-900">
+                      {contactPhone}
+                    </a>
+                  </p>
+                )}
+                {contactEmail && (
+                  <p className="text-sm text-gray-600">
+                    <a href={`mailto:${contactEmail}`} className="hover:text-gray-900">
+                      {contactEmail}
+                    </a>
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="container mx-auto px-4 mt-12 pt-8 border-t border-slate-800 text-center text-xs text-gray-500">
-          © {new Date().getFullYear()} {companyName}. Todos os direitos reservados.
+
+          {/* Bottom Footer */}
+          <div className="pt-8 border-t border-gray-200 flex flex-col md:flex-row justify-between items-center">
+            <div className="flex items-center space-x-6 mb-4 md:mb-0">
+              <h5 className="text-sm font-bold text-gray-900">Legal</h5>
+              <Link to="/privacidade" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                Política de Privacidade
+              </Link>
+              <Link to="/termos" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                Termos de Uso
+              </Link>
+            </div>
+            <div className="flex items-center space-x-6">
+              <Link to="/admin/login" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+                Área do Corretor
+              </Link>
+            </div>
+          </div>
         </div>
       </footer>
 

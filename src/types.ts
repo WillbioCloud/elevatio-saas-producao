@@ -1,5 +1,44 @@
 // src/types.ts
 
+export interface SiteData {
+  logo_url: string | null;
+  favicon_url: string | null;
+  hero_image_url: string | null;
+  hero_title: string | null;
+  hero_subtitle: string | null;
+  about_text: string | null;
+  about_image_url: string | null;
+  primary_color: string;
+  secondary_color: string;
+  contact: { 
+    email: string | null; 
+    phone: string | null; 
+    address: string | null;
+  };
+  social: { 
+    instagram: string | null; 
+    facebook: string | null; 
+    whatsapp: string | null; 
+    youtube: string | null;
+  };
+  seo: { 
+    title: string | null; 
+    description: string | null;
+  };
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  subdomain: string;
+  slug?: string;
+  plan: string;
+  template?: string;
+  site_data?: SiteData;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export type ListingType = 'sale' | 'rent';
 
 export enum PropertyType {

@@ -6,13 +6,15 @@ import { useTenant } from '../contexts/TenantContext';
 import MinimalistLayout from './minimalist/MinimalistLayout';
 import LuxuryLayout from './luxury/LuxuryLayout';
 import ModernLayout from './modern/ModernLayout';
+import ClassicLayout from './classic/ClassicLayout';
 
 // Home Pages
 import MinimalistHome from './minimalist/pages/Home';
 import LuxuryHome from './luxury/pages/Home';
 import ModernHome from './modern/pages/Home';
+import ClassicHome from './classic/pages/Home';
 
-// Páginas Internas Compartilhadas (Usamos as do 'classic' antigo por agora)
+// Páginas Internas Compartilhadas
 import Properties from './classic/pages/Properties';
 import PropertyDetail from './classic/pages/PropertyDetail';
 import About from './classic/pages/About';
@@ -37,19 +39,21 @@ export default function TenantRouter() {
     );
   }
 
-  // Decide qual template carregar com base no banco de dados (fallback para minimalist)
-  const templateName = tenant?.template || 'minimalist';
+  // Define 'classic' como o template Premium padrão se não houver nenhum selecionado
+  const templateName = tenant?.template || 'classic';
 
-  // Componentes Dinâmicos
+  // Componentes Dinâmicos (Agora com o Classic incluído!)
   const Layout = 
     templateName === 'luxury' ? LuxuryLayout : 
     templateName === 'modern' ? ModernLayout : 
-    MinimalistLayout;
+    templateName === 'minimalist' ? MinimalistLayout : 
+    ClassicLayout;
 
   const Home = 
     templateName === 'luxury' ? LuxuryHome : 
     templateName === 'modern' ? ModernHome : 
-    MinimalistHome;
+    templateName === 'minimalist' ? MinimalistHome : 
+    ClassicHome;
 
   return (
     <Routes>
@@ -57,7 +61,7 @@ export default function TenantRouter() {
         {/* Home dinâmica dependendo do template */}
         <Route index element={<Home />} />
         
-        {/* Páginas internas partilhadas, mas que herdam a casca do Layout escolhido */}
+        {/* Páginas internas */}
         <Route path="imoveis" element={<Properties />} />
         <Route path="imoveis/:id" element={<PropertyDetail />} />
         <Route path="sobre" element={<About />} />

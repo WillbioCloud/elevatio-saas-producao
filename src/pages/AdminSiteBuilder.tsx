@@ -2,33 +2,172 @@ import React, { useState, useEffect } from 'react';
 import { Icons } from '../components/Icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { uploadCompanyAsset } from '../lib/storage';
+import { SiteData } from '../types';
+import { Palette, Image, Info, Mail, Loader2, Save, ExternalLink, Upload, X } from 'lucide-react';
+
+type TabId = 'identity' | 'hero' | 'about' | 'contact';
+type AssetType = 'logo' | 'hero' | 'favicon' | 'about';
+
+interface ImageUploaderProps {
+  label: string;
+  currentUrl: string | null;
+  onUpload: (url: string) => void;
+  assetType: AssetType;
+  companyId: string;
+  aspectRatio?: string;
+}
+
+const ImageUploader: React.FC<ImageUploaderProps> = ({ 
+  label, 
+  currentUrl, 
+  onUpload, 
+  assetType, 
+  companyId,
+  aspectRatio = 'aspect-video'
+}) => {
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState<string | null>(currentUrl);
+
+  useEffect(() => {
+    setPreview(currentUrl);
+  }, [currentUrl]);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor, selecione apenas arquivos de imagem.');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const url = await uploadCompanyAsset(file, companyId, assetType);
+      setPreview(url);
+      onUpload(url);
+    } catch (error) {
+      console.error('Erro no upload:', error);
+      alert('Erro ao fazer upload da imagem. Tente novamente.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemove = () => {
+    setPreview(null);
+    onUpload('');
+  };
+
+  return (
+    <div>
+      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+        {label}
+      </label>
+      
+      {preview ? (
+        <div className="relative group">
+          <div className={`${aspectRatio} w-full rounded-xl overflow-hidden border-2 border-slate-200 dark:border-slate-700`}>
+            <img src={preview} alt={label} className="w-full h-full object-cover" />
+          </div>
+          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center gap-3">
+            <label className="cursor-pointer bg-white text-slate-900 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-slate-100 transition-colors">
+              <Upload size={16} />
+              Trocar
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="hidden"
+                disabled={uploading}
+              />
+            </label>
+            <button
+              onClick={handleRemove}
+              className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-red-600 transition-colors"
+            >
+              <X size={16} />
+              Remover
+            </button>
+          </div>
+        </div>
+      ) : (
+        <label className={`${aspectRatio} w-full border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-brand-500 hover:bg-brand-50/50 dark:hover:bg-brand-900/10 transition-all group`}>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            className="hidden"
+            disabled={uploading}
+          />
+          {uploading ? (
+            <>
+              <Loader2 className="animate-spin text-brand-500 mb-2" size={32} />
+              <p className="text-sm text-slate-500">Enviando...</p>
+            </>
+          ) : (
+            <>
+              <Upload className="text-slate-400 group-hover:text-brand-500 mb-2" size={32} />
+              <p className="text-sm font-bold text-slate-600 dark:text-slate-400">Clique para enviar</p>
+              <p className="text-xs text-slate-500 mt-1">PNG, JPG ou WEBP</p>
+            </>
+          )}
+        </label>
+      )}
+    </div>
+  );
+};
 
 export default function AdminSiteBuilder() {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<TabId>('identity');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [companyData, setCompanyData] = useState<any>(null);
-  const [siteData, setSiteData] = useState({
-    primaryColor: '#0EA5E9',
-    heroTitle: 'Encontre o Imóvel dos Seus Sonhos',
-    heroSubtitle: 'As melhores opções do mercado com atendimento exclusivo.',
-    aboutText: 'Somos especialistas em realizar sonhos e garantir os melhores negócios imobiliários.'
+  
+  const [siteData, setSiteData] = useState<SiteData>({
+    logo_url: null,
+    favicon_url: null,
+    hero_image_url: null,
+    hero_title: null,
+    hero_subtitle: null,
+    about_text: null,
+    about_image_url: null,
+    primary_color: '#0f172a',
+    secondary_color: '#3b82f6',
+    contact: { email: null, phone: null, address: null },
+    social: { instagram: null, facebook: null, whatsapp: null, youtube: null },
+    seo: { title: null, description: null },
   });
 
   useEffect(() => {
     const fetchCompanyData = async () => {
       if (!user?.company_id) return;
 
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('companies')
         .select('*')
         .eq('id', user.company_id)
         .single();
 
+      if (error) {
+        console.error('Erro ao buscar dados da empresa:', error);
+        setIsLoading(false);
+        return;
+      }
+
       if (data) {
         setCompanyData(data);
-        if (data.site_data && Object.keys(data.site_data).length > 0) {
-          setSiteData(prev => ({ ...prev, ...data.site_data }));
+        
+        if (data.site_data) {
+          setSiteData(prev => ({
+            ...prev,
+            ...data.site_data,
+            contact: { ...prev.contact, ...data.site_data.contact },
+            social: { ...prev.social, ...data.site_data.social },
+            seo: { ...prev.seo, ...data.site_data.seo },
+          }));
         }
       }
 
@@ -36,12 +175,13 @@ export default function AdminSiteBuilder() {
     };
 
     fetchCompanyData();
-  }, [user]);
+  }, [user?.company_id]);
 
   const handleSave = async () => {
     if (!user?.company_id) return;
 
     setIsSaving(true);
+    
     const { error } = await supabase
       .from('companies')
       .update({ site_data: siteData })
@@ -50,10 +190,29 @@ export default function AdminSiteBuilder() {
     setIsSaving(false);
 
     if (error) {
-      alert("Erro ao salvar as edições.");
+      console.error('Erro ao salvar:', error);
+      alert('Erro ao salvar as alterações. Tente novamente.');
     } else {
-      alert("Site atualizado com sucesso!");
+      alert('Site atualizado com sucesso! 🎉');
     }
+  };
+
+  const updateSiteData = (updates: Partial<SiteData>) => {
+    setSiteData(prev => ({ ...prev, ...updates }));
+  };
+
+  const updateContact = (field: keyof SiteData['contact'], value: string) => {
+    setSiteData(prev => ({
+      ...prev,
+      contact: { ...prev.contact, [field]: value }
+    }));
+  };
+
+  const updateSocial = (field: keyof SiteData['social'], value: string) => {
+    setSiteData(prev => ({
+      ...prev,
+      social: { ...prev.social, [field]: value }
+    }));
   };
 
   const previewUrl = companyData 
@@ -63,7 +222,7 @@ export default function AdminSiteBuilder() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-12">
-        <Icons.RefreshCw size={32} className="animate-spin text-brand-500" />
+        <Loader2 size={32} className="animate-spin text-brand-500" />
       </div>
     );
   }
@@ -78,11 +237,8 @@ export default function AdminSiteBuilder() {
               <h3 className="font-bold text-red-900 dark:text-red-100 mb-2">
                 Empresa não encontrada
               </h3>
-              <p className="text-sm text-red-700 dark:text-red-300 mb-4">
-                Não foi possível carregar os dados da sua empresa. Verifique se você está vinculado a uma empresa ativa.
-              </p>
-              <p className="text-xs text-red-600 dark:text-red-400">
-                <strong>ID da Empresa:</strong> {user?.company_id || 'Não definido'}
+              <p className="text-sm text-red-700 dark:text-red-300">
+                Não foi possível carregar os dados da sua empresa.
               </p>
             </div>
           </div>
@@ -91,146 +247,337 @@ export default function AdminSiteBuilder() {
     );
   }
 
+  const tabs = [
+    { id: 'identity' as TabId, label: 'Identidade', icon: Palette },
+    { id: 'hero' as TabId, label: 'Hero', icon: Image },
+    { id: 'about' as TabId, label: 'Sobre', icon: Info },
+    { id: 'contact' as TabId, label: 'Contato', icon: Mail },
+  ];
+
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6 animate-fade-in">
-      <div className="flex justify-between items-end">
+    <div className="p-6 max-w-6xl mx-auto space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Icons.Layout className="text-brand-500" /> Meu Site
+            <Icons.Layout className="text-brand-500" /> Construtor de Site
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-1">
-            Personalize as cores e textos da sua vitrine de imóveis.
+            Personalize a identidade visual e conteúdo do seu site.
           </p>
         </div>
-        <a
-          href={previewUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors"
-        >
-          <Icons.ExternalLink size={18} /> Ver Meu Site
-        </a>
+        <div className="flex gap-3">
+          <a
+            href={previewUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors"
+          >
+            <ExternalLink size={18} /> Visualizar
+          </a>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="bg-brand-600 hover:bg-brand-700 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-50 shadow-lg shadow-brand-500/20"
+          >
+            {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+            Salvar
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Formulário de Edição */}
-        <div className="md:col-span-2 space-y-6">
-          <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border rounded-2xl p-6 shadow-sm space-y-5">
-            <h3 className="font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-dark-border pb-3">
-              Identidade Visual
-            </h3>
+      {/* Tabs Navigation */}
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-2 shadow-sm">
+        <div className="flex gap-2 overflow-x-auto">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Icon size={18} />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm">
+        
+        {/* Identidade Visual */}
+        {activeTab === 'identity' && (
+          <div className="space-y-6 animate-fade-in">
             <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                Cor Principal
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={siteData.primaryColor}
-                  onChange={e => setSiteData({...siteData, primaryColor: e.target.value})}
-                  className="w-12 h-12 rounded cursor-pointer border-0 p-0"
-                />
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Identidade Visual</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Defina as cores e logos da sua marca.</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <ImageUploader
+                label="Logo Principal"
+                currentUrl={siteData.logo_url}
+                onUpload={(url) => updateSiteData({ logo_url: url })}
+                assetType="logo"
+                companyId={user?.company_id || ''}
+                aspectRatio="aspect-[3/1]"
+              />
+
+              <ImageUploader
+                label="Favicon (Ícone do Site)"
+                currentUrl={siteData.favicon_url}
+                onUpload={(url) => updateSiteData({ favicon_url: url })}
+                assetType="favicon"
+                companyId={user?.company_id || ''}
+                aspectRatio="aspect-square"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-200 dark:border-slate-700">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                  Cor Primária
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={siteData.primary_color}
+                    onChange={(e) => updateSiteData({ primary_color: e.target.value })}
+                    className="w-16 h-16 rounded-xl cursor-pointer border-2 border-slate-200 dark:border-slate-600"
+                  />
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={siteData.primary_color}
+                      onChange={(e) => updateSiteData({ primary_color: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none uppercase"
+                      placeholder="#0f172a"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Cor principal da marca</p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                  Cor Secundária
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={siteData.secondary_color}
+                    onChange={(e) => updateSiteData({ secondary_color: e.target.value })}
+                    className="w-16 h-16 rounded-xl cursor-pointer border-2 border-slate-200 dark:border-slate-600"
+                  />
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={siteData.secondary_color}
+                      onChange={(e) => updateSiteData({ secondary_color: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none uppercase"
+                      placeholder="#3b82f6"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Cor de destaque e botões</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Hero Section */}
+        {activeTab === 'hero' && (
+          <div className="space-y-6 animate-fade-in">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Seção Hero</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Banner principal que aparece no topo do site.</p>
+            </div>
+
+            <ImageUploader
+              label="Imagem de Fundo do Hero"
+              currentUrl={siteData.hero_image_url}
+              onUpload={(url) => updateSiteData({ hero_image_url: url })}
+              assetType="hero"
+              companyId={user?.company_id || ''}
+              aspectRatio="aspect-[21/9]"
+            />
+
+            <div className="grid grid-cols-1 gap-6 pt-4 border-t border-slate-200 dark:border-slate-700">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                  Título Principal
+                </label>
                 <input
                   type="text"
-                  value={siteData.primaryColor}
-                  onChange={e => setSiteData({...siteData, primaryColor: e.target.value})}
-                  className="bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none w-32 uppercase"
+                  value={siteData.hero_title || ''}
+                  onChange={(e) => updateSiteData({ hero_title: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
+                  placeholder="Encontre o Imóvel dos Seus Sonhos"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                  Subtítulo
+                </label>
+                <input
+                  type="text"
+                  value={siteData.hero_subtitle || ''}
+                  onChange={(e) => updateSiteData({ hero_subtitle: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
+                  placeholder="As melhores opções do mercado com atendimento exclusivo"
                 />
               </div>
             </div>
           </div>
+        )}
 
-          <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border rounded-2xl p-6 shadow-sm space-y-5">
-            <h3 className="font-bold text-slate-900 dark:text-white border-b border-slate-100 dark:border-dark-border pb-3">
-              Textos Principais
-            </h3>
+        {/* About Section */}
+        {activeTab === 'about' && (
+          <div className="space-y-6 animate-fade-in">
             <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                Título do Banner (Hero)
-              </label>
-              <input
-                value={siteData.heroTitle}
-                onChange={e => setSiteData({...siteData, heroTitle: e.target.value})}
-                className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
-              />
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Sobre a Empresa</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Conte a história da sua imobiliária.</p>
             </div>
-            <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                Subtítulo do Banner
-              </label>
-              <input
-                value={siteData.heroSubtitle}
-                onChange={e => setSiteData({...siteData, heroSubtitle: e.target.value})}
-                className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                Texto "Quem Somos"
+
+            <ImageUploader
+              label="Imagem da Seção Sobre"
+              currentUrl={siteData.about_image_url}
+              onUpload={(url) => updateSiteData({ about_image_url: url })}
+              assetType="about"
+              companyId={user?.company_id || ''}
+            />
+
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                Texto Sobre a Empresa
               </label>
               <textarea
-                value={siteData.aboutText}
-                onChange={e => setSiteData({...siteData, aboutText: e.target.value})}
-                className="w-full h-32 resize-none bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
+                value={siteData.about_text || ''}
+                onChange={(e) => updateSiteData({ about_text: e.target.value })}
+                rows={6}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none resize-none"
+                placeholder="Somos especialistas em realizar sonhos e garantir os melhores negócios imobiliários..."
               />
+              <p className="text-xs text-slate-500 mt-2">Descreva a missão, valores e diferenciais da sua empresa.</p>
             </div>
           </div>
+        )}
 
-          <div className="flex justify-end">
-            <button
-              onClick={handleSave}
-              disabled={isSaving}
-              className="bg-brand-600 hover:bg-brand-700 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors disabled:opacity-50 shadow-lg shadow-brand-500/20"
-            >
-              {isSaving ? <Icons.RefreshCw className="animate-spin" size={20} /> : <Icons.Save size={20} />}
-              Salvar Alterações
-            </button>
+        {/* Contact Section */}
+        {activeTab === 'contact' && (
+          <div className="space-y-6 animate-fade-in">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Informações de Contato</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Dados para seus clientes entrarem em contato.</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                  E-mail
+                </label>
+                <input
+                  type="email"
+                  value={siteData.contact.email || ''}
+                  onChange={(e) => updateContact('email', e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
+                  placeholder="contato@imobiliaria.com"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                  Telefone
+                </label>
+                <input
+                  type="tel"
+                  value={siteData.contact.phone || ''}
+                  onChange={(e) => updateContact('phone', e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
+                  placeholder="(11) 99999-9999"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                  Endereço
+                </label>
+                <input
+                  type="text"
+                  value={siteData.contact.address || ''}
+                  onChange={(e) => updateContact('address', e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
+                  placeholder="Rua Exemplo, 123 - Centro - Cidade/UF"
+                />
+              </div>
+            </div>
+
+            <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Redes Sociais</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                    Instagram
+                  </label>
+                  <input
+                    type="text"
+                    value={siteData.social.instagram || ''}
+                    onChange={(e) => updateSocial('instagram', e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
+                    placeholder="@suaimobiliaria"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                    Facebook
+                  </label>
+                  <input
+                    type="text"
+                    value={siteData.social.facebook || ''}
+                    onChange={(e) => updateSocial('facebook', e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
+                    placeholder="facebook.com/suaimobiliaria"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                    WhatsApp
+                  </label>
+                  <input
+                    type="tel"
+                    value={siteData.social.whatsapp || ''}
+                    onChange={(e) => updateSocial('whatsapp', e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
+                    placeholder="5511999999999"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                    YouTube
+                  </label>
+                  <input
+                    type="text"
+                    value={siteData.social.youtube || ''}
+                    onChange={(e) => updateSocial('youtube', e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none"
+                    placeholder="youtube.com/@suaimobiliaria"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-
-        {/* Live Preview (Simulação) */}
-        <div className="hidden md:block">
-          <div className="sticky top-6 bg-slate-900 rounded-3xl overflow-hidden border-4 border-slate-800 shadow-2xl h-[600px] flex flex-col relative">
-            <div className="h-12 bg-white/10 backdrop-blur border-b border-white/10 flex items-center px-4 justify-between z-10">
-              <div className="w-24 h-4 rounded bg-white/20"></div>
-              <div 
-                className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] text-white"
-                style={{ backgroundColor: siteData.primaryColor }}
-              >
-                <Icons.Menu size={14}/>
-              </div>
-            </div>
-
-            <div
-              className="h-48 relative flex items-center justify-center p-6 text-center"
-              style={{ backgroundColor: siteData.primaryColor }}
-            >
-              <div className="absolute inset-0 bg-black/20"></div>
-              <div className="relative z-10">
-                <h4 className="text-white font-black text-lg leading-tight mb-2">
-                  {siteData.heroTitle}
-                </h4>
-                <p className="text-white/80 text-[10px]">
-                  {siteData.heroSubtitle}
-                </p>
-              </div>
-            </div>
-
-            <div className="p-4 flex-1 bg-white">
-              <div className="w-1/3 h-3 bg-slate-200 rounded mb-4"></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="h-24 bg-slate-100 rounded-xl"></div>
-                <div className="h-24 bg-slate-100 rounded-xl"></div>
-              </div>
-              <div className="mt-6">
-                <div className="w-1/3 h-3 bg-slate-200 rounded mb-2"></div>
-                <p className="text-[8px] text-slate-500 leading-relaxed line-clamp-4">
-                  {siteData.aboutText}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

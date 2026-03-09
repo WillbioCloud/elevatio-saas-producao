@@ -3,9 +3,9 @@ import { Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const MASTER_DOMAINS = [
-  'localhost', // Para testes locais do CRM Mestre
-  'lvh.me', // Adicionado para testes de subdomínio local
-  'app-elevatiovendas.vercel.app', // Para futuro deploy gratuito
+  'localhost',
+  'lvh.me',
+  'app-elevatiovendas.vercel.app',
   'elevatiovendas.com.br',
   'www.elevatiovendas.com.br',
 ] as const;
@@ -22,6 +22,7 @@ export type Company = {
   phone?: string | null;
   email?: string | null;
   address?: string | null;
+  site_data?: any;
   [key: string]: unknown;
 };
 
@@ -54,21 +55,19 @@ const getHostData = (hostname: string): {
     return { isMasterDomain: true, slug: null, customDomain: null };
   }
 
-  // Teste local com lvh.me (Pode ser bloqueado por ISP)
   if (normalizedHostname.endsWith('.lvh.me')) {
     return {
       isMasterDomain: false,
       slug: normalizedHostname.replace(/\.lvh\.me$/, ''),
-      customDomain: null,
+      customDomain: null
     };
   }
 
-  // Teste local nativo do Chrome/Edge (*.localhost)
   if (normalizedHostname.endsWith('.localhost') && normalizedHostname !== 'localhost') {
     return {
       isMasterDomain: false,
       slug: normalizedHostname.replace(/\.localhost$/, ''),
-      customDomain: null,
+      customDomain: null
     };
   }
 
@@ -76,7 +75,7 @@ const getHostData = (hostname: string): {
     return {
       isMasterDomain: false,
       slug: normalizedHostname.replace(/\.vercel\.app$/, ''),
-      customDomain: null,
+      customDomain: null
     };
   }
 
@@ -84,7 +83,7 @@ const getHostData = (hostname: string): {
     return {
       isMasterDomain: false,
       slug: normalizedHostname.replace(/\.elevatiovendas\.com\.br$/, ''),
-      customDomain: null,
+      customDomain: null
     };
   }
 
@@ -119,45 +118,26 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       try {
-        const filters: string[] = [];
+        let query = supabase.from('companies').select('*');
 
-        // Busca por domínio customizado (ex: imobiliariadojoao.com.br)
         if (hostData.customDomain) {
-          filters.push(`domain.eq.${cleanHostname}`);
+          query = query.eq('domain', cleanHostname);
+        } else if (hostData.slug) {
+          query = query.eq('subdomain', hostData.slug);
         }
 
-        // Busca por slug/subdomain (ex: imobilaria.elevatiovendas.com)
-        if (hostData.slug) {
-          filters.push(`subdomain.eq.${hostData.slug}`);
-          filters.push(`slug.eq.${hostData.slug}`); // Blindagem extra
+        const { data, error } = await query.limit(1).maybeSingle();
+
+        if (error) {
+          console.error('Erro na query do banco:', error);
+          throw error;
         }
-
-        const filterString = filters.join(',');
-
-        const { data, error } = await supabase
-          .from('companies')
-          .select('*')
-          .or(filterString)
-          .limit(1)
-          .maybeSingle();
-
-        if (error) throw error;
 
         if (isMounted) {
           setTenant((data as Company | null) ?? null);
         }
       } catch (error) {
-        const errorName = `${(error as { name?: string }).name ?? ''}`;
-        const errorMessage = `${(error as { message?: string }).message ?? ''}`.toLowerCase();
-        const isAbortError =
-          errorName === 'AbortError' ||
-          errorMessage.includes('signal is aborted') ||
-          errorMessage.includes('aborted');
-
-        if (!isAbortError) {
-          console.error('Erro ao carregar tenant:', error);
-        }
-
+        console.error('Erro ao carregar tenant:', error);
         if (isMounted) {
           setTenant(null);
         }
