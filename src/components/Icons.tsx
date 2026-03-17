@@ -107,6 +107,15 @@ import {
   UserMinus,
   BellOff,
   Code,
+  Instagram,
+  Facebook,
+  Linkedin,
+  Youtube,
+  Palette,
+  Sparkles,
+  BrainCircuit,
+  UserCheck,
+  Key,
 } from 'lucide-react';
 
 const Google = (props: ComponentPropsWithoutRef<'svg'>) => (
@@ -247,4 +256,13 @@ export const Icons = {
   UserMinus,
   BellOff,
   Code,
+  Instagram,
+  Facebook,
+  Linkedin,
+  Youtube,
+  Palette,
+  Sparkles,
+  BrainCircuit,
+  UserCheck,
+  Key,
 };

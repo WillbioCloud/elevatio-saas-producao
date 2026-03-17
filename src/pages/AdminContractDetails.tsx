@@ -3,29 +3,34 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 
 const AdminContractDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { addToast } = useToast();
   
   const [contract, setContract] = useState<any>(null);
   const [installments, setInstallments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [isGeneratingInvoices, setIsGeneratingInvoices] = useState(false);
   
-  // Novos estados para Abas e Vistoria
   const [activeTab, setActiveTab] = useState<'finance' | 'vistoria'>('finance');
   const [vistoriaList, setVistoriaList] = useState<any[]>([]);
   const [savingVistoria, setSavingVistoria] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+
+  const [keysStatus, setKeysStatus] = useState('na_imobiliaria');
+  const [keysNotes, setKeysNotes] = useState('');
+  const [isUpdatingKeys, setIsUpdatingKeys] = useState(false);
 
   const handleFinalizeContract = async () => {
     if (!window.confirm('CUIDADO: Tem certeza que deseja encerrar/dar baixa neste contrato? O imóvel associado será marcado como "Inativo" e oculto do sistema.')) return;
 
     setFinalizing(true);
     try {
-      // 1. Arquiva/Finaliza o contrato
       const { data: contractData, error: contractError } = await supabase
         .from('contracts')
         .update({ status: 'archived' })
@@ -35,7 +40,6 @@ const AdminContractDetails: React.FC = () => {
       if (contractError) throw contractError;
       if (!contractData || contractData.length === 0) throw new Error('Acesso negado: O contrato não pôde ser atualizado. Verifique as permissões (RLS).');
 
-      // 2. EXCLUI o imóvel do banco de dados permanentemente para limpar espaço
       if (contract.property_id) {
         const { error: propError } = await supabase
           .from('properties')
@@ -47,7 +51,7 @@ const AdminContractDetails: React.FC = () => {
 
       alert('Contrato e Imóvel finalizados com sucesso!');
       fetchContractData();
-      navigate('/admin/contratos'); // Volta para a lista
+      navigate('/admin/contratos');
     } catch (error: any) {
       alert('Erro ao finalizar: ' + error.message);
     } finally {
@@ -57,22 +61,37 @@ const AdminContractDetails: React.FC = () => {
 
   const fetchContractData = async () => {
     setLoading(true);
-    const { data: contractData } = await supabase
+    
+    let contractQuery = supabase
       .from('contracts')
       .select('*, lead:leads(name, phone, email), property:properties(title), broker:profiles(name)')
-      .eq('id', id)
-      .single();
+      .eq('id', id);
+    
+    // Multi-Tenant: Filtra por company_id se não for admin
+    if (user?.role !== 'admin' && user?.company_id) {
+      contractQuery = contractQuery.eq('company_id', user.company_id);
+    }
+    
+    const { data: contractData } = await contractQuery.single();
 
     if (contractData) {
       setContract(contractData);
       setVistoriaList(contractData.vistoria_items || []);
+      setKeysStatus(contractData.keys_status || 'na_imobiliaria');
+      setKeysNotes(contractData.keys_notes || '');
     }
 
-    const { data: installmentsData } = await supabase
+    let installmentsQuery = supabase
       .from('installments')
       .select('*')
       .eq('contract_id', id)
       .order('due_date', { ascending: true });
+    
+    if (user?.role !== 'admin' && user?.company_id) {
+      installmentsQuery = installmentsQuery.eq('company_id', user.company_id);
+    }
+
+    const { data: installmentsData } = await installmentsQuery;
 
     if (installmentsData) setInstallments(installmentsData);
     setLoading(false);
@@ -92,12 +111,12 @@ const AdminContractDetails: React.FC = () => {
     setGenerating(true);
     const { error } = await supabase.from('installments').insert([{
       contract_id: id,
+      company_id: user?.company_id,
       type: contract?.type === 'rent' ? 'rent_monthly' : 'monthly',
       amount: Number(value),
       due_date: dueDate,
       status: 'pending',
-      installment_number: installments.length + 1,
-      company_id: user?.company_id,
+      installment_number: installments.length + 1
     }]);
 
     if (error) alert('Erro ao gerar parcela: ' + error.message);
@@ -128,7 +147,6 @@ const AdminContractDetails: React.FC = () => {
     const valueFormatted = Number(inst.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     const dateFormatted = new Date(inst.due_date).toLocaleDateString('pt-BR');
 
-    // Verifica se está atrasado (data menor que hoje e não está pago)
     const isOverdue = new Date(inst.due_date) < new Date() && inst.status !== 'paid';
 
     let text = '';
@@ -141,7 +159,6 @@ const AdminContractDetails: React.FC = () => {
     window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  // Gerenciamento da Vistoria
   const updateVistoriaItem = (index: number, field: string, value: any) => {
     const newList = [...vistoriaList];
     newList[index] = { ...newList[index], [field]: value };
@@ -161,17 +178,63 @@ const AdminContractDetails: React.FC = () => {
   };
 
   if (loading) return <div className="flex justify-center py-20"><Icons.Loader2 className="animate-spin text-brand-500" size={40} /></div>;
-  if (!contract) return <div className="p-10 text-center text-slate-500">Contrato não encontrado.</div>;
+  if (!contract) return <div className="p-10 text-center text-slate-500 dark:text-slate-400">Contrato não encontrado.</div>;
 
   const isRent = contract.type === 'rent';
   const isCash = contract.sale_is_cash;
 
-  // Cálculos visuais
   const totalRepairCost = vistoriaList.reduce((acc, item) => acc + (Number(item.repair_cost) || 0), 0);
   const totalPaid = installments.filter(i => i.status === 'paid').reduce((acc, i) => acc + Number(i.amount), 0);
   const pendingInstallments = installments.filter(i => i.status !== 'paid');
   const remainingBalance = pendingInstallments.reduce((acc, i) => acc + Number(i.amount), 0);
   const remainingCount = pendingInstallments.length;
+
+  const handleGenerateInvoices = async () => {
+    if (!contract || contract.type !== 'rent' || !contract.duration_months) return;
+    setIsGeneratingInvoices(true);
+    try {
+      const invoicesToInsert = Array.from({ length: contract.duration_months }).map((_, index) => {
+        const dueDate = new Date(contract.start_date || new Date());
+        dueDate.setMonth(dueDate.getMonth() + index + 1);
+        return {
+          company_id: contract.company_id,
+          property_id: contract.property_id,
+          contract_id: contract.id,
+          client_name: contract.lead?.name || 'Inquilino',
+          description: `Aluguel - Parcela ${index + 1}/${contract.duration_months}`,
+          amount: contract.value,
+          due_date: dueDate.toISOString().split('T')[0],
+          status: 'pendente',
+        };
+      });
+
+      const { error } = await supabase.from('invoices').insert(invoicesToInsert);
+      if (error) throw error;
+      alert(`${contract.duration_months} faturas geradas com sucesso no Financeiro!`);
+    } catch (error: any) {
+      console.error('Erro ao gerar faturas:', error);
+      alert('Erro ao gerar faturas: ' + error.message);
+    } finally {
+      setIsGeneratingInvoices(false);
+    }
+  };
+
+  const handleUpdateKeys = async () => {
+    setIsUpdatingKeys(true);
+    try {
+      const { error } = await supabase
+        .from('contracts')
+        .update({ keys_status: keysStatus, keys_notes: keysNotes })
+        .eq('id', contract.id);
+      if (error) throw error;
+      addToast('Status das chaves atualizado com sucesso!', 'success');
+    } catch (error: any) {
+      console.error('Erro ao atualizar chaves:', error);
+      addToast('Erro ao atualizar as chaves.', 'error');
+    } finally {
+      setIsUpdatingKeys(false);
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fade-in pb-10">
@@ -179,28 +242,27 @@ const AdminContractDetails: React.FC = () => {
       {/* HEADER PRINCIPAL */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate(-1)} className="p-2 bg-white rounded-full border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors" title="Voltar para a tela anterior">
+          <button onClick={() => navigate(-1)} className="p-2 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-full border border-slate-200/60 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400 transition-colors shadow-sm" title="Voltar para a tela anterior">
             <Icons.ArrowLeft size={20} />
           </button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-serif font-bold text-slate-800">
+              <h1 className="text-3xl font-serif font-bold tracking-tight text-slate-800 dark:text-white">
                 Contrato #{contract.id.split('-')[0].toUpperCase()}
               </h1>
-              <span className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full ${isRent ? 'bg-indigo-100 text-indigo-700' : 'bg-brand-100 text-brand-700'}`}>
+              <span className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full ${isRent ? 'bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400' : 'bg-brand-100 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400'}`}>
                 {isRent ? 'Locação' : 'Venda'} {isCash && '- À VISTA'}
               </span>
               {contract.status === 'archived' && (
-                <span className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full bg-slate-100 text-slate-500">
+                <span className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400">
                   Encerrado
                 </span>
               )}
             </div>
-            <p className="text-sm text-slate-500 mt-1">Imóvel: {contract.property?.title}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Imóvel: {contract.property?.title}</p>
           </div>
         </div>
 
-        {/* BOTÃO DE FINALIZAÇÃO */}
         {contract.status !== 'archived' && (
           <button
             onClick={handleFinalizeContract}
@@ -214,94 +276,118 @@ const AdminContractDetails: React.FC = () => {
         )}
       </div>
 
+      {/* INTEGRAÇÃO FINANCEIRA */}
+      {contract.type === 'rent' && (
+        <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-emerald-800 dark:text-emerald-400 flex items-center gap-2">
+              <Icons.Wallet size={20} /> Integração Financeira
+            </h3>
+            <p className="text-sm text-emerald-600 dark:text-emerald-500 mt-1">
+              Gere as cobranças mensais deste contrato automaticamente no painel Financeiro.
+            </p>
+          </div>
+          <button
+            onClick={handleGenerateInvoices}
+            disabled={isGeneratingInvoices}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 disabled:opacity-50 shrink-0 shadow-sm"
+          >
+            {isGeneratingInvoices
+              ? <Icons.Loader2 size={18} className="animate-spin" />
+              : <Icons.Settings size={18} />}
+            Gerar {contract.duration_months} Faturas
+          </button>
+        </div>
+      )}
+
       {/* CARDS DE RESUMO GERAL */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Card Cliente e Prazos */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none space-y-4">
           <div>
-            <div className="flex items-center gap-2 mb-2 text-slate-400">
-              <Icons.User size={16} /> <h3 className="font-bold text-slate-700 text-sm uppercase">Cliente</h3>
+            <div className="flex items-center gap-2 mb-2 text-slate-400 dark:text-slate-500">
+              <Icons.User size={16} /> <h3 className="font-bold text-slate-700 dark:text-slate-300 text-sm uppercase">Cliente</h3>
             </div>
-            <p className="font-bold text-lg text-slate-800">{contract.lead?.name}</p>
-            <p className="text-sm text-slate-500">{contract.lead?.phone}</p>
+            <p className="font-bold font-serif text-lg text-slate-800 dark:text-white">{contract.lead?.name}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{contract.lead?.phone}</p>
           </div>
-          <div className="pt-4 border-t border-slate-100 flex justify-between items-center">
+          <div className="pt-4 border-t border-slate-100 dark:border-white/5 flex justify-between items-center">
             <div>
-              <p className="text-xs text-slate-400 uppercase">Início</p>
-              <p className="font-bold text-slate-700">{new Date(contract.start_date).toLocaleDateString('pt-BR')}</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 uppercase">Início</p>
+              <p className="font-bold text-slate-700 dark:text-slate-300">{new Date(contract.start_date).toLocaleDateString('pt-BR')}</p>
             </div>
             {contract.end_date && (
               <div className="text-right">
-                <p className="text-xs text-slate-400 uppercase">Vencimento</p>
-                <p className="font-bold text-slate-700">{new Date(contract.end_date).toLocaleDateString('pt-BR')}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 uppercase">Vencimento</p>
+                <p className="font-bold text-slate-700 dark:text-slate-300">{new Date(contract.end_date).toLocaleDateString('pt-BR')}</p>
               </div>
             )}
           </div>
         </div>
 
         {/* Card Financeiro Principal */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-2 mb-4 text-slate-400">
-            <Icons.DollarSign size={16} /> <h3 className="font-bold text-slate-700 text-sm uppercase">Extrato do Contrato</h3>
+        <div className="lg:col-span-2 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none">
+          <div className="flex items-center gap-2 mb-4 text-slate-400 dark:text-slate-500">
+            <Icons.DollarSign size={16} /> <h3 className="font-bold text-slate-700 dark:text-slate-300 text-sm uppercase">Extrato do Contrato</h3>
           </div>
           
           {isRent ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
-                <p className="text-xs text-slate-400 uppercase">Aluguel Base</p>
-                <p className="font-bold text-xl text-indigo-600">{Number(contract.rent_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 uppercase">Aluguel Base</p>
+                <p className="font-bold font-serif text-xl text-indigo-600 dark:text-indigo-400">{Number(contract.rent_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400 uppercase">Condomínio</p>
-                <p className="font-bold text-lg text-slate-700">{Number(contract.condo_value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 uppercase">Condomínio</p>
+                <p className="font-bold font-serif text-lg text-slate-700 dark:text-slate-300">{Number(contract.condo_value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400 uppercase">IPTU</p>
-                <p className="font-bold text-lg text-slate-700">{Number(contract.iptu_value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 uppercase">IPTU</p>
+                <p className="font-bold font-serif text-lg text-slate-700 dark:text-slate-300">{Number(contract.iptu_value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400 uppercase">Garantia</p>
-                <p className="font-bold text-sm text-slate-700 mt-1 uppercase">{String(contract.rent_guarantee_type).replace('_', ' ')}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 uppercase">Garantia</p>
+                <p className="font-bold text-sm text-slate-700 dark:text-slate-300 mt-1 uppercase">{String(contract.rent_guarantee_type).replace('_', ' ')}</p>
               </div>
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="flex justify-between items-end border-b border-slate-100 pb-4">
+              <div className="flex justify-between items-end border-b border-slate-100 dark:border-white/5 pb-4">
                 <div>
-                  <p className="text-xs text-slate-400 uppercase">Valor Total do Imóvel</p>
-                  <p className="font-bold text-3xl text-emerald-600">{Number(contract.sale_total_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 uppercase">Valor Total do Imóvel</p>
+                  <p className="font-bold font-serif text-3xl text-emerald-600 dark:text-emerald-400">{Number(contract.sale_total_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                 </div>
                 {isCash ? (
                   <div className="text-right">
                     <p className="text-xs text-emerald-500 font-bold uppercase tracking-wider mb-1 flex items-center gap-1 justify-end"><Icons.CheckCircle size={14}/> Pago à vista</p>
-                    <p className="text-sm font-bold text-slate-700">{contract.sale_payment_method}</p>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{contract.sale_payment_method}</p>
                   </div>
                 ) : (
                   <div className="text-right">
-                    <p className="text-xs text-slate-400 uppercase">Saldo Devedor (Faltante)</p>
-                    <p className="font-bold text-2xl text-amber-500">{remainingBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
-                    <p className="text-xs text-slate-500 font-medium mt-1">Faltam {remainingCount} parcela(s)</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 uppercase">Saldo Devedor (Faltante)</p>
+                    <p className="font-bold font-serif text-2xl text-amber-500">{remainingBalance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">Faltam {remainingCount} parcela(s)</p>
                   </div>
                 )}
               </div>
               
               {!isCash && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50/50 dark:bg-white/[0.02] p-4 rounded-xl">
                   <div>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold">Sinal / Entrada</p>
-                    <p className="font-bold text-slate-700">{Number(contract.sale_down_payment || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold">Sinal / Entrada</p>
+                    <p className="font-bold font-serif text-slate-700 dark:text-slate-300">{Number(contract.sale_down_payment || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold">Financiamento</p>
-                    <p className="font-bold text-slate-700">{Number(contract.sale_financing_value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold">Financiamento</p>
+                    <p className="font-bold font-serif text-slate-700 dark:text-slate-300">{Number(contract.sale_financing_value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold">Consórcio</p>
-                    <p className="font-bold text-slate-700">{Number(contract.sale_consortium_value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold">Consórcio</p>
+                    <p className="font-bold font-serif text-slate-700 dark:text-slate-300">{Number(contract.sale_consortium_value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold">Permuta</p>
-                    <p className="font-bold text-slate-700">{Number(contract.permutation_value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold">Permuta</p>
+                    <p className="font-bold font-serif text-slate-700 dark:text-slate-300">{Number(contract.permutation_value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                   </div>
                 </div>
               )}
@@ -311,11 +397,11 @@ const AdminContractDetails: React.FC = () => {
       </div>
 
       {/* NAVEGAÇÃO DE ABAS (RECEBÍVEIS X VISTORIA) */}
-      <div className="flex gap-6 border-b border-slate-200">
+      <div className="flex gap-6 border-b border-slate-200/60 dark:border-white/5">
         <button
           onClick={() => setActiveTab('finance')}
-          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 ${
-            activeTab === 'finance' ? 'border-brand-500 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+          className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 flex items-center gap-2 ${
+            activeTab === 'finance' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
           <Icons.List size={18} /> Parcelas e Recebíveis
@@ -323,8 +409,8 @@ const AdminContractDetails: React.FC = () => {
         {isRent && (
           <button
             onClick={() => setActiveTab('vistoria')}
-            className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 ${
-              activeTab === 'vistoria' ? 'border-brand-500 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+            className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 flex items-center gap-2 ${
+              activeTab === 'vistoria' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
             }`}
           >
             <Icons.CheckSquare size={18} /> Vistoria e Avarias
@@ -334,16 +420,16 @@ const AdminContractDetails: React.FC = () => {
 
       {/* ABA: FINANCEIRO */}
       {activeTab === 'finance' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
-          <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+        <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden animate-fade-in">
+          <div className="p-6 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-slate-50/50 dark:bg-white/[0.02]">
             <div>
-              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">Cronograma de Pagamentos</h2>
-              <p className="text-sm text-slate-500">Valor total já recebido: <strong className="text-emerald-600">{totalPaid.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></p>
+              <h2 className="text-lg font-bold font-serif text-slate-800 dark:text-white flex items-center gap-2">Cronograma de Pagamentos</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Valor total já recebido: <strong className="text-emerald-600 dark:text-emerald-400">{totalPaid.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></p>
             </div>
             <button 
               onClick={handleGenerateInstallment}
               disabled={generating}
-              className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2"
+              className="bg-slate-900 dark:bg-white/10 hover:bg-slate-800 dark:hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2"
             >
               <Icons.Plus size={16} /> Nova Parcela/Boleto
             </button>
@@ -351,15 +437,15 @@ const AdminContractDetails: React.FC = () => {
 
           {installments.length === 0 ? (
             <div className="p-10 text-center">
-              <Icons.Receipt className="mx-auto text-slate-300 mb-3" size={40} />
-              <p className="text-slate-500 font-medium">Nenhuma parcela gerada.</p>
-              {isCash && <p className="text-sm text-emerald-600 mt-2 font-bold">A venda foi à vista, não há parcelas futuras.</p>}
+              <Icons.Receipt className="mx-auto text-slate-300 dark:text-slate-600 mb-3" size={40} />
+              <p className="text-slate-500 dark:text-slate-400 font-medium">Nenhuma parcela gerada.</p>
+              {isCash && <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-2 font-bold">A venda foi à vista, não há parcelas futuras.</p>}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-white border-b border-slate-100 text-xs uppercase tracking-wider text-slate-500 font-bold">
+                  <tr className="bg-white dark:bg-[#0a0f1c] border-b border-slate-100 dark:border-white/5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
                     <th className="p-4">Descrição</th>
                     <th className="p-4">Vencimento</th>
                     <th className="p-4">Valor</th>
@@ -367,25 +453,25 @@ const AdminContractDetails: React.FC = () => {
                     <th className="p-4 text-center">Ação</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-sm">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/5 text-sm">
                   {installments.map((inst, index) => (
-                    <tr key={inst.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-4 font-bold text-slate-700">
+                    <tr key={inst.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                      <td className="p-4 font-bold font-serif text-slate-700 dark:text-slate-300">
                         {inst.installment_number ? `${inst.installment_number}ª Parcela` : `Parcela Extra`}
                       </td>
-                      <td className="p-4 text-slate-600">
+                      <td className="p-4 text-slate-600 dark:text-slate-400">
                         {new Date(inst.due_date).toLocaleDateString('pt-BR')}
                       </td>
-                      <td className="p-4 font-bold text-slate-800">
+                      <td className="p-4 font-bold font-serif text-slate-800 dark:text-white">
                         {Number(inst.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </td>
                       <td className="p-4">
                         {inst.status === 'paid' ? (
-                          <span className="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 w-fit"><Icons.CheckCircle size={12} /> Pago</span>
+                          <span className="bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 w-fit"><Icons.CheckCircle size={12} /> Pago</span>
                         ) : new Date(inst.due_date) < new Date() ? (
-                          <span className="bg-red-100 text-red-700 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 w-fit"><Icons.AlertCircle size={12} /> Atrasado</span>
+                          <span className="bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 w-fit"><Icons.AlertCircle size={12} /> Atrasado</span>
                         ) : (
-                          <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 w-fit"><Icons.Clock size={12} /> Pendente</span>
+                          <span className="bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 w-fit"><Icons.Clock size={12} /> Pendente</span>
                         )}
                       </td>
                       <td className="p-4 text-center">
@@ -402,7 +488,7 @@ const AdminContractDetails: React.FC = () => {
                           <button
                             onClick={() => handleMarkAsPaid(inst.id, inst.status)}
                             className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
-                              inst.status === 'paid' ? 'border-slate-200 text-slate-500 hover:bg-slate-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                              inst.status === 'paid' ? 'border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5' : 'border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20'
                             }`}
                           >
                             {inst.status === 'paid' ? 'Desfazer' : 'Dar Baixa'}
@@ -420,15 +506,15 @@ const AdminContractDetails: React.FC = () => {
 
       {/* ABA: VISTORIA (APENAS ALUGUEL) */}
       {activeTab === 'vistoria' && isRent && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in">
-          <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-start">
+        <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden animate-fade-in">
+          <div className="p-6 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.02] flex justify-between items-start">
             <div>
-              <h2 className="text-lg font-bold text-slate-800">Checklist de Saída (Vistoria)</h2>
-              <p className="text-sm text-slate-500 mt-1">Marque avarias encontradas no final do contrato para deduzir do Caução.</p>
+              <h2 className="text-lg font-bold font-serif text-slate-800 dark:text-white">Checklist de Saída (Vistoria)</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Marque avarias encontradas no final do contrato para deduzir do Caução.</p>
             </div>
-            <div className="text-right bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-              <p className="text-xs text-slate-500 uppercase font-bold">Total a Deduzir</p>
-              <p className="text-xl font-bold text-red-500">
+            <div className="text-right bg-white dark:bg-[#0a0f1c] p-3 rounded-xl border border-slate-200 dark:border-white/5 shadow-sm">
+              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Total a Deduzir</p>
+              <p className="text-xl font-bold font-serif text-red-500">
                 {totalRepairCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </p>
             </div>
@@ -436,15 +522,15 @@ const AdminContractDetails: React.FC = () => {
 
           <div className="p-6 space-y-4">
             {vistoriaList.map((item, idx) => (
-              <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center p-4 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="md:col-span-5 font-bold text-slate-700">{item.item}</div>
+              <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center p-4 bg-slate-50/50 dark:bg-white/[0.02] rounded-xl border border-slate-100 dark:border-white/5">
+                <div className="md:col-span-5 font-bold font-serif text-slate-700 dark:text-slate-300">{item.item}</div>
                 
                 <div className="md:col-span-4 flex items-center gap-3">
                   <select 
                     value={item.status} 
                     onChange={(e) => updateVistoriaItem(idx, 'status', e.target.value)}
                     className={`w-full px-3 py-2 rounded-lg border text-sm font-bold outline-none ${
-                      item.status === 'ok' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'
+                      item.status === 'ok' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' : 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20'
                     }`}
                   >
                     <option value="ok">✅ Inteiro / Sem Avarias</option>
@@ -454,13 +540,13 @@ const AdminContractDetails: React.FC = () => {
 
                 <div className="md:col-span-3">
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">R$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 text-sm">R$</span>
                     <input 
                       type="number" 
                       value={item.repair_cost}
                       disabled={item.status === 'ok'}
                       onChange={(e) => updateVistoriaItem(idx, 'repair_cost', Number(e.target.value))}
-                      className="w-full pl-8 pr-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-brand-500 text-sm disabled:opacity-50 disabled:bg-slate-100"
+                      className="w-full pl-8 pr-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0a0f1c] text-slate-800 dark:text-white outline-none focus:border-brand-500 text-sm disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-white/5"
                       placeholder="Custo..."
                     />
                   </div>
@@ -468,11 +554,11 @@ const AdminContractDetails: React.FC = () => {
               </div>
             ))}
 
-            <div className="pt-6 mt-4 border-t border-slate-100 flex justify-end">
+            <div className="pt-6 mt-4 border-t border-slate-100 dark:border-white/5 flex justify-end">
               <button 
                 onClick={handleSaveVistoria}
                 disabled={savingVistoria}
-                className="bg-brand-600 hover:bg-brand-700 text-white px-6 py-2.5 rounded-xl font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
+                className="bg-gradient-to-r from-brand-600 to-sky-500 hover:shadow-lg text-white px-6 py-2.5 rounded-xl font-bold transition-all disabled:opacity-50 flex items-center gap-2"
               >
                 {savingVistoria ? 'Salvando...' : 'Salvar Vistoria'} <Icons.Save size={18} />
               </button>
@@ -480,6 +566,61 @@ const AdminContractDetails: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* GESTÃO DE CHAVES */}
+      <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 shadow-sm">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
+            <Icons.Key size={20} />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-800 dark:text-white">Gestão de Chaves</h2>
+            <p className="text-sm text-slate-500">Controlo de entrega/devolução</p>
+          </div>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Localização Atual</label>
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                onClick={() => setKeysStatus('na_imobiliaria')}
+                className={`flex items-center gap-2 p-3 rounded-xl border transition-all text-sm font-medium ${keysStatus === 'na_imobiliaria' ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-dark-border dark:bg-white/5 dark:text-slate-400'}`}
+              >
+                <Icons.Building size={16} /> Na Imobiliária (Quadro)
+              </button>
+              <button
+                onClick={() => setKeysStatus('com_inquilino')}
+                className={`flex items-center gap-2 p-3 rounded-xl border transition-all text-sm font-medium ${keysStatus === 'com_inquilino' ? 'border-green-500 bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-dark-border dark:bg-white/5 dark:text-slate-400'}`}
+              >
+                <Icons.UserCheck size={16} /> Entregues ao Inquilino
+              </button>
+              <button
+                onClick={() => setKeysStatus('devolvidas')}
+                className={`flex items-center gap-2 p-3 rounded-xl border transition-all text-sm font-medium ${keysStatus === 'devolvidas' ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-400' : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-dark-border dark:bg-white/5 dark:text-slate-400'}`}
+              >
+                <Icons.Archive size={16} /> Devolvidas (Rescisão)
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Observações (Cópias, comandos, etc.)</label>
+            <textarea
+              value={keysNotes}
+              onChange={(e) => setKeysNotes(e.target.value)}
+              placeholder="Ex: Entregue 2 cópias da porta principal e 1 comando da garagem."
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-white/5 focus:ring-2 focus:ring-brand-500 outline-none text-sm min-h-[100px] resize-none"
+            />
+          </div>
+          <button
+            onClick={handleUpdateKeys}
+            disabled={isUpdatingKeys || (keysStatus === contract.keys_status && keysNotes === (contract.keys_notes || ''))}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 hover:bg-slate-800 dark:bg-brand-600 dark:hover:bg-brand-700 text-white rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isUpdatingKeys ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.Save size={18} />}
+            Salvar Registo de Chaves
+          </button>
+        </div>
+      </div>
 
     </div>
   );

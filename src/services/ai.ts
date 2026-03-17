@@ -214,3 +214,42 @@ export const mapPropertyToCandidate = (property: Property): CandidateProperty =>
   city: property.city || property.location?.city,
   features: property.features || []
 });
+
+export async function autoTagContractTemplate(rawContent: string): Promise<string> {
+  if (!genAI) throw new Error("Gemini API Key não configurada.");
+
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+  const prompt = `Você é um assistente de IA especialista em contratos imobiliários SaaS.
+Sua tarefa é analisar o contrato abaixo e substituir Nomes Próprios, CPFs, RGs, Endereços, Profissões, Estados Civis, Nacionalidades e Valores reais (ou espaços em branco como '________') pelas tags (shortcodes) correspondentes do nosso sistema.
+
+Lista EXATA de tags permitidas:
+{{IMOBILIARIA_NOME}}, {{CORRETOR_NOME}}, {{CORRETOR_CRECI}}
+{{IMOVEL_TITULO}}, {{IMOVEL_ENDERECO}}, {{IMOVEL_MATRICULA}}
+{{VALOR_NEGOCIADO}}, {{VALOR_SINAL}}, {{VALOR_FINANCIAMENTO}}, {{VALOR_FGTS}}, {{VALOR_PERMUTA}}, {{QTD_PARCELAS}}
+{{LOCATARIO_NOME}}, {{LOCATARIO_CPF}}, {{LOCATARIO_RG}}, {{LOCATARIO_PROFISSAO}}, {{LOCATARIO_ESTADO_CIVIL}}
+{{LOCADOR_NOME}}, {{LOCADOR_CPF}}, {{LOCADOR_RG}}, {{LOCADOR_PROFISSAO}}, {{LOCADOR_ESTADO_CIVIL}}
+{{FIADOR_NOME}}, {{FIADOR_CPF}}, {{FIADOR_RG}}, {{FIADOR_PROFISSAO}}, {{FIADOR_ESTADO_CIVIL}}
+{{DATA_ATUAL}}
+
+Regras rigorosas:
+1. Preserve RIGOROSAMENTE todo o texto jurídico, pontuação, quebras de linha e cláusulas originais.
+2. Identifique pelo contexto da frase quem é o Locador (Proprietário/Vendedor) e quem é o Locatário (Inquilino/Comprador) para usar a tag certa.
+3. Se o contrato for de Venda, use a família LOCADOR para o Vendedor e a família LOCATARIO para o Comprador.
+4. Retorne APENAS o texto do contrato com as tags aplicadas. Não adicione saudações, nem formatação Markdown (como \`\`\` ou dicas).
+
+CONTRATO ORIGINAL PARA ANALISAR:
+${rawContent}`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text()
+      .replace(/^```[a-z]*\n/gi, '')
+      .replace(/\n```$/gi, '')
+      .trim();
+  } catch (error) {
+    console.error("Erro ao analisar contrato com IA:", error);
+    throw new Error("Não foi possível analisar o contrato no momento.");
+  }
+}

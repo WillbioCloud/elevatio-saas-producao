@@ -67,3 +67,13 @@ O Supabase dispara eventos `SIGNED_IN` ou `TOKEN_REFRESHED` quando a aba do nave
 - **Sintoma:** O Webhook do Asaas é recebido e processado, mas o status do contrato na tabela `saas_contracts` continua como `pending`. Os logs da Edge Function acusam o erro `PostgREST; error=PGRST204` (Erro 400).
 - **Causa:** O erro PGRST204 significa uma tentativa de fazer UPDATE em uma coluna que NÃO existe na tabela (ex: tentar atualizar `updated_at` se a tabela não tiver essa coluna criada). Além disso, requisições de webhooks (robôs externos) são bloqueadas pelo RLS (Row Level Security) padrão do Supabase se usarem a Anon Key.
 - **A Solução:** Limpar a requisição enviando apenas as colunas que realmente existem (ex: `{ status: 'active' }`). Para garantir que o banco de dados aceite a atualização enviada pelo Webhook sem login humano, deve-se instanciar o cliente do Supabase *exclusivamente* com a `SUPABASE_SERVICE_ROLE_KEY` (Chave Mestra), que ignora o RLS e atualiza o contrato forçadamente.
+
+## 🔮 Roadmap Financeiro Futuro (Módulo Banco Invisível)
+
+Atualmente (Fase 1), o sistema utiliza o modelo BYOK (Bring Your Own Key), onde a imobiliária cola a própria chave da API (Asaas/Cora) e assume a responsabilidade fiscal.
+
+Para a Fase 2 (Monetização Avançada), considere implementar o **Modelo de Subcontas (White-Label)** via Asaas:
+
+- **Como funciona:** O SaaS atua como sub-adquirente. A imobiliária não cria conta no Asaas, ela faz o KYC dentro do nosso painel.
+- **Vantagem:** Permite cobrar "Taxa de Software" (Split de Pagamento) em cada boleto pago pelo inquilino (Ex: Inquilino paga R$ 2.000 -> Asaas retém R$ 2 da taxa -> SaaS retém R$ 3 de lucro -> R$ 1.995 cai na subconta da imobiliária).
+- **Aviso de Arquitetura:** Exigirá webhook complexo para split de pagamentos, fluxo de aprovação de documentos (KYC) e lidar com transferências/saques para a conta bancária final da imobiliária.

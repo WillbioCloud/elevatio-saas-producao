@@ -4,10 +4,10 @@ import { useTenant } from '../../../contexts/TenantContext';
 import Loading from '../../../components/Loading';
 import { Property } from '../../../types';
 import { supabase } from '../../../lib/supabase';
-import { ArrowLeft, ArrowRight, X, MapPin, CheckCircle, MessageCircle, Loader2 } from 'lucide-react';
+import { ArrowLeft, Home, ArrowRight, X, MapPin, CheckCircle, MessageCircle, Loader2, Maximize, Maximize2, Bed, Bath, Car } from 'lucide-react';
 
 const PropertyDetail: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { tenant } = useTenant();
   const [property, setProperty] = useState<Property | null>(null);
@@ -31,7 +31,7 @@ const PropertyDetail: React.FC = () => {
     let isMounted = true;
 
     async function fetchProperty() {
-      if (!id || !tenant?.id) {
+      if (!slug || !tenant?.id) {
         if (isMounted) setLoading(false);
         return;
       }
@@ -39,24 +39,23 @@ const PropertyDetail: React.FC = () => {
       setLoading(true);
 
       try {
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
-
-        let query = supabase
+        const { data, error } = await supabase
           .from('properties')
           .select('*, profiles(*)')
-          .eq('company_id', tenant.id);
-
-        if (isUUID) {
-          query = query.eq('id', id);
-        } else {
-          query = query.eq('slug', id);
-        }
-
-        const { data, error } = await query.single();
+          .eq('company_id', tenant.id)
+          .eq('slug', slug)
+          .maybeSingle();
 
         if (error) {
           console.error('Erro do Supabase:', error);
-          throw error;
+          if (isMounted) setLoading(false);
+          return;
+        }
+
+        if (!data) {
+          // Imóvel não encontrado
+          if (isMounted) setLoading(false);
+          return;
         }
 
         if (isMounted && data) {
@@ -110,7 +109,7 @@ const PropertyDetail: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [id, tenant?.id]);
+  }, [slug, tenant?.id]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -242,17 +241,17 @@ const PropertyDetail: React.FC = () => {
       )}
 
       {/* CABEÇALHO */}
-      <div className="bg-white pt-8 pb-4">
+      <div className="bg-white pt-24 sm:pt-28 md:pt-32 pb-4 shadow-sm relative z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 font-semibold">
             <ArrowLeft size={18} /> Voltar
           </button>
-          <h1 className="text-3xl md:text-5xl font-semibold text-gray-900 mb-2">
+          <h1 className="text-2xl sm:text-3xl md:text-5xl font-semibold text-gray-900 mb-2">
             {property?.title || 'Imóvel'}
           </h1>
           <div className="flex items-center text-gray-500 gap-2">
             <MapPin size={18} />
-            <span>{safeNeighborhood}, {safeCity}</span>
+            <span className="text-sm sm:text-base">{safeNeighborhood}, {safeCity}</span>
           </div>
         </div>
       </div>
@@ -279,6 +278,18 @@ const PropertyDetail: React.FC = () => {
               >
                 {isRent ? 'Aluguel' : 'Venda'}
               </span>
+              {property.built_area && (
+                  <span className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-full text-sm font-bold shadow-sm uppercase tracking-wider text-white">
+                    <Home size={14} className="text-slate-300" />
+                    {property.built_area} m² Const.
+                  </span>
+                )}
+              {(property.suites || 0) > 0 && (
+                  <span className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md px-4 py-2 rounded-full text-sm font-bold shadow-sm uppercase tracking-wider text-white">
+                    <Bed size={14} className="text-slate-300" />
+                    {property.suites} Suítes
+                  </span>
+                )}
             </div>
           </div>
 
@@ -303,24 +314,36 @@ const PropertyDetail: React.FC = () => {
           
           <div className="lg:col-span-8 space-y-12">
             
-            {/* Cards de Métricas */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pb-8 border-b">
-              <div className="p-4 bg-white rounded-3xl shadow-sm border">
-                <span className="block text-xl font-bold">{property?.area || 0} m²</span>
-                <span className="text-xs text-gray-500">ÁREA</span>
-              </div>
-              <div className="p-4 bg-white rounded-3xl shadow-sm border">
-                <span className="block text-xl font-bold">{property?.bedrooms || 0}</span>
-                <span className="text-xs text-gray-500">QUARTOS</span>
-              </div>
-              <div className="p-4 bg-white rounded-3xl shadow-sm border">
-                <span className="block text-xl font-bold">{property?.bathrooms || 0}</span>
-                <span className="text-xs text-gray-500">BANHEIROS</span>
-              </div>
-              <div className="p-4 bg-white rounded-3xl shadow-sm border">
-                <span className="block text-xl font-bold">{property?.garage || 0}</span>
-                <span className="text-xs text-gray-500">VAGAS</span>
-              </div>
+            {/* Cards de Métricas (Design Clean) */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 border-b border-slate-200 dark:border-slate-700 pb-8">
+                <div className="px-4 md:px-6 py-4 bg-white dark:bg-slate-800 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 flex items-center gap-3">
+                  <Maximize size={24} className="text-slate-400" />
+                  <div>
+                    <span className="block text-xl font-bold text-slate-900 dark:text-white">{property.area} m²</span>
+                    <span className="text-xs text-slate-500 font-medium uppercase">Área Útil</span>
+                  </div>
+                </div>
+                <div className="px-4 md:px-6 py-4 bg-white dark:bg-slate-800 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 flex items-center gap-3">
+                  <Bed size={24} className="text-slate-400" />
+                  <div>
+                    <span className="block text-xl font-bold text-slate-900 dark:text-white">{property.bedrooms}</span>
+                    <span className="text-xs text-slate-500 font-medium uppercase">Quartos</span>
+                  </div>
+                </div>
+                <div className="px-4 md:px-6 py-4 bg-white dark:bg-slate-800 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 flex items-center gap-3">
+                  <Bath size={24} className="text-slate-400" />
+                  <div>
+                    <span className="block text-xl font-bold text-slate-900 dark:text-white">{property.bathrooms}</span>
+                    <span className="text-xs text-slate-500 font-medium uppercase">Banheiros</span>
+                  </div>
+                </div>
+                <div className="px-4 md:px-6 py-4 bg-white dark:bg-slate-800 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 flex items-center gap-3">
+                  <Car size={24} className="text-slate-400" />
+                  <div>
+                    <span className="block text-xl font-bold text-slate-900 dark:text-white">{property.garage}</span>
+                    <span className="text-xs text-slate-500 font-medium uppercase">Vagas</span>
+                  </div>
+                </div>
             </div>
 
             {/* Descrição */}
@@ -350,8 +373,8 @@ const PropertyDetail: React.FC = () => {
           </div>
 
           <div className="lg:col-span-4">
-            <div className="lg:sticky lg:top-8 bg-white p-8 rounded-3xl shadow-xl border">
-              <h2 className="text-4xl font-bold text-gray-900 mb-6">
+            <div className="lg:sticky lg:top-24 bg-white p-6 sm:p-8 rounded-3xl shadow-xl border w-full">
+              <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-6">
                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(property?.price || 0)}
               </h2>
 
@@ -367,7 +390,7 @@ const PropertyDetail: React.FC = () => {
                     type="text"
                     required
                     placeholder="Nome Completo"
-                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border-none focus:ring-2 outline-none"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border-none focus:ring-2 outline-none text-base"
                     value={contactForm.name}
                     onChange={e => setContactForm({ ...contactForm, name: e.target.value })}
                   />
@@ -375,14 +398,14 @@ const PropertyDetail: React.FC = () => {
                     type="tel"
                     required
                     placeholder="Seu WhatsApp"
-                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border-none focus:ring-2 outline-none"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border-none focus:ring-2 outline-none text-base"
                     value={contactForm.phone}
                     onChange={e => setContactForm({ ...contactForm, phone: e.target.value })}
                   />
                   <input
                     type="email"
                     placeholder="Seu e-mail (opcional)"
-                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border-none focus:ring-2 outline-none"
+                    className="w-full px-4 py-3 rounded-xl bg-gray-50 border-none focus:ring-2 outline-none text-base"
                     value={contactForm.email}
                     onChange={e => setContactForm({ ...contactForm, email: e.target.value })}
                   />
@@ -390,7 +413,7 @@ const PropertyDetail: React.FC = () => {
                   <button
                     type="submit"
                     disabled={formStatus === 'sending'}
-                    className="w-full text-white font-bold py-4 rounded-xl flex justify-center gap-2"
+                    className="w-full text-white font-bold py-4 rounded-xl flex justify-center items-center gap-2 text-base sm:text-lg"
                     style={{ backgroundColor: primaryColor }}
                   >
                     {formStatus === 'sending' ? (

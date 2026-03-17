@@ -1,50 +1,173 @@
-import React, { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useLayoutEffect, useRef } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Icons } from '../components/Icons';
-import { COMPANY_NAME } from '../constants';
-import { supabase } from '../lib/supabase';
 
+// ============================================================
+// ELEVATIO VENDAS — Login / Cadastro Unificado
+// Design: Split layout — form esquerda + visual direita com cards flutuantes
+// Cores: idênticas ao LandingPage (azul #1a56db, #0ea5e9, navy escuro)
+// ============================================================
+
+// ── Floating UI Card ─────────────────────────────────────────
+const FloatingCard: React.FC<{
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}> = ({ style, children }) => (
+  <div style={{
+    position: 'absolute',
+    background: 'rgba(255,255,255,0.95)',
+    backdropFilter: 'blur(12px)',
+    borderRadius: 16,
+    padding: '14px 18px',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+    border: '1px solid rgba(255,255,255,0.8)',
+    fontFamily: "'DM Sans', sans-serif",
+    ...style,
+  }}>
+    {children}
+  </div>
+);
+
+// ── Avatares empilhados ───────────────────────────────────────
+const AvatarStack: React.FC<{ colors: string[] }> = ({ colors }) => (
+  <div style={{ display: 'flex' }}>
+    {colors.map((c, i) => (
+      <div key={i} style={{
+        width: 26, height: 26, borderRadius: '50%',
+        background: c, border: '2px solid #fff',
+        marginLeft: i > 0 ? -8 : 0,
+      }} />
+    ))}
+  </div>
+);
+
+// ── Painel direito com imagem e cards ────────────────────────
+const RightPanel: React.FC<{ isSignup: boolean }> = ({ isSignup }) => {
+  const dotStyle: React.CSSProperties = {
+    width: 8, height: 8, borderRadius: '50%', background: '#f59e0b',
+    display: 'inline-block', marginLeft: 6,
+  };
+
+  return (
+    <div style={{
+      position: 'relative', flex: 1,
+      background: 'linear-gradient(135deg, #0f2460, #1a3a7a)',
+      overflow: 'hidden', borderRadius: '0 20px 20px 0',
+    }}>
+      {/* Foto de fundo */}
+      <img
+        src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&q=80"
+        alt="Equipe imobiliária"
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.55 }}
+      />
+      {/* Overlay gradiente */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(135deg, rgba(15,36,96,0.55) 0%, rgba(14,165,233,0.15) 100%)',
+      }} />
+
+      {/* Grid decorativo */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        backgroundImage: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)',
+        backgroundSize: '40px 40px',
+      }} />
+
+      {/* ── Card topo: reunião agendada ── */}
+      <FloatingCard style={{ top: 32, left: 32, minWidth: 200 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Reunião com Equipe</div>
+          <div style={dotStyle} />
+        </div>
+        <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>09:30am – 10:00am</div>
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AvatarStack colors={['#1a56db','#0ea5e9','#38bdf8']} />
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>3 participantes</span>
+        </div>
+      </FloatingCard>
+
+      {/* ── Mini calendário semana ── */}
+      <FloatingCard style={{ top: 32, right: 24, padding: '12px 16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px 8px', textAlign: 'center' }}>
+          {['D','S','T','Q','Q','S','S'].map((d,i) => (
+            <div key={i} style={{ fontSize: 9, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' as const }}>{d}</div>
+          ))}
+          {[22,23,24,25,26,27,28].map((n,i) => (
+            <div key={i} style={{
+              fontSize: 13, fontWeight: n === 25 ? 800 : 500,
+              color: n === 25 ? '#fff' : '#374151',
+              background: n === 25 ? 'linear-gradient(135deg, #1a56db, #0ea5e9)' : 'transparent',
+              borderRadius: 6, padding: '2px 0', lineHeight: '22px',
+            }}>{n}</div>
+          ))}
+        </div>
+      </FloatingCard>
+
+      {/* ── Card inferior: daily meeting ── */}
+      <FloatingCard style={{ bottom: 40, left: 28, minWidth: 210 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Daily Meeting</div>
+          <div style={{ ...dotStyle, background: '#0ea5e9' }} />
+        </div>
+        <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10, fontWeight: 500 }}>12:00pm – 01:00pm</div>
+        <AvatarStack colors={['#1a56db','#7c3aed','#0ea5e9','#16a34a']} />
+      </FloatingCard>
+
+      {/* ── Tagline central ── */}
+      <div style={{
+        position: 'absolute', bottom: 32, right: 24,
+        fontFamily: "'Sora', sans-serif",
+        fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)',
+        letterSpacing: '0.05em', textTransform: 'uppercase' as const,
+        textAlign: 'right' as const, lineHeight: 1.6,
+      }}>
+        Site + CRM<br />
+        <span style={{ color: '#7dd3fc' }}>em um só lugar</span>
+      </div>
+    </div>
+  );
+};
+
+// ── Componente principal ─────────────────────────────────────
 const Login: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { user, signIn, signUp } = useAuth();
-  
-  const [isLogin, setIsLogin] = useState(true);
+
+  // Detectar modo: se vier ?mode=signup ou ?plan=xxx, abre cadastro
+  const [isLogin, setIsLogin] = useState(() => {
+    const mode = searchParams.get('mode');
+    const plan = searchParams.get('plan') || localStorage.getItem('selectedPlan');
+    return mode !== 'signup' && !plan;
+  });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
-  // Formulário
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Plano vindo da landing page
+  const selectedPlan = searchParams.get('plan') || localStorage.getItem('selectedPlan') || '';
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [keepLogged, setKeepLogged] = useState(true);
 
+  // Tratar error_description do OAuth
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const errorDesc = params.get('error_description');
-
     if (errorDesc) {
       setError(decodeURIComponent(errorDesc).replace(/\+/g, ' '));
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
 
+  // Redirecionar se já logado
   useEffect(() => {
-    if (user) {
-      const role = user.role ?? (user.user_metadata as Record<string, unknown>)?.role;
-      const navState =
-        location.state && typeof location.state === 'object'
-          ? (location.state as Record<string, unknown>)
-          : undefined;
-
-      if (role === 'super_admin') {
-        navigate('/saas/dashboard', { replace: true, state: navState });
-      } else {
-        navigate('/admin/dashboard', { replace: true, state: navState });
-      }
-    }
-  }, [user, navigate, location.state]);
+    if (user) navigate('/admin/dashboard', { replace: true });
+  }, [user, navigate]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,242 +175,298 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      const navState =
-        location.state && typeof location.state === 'object'
-          ? (location.state as Record<string, unknown>)
-          : undefined;
-
       if (isLogin) {
         const { error } = await signIn(email, password);
         if (error) throw error;
-        const currentUser = (await supabase.auth.getUser()).data.user;
-        const role = (currentUser as { role?: string })?.role ?? (currentUser?.user_metadata as Record<string, unknown>)?.role;
-        if (role === 'super_admin') {
-          navigate('/saas/dashboard', { replace: true, state: navState });
-        } else {
-          navigate('/admin/dashboard', { replace: true, state: navState });
-        }
+        navigate('/admin/dashboard');
       } else {
-        if (!name) throw new Error('Por favor, informe seu nome.');
+        if (!name.trim()) throw new Error('Por favor, informe seu nome.');
+        if (!companyName.trim()) throw new Error('Por favor, informe o nome da sua imobiliária.');
 
-        const { error } = await signUp(name, email.trim(), password);
+        // Salva plano no localStorage para o wizard consumir depois
+        if (selectedPlan) localStorage.setItem('selectedPlan', selectedPlan);
+
+        const { error } = await signUp(name.trim(), email.trim(), password);
         if (error) throw error;
 
-        const currentUser = (await supabase.auth.getUser()).data.user;
-        const role = (currentUser as { role?: string })?.role ?? (currentUser?.user_metadata as Record<string, unknown>)?.role;
-        if (role === 'super_admin') {
-          navigate('/saas/dashboard', { replace: true, state: navState });
-        } else {
-          navigate('/admin/dashboard', { replace: true, state: navState });
-        }
+        navigate('/admin/dashboard', { replace: true });
       }
     } catch (err: any) {
-      console.error(err);
-      // Tratamento de erro mais amigável
-      let msg = 'Ocorreu um erro.';
+      let msg = 'Ocorreu um erro inesperado.';
       if (err.message?.includes('invalid format')) msg = 'Formato de e-mail inválido.';
       if (err.message?.includes('already registered')) msg = 'Este e-mail já está cadastrado.';
       if (err.message?.includes('password')) msg = 'A senha deve ter no mínimo 6 caracteres.';
-      
+      if (err.message?.includes('nome')) msg = err.message;
+      if (err.message?.includes('imobiliária')) msg = err.message;
       setError(msg);
     } finally {
       setLoading(false);
     }
-};
+  };
+
+  const switchMode = () => {
+    setIsLogin(!isLogin);
+    setError('');
+    setName('');
+    setEmail('');
+    setPassword('');
+    setCompanyName('');
+  };
+
+  // ── Input reutilizável ────────────────────────────────────
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '12px 16px 12px 44px',
+    fontFamily: "'DM Sans', sans-serif", fontSize: 15, fontWeight: 400,
+    background: '#f8fafc', border: '1.5px solid #e2e8f0',
+    borderRadius: 12, outline: 'none', color: '#0f172a',
+    transition: 'border-color 0.2s, box-shadow 0.2s',
+    boxSizing: 'border-box' as const,
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block', fontFamily: "'DM Sans', sans-serif",
+    fontSize: 12, fontWeight: 600, color: '#64748b',
+    marginBottom: 6, letterSpacing: '0.03em',
+  };
+
+  const iconWrap: React.CSSProperties = {
+    position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
+    color: '#94a3b8', pointerEvents: 'none',
+  };
 
   return (
-    <div className="min-h-screen bg-brand-50 dark:bg-dark-bg flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-dark-card rounded-3xl shadow-2xl w-full max-w-4xl flex overflow-hidden border border-brand-100 dark:border-dark-border min-h-[600px]">
-        
-        {/* Lado Esquerdo - Visual e Branding */}
-        <div className="hidden md:flex w-1/2 bg-slate-900 relative flex-col justify-between p-12 text-white">
-          <div className="absolute inset-0 opacity-40">
-            <img 
-              src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1453&q=80" 
-              alt="Background" 
-              className="w-full h-full object-cover grayscale"
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-slate-900/80 to-brand-900/80 mix-blend-multiply"></div>
-          </div>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        .ev-input:focus { border-color: #1a56db !important; box-shadow: 0 0 0 3px rgba(26,86,219,0.12) !important; background: #fff !important; }
+        .ev-input::placeholder { color: #cbd5e1; }
+        .ev-btn-ghost:hover { background: rgba(26,86,219,0.06) !important; }
+        .ev-link:hover { color: #1a56db !important; }
+        @keyframes ev-slide-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        .ev-animate { animation: ev-slide-in 0.3s ease forwards; }
+      `}</style>
+
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'linear-gradient(135deg, #f0f4ff 0%, #e8f2fe 50%, #f5f3ff 100%)',
+        padding: '24px 16px',
+        fontFamily: "'DM Sans', sans-serif",
+      }}>
+        <div style={{
+          width: '100%', maxWidth: 960,
+          background: '#fff', borderRadius: 24,
+          boxShadow: '0 32px 80px rgba(15,23,42,0.12), 0 4px 16px rgba(15,23,42,0.06)',
+          display: 'flex', overflow: 'hidden',
+          minHeight: 600,
+        }}>
           
-          <div className="mb-8 text-center relative">
-          {/* BOTÃO REMOVIDO DAQUI */}
-
-          {/* Nome da Empresa agora é um Link seguro para a Home */}
-          <Link to="/" className="inline-block hover:opacity-80 transition-opacity">
-            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-brand-400 to-blue-500 mb-2 cursor-pointer">
-              {COMPANY_NAME}
-            </h1>
-          </Link>
-          
-          <p className="text-slate-500 dark:text-slate-400">
-            {isLogin ? 'Bem-vindo de volta! Acesse sua conta do CRM.' : 'Crie sua conta para gerenciar imóveis.'}
-          </p>
-        </div>
-
-          <div className="relative z-10 space-y-6">
-            <div className="space-y-4">
-              <div className="flex items-center gap-4 text-sm text-slate-300">
-                <div className="p-2 bg-white/10 rounded-lg backdrop-blur-sm">
-                  <Icons.TrendingUp size={20} className="text-brand-400" />
-                </div>
-                <span>Gestão de Leads Inteligente</span>
+          {/* ── LADO ESQUERDO: Formulário ── */}
+          <div style={{
+            width: '50%', padding: '48px 44px',
+            display: 'flex', flexDirection: 'column',
+            justifyContent: 'space-between',
+            background: 'linear-gradient(170deg, #ffffff 0%, #fafbff 100%)',
+          }}>
+            
+            {/* Logo */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <div style={{
+                width: 34, height: 34, borderRadius: 9,
+                background: 'linear-gradient(135deg, #1a56db, #0ea5e9)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <polyline points="9 22 9 12 15 12 15 22" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
               </div>
-              <div className="flex items-center gap-4 text-sm text-slate-300">
-                <div className="p-2 bg-white/10 rounded-lg backdrop-blur-sm">
-                  <Icons.Users size={20} className="text-brand-400" />
-                </div>
-                <span>Distribuição de Equipe</span>
-              </div>
-              <div className="flex items-center gap-4 text-sm text-slate-300">
-                <div className="p-2 bg-white/10 rounded-lg backdrop-blur-sm">
-                  <Icons.Shield size={20} className="text-brand-400" />
-                </div>
-                <span>Painel Administrativo Seguro</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="relative z-10 text-xs text-slate-500">
-            &copy; {new Date().getFullYear()} {COMPANY_NAME}. Todos os direitos reservados.
-          </div>
-        </div>
-
-        {/* Lado Direito - Formulário */}
-        <div className="w-full md:w-1/2 p-8 md:p-12 flex flex-col justify-center bg-white dark:bg-dark-card transition-colors">
-          <div className="max-w-sm mx-auto w-full">
-            <div className="mb-10">
-              <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-2 font-serif">
-                {isLogin ? 'Bem-vindo de volta' : 'Criar nova conta'}
-              </h2>
-              <p className="text-slate-500 dark:text-slate-400 text-sm">
-                {isLogin 
-                  ? 'Insira suas credenciais para acessar o painel do CRM.' 
-                  : 'Preencha os dados abaixo para se registrar.'}
-              </p>
+              <Link to="/" style={{ textDecoration: 'none' }}>
+                <span style={{ fontFamily: "'Sora', sans-serif", fontWeight: 700, fontSize: 17, color: '#0f172a', letterSpacing: '-0.3px' }}>
+                  Elevatio<span style={{ color: '#0ea5e9' }}>Vendas</span>
+                </span>
+              </Link>
             </div>
 
-            {error && (
-              <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-700 dark:text-red-300 text-sm rounded-r flex items-center gap-2 animate-fade-in">
-                <Icons.AlertCircle size={18} />
-                {error}
+            {/* Heading */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ marginBottom: 28 }}>
+                <h1 style={{
+                  fontFamily: "'Sora', sans-serif",
+                  fontSize: 26, fontWeight: 800, letterSpacing: '-0.8px',
+                  color: '#0f172a', marginBottom: 6, lineHeight: 1.2,
+                }}>
+                  {isLogin ? 'Bem-vindo de volta' : 'Criar uma conta'}
+                </h1>
+                <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.5 }}>
+                  {isLogin
+                    ? 'Acesse seu painel CRM.'
+                    : selectedPlan
+                      ? `Cadastre-se para ativar o plano ${selectedPlan.charAt(0).toUpperCase() + selectedPlan.slice(1)}.`
+                      : 'Cadastre-se e ganhe 7 dias grátis.'
+                  }
+                </p>
+                {/* Badge plano selecionado */}
+                {!isLogin && selectedPlan && (
+                  <div style={{
+                    marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6,
+                    background: 'rgba(26,86,219,0.08)', border: '1px solid rgba(26,86,219,0.2)',
+                    borderRadius: 100, padding: '4px 12px',
+                  }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#1a56db"/><path d="M8 12l3 3 5-6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#1a56db' }}>Plano {selectedPlan.charAt(0).toUpperCase() + selectedPlan.slice(1)} selecionado</span>
+                  </div>
+                )}
               </div>
-            )}
 
-            <form onSubmit={handleAuth} className="space-y-5">
-              
-              {/* Nome (Só aparece no cadastro) */}
-              {!isLogin && (
-                <div className="animate-slide-up">
-                  <label htmlFor="name" className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Nome Completo</label>
-                  <div className="relative">
-                    <Icons.Users className="absolute left-4 top-3.5 text-slate-400" size={18} />
-                    <input 
-                      id="name"
-                      type="text" 
-                      name="name"
-                      autoComplete="name"
-                      placeholder="Seu nome"
-                      className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500 transition-all"
-                      value={name}
-                      onChange={e => setName(e.target.value)}
-                      required={!isLogin}
+              {/* Erro */}
+              {error && (
+                <div className="ev-animate" style={{
+                  marginBottom: 20, padding: '12px 16px',
+                  background: '#fef2f2', border: '1px solid #fecaca',
+                  borderRadius: 12, display: 'flex', alignItems: 'center', gap: 10,
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#ef4444"/><path d="M12 8v5M12 16h.01" stroke="#fff" strokeWidth="2" strokeLinecap="round"/></svg>
+                  <span style={{ fontSize: 13, color: '#b91c1c', fontWeight: 500 }}>{error}</span>
+                </div>
+              )}
+
+              {/* Formulário */}
+              <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                {/* Nome (só no cadastro) */}
+                {!isLogin && (
+                  <div className="ev-animate" style={{ position: 'relative' }}>
+                    <label style={labelStyle}>Nome completo</label>
+                    <div style={{ position: 'relative' }}>
+                      <svg style={iconWrap} width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      <input
+                        type="text" placeholder="Seu nome" value={name} onChange={e => setName(e.target.value)}
+                        required={!isLogin} className="ev-input" style={inputStyle} autoComplete="name"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Nome da imobiliária (só no cadastro) */}
+                {!isLogin && (
+                  <div className="ev-animate" style={{ position: 'relative' }}>
+                    <label style={labelStyle}>Nome da imobiliária</label>
+                    <div style={{ position: 'relative' }}>
+                      <svg style={iconWrap} width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                      <input
+                        type="text" placeholder="Ex: Prime Brokers" value={companyName} onChange={e => setCompanyName(e.target.value)}
+                        required={!isLogin} className="ev-input" style={inputStyle} autoComplete="organization"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* E-mail */}
+                <div style={{ position: 'relative' }}>
+                  <label style={labelStyle}>E-mail</label>
+                  <div style={{ position: 'relative' }}>
+                    <svg style={iconWrap} width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 7l10 7 10-7"/></svg>
+                    <input
+                      type="email" placeholder="voce@imobiliaria.com" value={email} onChange={e => setEmail(e.target.value)}
+                      required className="ev-input" style={inputStyle} autoComplete="email"
                     />
                   </div>
                 </div>
-              )}
 
-              <div>
-                <label htmlFor="email" className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">E-mail Corporativo</label>
-                <div className="relative">
-                  <Icons.Mail className="absolute left-4 top-3.5 text-slate-400" size={18} />
-                  <input 
-                    id="email"
-                    name="email"
-                    type="email" 
-                    autoComplete="email"
-                    placeholder="voce@imobiliaria.com"
-                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500 transition-all"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="password" className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Senha</label>
-                <div className="relative">
-                  <Icons.Lock className="absolute left-4 top-3.5 text-slate-400" size={18} />
-                  <input 
-                    id="password"
-                    name="password"
-                    type="password" 
-                    autoComplete="current-password"
-                    placeholder="••••••••"
-                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500 transition-all"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* Checkbox Manter Conectado (Só no login) */}
-              {isLogin && (
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer group">
-                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${keepLogged ? 'bg-brand-500 border-brand-500' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'}`}>
-                      {keepLogged && <Icons.Check size={14} className="text-white" />}
-                    </div>
-                    <input 
-                      name="keep_logged"
-                      type="checkbox" 
-                      className="hidden"
-                      checked={keepLogged}
-                      onChange={(e) => setKeepLogged(e.target.checked)}
+                {/* Senha */}
+                <div style={{ position: 'relative' }}>
+                  <label style={labelStyle}>Senha</label>
+                  <div style={{ position: 'relative' }}>
+                    <svg style={iconWrap} width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                    <input
+                      type={showPassword ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)}
+                      required className="ev-input" style={{ ...inputStyle, paddingRight: 44 }} autoComplete={isLogin ? 'current-password' : 'new-password'}
                     />
-                    <span className="text-sm text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Manter conectado</span>
-                  </label>
-                  <a href="#" className="text-sm font-bold text-brand-600 hover:text-brand-700 transition-colors">Esqueceu a senha?</a>
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2 }}>
+                      {showPassword
+                        ? <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22"/></svg>
+                        : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      }
+                    </button>
+                  </div>
                 </div>
-              )}
 
-
-              <button 
-                type="submit" 
-                disabled={loading}
-                className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-brand-500/20 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed mt-4"
-              >
-                {loading ? (
-                  <>
-                    <Icons.RefreshCw className="animate-spin" size={20} />
-                    {isLogin ? 'Entrando...' : 'Criando conta...'}
-                  </>
-                ) : (
-                  <>
-                    {isLogin ? 'Acessar Painel' : 'Criar Conta'}
-                    <Icons.ChevronRight size={20} />
-                  </>
+                {/* Manter conectado / Esqueceu senha (só no login) */}
+                {isLogin && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                      <div onClick={() => setKeepLogged(!keepLogged)} style={{
+                        width: 18, height: 18, borderRadius: 5, cursor: 'pointer', flexShrink: 0,
+                        border: keepLogged ? 'none' : '1.5px solid #cbd5e1',
+                        background: keepLogged ? 'linear-gradient(135deg, #1a56db, #0ea5e9)' : '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'all 0.15s',
+                      }}>
+                        {keepLogged && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5"><path d="M5 12l5 5L19 7"/></svg>}
+                      </div>
+                      <span style={{ fontSize: 13, color: '#64748b', fontWeight: 500 }}>Manter conectado</span>
+                    </label>
+                    <a href="#" className="ev-link" style={{ fontSize: 13, color: '#94a3b8', textDecoration: 'none', fontWeight: 500, transition: 'color 0.15s' }}>
+                      Esqueceu a senha?
+                    </a>
+                  </div>
                 )}
-              </button>
-            </form>
 
-            <div className="mt-8 text-center pt-6 border-t border-slate-100 dark:border-slate-800">
-              <p className="text-slate-500 dark:text-slate-400 text-sm">
-                {isLogin ? 'Ainda não tem acesso?' : 'Já possui uma conta?'}
-                <button 
-                  onClick={() => { setIsLogin(!isLogin); setError(''); }}
-                  className="ml-2 font-bold text-slate-800 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 transition-colors underline decoration-brand-200 underline-offset-4"
+                {/* Botão principal */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    width: '100%', padding: '14px',
+                    fontFamily: "'DM Sans', sans-serif", fontSize: 15, fontWeight: 700,
+                    background: loading ? '#94a3b8' : 'linear-gradient(135deg, #1a56db, #0ea5e9)',
+                    color: '#fff', border: 'none', borderRadius: 12, cursor: loading ? 'not-allowed' : 'pointer',
+                    boxShadow: loading ? 'none' : '0 6px 20px rgba(26,86,219,0.35)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    transition: 'all 0.2s', marginTop: 4,
+                  }}
+                  onMouseEnter={e => { if (!loading) { (e.currentTarget as HTMLElement).style.opacity = '0.92'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; } }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; }}
                 >
-                  {isLogin ? 'Solicitar cadastro' : 'Fazer Login'}
+                  {loading ? (
+                    <>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ animation: 'spin 0.8s linear infinite' }}><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                      {isLogin ? 'Entrando...' : 'Criando conta...'}
+                    </>
+                  ) : (
+                    <>
+                      {isLogin ? 'Acessar Painel' : 'Criar Conta'}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+
+            {/* Footer da esquerda */}
+            <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <p style={{ fontSize: 13, color: '#94a3b8' }}>
+                {isLogin ? 'Não tem conta? ' : 'Já tem conta? '}
+                <button onClick={switchMode} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1a56db', fontFamily: "'DM Sans', sans-serif", textDecoration: 'underline', textDecorationColor: 'rgba(26,86,219,0.3)', textUnderlineOffset: 3, padding: 0 }}>
+                  {isLogin ? 'Cadastrar' : 'Fazer login'}
                 </button>
               </p>
+              <a href="#" style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'none' }}>Termos & Condições</a>
             </div>
           </div>
+
+          {/* ── LADO DIREITO: Visual ── */}
+          <div style={{ flex: 1, display: 'flex' }}>
+            <RightPanel isSignup={!isLogin} />
+          </div>
         </div>
+
+        {/* Keyframe spin inline */}
+        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       </div>
-    </div>
+    </>
   );
 };
 

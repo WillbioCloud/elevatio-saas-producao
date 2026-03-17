@@ -4,7 +4,8 @@ import { supabase } from '../../../lib/supabase';
 import { useTenant } from '../../../contexts/TenantContext';
 import { Icons } from '../../../components/Icons';
 import { ListingType, Property, PropertyType } from '../../../types';
-import { Bed, Bath, Maximize2, MapPin, Loader2, Star } from 'lucide-react';
+import { Loader2, Star } from 'lucide-react';
+import PropertyCard from '../components/PropertyCard';
 
 const Properties: React.FC = () => {
   const navigate = useNavigate();
@@ -240,72 +241,7 @@ const Properties: React.FC = () => {
         ) : properties.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {properties.map(property => (
-              <div 
-                key={property.id}
-                onClick={() => navigate(`/imovel/${property.slug}`)}
-                className="group cursor-pointer"
-              >
-                {/* Image Container */}
-                <div className="relative aspect-[4/3] rounded-2xl overflow-hidden mb-4 bg-gray-100">
-                  <img
-                    src={property.images?.[0] || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800'}
-                    alt={property.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  {/* Badge Venda/Aluguel */}
-                  <div 
-                    className="absolute top-4 left-4 text-white font-bold text-xs px-4 py-2 rounded-full shadow-lg"
-                    style={{ backgroundColor: property.listing_type === 'sale' ? primaryColor : secondaryColor }}
-                  >
-                    {property.listing_type === 'sale' ? 'Venda' : 'Aluguel'}
-                  </div>
-                  {/* Bookmark Icon */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                    }}
-                    className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center hover:bg-white transition-colors shadow-lg"
-                  >
-                    <Icons.Heart size={18} className="text-gray-700" />
-                  </button>
-                </div>
-
-                {/* Property Info */}
-                <div>
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="text-2xl font-bold text-gray-900">
-                        {new Intl.NumberFormat('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL',
-                          minimumFractionDigits: 0,
-                        }).format(property.price)}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Specs */}
-                  <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
-                    <span className="flex items-center gap-1">
-                      <Bed size={16} />
-                      {property.bedrooms} quartos
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Bath size={16} />
-                      {property.bathrooms} banheiros
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Maximize2 size={16} />
-                      {property.area} m²
-                    </span>
-                  </div>
-
-                  {/* Address */}
-                  <p className="text-sm text-gray-600 line-clamp-1">
-                    {property.location.address || `${property.location.neighborhood}, ${property.location.city}, ${property.location.state}`}
-                  </p>
-                </div>
-              </div>
+              <PropertyCard key={property.id} property={property} />
             ))}
           </div>
         ) : (

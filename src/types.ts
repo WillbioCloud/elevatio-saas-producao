@@ -1,27 +1,46 @@
 // src/types.ts
 
 export interface SiteData {
-  logo_url: string | null;
-  favicon_url: string | null;
-  hero_image_url: string | null;
-  hero_title: string | null;
-  hero_subtitle: string | null;
-  about_text: string | null;
-  about_image_url: string | null;
-  primary_color: string;
-  secondary_color: string;
-  contact: { 
+  // Identidade Visual (Já existentes e novos)
+  logo_url?: string | null;
+  logo_alt_url?: string | null;
+  favicon_url?: string | null;
+  hero_image_url?: string | null;
+  primary_color?: string;
+  secondary_color?: string;
+
+  // Hero Section (Textos da Página Inicial)
+  hero_title?: string;
+  hero_subtitle?: string;
+
+  // Página "Sobre Nós"
+  about_image_url?: string | null;
+  about_title?: string;
+  about_text?: string;
+
+  // Seções Opcionais
+  show_partnerships?: boolean;
+  partners?: string[];
+
+  // Redes Sociais (Footer)
+  social_instagram?: string;
+  social_facebook?: string;
+  social_linkedin?: string;
+  social_youtube?: string;
+
+  // Campos legados (mantidos para compatibilidade)
+  contact?: { 
     email: string | null; 
     phone: string | null; 
     address: string | null;
   };
-  social: { 
+  social?: { 
     instagram: string | null; 
     facebook: string | null; 
     whatsapp: string | null; 
     youtube: string | null;
   };
-  seo: { 
+  seo?: { 
     title: string | null; 
     description: string | null;
   };
@@ -37,6 +56,8 @@ export interface Company {
   site_data?: SiteData;
   created_at?: string;
   updated_at?: string;
+  payment_api_key?: string;
+  payment_gateway?: 'asaas' | 'cora';
 }
 
 export type ListingType = 'sale' | 'rent';
@@ -111,6 +132,13 @@ export interface Property {
   video_url?: string;
   owner_name?: string;
   owner_phone?: string;
+  owner_email?: string;
+  owner_document?: string;
+  owner_profession?: string;
+  owner_marital_status?: string;
+  owner_address?: string;
+  owner_spouse_name?: string;
+  owner_spouse_document?: string;
   created_at?: string;
 
   // SEO
@@ -245,6 +273,23 @@ export interface Template {
   content: string;
   user_id: string;
   created_at?: string;
+}
+
+export interface Invoice {
+  id: string;
+  company_id: string;
+  property_id?: string;
+  contract_id?: string;
+  client_name: string;
+  client_document?: string;
+  description?: string;
+  amount: number;
+  due_date: string;
+  status: 'pendente' | 'pago' | 'atrasado' | 'cancelado';
+  gateway_id?: string;
+  payment_url?: string;
+  created_at: string;
+  property?: Property;
 }
 
 export interface Database {

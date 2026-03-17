@@ -7,6 +7,7 @@ const MASTER_DOMAINS = [
   'lvh.me',
   'app-elevatiovendas.vercel.app',
   'elevatiovendas.com.br',
+  'elevatiovendas.vercel.app',
   'www.elevatiovendas.com.br',
 ] as const;
 

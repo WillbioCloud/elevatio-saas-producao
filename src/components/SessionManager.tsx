@@ -23,7 +23,11 @@ const SessionManager: React.FC<{ children: React.ReactNode }> = ({ children }) =
       }
 
       try {
-        if (!user.company_id) throw new Error("Sem company_id");
+        // Se for um usuário genuinamente novo (sem empresa), deixa passar para o SetupWizardModal assumir.
+        if (!user.company_id) {
+          if (isMounted) setIsChecking(false);
+          return;
+        }
 
         // Busca a empresa do utilizador logado DIRETAMENTE do banco (ignora TenantContext)
         const { data: company, error } = await supabase

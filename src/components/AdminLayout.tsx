@@ -131,47 +131,46 @@ const AdminLayout: React.FC = () => {
     { label: 'Imóveis', path: '/admin/imoveis', icon: Icons.Building },
     { label: 'Tarefas', path: '/admin/tarefas', icon: Icons.Calendar },
     { label: 'Relatórios', path: '/admin/analytics', icon: Icons.PieChart, adminOnly: true },
-    { label: 'Site e Visual', path: '/admin/site', icon: Icons.Layout, adminOnly: true },
     { label: 'Configurações', path: '/admin/config', icon: Icons.Settings },
   ];
 
   return (
-    <div className="flex h-screen bg-slate-900 overflow-hidden font-sans">
-      {/* 🚨 O GUARDA-COSTAS (WIZARD) 🚨 */}
-      {/* Só exibe se não tiver empresa e NÃO for super_admin (dono do SaaS não tem company_id) */}
-      {shouldShowWizard && (
-        <SetupWizardModal onComplete={handleRefresh} />
-      )}
-
+    <div className="flex h-screen bg-[#070d1f] overflow-hidden font-sans selection:bg-brand-500/30 text-slate-800 dark:text-slate-200">
+      {shouldShowWizard && <SetupWizardModal onComplete={handleRefresh} />}
       <ProductTour isSidebarCollapsed={isSidebarCollapsed} />
       <aside
-        className={`hidden md:flex flex-col bg-slate-900 text-white shadow-xl relative z-20 transition-all duration-300 ${
-          isSidebarCollapsed ? 'w-20' : 'w-64'
+        className={`hidden md:flex flex-col relative z-30 transition-all duration-300 shrink-0 bg-gradient-to-b from-[#0c1445] via-[#0f2460] to-[#0c1f55] border-none ${
+          isSidebarCollapsed ? 'w-[76px]' : 'w-[260px]'
         }`}
       >
-        <div
-          className={`p-6 border-b border-slate-800 flex items-center transition-all ${
-            isSidebarCollapsed ? 'justify-center px-2' : 'justify-between gap-2'
-          }`}
-        >
-          {!isSidebarCollapsed ? (
-            <div className="animate-in fade-in duration-300">
-              <h1 className="text-2xl font-serif font-bold tracking-wide text-brand-400 whitespace-nowrap">TR Imóveis</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest mt-1">Gestão Premium</p>
-            </div>
-          ) : (
-            <div
+        <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-sky-500/10 blur-3xl pointer-events-none" />
+        
+        <div className={`h-20 flex items-center border-b border-white/10 relative z-10 px-4 ${
+          isSidebarCollapsed ? 'justify-center' : 'justify-between'
+        }`}>
+          {isSidebarCollapsed ? (
+            <button
               onClick={toggleSidebar}
-              className="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center font-serif font-bold text-white shadow-lg cursor-pointer hover:bg-brand-500 transition-colors shrink-0"
-              title="Expandir Menu"
+              className="hover:scale-105 transition-transform"
+              title="Expandir"
             >
-              TR
+              <Icons.Building size={36} />
+            </button>
+          ) : (
+            <div className="flex items-center gap-3 overflow-hidden">
+              <Icons.Building size={32} />
+              <div className="flex flex-col animate-in fade-in">
+                <span className="font-bold text-white text-lg leading-tight tracking-tight font-serif">
+                  Elevatio<span className="text-sky-400">Vendas</span>
+                </span>
+                <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">CRM Platform</span>
+              </div>
             </div>
           )}
           {!isSidebarCollapsed && (
             <button
               onClick={handleOpenWebsite}
-              className="text-slate-400 hover:text-brand-400 transition-colors p-1 rounded-md hover:bg-slate-800 shrink-0"
+              className="text-white/60 hover:text-sky-400 transition-colors p-1 rounded-md hover:bg-white/5 shrink-0"
               title="Abrir site da imobiliária"
             >
               <Icons.Globe size={20} />
@@ -277,6 +276,20 @@ const AdminLayout: React.FC = () => {
                     </div>
                   )}
                 </div>
+              )}
+
+              {item.path === '/admin/imoveis' && (
+                <NavLink
+                  to="/admin/financeiro"
+                  className={({ isActive }) => `
+                    flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200 font-medium text-sm
+                    ${isSidebarCollapsed ? 'justify-center px-0' : 'px-4'}
+                    ${isActive ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}
+                  `}
+                >
+                  <Icons.Wallet size={20} />
+                  {!isSidebarCollapsed && <span className="whitespace-nowrap">Financeiro</span>}
+                </NavLink>
               )}
             </React.Fragment>
           ))}
@@ -433,26 +446,32 @@ const AdminLayout: React.FC = () => {
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 md:rounded-l-[2.5rem] shadow-2xl relative z-10">
-        <header className="flex items-center justify-between p-4 md:px-8 md:py-5 bg-white border-b border-slate-100">
-          <div className="flex items-center gap-3 min-w-0">
+      <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-slate-950 md:rounded-l-[2rem] shadow-[-10px_0_40px_rgba(0,0,0,0.4)] relative z-20 transition-colors duration-300">
+        <header className="h-16 px-4 md:px-8 flex items-center justify-between border-b border-slate-200 dark:border-slate-800/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md shrink-0 relative z-30">
+          <div className="flex items-center gap-4">
             <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="md:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="md:hidden p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 shadow-sm"
             >
-              <Icons.Menu />
+              <Icons.Menu size={20} />
             </button>
+            
             <button
               onClick={toggleSidebar}
-              className="hidden md:flex p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-              title="Recolher / Expandir Menu Lateral"
+              className="hidden md:flex p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
+              title="Recolher / Expandir Menu"
             >
-              <Icons.Menu />
+              <Icons.Menu size={18} />
             </button>
-            <div className="md:hidden font-serif font-bold text-slate-800">TR Imóveis</div>
-            <div className="hidden md:block min-w-0">
-              <p className="text-sm font-bold text-slate-700 truncate">{user?.name || user?.email || 'Usuário'}</p>
-              <p className="text-xs text-slate-500 uppercase tracking-wide">{roleLabel}</p>
+            
+            <div className="md:hidden flex items-center gap-2">
+              <Icons.Building size={24} />
+              <span className="font-serif font-bold text-slate-800 dark:text-white">ElevatioVendas</span>
+            </div>
+            
+            <div className="hidden md:block">
+              <p className="text-sm font-bold text-slate-800 dark:text-white">Olá, {user?.name?.split(' ')[0] || 'Corretor'} 👋</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Bem-vindo de volta ao seu painel</p>
             </div>
           </div>
 
@@ -473,6 +492,7 @@ const AdminLayout: React.FC = () => {
               onClick={toggleTheme}
               className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
               aria-label="Alternar tema"
+              title= "Alternar tema claro/escuro"
             >
               {theme === 'dark' ? <Icons.Sun size={18} /> : <Icons.Moon size={18} />}
             </button>

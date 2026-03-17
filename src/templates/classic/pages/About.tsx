@@ -1,18 +1,32 @@
 import React from 'react';
 import { Building2, Gem, ShieldCheck, Sparkles, Target, Users } from 'lucide-react';
+import { useTenant } from '../../../contexts/TenantContext';
 
 const About: React.FC = () => {
+  const { tenant } = useTenant();
+  const siteData = tenant?.site_data;
+
   return (
     <div className="bg-slate-50 min-h-screen py-12 md:py-20 animate-fade-in">
       <div className="container mx-auto px-4 space-y-10 md:space-y-14">
         <section className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 p-8 md:p-14">
           <p className="text-sm uppercase tracking-[0.25em] text-slate-400 mb-3">Sobre a Tr Imóveis</p>
-          <h1 className="text-4xl md:text-6xl font-serif font-semibold text-slate-900 mb-6">Nossa História</h1>
-          <p className="text-slate-600 text-lg leading-relaxed max-w-4xl">
-            A Tr Imóveis nasceu em Caldas Novas para atender um público que busca mais do que metragem: busca estilo de vida.
-            Unimos inteligência de mercado, curadoria de alto padrão e atendimento próximo para conectar famílias e
-            investidores aos endereços mais desejados da região.
-          </p>
+          <h1 className="text-4xl md:text-6xl font-serif font-semibold text-slate-900 mb-6">
+            {siteData?.about_title || 'Nossa História'}
+          </h1>
+          <div className="space-y-4 text-slate-600 leading-relaxed text-lg whitespace-pre-line">
+            {siteData?.about_text ? (
+              <p>{siteData.about_text}</p>
+            ) : (
+              <>
+                <p>
+                  A Tr Imóveis nasceu em Caldas Novas para atender um público que busca mais do que metragem: busca estilo de vida.
+                  Unimos inteligência de mercado, curadoria de alto padrão e atendimento próximo para conectar famílias e
+                  investidores aos endereços mais desejados da região.
+                </p>
+              </>
+            )}
+          </div>
         </section>
 
         <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -39,6 +53,16 @@ const About: React.FC = () => {
               <p className="text-slate-600 leading-relaxed">{item.text}</p>
             </article>
           ))}
+        </section>
+
+        {/* Imagem da Empresa */}
+        <section className="relative h-[500px] rounded-3xl overflow-hidden shadow-2xl animate-fade-in">
+          <img 
+            src={siteData?.about_image_url || "https://images.unsplash.com/photo-1560518883-ce09059eeffa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80"}
+            alt="Nossa equipe" 
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
         </section>
 
         <section>

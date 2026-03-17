@@ -2,7 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Icons } from './Icons';
 import { Lead, Property } from '../types';
+import { useNotification } from '../contexts/NotificationContext';
+import { generateContract } from '../utils/contractGenerator';
 import { useAuth } from '../contexts/AuthContext';
+import { useTenant } from '../contexts/TenantContext';
+import { RENT_DOCUMENTS, ADMIN_DOCUMENTS } from '../constants/contractTypes';
 
 interface RentContractModalProps {
   isOpen: boolean;
@@ -13,10 +17,28 @@ interface RentContractModalProps {
 
 const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, onSuccess, contractData: _contractData }) => {
   const { user } = useAuth();
+  const { tenant } = useTenant();
+  const { addNotification } = useNotification();
   const [loading, setLoading] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [brokers, setBrokers] = useState<any[]>([]);
+  
+  const [brokerProfile, setBrokerProfile] = useState<{name: string, company_logo: string, cpf_cnpj: string, creci: string} | null>(null);
+  const [customTemplates, setCustomTemplates] = useState<any[]>([]);
+
+  const [documentType, setDocumentType] = useState('');
+  const [guarantorName, setGuarantorName] = useState('');
+  const [guarantorDocument, setGuarantorDocument] = useState('');
+  const [guarantorAddress, setGuarantorAddress] = useState('');
+  const [guarantorPhone, setGuarantorPhone] = useState('');
+
+  const [contractDetails, setContractDetails] = useState({
+    tenant_document: '', tenant_rg: '', tenant_nationality: 'brasileiro(a)', tenant_profession: '', tenant_marital_status: '', tenant_address: '',
+    tenant_spouse_name: '', tenant_spouse_document: '', tenant_spouse_rg: '', tenant_spouse_profession: '',
+    landlord_document: '', landlord_rg: '', landlord_nationality: 'brasileiro(a)', landlord_profession: '', landlord_marital_status: '', landlord_address: '',
+    landlord_spouse_name: '', landlord_spouse_document: '', landlord_spouse_rg: '', landlord_spouse_profession: ''
+  });
 
   const [formData, setFormData] = useState({
     lead_id: '',
@@ -29,13 +51,113 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
     iptu_value: '',
     rent_guarantee_type: '',
     rent_readjustment_index: 'IGPM',
-    commission_percentage: '', // Ex: Primeiro aluguel (100%) ou Taxa de administração mensal (8%)
+    commission_percentage: '',
+    due_day: '5',
   });
+
+  useEffect(() => {
+    if (formData.property_id && properties.length > 0) {
+      const selectedProp = properties.find(p => p.id === formData.property_id);
+      if (selectedProp) {
+        setContractDetails(prev => ({
+          ...prev,
+          landlord_document: selectedProp.owner_document || prev.landlord_document,
+          landlord_rg: (selectedProp as any).owner_rg || prev.landlord_rg,
+          landlord_nationality: (selectedProp as any).owner_nationality || prev.landlord_nationality,
+          landlord_profession: selectedProp.owner_profession || prev.landlord_profession,
+          landlord_marital_status: selectedProp.owner_marital_status || prev.landlord_marital_status,
+          landlord_address: selectedProp.owner_address || prev.landlord_address,
+        }));
+        // Auto-preenchimento inteligente do valor do Aluguel
+        if (selectedProp.price && !formData.rent_value) {
+          setFormData(prev => ({ ...prev, rent_value: String(selectedProp.price) }));
+        }
+      }
+    }
+  }, [formData.property_id, properties]);
+
+  const handleGeneratePDF = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const selectedLead = leads.find(l => l.id === formData.lead_id);
+      const selectedPropertyData = properties.find(p => p.id === formData.property_id);
+
+      const startDate = new Date(formData.start_date);
+      const endDate = new Date(formData.end_date);
+      let months = (endDate.getFullYear() - startDate.getFullYear()) * 12 + (endDate.getMonth() - startDate.getMonth());
+      if (months <= 0) months = 12;
+
+      const contractDataObj = {
+        tenant_name: selectedLead?.name || '',
+        tenant_phone: selectedLead?.phone || '',
+        tenant_document: contractDetails.tenant_document,
+        tenant_profession: contractDetails.tenant_profession,
+        tenant_marital_status: contractDetails.tenant_marital_status,
+        tenant_address: contractDetails.tenant_address,
+        landlord_name: selectedPropertyData?.owner_name || 'Proprietário Atual',
+        landlord_phone: selectedPropertyData?.owner_phone || '',
+        landlord_document: contractDetails.landlord_document,
+        landlord_profession: contractDetails.landlord_profession,
+        landlord_marital_status: contractDetails.landlord_marital_status,
+        landlord_address: contractDetails.landlord_address,
+        landlord_spouse_name: contractDetails.landlord_spouse_name,
+        landlord_spouse_document: contractDetails.landlord_spouse_document,
+        landlord_spouse_profession: contractDetails.landlord_spouse_profession,
+        landlord_spouse_rg: contractDetails.landlord_spouse_rg,
+        tenant_spouse_name: contractDetails.tenant_spouse_name,
+        tenant_spouse_document: contractDetails.tenant_spouse_document,
+        tenant_spouse_profession: contractDetails.tenant_spouse_profession,
+        tenant_spouse_rg: contractDetails.tenant_spouse_rg,
+        tenant_rg: contractDetails.tenant_rg,
+        tenant_nationality: contractDetails.tenant_nationality,
+        landlord_rg: contractDetails.landlord_rg,
+        landlord_nationality: contractDetails.landlord_nationality,
+        property_address: selectedPropertyData ? `${(selectedPropertyData as any).street || selectedPropertyData.address || ''}, ${(selectedPropertyData as any).number || 'S/N'} - ${(selectedPropertyData as any).neighborhood || ''}, CEP ${(selectedPropertyData as any).zip_code || ''}, ${selectedPropertyData.city || ''} - ${(selectedPropertyData as any).state || ''}` : '',
+        property_registration: selectedPropertyData?.property_registration || '',
+        property_registry_office: selectedPropertyData?.property_registry_office || '',
+        property_municipal_registration: selectedPropertyData?.property_municipal_registration || '',
+        rent_value: formData.rent_value,
+        due_day: formData.due_day || '5',
+        lease_duration: String(months),
+        start_date: formData.start_date ? new Date(formData.start_date).toLocaleDateString('pt-BR') : '___/___/_____',
+        end_date: formData.end_date ? new Date(formData.end_date).toLocaleDateString('pt-BR') : '___/___/_____',
+        guarantor_name: guarantorName,
+        guarantor_document: guarantorDocument,
+        guarantor_address: guarantorAddress,
+        guarantor_phone: guarantorPhone,
+      };
+
+      const selectedBroker = brokers.find(b => b.id === formData.broker_id);
+      const brokerName = selectedBroker?.name || brokerProfile?.name;
+      const brokerDoc = (selectedBroker as any)?.cpf_cnpj || brokerProfile?.cpf_cnpj;
+      const brokerCreci = (selectedBroker as any)?.creci || brokerProfile?.creci;
+
+      await generateContract(documentType, contractDataObj, tenant, brokerProfile?.company_logo, brokerName, brokerDoc, brokerCreci, (brokerProfile as any)?.companies?.name, customTemplates.find(t => `custom_${t.id}` === documentType)?.content);
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      addNotification({ title: 'Erro ao gerar documento PDF', message: '', type: 'property' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
       fetchData();
-      // Set default dates (Today and 12 months from now)
+      const fetchProfileData = async () => {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) {
+          const { data } = await supabase.from('profiles').select('name, company_logo, cpf_cnpj, creci, companies(name)').eq('id', authUser.id).single();
+          if (data) setBrokerProfile(data as any);
+        }
+      };
+      fetchProfileData();
+      const fetchTemplates = async () => {
+        const { data } = await supabase.from('contract_templates').select('id, name, content').eq('type', 'rent');
+        if (data) setCustomTemplates(data);
+      };
+      fetchTemplates();
       const today = new Date();
       const nextYear = new Date(today);
       nextYear.setFullYear(today.getFullYear() + 1);
@@ -48,7 +170,6 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
     }
   }, [isOpen]);
 
-  // Carrega dinamicamente APENAS os imóveis de interesse do Lead selecionado
   useEffect(() => {
     const fetchLeadProperties = async () => {
       if (!formData.lead_id) {
@@ -59,7 +180,6 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
       const selectedLead = leads.find(l => l.id === formData.lead_id);
       if (!selectedLead) return;
 
-      // AUTO-PREENCHE O CORRETOR DO LEAD
       const leadBroker = (selectedLead as any).assigned_to;
       if (leadBroker) {
         setFormData(prev => ({ ...prev, broker_id: leadBroker }));
@@ -77,7 +197,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
           .from('properties')
           .select('*')
           .in('id', Array.from(propIds))
-          .eq('listing_type', 'rent'); // Apenas locação
+          .eq('listing_type', 'rent');
 
         if (data && data.length > 0) {
           setProperties(data as any);
@@ -101,7 +221,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
 
     if (leadsData) setLeads(leadsData as any);
 
-    const { data: brokersData } = await supabase.from('profiles').select('id, name').eq('active', true);
+    const { data: brokersData } = await supabase.from('profiles').select('id, name, cpf_cnpj, creci').eq('active', true);
     if (brokersData) setBrokers(brokersData);
   };
 
@@ -109,19 +229,16 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
     e.preventDefault();
     setLoading(true);
 
-    // 1. Calcula a Duração (Meses)
     const startDate = new Date(formData.start_date);
     const endDate = new Date(formData.end_date);
     let months = (endDate.getFullYear() - startDate.getFullYear()) * 12 + (endDate.getMonth() - startDate.getMonth());
-    if (months <= 0) months = 12; // fallback
+    if (months <= 0) months = 12;
 
-    // 2. Calcula o valor total da parcela mensal
     const rentVal = Number(formData.rent_value) || 0;
     const condoVal = Number(formData.condo_value) || 0;
     const iptuVal = Number(formData.iptu_value) || 0;
     const totalMonthly = rentVal + condoVal + iptuVal;
 
-    // 3. Cria a lista base de Vistoria
     const defaultVistoria = [
       { id: '1', item: 'Pintura Geral', status: 'ok', repair_cost: 0 },
       { id: '2', item: 'Portas e Fechaduras', status: 'ok', repair_cost: 0 },
@@ -132,10 +249,9 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
     ];
 
     try {
-      // 4. Salva o Contrato
       const payload = {
         type: 'rent',
-        status: 'pending', // Requer aprovação da diretoria
+        status: 'pending',
         lead_id: formData.lead_id || null,
         property_id: formData.property_id || null,
         broker_id: formData.broker_id || null,
@@ -148,18 +264,17 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         rent_readjustment_index: formData.rent_readjustment_index,
         commission_percentage: Number(formData.commission_percentage) || 0,
         vistoria_items: defaultVistoria,
-        company_id: user.company_id,
+        company_id: user?.company_id,
       };
 
       const { data: contract, error } = await supabase.from('contracts').insert([payload]).select().single();
       if (error) throw error;
 
-      // 5. Gera as Parcelas Automaticamente
       if (contract) {
         const installments = [];
         for (let i = 1; i <= months; i++) {
           const dueDate = new Date(startDate);
-          dueDate.setMonth(dueDate.getMonth() + i); // Vence 1 mês após o início
+          dueDate.setMonth(dueDate.getMonth() + i);
 
           installments.push({
             contract_id: contract.id,
@@ -167,20 +282,24 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
             installment_number: i,
             amount: totalMonthly,
             due_date: dueDate.toISOString().split('T')[0],
-            status: 'pending',
-            company_id: user.company_id,
+            status: 'pending'
           });
         }
         await supabase.from('installments').insert(installments);
       }
 
-      // AUTOMATIZAÇÃO: Tira o imóvel do catálogo e marca como Alugado
       if (formData.property_id) {
         await supabase
           .from('properties')
           .update({ status: 'Alugado' })
           .eq('id', formData.property_id);
       }
+
+      addNotification({
+        title: 'Contrato Gerado',
+        message: 'Novo contrato de aluguel gerado com sucesso.',
+        type: 'property'
+      });
 
       onSuccess();
       onClose();
@@ -195,7 +314,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
 
   return (
     <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white/95 dark:bg-[#0a0f1c]/95 backdrop-blur-2xl rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
 
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-indigo-50 shrink-0">
           <div>
@@ -305,12 +424,221 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
               </div>
             </section>
 
+            {/* 4. TIPO DE DOCUMENTO (PARA GERAÇÃO DE PDF) */}
+            <section className="bg-indigo-50 p-4 rounded-xl border border-indigo-200">
+              <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Icons.FileText size={14} /> Modelo de Contrato
+              </h3>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1">Selecione o tipo de contrato para gerar o PDF</label>
+                <select value={documentType} onChange={e => setDocumentType(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-indigo-300 outline-none focus:border-indigo-500 bg-white text-sm">
+                  <option value="">Escolha um modelo...</option>
+                  {customTemplates.length > 0 && (
+                    <>
+                      {customTemplates.map(t => (
+                        <option key={`custom_${t.id}`} value={`custom_${t.id}`}>⭐ {t.name}</option>
+                      ))}
+                      <option disabled>──────────────</option>
+                    </>
+                  )}
+                  <option value="rent_guarantor">Locação Residencial com Fiador</option>
+                  <option value="rent_noguarantee">Locação Residencial sem Garantia</option>
+                  <option value="rent_commercial">Locação Comercial</option>
+                </select>
+              </div>
+
+              {/* Dados Complementares para o Contrato */}
+              {documentType && documentType !== '' && (
+                <div className="pt-4 border-t border-slate-100 mt-4 animate-fade-in space-y-4">
+                  <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <Icons.FileText size={16} className="text-brand-500" /> Qualificação das Partes (Para o Contrato)
+                  </h4>
+
+                  {/* Locatário (Inquilino) */}
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                    <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Dados do Locatário (Inquilino)</h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">CPF/CNPJ</label>
+                        <input type="text" value={contractDetails.tenant_document} onChange={e => setContractDetails({...contractDetails, tenant_document: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">RG e Órgão</label>
+                        <input type="text" placeholder="Ex: 12345 SSP-GO" value={contractDetails.tenant_rg} onChange={e => setContractDetails({...contractDetails, tenant_rg: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Nacionalidade</label>
+                        <input type="text" value={contractDetails.tenant_nationality} onChange={e => setContractDetails({...contractDetails, tenant_nationality: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Estado Civil</label>
+                        <select value={contractDetails.tenant_marital_status} onChange={e => setContractDetails({...contractDetails, tenant_marital_status: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500">
+                          <option value="">Selecione...</option>
+                          <option value="Solteiro(a)">Solteiro(a)</option>
+                          <option value="Casado(a)">Casado(a)</option>
+                          <option value="Divorciado(a)">Divorciado(a)</option>
+                          <option value="Viúvo(a)">Viúvo(a)</option>
+                          <option value="União Estável">União Estável</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Profissão</label>
+                        <input type="text" value={contractDetails.tenant_profession} onChange={e => setContractDetails({...contractDetails, tenant_profession: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Endereço Atual</label>
+                        <input type="text" value={contractDetails.tenant_address} onChange={e => setContractDetails({...contractDetails, tenant_address: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                      </div>
+                      {(contractDetails.tenant_marital_status === 'Casado(a)' || contractDetails.tenant_marital_status === 'União Estável') && (
+                        <div className="sm:col-span-3 grid grid-cols-1 sm:grid-cols-4 gap-3 mt-2 pt-3 border-t border-slate-200 animate-fade-in">
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-500 mb-1">Nome do Cônjuge</label>
+                            <input type="text" value={contractDetails.tenant_spouse_name} onChange={e => setContractDetails({...contractDetails, tenant_spouse_name: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-500 mb-1">CPF do Cônjuge</label>
+                            <input type="text" value={contractDetails.tenant_spouse_document} onChange={e => setContractDetails({...contractDetails, tenant_spouse_document: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-500 mb-1">RG do Cônjuge</label>
+                            <input type="text" value={contractDetails.tenant_spouse_rg} onChange={e => setContractDetails({...contractDetails, tenant_spouse_rg: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-500 mb-1">Profissão</label>
+                            <input type="text" value={contractDetails.tenant_spouse_profession} onChange={e => setContractDetails({...contractDetails, tenant_spouse_profession: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Locador (Proprietário) */}
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                    <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Dados do Locador (Proprietário)</h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">CPF/CNPJ</label>
+                        <input type="text" value={contractDetails.landlord_document} onChange={e => setContractDetails({...contractDetails, landlord_document: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">RG e Órgão</label>
+                        <input type="text" placeholder="Ex: 12345 SSP-GO" value={contractDetails.landlord_rg} onChange={e => setContractDetails({...contractDetails, landlord_rg: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Nacionalidade</label>
+                        <input type="text" value={contractDetails.landlord_nationality} onChange={e => setContractDetails({...contractDetails, landlord_nationality: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Estado Civil</label>
+                        <select value={contractDetails.landlord_marital_status} onChange={e => setContractDetails({...contractDetails, landlord_marital_status: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500">
+                          <option value="">Selecione...</option>
+                          <option value="Solteiro(a)">Solteiro(a)</option>
+                          <option value="Casado(a)">Casado(a)</option>
+                          <option value="Divorciado(a)">Divorciado(a)</option>
+                          <option value="Viúvo(a)">Viúvo(a)</option>
+                          <option value="União Estável">União Estável</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Profissão</label>
+                        <input type="text" value={contractDetails.landlord_profession} onChange={e => setContractDetails({...contractDetails, landlord_profession: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-600 mb-1">Endereço Atual</label>
+                        <input type="text" value={contractDetails.landlord_address} onChange={e => setContractDetails({...contractDetails, landlord_address: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500" />
+                      </div>
+                      {(contractDetails.landlord_marital_status === 'Casado(a)' || contractDetails.landlord_marital_status === 'União Estável') && (
+                        <div className="sm:col-span-3 grid grid-cols-1 sm:grid-cols-4 gap-3 mt-2 pt-3 border-t border-slate-200 animate-fade-in">
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-500 mb-1">Nome do Cônjuge</label>
+                            <input type="text" value={contractDetails.landlord_spouse_name} onChange={e => setContractDetails({...contractDetails, landlord_spouse_name: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-500 mb-1">CPF do Cônjuge</label>
+                            <input type="text" value={contractDetails.landlord_spouse_document} onChange={e => setContractDetails({...contractDetails, landlord_spouse_document: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-500 mb-1">RG do Cônjuge</label>
+                            <input type="text" value={contractDetails.landlord_spouse_rg} onChange={e => setContractDetails({...contractDetails, landlord_spouse_rg: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-500 mb-1">Profissão</label>
+                            <input type="text" value={contractDetails.landlord_spouse_profession} onChange={e => setContractDetails({...contractDetails, landlord_spouse_profession: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Campos Dinâmicos: Fiador (Aparece apenas se o contrato exigir fiador) */}
+              {documentType === 'rent_guarantor' && (
+                <div className="pt-4 mt-4 border-t border-indigo-200 animate-fade-in bg-amber-50 p-4 rounded-xl border border-amber-200">
+                  <h4 className="text-sm font-bold text-amber-800 mb-3 flex items-center gap-2">
+                    <Icons.Shield size={16} /> Dados do Fiador Exigidos
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Nome do Fiador</label>
+                      <input
+                        type="text"
+                        value={guarantorName}
+                        onChange={e => setGuarantorName(e.target.value)}
+                        placeholder="Nome completo"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">CPF do Fiador</label>
+                      <input
+                        type="text"
+                        value={guarantorDocument}
+                        onChange={e => setGuarantorDocument(e.target.value)}
+                        placeholder="000.000.000-00"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Endereço do Fiador</label>
+                      <input
+                        type="text"
+                        value={guarantorAddress}
+                        onChange={e => setGuarantorAddress(e.target.value)}
+                        placeholder="Rua, número, bairro, cidade"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Telefone do Fiador</label>
+                      <input
+                        type="text"
+                        value={guarantorPhone}
+                        onChange={e => setGuarantorPhone(e.target.value)}
+                        placeholder="(00) 00000-0000"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
           </form>
         </div>
 
         <div className="p-6 border-t border-slate-100 flex justify-end gap-3 bg-white shrink-0">
           <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors border border-slate-200">
             Cancelar
+          </button>
+          <button 
+            type="button" 
+            onClick={handleGeneratePDF}
+            disabled={!formData.lead_id || !formData.property_id || !documentType}
+            className="px-5 py-2.5 rounded-xl font-bold bg-slate-800 text-white hover:bg-slate-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            <Icons.FileText size={18} />
+            Gerar PDF
           </button>
           <button type="submit" form="rent-form" disabled={loading} className="px-6 py-2.5 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-2">
             {loading ? 'Salvando...' : 'Registrar Aluguel'} <Icons.ArrowRight size={18} />

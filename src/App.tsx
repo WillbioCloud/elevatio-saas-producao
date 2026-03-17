@@ -28,8 +28,7 @@ import { supabase } from './lib/supabase';
 import Login from './pages/Login';
 
 // Website Landing Pages (Master Domain Only)
-import SiteHome from './pages/website/SiteHome';
-import SiteSignup from './pages/website/SiteSignup';
+import LandingPage from './pages/website/LandingPage';
 
 // Template Router
 import TenantRouter from './templates/TenantRouter';
@@ -44,7 +43,7 @@ import AdminAnalytics from './pages/AdminAnalytics';
 import AdminConfig from './pages/AdminConfig';
 import AdminContracts from './pages/AdminContracts';
 import AdminContractDetails from './pages/AdminContractDetails';
-import AdminSiteBuilder from './pages/AdminSiteBuilder';
+import AdminFinance from './pages/AdminFinance';
 import PendingApproval from './pages/PendingApproval';
 
 // Super Admin (SaaS) Pages
@@ -75,14 +74,14 @@ const getEnvironment = () => {
   }
 
   // Domínios principais da plataforma SaaS
-  const mainDomains = ['elevatiovendas.com', 'elevatiovendas.vercel.app', 'lvh.me'];
+  const mainDomains = ['elevatiovendas.com', 'elevatiovendas.com.br', 'elevatiovendas.vercel.app', 'lvh.me'];
   
   const isMainDomain = mainDomains.some(domain => 
     hostname === domain || hostname === `www.${domain}`
   );
   
   if (isMainDomain) {
-    return { type: 'landing' }; // Mostra a Landing Page do SaaS (SiteHome)
+    return { type: 'landing' }; // Mostra a Landing Page do SaaS (LandingPage)
   }
 
   const isAdminDomain = mainDomains.some(domain => 
@@ -162,8 +161,9 @@ const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomai
           {/* === 1. ROTAS DA LANDING PAGE DO SAAS (MASTER DOMAIN ONLY) === */}
           {isMasterDomain && (
             <>
-              <Route path="/" element={<AnimatedPage><SiteHome /></AnimatedPage>} />
-              <Route path="/registro" element={<AnimatedPage><SiteSignup /></AnimatedPage>} />
+              <Route path="/" element={<AnimatedPage><LandingPage /></AnimatedPage>} />
+              <Route path="/registro" element={<Navigate to="/admin/login?mode=signup" replace />} />
+              <Route path="/cadastro" element={<Navigate to="/admin/login?mode=signup" replace />} />
             </>
           )}
 
@@ -189,8 +189,8 @@ const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomai
               <Route path="tarefas" element={<AdminTasks />} />
               <Route path="contratos" element={<AdminContracts />} />
               <Route path="contratos/:id" element={<AdminContractDetails />} />
+              <Route path="financeiro" element={<AdminFinance />} />
               <Route path="analytics" element={<AdminAnalytics />} />
-              <Route path="site" element={<AdminSiteBuilder />} />
               <Route path="config" element={<AdminConfig />} />
             </Route>
           </Route>

@@ -1,339 +1,339 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Icons } from '../../../components/Icons';
 import { useTenant } from '../../../contexts/TenantContext';
 import { supabase } from '../../../lib/supabase';
 import { Property } from '../../../types';
-import { MapPin, Search, Sliders, Bed, Bath, Maximize2, ArrowRight, Loader2 } from 'lucide-react';
+import PropertyCard from '../components/PropertyCard';
+import { Search, MapPin, Building, Home as HomeIcon, Briefcase, Map, Waves, TreePine, Key, TrendingUp, Loader2, ChevronDown } from 'lucide-react';
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
   const { tenant } = useTenant();
   const [searchLocation, setSearchLocation] = useState('');
   const [propertyType, setPropertyType] = useState('');
-  const [priceRange, setPriceRange] = useState('');
-  const [bedrooms, setBedrooms] = useState('');
+  const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
   const [featuredProperties, setFeaturedProperties] = useState<Property[]>([]);
   const [isLoadingProperties, setIsLoadingProperties] = useState(true);
 
-  // Dados do site_data
+  // Dados do site_data (Tenant)
   const siteData = tenant?.site_data;
-  const heroImageUrl = siteData?.hero_image_url;
-  const heroTitle = siteData?.hero_title || 'Imóveis para moradia e investimentos';
+  const heroImageUrl = siteData?.hero_image_url || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&q=80&w=2000';
+  const heroTitle = siteData?.hero_title || 'Encontre o imóvel dos seus sonhos';
+  const heroSubtitle = siteData?.hero_subtitle || 'A sua jornada para um novo lar começa aqui.';
   const primaryColor = siteData?.primary_color || '#1e293b';
   const secondaryColor = siteData?.secondary_color || '#3b82f6';
 
-  // Buscar imóveis em destaque
+  // Logos de Parceiros (preparado para o Admin futuro)
+  const partnerLogos = siteData?.partners || [
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a6/Logo_NIKE.svg/1200px-Logo_NIKE.svg.png',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/Samsung_Logo.svg/1200px-Samsung_Logo.svg.png',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Cisco_logo_blue_2016.svg/1200px-Cisco_logo_blue_2016.svg.png',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bb/Tesla_T_symbol.svg/1200px-Tesla_T_symbol.svg.png'
+  ];
+
   useEffect(() => {
+    let isMounted = true;
+
     const fetchFeaturedProperties = async () => {
       if (!tenant?.id) return;
 
       setIsLoadingProperties(true);
-      
-      const { data, error } = await supabase
-        .from('properties')
-        .select('*')
-        .eq('company_id', tenant.id)
-        .eq('featured', true)
-        .neq('status', 'Vendido')
-        .neq('status', 'Alugado')
-        .order('created_at', { ascending: false })
-        .limit(6);
 
-      if (error) {
-        console.error('Erro ao buscar imóveis em destaque:', error);
-      } else if (data) {
-        const mappedProperties = data.map(prop => ({
-          ...prop,
-          location: {
-            city: prop.city || '',
-            neighborhood: prop.neighborhood || '',
-            state: prop.state || '',
-            address: prop.address,
-            zip_code: prop.zip_code,
-          }
-        }));
-        setFeaturedProperties(mappedProperties);
+      try {
+        const { data, error } = await supabase
+          .from('properties')
+          .select('*, profiles(*)')
+          .eq('company_id', tenant.id)
+          .neq('status', 'Vendido')
+          .neq('status', 'Alugado')
+          .limit(6);
+
+        if (error) throw error;
+
+        if (isMounted && data) {
+          const formattedData = data.map(item => ({
+            ...item,
+            agent: Array.isArray(item.profiles) ? item.profiles[0] : item.profiles,
+            images: typeof item.images === 'string' ? JSON.parse(item.images || '[]') : (item.images || []),
+            features: typeof item.features === 'string' ? JSON.parse(item.features || '[]') : (item.features || [])
+          })) as Property[];
+
+          setFeaturedProperties(formattedData);
+        }
+      } catch (error) {
+        console.error('Erro ao buscar destaques:', error);
+      } finally {
+        if (isMounted) setIsLoadingProperties(false);
       }
-
-      setIsLoadingProperties(false);
     };
 
     fetchFeaturedProperties();
+
+    return () => {
+      isMounted = false;
+    };
   }, [tenant?.id]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams();
-    if (searchLocation) params.set('search', searchLocation);
+    if (searchLocation) params.set('city', searchLocation);
     if (propertyType) params.set('type', propertyType);
-    if (priceRange) params.set('price', priceRange);
-    if (bedrooms) params.set('bedrooms', bedrooms);
-    
-    const query = params.toString();
-    navigate(query ? `/imoveis?${query}` : '/imoveis');
+    navigate(`/imoveis?${params.toString()}`);
   };
 
+  const lifestyles = [
+    { id: 'praia', title: 'Frente para o Mar', icon: Waves, image: 'https://images.unsplash.com/photo-1499793983690-e29da59ef1c2?auto=format&fit=crop&q=80&w=800' },
+    { id: 'condominio', title: 'Condomínio Fechado', icon: TreePine, image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&q=80&w=800' },
+    { id: 'cobertura', title: 'Coberturas', icon: Key, image: 'https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?auto=format&fit=crop&q=80&w=800' },
+    { id: 'investimento', title: 'Para Investimento', icon: TrendingUp, image: 'https://images.unsplash.com/photo-1554469384-e58fac16e23a?auto=format&fit=crop&q=80&w=800' },
+  ];
+
+  const propertyTypes = [
+    { id: 'Casa', title: 'Casas', icon: HomeIcon },
+    { id: 'Apartamento', title: 'Apartamentos', icon: Building },
+    { id: 'Lote/Terreno', title: 'Lotes e Terrenos', icon: Map },
+    { id: 'Comercial', title: 'Comercial', icon: Briefcase },
+  ];
+
   return (
-    <div className="bg-white">
+    <div className="min-h-screen bg-slate-50 pb-12 font-sans">
       
-      {/* Hero Section */}
-      <section 
-        className="relative bg-gray-900 overflow-hidden min-h-screen flex items-center"
-        style={{
-          backgroundImage: heroImageUrl ? `url(${heroImageUrl})` : 'none',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      >
-        {/* Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-gray-900/80 to-gray-900/60"></div>
+      {/* 1. HERO SECTION */}
+      <section className="relative h-screen flex items-center justify-center">
+        <div 
+          className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat"
+          style={{ 
+            backgroundImage: `url('${siteData?.hero_image_url || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80'}')` 
+          }}
+        >
+          <div className="absolute inset-0 bg-slate-900/40"></div>
+        </div>
 
-        {/* Content */}
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-32 md:py-40 w-full">
-          <div className="max-w-3xl">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
-              {heroTitle}
-            </h1>
-            
-            {/* Search Bar Horizontal */}
-            <form onSubmit={handleSearch} className="bg-white rounded-2xl shadow-2xl p-2">
-              <div className="flex flex-col md:flex-row md:items-center md:divide-x divide-gray-200">
-                
-                {/* Location */}
-                <div className="flex-1 px-4 py-3">
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Localização</label>
-                  <div className="flex items-center">
-                    <MapPin size={18} className="text-gray-400 mr-2" />
-                    <input
-                      type="text"
-                      value={searchLocation}
-                      onChange={(e) => setSearchLocation(e.target.value)}
-                      placeholder="Cidade ou bairro"
-                      className="w-full text-sm font-medium text-gray-900 placeholder:text-gray-400 outline-none bg-transparent"
-                    />
-                  </div>
-                </div>
+        <div className="relative z-10 w-full max-w-5xl mx-auto px-4 text-center mt-16 md:mt-0">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6 drop-shadow-lg leading-tight">
+            {siteData?.hero_title || 'Encontre o imóvel perfeito para você'}
+          </h1>
+          <p className="text-lg md:text-2xl text-white/90 mb-10 max-w-3xl mx-auto drop-shadow-md">
+            {siteData?.hero_subtitle || 'A sua jornada para a casa dos sonhos começa aqui. Descubra as melhores opções na sua região.'}
+          </p>
 
-                {/* Property Type */}
-                <div className="flex-1 px-4 py-3 border-t md:border-t-0 border-gray-100">
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Tipo de imóvel</label>
-                  <select
-                    value={propertyType}
-                    onChange={(e) => setPropertyType(e.target.value)}
-                    className="w-full text-sm font-medium text-gray-900 outline-none bg-transparent"
-                  >
-                    <option value="">Todos os tipos</option>
-                    <option value="Casa">Casas</option>
-                    <option value="Apartamento">Apartamentos</option>
-                    <option value="Cobertura">Coberturas</option>
-                    <option value="Comercial">Comercial</option>
-                  </select>
-                </div>
+          <form onSubmit={handleSearch} className="bg-white p-4 md:p-4 rounded-2xl md:rounded-full shadow-2xl flex flex-col md:flex-row items-stretch md:items-center gap-4 md:gap-3 max-w-4xl mx-auto animate-fade-in-up">
+            <div className="flex-1 flex items-center px-4 py-3 md:py-0 w-full border-b md:border-b-0 md:border-r border-slate-200">
+              <MapPin className="text-slate-400 mr-3 shrink-0" size={20} />
+              <input
+                type="text"
+                placeholder="Cidade ou bairro..."
+                className="w-full bg-transparent border-none focus:outline-none text-slate-700 placeholder:text-slate-400"
+                value={searchLocation}
+                onChange={(e) => setSearchLocation(e.target.value)}
+              />
+            </div>
 
-                {/* Price */}
-                <div className="flex-1 px-4 py-3 border-t md:border-t-0 border-gray-100">
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Preço</label>
-                  <select
-                    value={priceRange}
-                    onChange={(e) => setPriceRange(e.target.value)}
-                    className="w-full text-sm font-medium text-gray-900 outline-none bg-transparent"
-                  >
-                    <option value="">Qualquer valor</option>
-                    <option value="0-500000">Até R$ 500 mil</option>
-                    <option value="500000-1000000">R$ 500 mil - R$ 1 milhão</option>
-                    <option value="1000000-2000000">R$ 1 milhão - R$ 2 milhões</option>
-                    <option value="2000000+">Acima de R$ 2 milhões</option>
-                  </select>
-                </div>
+            <div className="flex-1 flex items-center px-4 w-full md:w-auto pb-3 md:pb-0 relative">
+              <Building className="text-slate-400 mr-3 shrink-0" size={20} />
+              
+              {/* Dropdown Customizado */}
+              <div className="relative w-full">
+                <button
+                  type="button"
+                  onClick={() => setIsTypeDropdownOpen(!isTypeDropdownOpen)}
+                  className="w-full bg-transparent border-none focus:outline-none text-slate-700 cursor-pointer flex justify-between items-center text-left"
+                >
+                  <span className="truncate font-medium">
+                    {propertyType ? propertyTypes.find(t => t.id === propertyType)?.title || propertyType : 'Qualquer tipo'}
+                  </span>
+                  <ChevronDown 
+                    className={`text-slate-400 transition-transform duration-300 ${isTypeDropdownOpen ? 'rotate-180' : ''}`} 
+                    size={16} 
+                  />
+                </button>
 
-                {/* Bedrooms */}
-                <div className="flex-1 px-4 py-3 border-t md:border-t-0 border-gray-100">
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Quartos</label>
-                  <select
-                    value={bedrooms}
-                    onChange={(e) => setBedrooms(e.target.value)}
-                    className="w-full text-sm font-medium text-gray-900 outline-none bg-transparent"
-                  >
-                    <option value="">Qualquer</option>
-                    <option value="1">1+</option>
-                    <option value="2">2+</option>
-                    <option value="3">3+</option>
-                    <option value="4">4+</option>
-                    <option value="5">5+</option>
-                  </select>
-                </div>
+                {isTypeDropdownOpen && (
+                  <>
+                    {/* Overlay invisível para fechar ao clicar fora */}
+                    <div 
+                      className="fixed inset-0 z-40" 
+                      onClick={() => setIsTypeDropdownOpen(false)}
+                    ></div>
 
-                {/* More Filters & Search Button */}
-                <div className="flex items-center gap-2 px-2 py-2 border-t md:border-t-0 border-gray-100">
-                  <button
-                    type="button"
-                    className="flex items-center justify-center w-12 h-12 rounded-xl bg-gray-100 hover:bg-gray-200 transition-colors"
-                  >
-                    <Sliders size={20} className="text-gray-700" />
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex items-center justify-center px-8 h-12 rounded-xl text-white font-semibold transition-all hover:opacity-90"
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    <Search size={20} className="mr-2" />
-                    Buscar
-                  </button>
-                </div>
+                    {/* Menu Dropdown */}
+                    <div className="absolute top-full right-0 mt-6 w-[340px] bg-white rounded-3xl shadow-xl border border-slate-100 py-2 z-50 overflow-hidden animate-fade-in-up">
+                      <div 
+                        className="px-5 py-3 hover:bg-slate-300 cursor-pointer text-slate-700 transition-colors font-medium text-sm flex itens-center gap-4"
+                        onClick={() => {
+                          setPropertyType('');
+                          setIsTypeDropdownOpen(false);
+                        }}
+                      >
+                        Qualquer tipo
+                      </div>
+                      {propertyTypes.map(type => (
+                        <div 
+                          key={type.id}
+                          className="px-5 py-3 hover:bg-slate-300 cursor-pointer text-slate-700 transition-colors font-medium text-sm flex items-center gap-3"
+                          onClick={() => {
+                            setPropertyType(type.id);
+                            setIsTypeDropdownOpen(false);
+                          }}
+                        >
+                          <type.icon size={16} className="text-slate-400" />
+                          {type.title}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
-            </form>
-          </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full md:w-auto text-white px-8 py-3.5 rounded-xl md:rounded-full font-bold flex items-center justify-center gap-2 transition-all hover:opacity-90 hover:scale-105 shadow-md shrink-0"
+              style={{ backgroundColor: primaryColor }}
+            >
+              <Search size={20} />
+              Buscar
+            </button>
+          </form>
         </div>
       </section>
 
-      {/* Latest in your area - Grid de Imóveis */}
-      <section className="py-20 bg-white">
+      {/* 2. EXPLORE POR ESTILO DE VIDA */}
+      <section className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 className="text-3xl font-bold text-slate-900 mb-2">Explore por Estilo de Vida</h2>
+        <p className="text-slate-500 mb-10">Encontre o imóvel que combina perfeitamente com você.</p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {lifestyles.map((style) => (
+            <div
+              key={style.id}
+              onClick={() => navigate(`/imoveis?lifestyle=${style.id}`)}
+              className="group relative h-72 rounded-3xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl transition-all"
+            >
+              <img
+                src={style.image}
+                alt={style.title}
+                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/20 to-transparent"></div>
+              <div className="absolute bottom-6 left-6 text-white">
+                <style.icon size={28} className="mb-3 opacity-80" />
+                <h3 className="text-xl font-bold">{style.title}</h3>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 3. IMÓVEIS EM DESTAQUE */}
+      <section className="py-12 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
-              Destaques da região
-            </h2>
+          <div className="flex justify-between items-end mb-10">
+            <div>
+              <h2 className="text-3xl font-bold text-slate-900 mb-2">Imóveis em Destaque</h2>
+              <p className="text-slate-500">As melhores oportunidades selecionadas para você.</p>
+            </div>
             <button
               onClick={() => navigate('/imoveis')}
-              className="text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-2 transition-colors"
+              className="hidden md:block font-bold hover:underline"
+              style={{ color: primaryColor }}
             >
-              Ver todos
-              <ArrowRight size={16} />
+              Ver todos &rarr;
             </button>
           </div>
 
           {isLoadingProperties ? (
-            <div className="flex justify-center items-center py-20">
-              <Loader2 className="animate-spin text-gray-400" size={48} />
+            <div className="flex justify-center items-center h-64">
+              <Loader2 className="animate-spin text-slate-400" size={40} />
             </div>
           ) : featuredProperties.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {featuredProperties.map((property) => (
-                <div 
-                  key={property.id}
-                  onClick={() => navigate(`/imovel/${property.slug}`)}
-                  className="group cursor-pointer"
-                >
-                  {/* Image Container */}
-                  <div className="relative aspect-[4/3] rounded-2xl overflow-hidden mb-4 bg-gray-100">
-                    <img
-                      src={property.images?.[0] || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800'}
-                      alt={property.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    {/* Bookmark Icon */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                      }}
-                      className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center hover:bg-white transition-colors shadow-lg"
-                    >
-                      <Icons.Heart size={18} className="text-gray-700" />
-                    </button>
-                  </div>
-
-                  {/* Property Info */}
-                  <div>
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <p className="text-2xl font-bold text-gray-900">
-                          {new Intl.NumberFormat('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                            minimumFractionDigits: 0,
-                          }).format(property.price)}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Specs */}
-                    <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
-                      <span className="flex items-center gap-1">
-                        <Bed size={16} />
-                        {property.bedrooms} quartos
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Bath size={16} />
-                        {property.bathrooms} banheiros
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Maximize2 size={16} />
-                        {property.area} m²
-                      </span>
-                    </div>
-
-                    {/* Address */}
-                    <p className="text-sm text-gray-600 line-clamp-1">
-                      {property.location.address || `${property.location.neighborhood}, ${property.location.city}, ${property.location.state}`}
-                    </p>
-                  </div>
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {featuredProperties.map(property => (
+                <PropertyCard key={property.id} property={property} />
               ))}
             </div>
           ) : (
-            <div className="text-center py-20">
-              <Icons.Home className="mx-auto text-gray-300 mb-4" size={64} />
-              <p className="text-gray-500 text-lg">
-                Nenhum imóvel em destaque no momento.
-              </p>
+            <div className="text-center py-20 bg-slate-50 rounded-3xl border border-dashed border-slate-300">
+              <p className="text-slate-500">Nenhum imóvel em destaque no momento.</p>
             </div>
           )}
+
+          <div className="mt-8 text-center md:hidden">
+            <button
+              onClick={() => navigate('/imoveis')}
+              className="font-bold border px-6 py-3 rounded-full"
+              style={{ color: primaryColor, borderColor: primaryColor }}
+            >
+              Ver todos os imóveis
+            </button>
+          </div>
         </div>
       </section>
 
-      {/* You might be interested in */}
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
-              Você pode se interessar
-            </h2>
-            <button
-              onClick={() => navigate('/imoveis')}
-              className="text-sm font-semibold text-gray-700 hover:text-gray-900 flex items-center gap-2 transition-colors"
-            >
-              Ver todos
-              <ArrowRight size={16} />
-            </button>
-          </div>
+      {/* 4. O QUE VOCÊ PROCURA? */}
+      <section className="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 className="text-3xl font-bold text-slate-900 mb-10 text-center">O que você procura?</h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {featuredProperties.slice(0, 2).map((property) => (
-              <div 
-                key={property.id}
-                onClick={() => navigate(`/imovel/${property.slug}`)}
-                className="group cursor-pointer"
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          {propertyTypes.map((type) => (
+            <div
+              key={type.id}
+              onClick={() => {
+                const params = new URLSearchParams();
+                params.set('type', type.id);
+                navigate(`/imoveis?${params.toString()}`);
+              }}
+              className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer flex flex-col items-center text-center group"
+            >
+              <div
+                className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4 group-hover:bg-brand-50 transition-colors"
+                style={{ color: primaryColor }}
               >
-                <div className="relative aspect-[16/10] rounded-2xl overflow-hidden mb-4 bg-gray-100">
-                  <img
-                    src={property.images?.[0] || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800'}
-                    alt={property.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900 mb-2">
-                    {new Intl.NumberFormat('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                      minimumFractionDigits: 0,
-                    }).format(property.price)}
-                  </p>
-                  <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
-                    <span>{property.bedrooms} quartos</span>
-                    <span>{property.bathrooms} banheiros</span>
-                    <span>{property.area} m²</span>
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    {property.location.address || `${property.location.neighborhood}, ${property.location.city}`}
-                  </p>
-                </div>
+                <type.icon size={28} className="sm:w-8 sm:h-8" />
               </div>
+              <h3 className="font-bold text-slate-800 text-sm sm:text-base">{type.title}</h3>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 5. NOSSAS PARCERIAS (Marquee) */}
+      {siteData?.show_partnerships !== false && (
+      <section className="py-12 bg-white border-t border-slate-100 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
+          <h3 className="text-center text-sm font-bold tracking-widest text-slate-400 uppercase">Nossos Parceiros</h3>
+        </div>
+
+        <div className="relative flex overflow-x-hidden group">
+          <div className="absolute top-0 left-0 w-16 md:w-32 h-full bg-gradient-to-r from-white to-transparent z-10"></div>
+          <div className="absolute top-0 right-0 w-16 md:w-32 h-full bg-gradient-to-l from-white to-transparent z-10"></div>
+
+          {/* Animação CSS inline simples para garantir o funcionamento */}
+          <div className="py-4 flex whitespace-nowrap animate-[marquee_20s_linear_infinite]">
+            {[...partnerLogos, ...partnerLogos, ...partnerLogos].map((logo, idx) => (
+              <img
+                key={idx}
+                src={logo}
+                alt="Parceiro"
+                className="h-10 md:h-12 w-auto object-contain mx-8 md:mx-16 grayscale hover:grayscale-0 opacity-50 hover:opacity-100 transition-all duration-300"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
             ))}
           </div>
         </div>
+
+        {/* Keyframe fallback injetado via estilo global caso o tailwind.config não tenha marquee */}
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes marquee {
+            0% { transform: translateX(0%); }
+            100% { transform: translateX(-33.33%); }
+          }
+        `}} />
       </section>
+      )}
     </div>
   );
 };

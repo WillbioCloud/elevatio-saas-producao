@@ -4,6 +4,7 @@ import { Lead, LeadStatus, Property } from '../types';
 import { Icons } from '../components/Icons';
 import LeadDetailsSidebar from '../components/LeadDetailsSidebar';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { TOOLTIPS } from '../constants/tooltips';
 import Loading from '../components/Loading';
 import { addXp } from '../services/gamification';
@@ -263,6 +264,7 @@ const DraggableCardWrapper = ({
 
 const AdminLeads: React.FC = () => {
   const { user } = useAuth();
+  const { addToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentFunnel = searchParams.get('funnel') || 'atendimento';
   const isAdmin = (user as any)?.role === 'admin';
@@ -294,6 +296,8 @@ const AdminLeads: React.FC = () => {
   });
   const [transferForm, setTransferForm] = useState({ brokerId: '', note: '' });
   const [confirmingTransfer, setConfirmingTransfer] = useState(false);
+  const [includeAdmins, setIncludeAdmins] = useState(false);
+  const [updatingAdminToggle, setUpdatingAdminToggle] = useState(false);
   const [roleta, setRoleta] = useState<{
     stats: Array<{ id: string; name: string; count: number; lastTime: Date | null }>;
     rounds: number;
@@ -342,13 +346,14 @@ const AdminLeads: React.FC = () => {
     setDraggedBrokerId(null);
   };
 
-  const fetchRoletaStats = async () => {
+  const fetchRoletaStats = async (withAdmins = includeAdmins) => {
     setRoleta((prev) => ({ ...prev, loading: true }));
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const { data: brokers } = await supabase.from('profiles').select('id, name').eq('active', true).eq('role', 'corretor');
+      const rolesToInclude = withAdmins ? ['corretor', 'admin'] : ['corretor'];
+      const { data: brokers } = await supabase.from('profiles').select('id, name').eq('active', true).in('role', rolesToInclude);
 
       const { data: leadsToday } = await supabase
         .from('leads')
@@ -493,9 +498,14 @@ const AdminLeads: React.FC = () => {
 
   useEffect(() => {
     const fetchSettings = async () => {
-      const { data } = await supabase.from('settings').select('kanban_config').eq('id', 1).single();
-      if (data?.kanban_config) {
-        setKanbanConfig(data.kanban_config as Record<string, string[]>);
+      const { data } = await supabase.from('settings').select('kanban_config, include_admins_in_roulette').eq('id', 1).single();
+      if (data) {
+        if (data.kanban_config) {
+          setKanbanConfig(data.kanban_config as Record<string, string[]>);
+        }
+        if (data.include_admins_in_roulette !== undefined) {
+          setIncludeAdmins(data.include_admins_in_roulette);
+        }
       }
     };
 
@@ -525,6 +535,19 @@ const AdminLeads: React.FC = () => {
     fetchAvailableProperties();
   }, []);
 
+  const handleToggleAdminsInRoulette = async (newValue: boolean) => {
+    setUpdatingAdminToggle(true);
+    setIncludeAdmins(newValue);
+    try {
+      await supabase.from('settings').update({ include_admins_in_roulette: newValue }).eq('id', 1);
+      await fetchRoletaStats(newValue);
+    } catch (e) {
+      console.error('Erro ao atualizar config da roleta', e);
+    } finally {
+      setUpdatingAdminToggle(false);
+    }
+  };
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
   };
@@ -548,14 +571,16 @@ const AdminLeads: React.FC = () => {
       if (isAdmin && lead.funnel_step === 'pre_atendimento' && newFunnel !== 'pre_atendimento') {
         setTransferModal({ isOpen: true, lead, newFunnel, newStatus: targetStatus });
         setTransferForm({ brokerId: '', note: '' });
-        fetchRoletaStats();
+        fetchRoletaStats(includeAdmins);
         return;
       }
 
       if (targetStatus === LeadStatus.CLOSED || (newFunnel === 'venda_ganha' && targetStatus.toLowerCase().includes('fechada'))) {
-        const suggestedValue = Number((lead as any)?.property?.price || 0);
         setClosingLead(lead);
-        setSelectedSoldPropertyId('');
+        // Busca o imóvel principal ou o primeiro adicionado manualmente nos interesses
+        const mainProp = (lead as any).property || (lead as any).interested_properties?.[0];
+        const suggestedValue = Number(mainProp?.price || 0);
+        setSelectedSoldPropertyId(mainProp?.id || (lead as any).property_id || '');
         setIsCustomValue(false);
         setDealValue(suggestedValue > 0 ? String(Math.round(suggestedValue)) : '');
         return;
@@ -641,7 +666,23 @@ const AdminLeads: React.FC = () => {
         }
       }
 
+      // Guarda os valores antes de limpar o modal
+      const leadToClose = transferModal.lead;
+      const targetFunnel = transferModal.newFunnel;
+      const targetStatus = transferModal.newStatus;
       setTransferModal({ isOpen: false, lead: null, newFunnel: '', newStatus: '' });
+
+      // Se a transferência foi direto para Fechado, abre o modal de Venda logo a seguir
+      if (leadToClose && (targetStatus === LeadStatus.CLOSED || (targetFunnel === 'venda_ganha' && targetStatus.toLowerCase().includes('fechada')))) {
+        setTimeout(() => {
+          setClosingLead(leadToClose);
+          const mainProp = (leadToClose as any).property || (leadToClose as any).interested_properties?.[0];
+          const suggestedValue = Number(mainProp?.price || 0);
+          setSelectedSoldPropertyId(mainProp?.id || (leadToClose as any).property_id || '');
+          setIsCustomValue(false);
+          setDealValue(suggestedValue > 0 ? String(Math.round(suggestedValue)) : '');
+        }, 300);
+      }
     } catch (err) {
       console.error(err);
       alert('Erro ao transferir.');
@@ -650,54 +691,53 @@ const AdminLeads: React.FC = () => {
     }
   };
 
-  const handleConfirmClosing = async () => {
-    if (!closingLead) return;
-
-    const interestedPropertyId = (closingLead as any)?.property_id || (closingLead as any)?.propertyId;
-    const soldPropertyId = isCustomValue ? selectedSoldPropertyId : interestedPropertyId;
-
-    if (!soldPropertyId) {
-      alert('Selecione o imóvel vendido para concluir o fechamento.');
+  const handleCloseSale = async () => {
+    if (!closingLead || !selectedSoldPropertyId || !dealValue) {
+      addToast('Por favor, confirme o imóvel e o valor final negociado.', 'error');
       return;
     }
 
     setSavingClosing(true);
-    const parsedValue = Number(String(dealValue).replace(/\./g, '').replace(',', '.')) || 0;
+    try {
+      // 1. Atualizar o Lead para Venda Fechada
+      const { error: leadError } = await supabase.from('leads').update({
+        status: 'Fechado',
+        funnel_step: 'venda_ganha',
+        property_id: selectedSoldPropertyId,
+        deal_value: Number(dealValue),
+        stage_updated_at: new Date().toISOString()
+      }).eq('id', closingLead.id);
+      if (leadError) throw leadError;
 
-    const { error: leadError } = await supabase
-      .from('leads')
-      .update({ status: LeadStatus.CLOSED, deal_value: parsedValue, sold_property_id: soldPropertyId })
-      .eq('id', closingLead.id);
+      // 2. Dar baixa no Imóvel
+      const { error: propError } = await supabase.from('properties').update({ status: 'Vendido' }).eq('id', selectedSoldPropertyId);
+      if (propError) console.error('Erro ao dar baixa no imóvel:', propError);
 
-    if (leadError) {
-      console.error('Erro ao fechar lead:', leadError);
-      alert(`Não foi possível concluir o fechamento: ${leadError.message}`);
+      // 3. Adicionar o grande momento na Timeline
+      await supabase.from('timeline_events').insert([{
+        lead_id: closingLead.id,
+        type: 'status_change',
+        description: `🎉 VENDA FECHADA! Imóvel negociado por ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(dealValue))}.`,
+        company_id: (user as any)?.company_id,
+      }]);
+
+      // 4. XP de gamificação
+      if (user?.id) await addXp(user.id, 500);
+
+      // 5. Finalizar a UI
+      addToast('Venda Registada com Sucesso! Parabéns! 🎉', 'success');
+      setClosingLead(null);
+      setDealValue('');
+      setSelectedSoldPropertyId('');
+      setIsCustomValue(false);
+      fetchLeads();
+      fetchAvailableProperties();
+    } catch (error) {
+      console.error('Erro ao fechar venda:', error);
+      addToast('Erro ao processar o fechamento da venda.', 'error');
+    } finally {
       setSavingClosing(false);
-      return;
     }
-
-    const { error: propertyError } = await supabase
-      .from('properties')
-      .update({ status: 'Vendido' })
-      .eq('id', soldPropertyId);
-
-    if (propertyError) {
-      console.error('Erro ao marcar imóvel como vendido:', propertyError);
-      alert(`Lead fechado, mas não foi possível atualizar o imóvel: ${propertyError.message}`);
-    }
-
-    if (user?.id) {
-      await addXp(user.id, 500);
-    }
-
-    setLeads((prev) => prev.map((l) => (l.id === closingLead.id ? { ...l, status: LeadStatus.CLOSED, deal_value: parsedValue, sold_property_id: soldPropertyId } : l)));
-    setClosingLead(null);
-    setDealValue('');
-    setSelectedSoldPropertyId('');
-    setIsCustomValue(false);
-    await fetchLeads();
-    await fetchAvailableProperties();
-    setSavingClosing(false);
   };
 
   const handleCreateLead = async (e: React.FormEvent) => {
@@ -855,95 +895,144 @@ const AdminLeads: React.FC = () => {
             if (isAdmin && selectedLead) {
               setTransferModal({ isOpen: true, lead: selectedLead, newFunnel, newStatus });
               setTransferForm({ brokerId: '', note: '' });
-              fetchRoletaStats();
+              fetchRoletaStats(includeAdmins);
             }
           }}
         />
       )}
 
-      <AlertDialog open={!!closingLead}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Fechamento</AlertDialogTitle>
-            <AlertDialogDescription>
-              Lead: <span className="font-semibold text-slate-700">{closingLead?.name}</span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+      {/* MODAL DE VENDA FECHADA (UI PREMIUM) */}
+      {closingLead && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col">
 
-          <div className="space-y-5">
-            <div className="space-y-3">
-              <p className="text-sm font-semibold text-slate-700">
-                Você vendeu o imóvel de interesse ({(closingLead as any)?.property?.title || 'Não informado'}) ou outro imóvel?
+            {/* Header de Celebração */}
+            <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 text-center text-white relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-full opacity-20 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, white 2px, transparent 2px)', backgroundSize: '20px 20px' }} />
+              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3 backdrop-blur-sm border border-white/30 shadow-inner">
+                <Icons.Trophy size={32} className="text-yellow-300 drop-shadow-md" />
+              </div>
+              <h2 className="text-2xl font-bold mb-1">Negócio Fechado! 🎉</h2>
+              <p className="text-emerald-50 text-sm font-medium">
+                Preencha os dados finais para registar a venda para <b className="text-white">{closingLead.name}</b>.
               </p>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="radio"
-                  name="sold-property"
-                  checked={!isCustomValue}
-                  onChange={() => {
-                    setIsCustomValue(false);
-                    setSelectedSoldPropertyId('');
-                    const suggestedValue = Number((closingLead as any)?.property?.price || 0);
-                    setDealValue(suggestedValue > 0 ? String(Math.round(suggestedValue)) : '');
-                  }}
-                />
-                Imóvel de Interesse
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="radio" name="sold-property" checked={isCustomValue} onChange={() => setIsCustomValue(true)} />
-                Outro Imóvel
-              </label>
+            </div>
 
-              {isCustomValue && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Imóvel Vendido</label>
+            <div className="p-6 space-y-5">
+              {/* Resumo do Imóvel de Interesse */}
+              {(() => {
+                const mainProp = (closingLead as any).property || (closingLead as any).interested_properties?.[0];
+                if (!mainProp) return null;
+                return (
+                  <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-start gap-4">
+                    <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center shrink-0">
+                      <Icons.Home size={24} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-emerald-600/70 uppercase tracking-wider mb-1">Imóvel de Interesse do Lead</p>
+                      <p className="font-bold text-slate-800 text-sm line-clamp-2">{mainProp.title}</p>
+                      <p className="text-emerald-600 font-bold mt-1 text-sm">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(mainProp.price || 0)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Seleção do Imóvel Fechado */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Confirmar Imóvel Fechado *</label>
+                <div className="relative">
+                  <Icons.Home className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <select
                     value={selectedSoldPropertyId}
-                    onChange={(e) => setSelectedSoldPropertyId(e.target.value)}
-                    className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                    onChange={(e) => {
+                      setSelectedSoldPropertyId(e.target.value);
+                      // Busca primeiro nos disponíveis, depois no imóvel do lead
+                      const prop = availableProperties.find(p => p.id === e.target.value)
+                        || (closingLead as any).property
+                        || (closingLead as any).interested_properties?.find((p: any) => p.id === e.target.value);
+                      if (prop && !isCustomValue) {
+                        setDealValue(prop.price ? String(Math.round(Number(prop.price))) : '');
+                      }
+                    }}
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-emerald-500 outline-none text-sm appearance-none font-medium"
                   >
-                    <option value="">Selecione um imóvel disponível</option>
-                    {availableProperties.map((property) => (
-                      <option key={property.id} value={property.id}>
-                        {property.title} • {Number(property.price || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                      </option>
+                    <option value="">Selecione o imóvel vendido...</option>
+                    {/* Fallback: se o imóvel pré-selecionado não está na lista de disponíveis, exibe mesmo assim */}
+                    {selectedSoldPropertyId && !availableProperties.find(p => p.id === selectedSoldPropertyId) && (() => {
+                      const mp = (closingLead as any).property
+                        || (closingLead as any).interested_properties?.find((p: any) => p.id === selectedSoldPropertyId);
+                      if (mp) return <option value={mp.id}>{mp.title}</option>;
+                      return null;
+                    })()}
+                    {availableProperties.map(p => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
                     ))}
                   </select>
+                  <Icons.ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
-              )}
+              </div>
+
+              {/* Valor Fechado */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-bold text-slate-700">Valor Final Negociado *</label>
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-emerald-600 cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={isCustomValue}
+                      onChange={(e) => setIsCustomValue(e.target.checked)}
+                      className="rounded border-slate-300 text-emerald-500 focus:ring-emerald-500"
+                    />
+                    Alterar valor do anúncio
+                  </label>
+                </div>
+                <div className="relative">
+                  <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-bold ${!isCustomValue && selectedSoldPropertyId ? 'text-slate-400' : 'text-emerald-600'}`}>R$</span>
+                  <input
+                    type="number"
+                    value={dealValue}
+                    onChange={(e) => setDealValue(e.target.value)}
+                    readOnly={!isCustomValue && !!selectedSoldPropertyId}
+                    className={`w-full pl-12 pr-4 py-3 rounded-xl border outline-none text-lg font-bold transition-colors ${
+                      !isCustomValue && selectedSoldPropertyId
+                        ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed'
+                        : 'bg-white border-emerald-200 focus:ring-2 focus:ring-emerald-500 text-emerald-600'
+                    }`}
+                    placeholder="0.00"
+                  />
+                </div>
+                {!isCustomValue && selectedSoldPropertyId && (
+                  <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
+                    <Icons.Info size={12} /> Valor bloqueado ao preço do anúncio. Marque a caixa acima para negociar desconto.
+                  </p>
+                )}
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Valor do Fechamento</label>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
-                value={dealValue}
-                onChange={(e) => setDealValue(e.target.value)}
-                placeholder="Ex: 850000"
-              />
+            {/* Footer de Ações */}
+            <div className="p-5 bg-slate-50 border-t border-slate-100 flex gap-3">
+              <button
+                onClick={() => { setClosingLead(null); setDealValue(''); setIsCustomValue(false); setSelectedSoldPropertyId(''); }}
+                className="flex-1 px-4 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCloseSale}
+                disabled={savingClosing || !selectedSoldPropertyId || !dealValue}
+                className="flex-1 px-4 py-3 rounded-xl font-bold text-white bg-emerald-500 hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingClosing
+                  ? <><Icons.Loader2 size={18} className="animate-spin" /> Confirmando...</>
+                  : <><Icons.CheckCircle2 size={18} /> Confirmar Venda</>
+                }
+              </button>
             </div>
           </div>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setClosingLead(null);
-                setDealValue('');
-                setIsCustomValue(false);
-                setSelectedSoldPropertyId('');
-              }}
-            >
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmClosing} disabled={savingClosing}>
-              {savingClosing ? 'Confirmando...' : 'Confirmar Venda'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        </div>
+      )}
 
       {isNewLeadModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -1126,6 +1215,26 @@ const AdminLeads: React.FC = () => {
                   <p className="text-xs font-bold text-indigo-600">Rodada Atual: {roleta.rounds + 1}</p>
                 </div>
               </div>
+
+              {/* TOGGLE PARA INCLUIR ADMIN */}
+              {isAdmin && (
+                <div className="mb-6 flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 shadow-sm transition-opacity">
+                  <div className="flex items-center gap-2">
+                    <Icons.Shield size={16} className="text-slate-400" />
+                    <span className="text-xs font-bold text-slate-600">Incluir Admin na Roleta</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={includeAdmins}
+                      disabled={updatingAdminToggle}
+                      onChange={(e) => handleToggleAdminsInRoulette(e.target.checked)}
+                    />
+                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-500"></div>
+                  </label>
+                </div>
+              )}
 
               {roleta.loading ? (
                 <div className="flex justify-center py-10">

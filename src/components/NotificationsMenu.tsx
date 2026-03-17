@@ -104,11 +104,12 @@ export default function NotificationsMenu() {
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)}></div>
           <div className="absolute right-0 mt-2 w-80 md:w-96 bg-white dark:bg-dark-card rounded-2xl shadow-xl border border-slate-200 dark:border-dark-border z-50 overflow-hidden">
             <div className="p-4 border-b border-slate-200 dark:border-dark-border flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
-              <h3 className="font-bold text-slate-900 dark:text-white">Notificações SaaS</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white">Notificações</h3>
               {unreadCount > 0 && (
                 <button
                   onClick={markAllAsRead}
                   className="text-xs font-bold text-brand-600 hover:text-brand-700"
+                  title="Notificações"
                 >
                   Marcar todas como lidas
                 </button>

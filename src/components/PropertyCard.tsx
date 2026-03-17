@@ -1,7 +1,8 @@
-import React, { useState } from 'react'; // Importe o useState
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Property } from '../types';
-import { Icons } from './Icons';
+import { useTenant } from '../contexts/TenantContext';
+import { BedDouble, Car, Home as HomeIcon, Maximize2, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
 
 interface PropertyCardProps {
   property: Property;
@@ -9,128 +10,151 @@ interface PropertyCardProps {
 
 const PropertyCard: React.FC<PropertyCardProps> = ({ property }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const isRent = property.listing_type === 'rent';
-  const hasMultipleImages = property.images && property.images.length > 1;
+  const { tenant } = useTenant();
 
-  // Funções para navegar entre as fotos
+  const siteData = tenant?.site_data;
+  const primaryColor = siteData?.primary_color || '#1e293b';
+  const secondaryColor = siteData?.secondary_color || '#3b82f6';
+  const isRent = property.listing_type === 'rent';
+
+  // Array de imagens seguro (fallback para array vazio)
+  let images: string[] = [];
+  if (Array.isArray(property.images)) {
+    images = property.images;
+  } else if (typeof property.images === 'string') {
+    try {
+      images = JSON.parse(property.images);
+    } catch {
+      images = [property.images];
+    }
+  }
+
+  const hasMultipleImages = images.length > 1;
+
+  // Funções do Carrossel
   const nextImage = (e: React.MouseEvent) => {
-    e.preventDefault(); // Impede de abrir o link do imóvel
-    setCurrentImageIndex((prev) => (prev + 1) % property.images.length);
+    e.preventDefault();
+    e.stopPropagation();
+    setCurrentImageIndex((prev) => (prev + 1) % images.length);
   };
 
   const prevImage = (e: React.MouseEvent) => {
-    e.preventDefault(); // Impede de abrir o link do imóvel
-    setCurrentImageIndex((prev) => (prev - 1 + property.images.length) % property.images.length);
+    e.preventDefault();
+    e.stopPropagation();
+    setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
   };
 
+  const linkTo = `/imoveis/${property.slug || property.id}`;
+  const displayPrice = new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  }).format(property.price || 0);
+
   return (
-    <Link to={`/imoveis/${property.slug}`} className="group relative bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-xl hover:-translate-y-1 hover:z-50 transition-all duration-300 flex flex-col h-full">
+    <Link
+      to={linkTo}
+      className="group relative bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-xl hover:-translate-y-1 hover:z-50 transition-all duration-300 flex flex-col h-full"
+    >
       <div className="relative h-64 overflow-hidden isolate">
-        {/* Imagem com Transição Suave */}
-        <img 
+        {/* CARROSSEL DE IMAGENS */}
+        <img
           key={currentImageIndex}
-          src={property.images[currentImageIndex] || 'https://placehold.co/600x400'} 
-          alt={property.title} 
-          className="w-full h-full object-cover transition-all duration-500 group-hover:scale-110"
+          src={images[currentImageIndex] || 'https://placehold.co/600x400?text=Sem+Foto'}
+          alt={property.title}
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
         />
-        
-        {/* Setas de Navegação (Só aparecem se houver mais de uma foto) */}
+
+        {/* SETAS DO CARROSSEL */}
         {hasMultipleImages && (
-          <div className="absolute inset-0 flex items-center justify-between px-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button 
+          <div className="absolute inset-0 flex items-center justify-between px-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-20">
+            <button
               onClick={prevImage}
-              className="p-1.5 rounded-full bg-white/80 text-brand-900 hover:bg-white shadow-lg transition-transform hover:scale-110"
+              className="p-1.5 rounded-full bg-white/80 hover:bg-white text-slate-800 shadow-sm backdrop-blur-sm transition-all"
             >
-              <Icons.ChevronLeft size={20} />
+              <ChevronLeft size={20} />
             </button>
-            <button 
+            <button
               onClick={nextImage}
-              className="p-1.5 rounded-full bg-white/80 text-brand-900 hover:bg-white shadow-lg transition-transform hover:scale-110"
+              className="p-1.5 rounded-full bg-white/80 hover:bg-white text-slate-800 shadow-sm backdrop-blur-sm transition-all"
             >
-              <Icons.ChevronRight size={20} />
+              <ChevronRight size={20} />
             </button>
           </div>
         )}
 
-        {/* Indicador de Fotos (Pontinhos) */}
+        {/* INDICADORES DO CARROSSEL */}
         {hasMultipleImages && (
-          <div className="absolute bottom-4 right-4 flex gap-1.5 z-10">
-            {property.images.slice(0, 5).map((_, idx) => (
-              <div 
+          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 z-20">
+            {images.map((_, idx) => (
+              <div
                 key={idx}
-                className={`h-1.5 w-1.5 rounded-full transition-all ${idx === currentImageIndex ? 'bg-white w-3' : 'bg-white/50'}`}
+                className={`h-1.5 rounded-full transition-all duration-300 shadow-sm ${
+                  idx === currentImageIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/60'
+                }`}
               />
             ))}
           </div>
         )}
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 group-hover:opacity-40 transition-opacity pointer-events-none" />
-        
-        {/* Tags Superiores */}
-        <div className="absolute top-4 left-4 flex flex-wrap gap-2">
-          {/* Tag de Tipo (Casa, Apto) */}
-          <span className="bg-white/90 backdrop-blur-md text-brand-900 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
-            {property.type}
+        {/* OVERLAY DE GRADIENTE */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent z-10 pointer-events-none" />
+
+        {/* BADGES NO TOPO */}
+        <div className="absolute top-4 left-4 z-20 flex flex-wrap gap-2">
+          <span className="bg-white/95 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold shadow-sm uppercase text-slate-700 tracking-wider">
+            {property.type || 'Imóvel'}
           </span>
-          
-          {/* NOVA Tag: Venda ou Aluguel */}
-          <span className={`text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm backdrop-blur-md ${
-            isRent 
-              ? 'bg-indigo-600/90 text-white' // Cor para Aluguel
-              : 'bg-emerald-600/90 text-white' // Cor para Venda
-          }`}>
+          <span
+            className="px-3 py-1 rounded-full text-xs font-bold shadow-sm uppercase text-white tracking-wider"
+            style={{ backgroundColor: isRent ? secondaryColor : primaryColor }}
+          >
             {isRent ? 'Aluguel' : 'Venda'}
           </span>
         </div>
-        
-        {/* Preço */}
-        <div className="absolute bottom-4 left-4 text-white">
-          <p className="text-xl font-bold font-serif flex items-baseline gap-1">
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(property.price)}
-            {/* Adiciona o /mês se for aluguel */}
-            {isRent && <span className="text-sm font-sans font-medium opacity-90">/mês</span>}
-          </p>
-        </div>
       </div>
 
-      <div className="p-5 flex-1 flex flex-col">
-        <div className="flex-1">
-          <h3 className="font-bold text-lg text-slate-800 mb-2 line-clamp-1 group-hover:text-brand-600 transition-colors">
-            {property.title}
-          </h3>
-          <p className="text-slate-500 text-sm flex items-center gap-1 mb-4">
-            <Icons.MapPin size={14} className="text-brand-500 shrink-0" />
-            <span className="truncate">{property.location.neighborhood}, {property.location.city}</span>
-          </p>
+      {/* INFORMAÇÕES DO IMÓVEL */}
+      <div className="p-5 flex flex-col flex-grow">
+        <h3 className="font-bold text-lg text-slate-800 line-clamp-1 group-hover:text-brand-600 transition-colors mb-1">
+          {property.title}
+        </h3>
 
-          <div className="flex items-center gap-4 text-slate-600 text-xs font-bold border-t border-slate-100 pt-4 flex-wrap">
-            <div className="flex items-center gap-1">
-              <Icons.Bed size={16} className="text-slate-400" /> 
-              {property.bedrooms || '-'} <span className="hidden sm:inline font-normal">Quartos</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Icons.Car size={16} className="text-slate-400" /> 
-              {property.garage || '-'} <span className="hidden sm:inline font-normal">Vagas</span>
-            </div>
-            {property.built_area ? (
-              <div className="flex items-center gap-1" title="Área Construída">
-                <Icons.Home size={16} className="text-slate-400" /> 
-                {property.built_area} m² <span className="hidden sm:inline font-normal">Const.</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1" title="Área Total">
-                <Icons.Maximize size={16} className="text-slate-400" /> 
-                {property.area || '-'} m²
-              </div>
-            )}
-          </div>
+        <p className="text-sm text-slate-500 flex items-center gap-1.5 mb-4 line-clamp-1">
+          <MapPin size={14} className="text-slate-400 shrink-0" />
+          {property.location?.neighborhood || property.neighborhood || ''}, {property.location?.city || property.city || ''}
+        </p>
+
+        <div className="text-2xl font-black text-slate-900 mb-4 tracking-tight mt-auto">
+          {displayPrice}
+          {isRent && <span className="text-sm text-slate-500 font-medium tracking-normal ml-1">/mês</span>}
         </div>
 
-        {/* --- RODAPÉ DO CORRETOR --- */}
-        <div className="mt-4 pt-3 border-t border-slate-50 flex items-center justify-between">
-          <div className="flex items-center gap-2">  
+        {/* ICONS DE STATUS */}
+        <div className="flex items-center gap-4 text-slate-600 text-xs font-bold border-t border-slate-100 pt-4 flex-wrap">
+          <div className="flex items-center gap-1.5" title="Quartos">
+            <BedDouble size={16} className="text-slate-400" />
+            {property.bedrooms || '-'}
+            <span className="hidden sm:inline font-medium uppercase text-[10px] tracking-wider">Quartos</span>
           </div>
-          <Icons.ArrowRight size={18} className="text-gray-400" />
+
+          <div className="flex items-center gap-1.5" title="Vagas">
+            <Car size={16} className="text-slate-400" />
+            {property.garage || '-'}
+            <span className="hidden sm:inline font-medium uppercase text-[10px] tracking-wider">Vagas</span>
+          </div>
+
+          {property.built_area ? (
+            <div className="flex items-center gap-1.5" title="Área Construída">
+              <HomeIcon size={16} className="text-slate-400" />
+              {property.built_area} m²
+              <span className="hidden sm:inline font-medium uppercase text-[10px] tracking-wider">Const.</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5" title="Área Total">
+              <Maximize2 size={16} className="text-slate-400" />
+              {property.area || '-'} m²
+            </div>
+          )}
         </div>
       </div>
     </Link>

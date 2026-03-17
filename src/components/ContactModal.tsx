@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Icons } from './Icons';
+import { useTenant } from '../contexts/TenantContext';
 
 interface ContactModalProps {
   isOpen: boolean;
@@ -7,11 +8,11 @@ interface ContactModalProps {
 }
 
 const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) => {
+  const { tenant } = useTenant();
   const [propertyType, setPropertyType] = useState('');
   const [neighborhood, setNeighborhood] = useState('');
 
-  // TODO: Substituir pelo número real da imobiliária (apenas números, com código do país)
-  const ADMIN_PHONE = '5511999999999';
+  const ADMIN_PHONE = tenant?.phone?.replace(/\D/g, '') || '5511999999999';
 
   if (!isOpen) return null;
 
@@ -30,7 +31,7 @@ const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-md animate-fade-in">
       <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
         <button
           onClick={handleClose}

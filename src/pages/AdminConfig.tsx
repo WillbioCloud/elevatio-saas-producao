@@ -2,9 +2,16 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import heic2any from 'heic2any';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
+import { autoTagContractTemplate } from '../services/ai';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import GamificationModal from '../components/GamificationModal';
 import { PLANS } from '../config/plans';
+import { uploadCompanyAsset } from '../lib/storage';
+import { SiteData } from '../types';
+import { Copy, Loader2, Upload, X } from 'lucide-react';
+import { useProperties } from '../hooks/useProperties';
+import { generateZapXML } from '../utils/zapXmlGenerator';
 
 interface Profile {
   id: string;
@@ -98,19 +105,131 @@ const getPresenceStatus = (lastSeen?: string) => {
   };
 };
 
+interface ImageUploaderProps {
+  label: string;
+  currentUrl: string | null;
+  onUpload: (url: string) => void;
+  assetType: 'logo' | 'logo_alt' | 'hero' | 'favicon' | 'about';
+  companyId: string;
+  aspectRatio?: string;
+}
+
+const ImageUploader: React.FC<ImageUploaderProps> = ({ 
+  label, 
+  currentUrl, 
+  onUpload, 
+  assetType, 
+  companyId,
+  aspectRatio = 'aspect-video'
+}) => {
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState<string | null>(currentUrl);
+
+  useEffect(() => {
+    setPreview(currentUrl);
+  }, [currentUrl]);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor, selecione apenas arquivos de imagem.');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const url = await uploadCompanyAsset(file, companyId, assetType);
+      setPreview(url);
+      onUpload(url);
+    } catch (error) {
+      console.error('Erro no upload:', error);
+      alert('Erro ao fazer upload da imagem. Tente novamente.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemove = () => {
+    setPreview(null);
+    onUpload('');
+  };
+
+  return (
+    <div>
+      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+        {label}
+      </label>
+      
+      {preview ? (
+        <div className="relative group">
+          <div className={`${aspectRatio} w-full rounded-xl overflow-hidden border-2 border-slate-200 dark:border-slate-700`}>
+            <img src={preview} alt={label} className="w-full h-full object-cover" />
+          </div>
+          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center gap-3">
+            <label className="cursor-pointer bg-white text-slate-900 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-slate-100 transition-colors">
+              <Upload size={16} />
+              Trocar
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="hidden"
+                disabled={uploading}
+              />
+            </label>
+            <button
+              onClick={handleRemove}
+              className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-red-600 transition-colors"
+            >
+              <X size={16} />
+              Remover
+            </button>
+          </div>
+        </div>
+      ) : (
+        <label className={`${aspectRatio} w-full border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-brand-500 hover:bg-brand-50/50 dark:hover:bg-brand-900/10 transition-all group`}>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            className="hidden"
+            disabled={uploading}
+          />
+          {uploading ? (
+            <>
+              <Loader2 className="animate-spin text-brand-500 mb-2" size={32} />
+              <p className="text-sm text-slate-500">Enviando...</p>
+            </>
+          ) : (
+            <>
+              <Upload className="text-slate-400 group-hover:text-brand-500 mb-2" size={32} />
+              <p className="text-sm font-bold text-slate-600 dark:text-slate-400">Clique para enviar</p>
+              <p className="text-xs text-slate-500 mt-1">PNG, JPG ou WEBP</p>
+            </>
+          )}
+        </label>
+      )}
+    </div>
+  );
+};
+
 const AdminConfig: React.FC = () => {
   const { user, refreshUser } = useAuth();
+  const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isAdmin = user?.role === 'admin';
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'team' | 'traffic' | 'subscription' | 'site'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance'>('profile');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [distRules, setDistRules] = useState<{ enabled: boolean; types: string[] }>({ enabled: false, types: [] });
-  const [profileForm, setProfileForm] = useState({ name: '', phone: '', email: '' });
+  const [profileForm, setProfileForm] = useState({ name: '', phone: '', email: '', company_logo: '', cpf_cnpj: '', creci: '' });
   const [passwordForm, setPasswordForm] = useState({ password: '', confirmPassword: '' });
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isXpModalOpen, setIsXpModalOpen] = useState(false);
   const [siteSettings, setSiteSettings] = useState({ route_to_central: true, central_whatsapp: '', central_user_id: '' });
   const [savingSettings, setSavingSettings] = useState(false);
@@ -123,14 +242,44 @@ const AdminConfig: React.FC = () => {
   const [acceptFidelity, setAcceptFidelity] = useState(false);
   const [isUpgrading, setIsUpgrading] = useState<string | null>(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [contractTemplates, setContractTemplates] = useState<any[]>([]);
+  const [editingTemplate, setEditingTemplate] = useState<{id?: string, name: string, type: string, content: string} | null>(null);
+  const [isAnalyzingContract, setIsAnalyzingContract] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [otherReason, setOtherReason] = useState('');
   const [isCanceling, setIsCanceling] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [siteTemplate, setSiteTemplate] = useState('classic');
   const [siteDomain, setSiteDomain] = useState('');
+  const [companySubdomain, setCompanySubdomain] = useState('');
   const [isSavingSite, setIsSavingSite] = useState(false);
+  const { properties } = useProperties();
+  const [isGeneratingXML, setIsGeneratingXML] = useState(false);
   const [isOpeningPortal, setIsOpeningPortal] = useState(false);
+  const [paymentApiKey, setPaymentApiKey] = useState('');
+  const [paymentGateway, setPaymentGateway] = useState<'asaas' | 'cora'>('cora');
+  const [siteSubTab, setSiteSubTab] = useState<'templates' | 'identity' | 'hero' | 'about' | 'social'>('templates');
+  const [siteData, setSiteData] = useState<SiteData>({
+    logo_url: null,
+    logo_alt_url: null,
+    favicon_url: null,
+    hero_image_url: null,
+    about_image_url: null,
+    primary_color: '#0ea5e9',
+    secondary_color: '#1e293b',
+    hero_title: '',
+    hero_subtitle: '',
+    about_title: '',
+    about_text: '',
+    show_partnerships: true,
+    social_instagram: '',
+    social_facebook: '',
+    social_linkedin: '',
+    social_youtube: '',
+    contact: { email: null, phone: null, address: null },
+    social: { instagram: null, facebook: null, whatsapp: null, youtube: null },
+    seo: { title: null, description: null },
+  });
 
   const fetchSettings = async () => {
     const { data } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
@@ -162,13 +311,26 @@ const AdminConfig: React.FC = () => {
     
     const { data } = await supabase
       .from('companies')
-      .select('template, domain')
+      .select('template, domain, site_data, subdomain, payment_api_key, payment_gateway')
       .eq('id', user.company_id)
       .maybeSingle();
     
     if (data) {
       setSiteTemplate(data.template || 'classic');
       setSiteDomain(data.domain || '');
+      setCompanySubdomain(data.subdomain || '');
+      setPaymentApiKey(data.payment_api_key || '');
+      setPaymentGateway(data.payment_gateway || 'asaas');
+      
+      if (data.site_data) {
+        setSiteData(prev => ({
+          ...prev,
+          ...data.site_data,
+          contact: { ...prev.contact, ...data.site_data.contact },
+          social: { ...prev.social, ...data.site_data.social },
+          seo: { ...prev.seo, ...data.site_data.seo },
+        }));
+      }
     }
   };
 
@@ -182,12 +344,36 @@ const AdminConfig: React.FC = () => {
   }, [isAdmin, user?.id]);
 
   useEffect(() => {
-    setProfileForm({
-      name: user?.name ?? '',
-      phone: user?.phone ?? '',
-      email: user?.email ?? '',
-    });
-  }, [user?.name, user?.phone, user?.email]);
+    const fetchCompleteProfile = async () => {
+      if (!user?.id) return;
+      try {
+        // Vai diretamente ao banco de dados buscar a "verdade absoluta" do utilizador
+        const { data } = await supabase
+          .from('profiles')
+          .select('name, phone, company_logo, cpf_cnpj, creci')
+          .eq('id', user.id)
+          .single();
+
+        if (data) {
+          setProfileForm({
+            name: data.name || user.name || '',
+            phone: data.phone || user.phone || '',
+            email: user.email || '',
+            company_logo: data.company_logo || '',
+            cpf_cnpj: data.cpf_cnpj || '',
+            creci: data.creci || '',
+          });
+        }
+
+        const { data: templatesData } = await supabase.from('contract_templates').select('*');
+        if (templatesData) setContractTemplates(templatesData);
+      } catch (err) {
+        console.error("Erro ao carregar dados complementares do perfil:", err);
+      }
+    };
+
+    fetchCompleteProfile();
+  }, [user?.id]); // Agora executa de forma limpa apenas quando o ID é carregado
 
   const fetchProfiles = async () => {
     if (!user?.company_id) return;
@@ -256,6 +442,19 @@ const AdminConfig: React.FC = () => {
     await fetchProfiles();
   };
 
+  const formatPhone = (value) => {
+  if (!value) return ""
+  
+  // Remove tudo o que não for dígito
+  const phoneNumber = value.replace(/\D/g, "")
+  
+  // Aplica a formatação progressivamente
+  if (phoneNumber.length <= 2) return phoneNumber.replace(/^(\d{0,2})/, "($1")
+  if (phoneNumber.length <= 7) return phoneNumber.replace(/^(\d{2})(\d{0,5})/, "($1) $2")
+  
+  return phoneNumber.replace(/^(\d{2})(\d{5})(\d{0,4}).*/, "($1) $2-$3")
+}
+
 
   const toggleRole = async (id: string, currentRole: Profile['role']) => {
     if (!user?.id || !canManageTeamMember(id)) return;
@@ -300,12 +499,23 @@ const AdminConfig: React.FC = () => {
     setSavingProfile(true);
     const { error } = await supabase
       .from('profiles')
-      .update({ name: profileForm.name, phone: profileForm.phone })
+      .update({
+        name: profileForm.name,
+        phone: profileForm.phone,
+        company_logo: profileForm.company_logo,
+        cpf_cnpj: profileForm.cpf_cnpj,
+        creci: profileForm.creci,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', user.id);
 
-    if (!error) {
+    if (error) {
+      console.error('Erro ao salvar perfil:', error);
+      addToast(`Erro ao salvar: ${error.message}`, 'error');
+    } else {
       await refreshUser();
       if (isAdmin) await fetchProfiles();
+      addToast('Perfil salvo com sucesso!', 'success');
     }
 
     setSavingProfile(false);
@@ -352,6 +562,30 @@ const AdminConfig: React.FC = () => {
       alert('Não foi possível atualizar a foto: ' + error.message);
     } finally {
       setUploadingAvatar(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !user?.id) return;
+    const file = e.target.files[0];
+    setIsUploadingLogo(true);
+    try {
+      const compressedBlob = await compressAvatar(file, 500);
+      const fileName = `logo_${user.id}_${Date.now()}.webp`;
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, compressedBlob, {
+        upsert: true,
+        contentType: 'image/webp',
+      });
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
+      setProfileForm(prev => ({ ...prev, company_logo: data.publicUrl }));
+      addToast('Logo processada! Não esqueça de clicar em "Salvar Perfil".', 'success');
+    } catch (error: any) {
+      console.error('Erro no upload da logo:', error);
+      addToast('Erro ao carregar a logo: ' + error.message, 'error');
+    } finally {
+      setIsUploadingLogo(false);
       e.target.value = '';
     }
   };
@@ -543,7 +777,8 @@ const AdminConfig: React.FC = () => {
         .from('companies')
         .update({ 
           template: siteTemplate,
-          domain: finalDomain
+          domain: finalDomain,
+          site_data: siteData
         })
         .eq('id', user.company_id);
 
@@ -555,6 +790,47 @@ const AdminConfig: React.FC = () => {
       alert('Erro ao salvar configurações: ' + error.message);
     } finally {
       setIsSavingSite(false);
+    }
+  };
+
+  const handleDownloadXML = () => {
+    setIsGeneratingXML(true);
+    try {
+      const activeProperties = properties.filter(p => p.status?.toLowerCase() === 'ativo');
+      const xmlString = generateZapXML(activeProperties, 'Imobiliaria');
+      const blob = new Blob([xmlString], { type: 'application/xml' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `feed_portais_${companySubdomain || 'imobiliaria'}.xml`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Erro ao gerar XML', error);
+    } finally {
+      setIsGeneratingXML(false);
+    }
+  };
+
+  const handleOpenWebsite = () => {
+    if (!companySubdomain) {
+      alert('Subdomínio não configurado. Verifique as configurações da empresa.');
+      return;
+    }
+
+    const hostname = window.location.hostname;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+    const port = window.location.port ? `:${window.location.port}` : '';
+
+    if (isLocalhost) {
+      // Abre no ambiente local com a porta correta (ex: http://imob.localhost:5173)
+      window.open(`http://${companySubdomain}.localhost${port}`, '_blank');
+    } else {
+      // Força o uso do domínio de teste base do sistema (ex: https://imob.elevatiovendas.com)
+      const baseDomain = hostname.replace(/^admin\./, '');
+      window.open(`https://${companySubdomain}.${baseDomain}`, '_blank');
     }
   };
 
@@ -597,56 +873,31 @@ const AdminConfig: React.FC = () => {
         <p className="text-sm text-gray-500 dark:text-slate-400">Gerencie seu perfil, segurança e equipe.</p>
       </div>
 
-      <div className="flex gap-6 border-b border-gray-200 dark:border-slate-700 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('profile')}
-          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'profile' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
-        >
-          <Icons.User size={18} /> Perfil
-        </button>
-
-        <button
-          onClick={() => setActiveTab('security')}
-          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'security' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
-        >
-          <Icons.Lock size={18} /> Segurança
-        </button>
-
-        {isAdmin && (
+      {/* Abas Principais de Configuração (Design Premium) */}
+      <div className="flex overflow-x-auto ev-main-scroll gap-2 p-1.5 bg-slate-200/50 dark:bg-[#0a0f1c]/50 backdrop-blur-md rounded-2xl w-fit border border-slate-300/50 dark:border-white/5 shadow-inner">
+        {[
+          { id: 'profile', label: 'Perfil', icon: Icons.User },
+          { id: 'security', label: 'Segurança', icon: Icons.Lock },
+          { id: 'team', label: 'Equipe', icon: Icons.Users, adminOnly: true },
+          { id: 'traffic', label: 'Tráfego', icon: Icons.Globe, adminOnly: true },
+          { id: 'subscription', label: 'Assinatura', icon: Icons.CreditCard, adminOnly: true },
+          { id: 'site', label: 'Meu Site', icon: Icons.Layout, adminOnly: true },
+          { id: 'contracts', label: 'Modelos de Contrato', icon: Icons.FileSignature, adminOnly: true },
+          { id: 'integrations', label: 'Integrações', icon: Icons.Share2, adminOnly: true },
+          { id: 'finance', label: 'Financeiro / API', icon: Icons.DollarSign, adminOnly: true },
+        ].filter(t => !t.adminOnly || isAdmin).map(tab => (
           <button
-            onClick={() => setActiveTab('team')}
-            className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'team' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all shrink-0 ${
+              activeTab === tab.id 
+                ? 'bg-white dark:bg-brand-600 text-brand-600 dark:text-white shadow-md' 
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-white/5'
+            }`}
           >
-            <Icons.Users size={18} /> Equipe
+            <tab.icon size={16} /> {tab.label}
           </button>
-        )}
-
-        {isAdmin && (
-          <button
-            onClick={() => setActiveTab('traffic')}
-            className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'traffic' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
-          >
-            <Icons.Globe size={18} /> Tráfego
-          </button>
-        )}
-
-        {isAdmin && (
-          <button
-            onClick={() => setActiveTab('subscription')}
-            className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'subscription' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
-          >
-            <Icons.CreditCard size={18} /> Assinatura
-          </button>
-        )}
-
-        {isAdmin && (
-          <button
-            onClick={() => setActiveTab('site')}
-            className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'site' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
-          >
-            <Icons.Globe size={18} /> Meu Site
-          </button>
-        )}
+        ))}
       </div>
 
       {activeTab === 'profile' && (
@@ -680,9 +931,39 @@ const AdminConfig: React.FC = () => {
               </div>
             </div>
 
+            {/* UPLOAD DA LOGO DA IMOBILIÁRIA (CONTRATOS) */}
+            <div className="pt-6 pb-2 border-t border-b border-gray-100 dark:border-slate-800 mb-6">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                <Icons.Image size={18} className="text-brand-500" />
+                Logo para Contratos e Recibos
+              </h3>
+              <div className="flex items-center gap-6">
+                <div className="w-32 h-16 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center bg-slate-50 dark:bg-white/5 overflow-hidden relative group">
+                  {profileForm.company_logo ? (
+                    <img src={profileForm.company_logo} alt="Logo" className="w-full h-full object-contain p-2" />
+                  ) : (
+                    <Icons.Building size={24} className="text-slate-400" />
+                  )}
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <label className="cursor-pointer p-2">
+                      {isUploadingLogo ? (
+                        <Icons.Loader2 size={20} className="text-white animate-spin" />
+                      ) : (
+                        <Icons.Upload size={20} className="text-white" />
+                      )}
+                      <input type="file" accept="image/*" className="hidden" disabled={isUploadingLogo} onChange={handleLogoUpload} />
+                    </label>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-[200px]">
+                  Aparecerá no cabeçalho dos contratos PDF. Recomendado PNG com fundo transparente. Lembre-se de clicar em "Salvar Perfil".
+                </p>
+              </div>
+            </div>
+
             <form onSubmit={handleSaveProfile} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome</label>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome Completo</label>
                 <input
                   type="text"
                   className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
@@ -694,12 +975,38 @@ const AdminConfig: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Telefone</label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
+                    value={profileForm.phone}
+                    maxLength={15} // Limita o tamanho máximo: (11) 99999-9999
+                    onChange={e => {
+                      const formattedValue = formatPhone(e.target.value)
+                      setProfileForm(prev => ({ ...prev, phone: formattedValue }))
+                    }}
+                    placeholder="(00) 00000-0000"
+                  />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">CPF / CNPJ da Empresa</label>
                 <input
                   type="text"
                   className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
-                  value={profileForm.phone}
-                  onChange={e => setProfileForm(prev => ({ ...prev, phone: e.target.value }))}
-                  placeholder="(00) 00000-0000"
+                  value={profileForm.cpf_cnpj}
+                  onChange={e => setProfileForm(prev => ({ ...prev, cpf_cnpj: e.target.value }))}
+                  placeholder="000.000.000-00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">CRECI (Opcional)</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
+                  value={profileForm.creci}
+                  onChange={e => setProfileForm(prev => ({ ...prev, creci: e.target.value }))}
+                  placeholder="Ex: 12345-F"
                 />
               </div>
 
@@ -1397,7 +1704,56 @@ const AdminConfig: React.FC = () => {
       )}
 
       {activeTab === 'site' && (
-        <div className="space-y-8 animate-fade-in">
+        <div className="space-y-6 animate-fade-in">
+          {/* Cabeçalho do Construtor */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
+            <div>
+              <h2 className="text-2xl font-serif font-bold text-slate-800 dark:text-white">Construtor do Site</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Personalize a identidade e os textos da sua página pública.</p>
+            </div>
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <button 
+                onClick={handleOpenWebsite} 
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white px-5 py-2.5 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-white/10 transition-all shadow-sm text-sm"
+              >
+                <Icons.Globe size={18} /> Visitar Site
+              </button>
+              <button 
+                onClick={handleSaveSiteConfig} 
+                disabled={isSavingSite} 
+                className="flex-1 md:flex-none bg-gradient-to-r from-brand-600 to-sky-500 text-white px-6 py-2.5 rounded-xl font-bold hover:scale-105 transition-all shadow-[0_4px_14px_rgba(14,165,233,0.35)] flex items-center justify-center gap-2 text-sm"
+              >
+                {isSavingSite ? <Icons.Loader2 className="animate-spin" size={18} /> : <Icons.Save size={18} />}
+                {isSavingSite ? 'Salvando...' : 'Salvar Alterações'}
+              </button>
+            </div>
+          </div>
+
+          {/* Sub-Abas do Construtor */}
+          <div className="flex overflow-x-auto ev-main-scroll gap-2 p-1.5 bg-slate-100 dark:bg-white/5 backdrop-blur-md rounded-2xl w-fit border border-slate-200 dark:border-white/10 shadow-inner mb-6">
+            {[
+              { id: 'templates', label: 'Templates & Domínio', icon: Icons.Layout },
+              { id: 'identity', label: 'Identidade Visual', icon: Icons.Palette },
+              { id: 'hero', label: 'Página Inicial', icon: Icons.Home },
+              { id: 'about', label: 'Quem Somos', icon: Icons.Users },
+              { id: 'social', label: 'Redes Sociais', icon: Icons.Share2 }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setSiteSubTab(tab.id as any)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all shrink-0 ${
+                  siteSubTab === tab.id 
+                    ? 'bg-white dark:bg-brand-600 text-brand-600 dark:text-white shadow-md' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                }`}
+              >
+                <tab.icon size={14} /> {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {siteSubTab === 'templates' && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
           {/* SEÇÃO 1: Escolha do Template */}
           <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 shadow-sm">
             <div className="mb-6">
@@ -1410,12 +1766,12 @@ const AdminConfig: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Opção Clássica */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+              {/* Opção Minimalist (O antigo Classic limpo) */}
               <div
-                onClick={() => setSiteTemplate('classic')}
+                onClick={() => setSiteTemplate('minimalist')}
                 className={`cursor-pointer rounded-xl border-2 transition-all overflow-hidden ${
-                  siteTemplate === 'classic'
+                  siteTemplate === 'minimalist'
                     ? 'border-brand-500 ring-4 ring-brand-500/20'
                     : 'border-slate-200 dark:border-slate-700 hover:border-brand-300'
                 }`}
@@ -1428,21 +1784,45 @@ const AdminConfig: React.FC = () => {
                     <div className="w-1/3 h-16 bg-white dark:bg-slate-700 rounded shadow-sm"></div>
                   </div>
                 </div>
-                <div className="p-4 bg-white dark:bg-dark-card">
+                <div className="p-4 bg-white dark:bg-dark-card h-full">
+                  <div className="flex justify-between items-center mb-1">
+                    <h4 className="font-bold text-slate-800 dark:text-white">Minimalist</h4>
+                    {siteTemplate === 'minimalist' && <Icons.CheckCircle className="text-brand-500" size={20} />}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Design limpo e direto, focado em alta conversão, leveza e simplicidade. Fundo claro.
+                  </p>
+                </div>
+              </div>
+
+              {/* Opção Classic (O novo formato tradicional) */}
+              <div
+                onClick={() => setSiteTemplate('classic')}
+                className={`cursor-pointer rounded-xl border-2 transition-all overflow-hidden flex flex-col ${
+                  siteTemplate === 'classic'
+                    ? 'border-brand-500 ring-4 ring-brand-500/20'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-brand-300'
+                }`}
+              >
+                <div className="h-40 bg-white dark:bg-slate-900 p-4 flex flex-col items-center justify-center border-b border-slate-200 dark:border-slate-800">
+                  <div className="w-full h-6 bg-slate-200 dark:bg-slate-800 rounded mb-3"></div>
+                  <div className="w-full h-20 bg-slate-100 dark:bg-slate-800/50 rounded shadow-inner"></div>
+                </div>
+                <div className="p-4 bg-white dark:bg-dark-card flex-grow">
                   <div className="flex justify-between items-center mb-1">
                     <h4 className="font-bold text-slate-800 dark:text-white">Classic</h4>
                     {siteTemplate === 'classic' && <Icons.CheckCircle className="text-brand-500" size={20} />}
                   </div>
                   <p className="text-xs text-slate-500">
-                    Design original, focado em alta conversão e simplicidade. Fundo claro.
+                    Design tradicional e confiável. Estrutura padrão com barra de navegação sólida e destaque central.
                   </p>
                 </div>
               </div>
 
-              {/* Opção Luxo */}
+              {/* Opção Luxury */}
               <div
                 onClick={() => setSiteTemplate('luxury')}
-                className={`cursor-pointer rounded-xl border-2 transition-all overflow-hidden ${
+                className={`cursor-pointer rounded-xl border-2 transition-all overflow-hidden flex flex-col ${
                   siteTemplate === 'luxury'
                     ? 'border-brand-500 ring-4 ring-brand-500/20'
                     : 'border-slate-200 dark:border-slate-700 hover:border-brand-300'
@@ -1452,13 +1832,70 @@ const AdminConfig: React.FC = () => {
                   <div className="w-3/4 h-8 bg-slate-800 rounded mb-4"></div>
                   <div className="w-1/2 h-10 bg-brand-600 rounded"></div>
                 </div>
-                <div className="p-4 bg-white dark:bg-dark-card">
+                <div className="p-4 bg-white dark:bg-dark-card flex-grow">
                   <div className="flex justify-between items-center mb-1">
                     <h4 className="font-bold text-slate-800 dark:text-white">Luxury</h4>
                     {siteTemplate === 'luxury' && <Icons.CheckCircle className="text-brand-500" size={20} />}
                   </div>
                   <p className="text-xs text-slate-500">
-                    Design premium em tons escuros. Ideal para imóveis de alto padrão e exclusividade.
+                    Design premium em tons escuros. Ideal para imóveis de alto padrão e máxima exclusividade.
+                  </p>
+                </div>
+              </div>
+
+              {/* Opção Modern */}
+              <div
+                onClick={() => setSiteTemplate('modern')}
+                className={`cursor-pointer rounded-xl border-2 transition-all overflow-hidden flex flex-col ${
+                  siteTemplate === 'modern'
+                    ? 'border-brand-500 ring-4 ring-brand-500/20'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-brand-300'
+                }`}
+              >
+                <div className="h-40 bg-slate-50 dark:bg-slate-800 p-4 flex flex-col items-center border-b border-slate-200 dark:border-slate-700 relative overflow-hidden">
+                  <div className="absolute top-3 left-3 right-3 h-6 bg-white dark:bg-slate-700 rounded-full shadow-sm"></div>
+                  <div className="mt-12 w-[90%] h-24 bg-brand-100 dark:bg-brand-900/30 rounded-2xl"></div>
+                </div>
+                <div className="p-4 bg-white dark:bg-dark-card flex-grow">
+                  <div className="flex justify-between items-center mb-1">
+                    <h4 className="font-bold text-slate-800 dark:text-white">Modern</h4>
+                    {siteTemplate === 'modern' && <Icons.CheckCircle className="text-brand-500" size={20} />}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Visual de vanguarda. Elementos flutuantes, cantos arredondados e foco total na imersão visual.
+                  </p>
+                </div>
+              </div>
+
+              {/* Opção Básico */}
+              <div
+                onClick={() => setSiteTemplate('basico')}
+                className={`cursor-pointer rounded-xl border-2 transition-all overflow-hidden flex flex-col ${
+                  siteTemplate === 'basico'
+                    ? 'border-brand-500 ring-4 ring-brand-500/20'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-brand-300'
+                }`}
+              >
+                <div className="h-40 bg-[#0e0e0e] p-4 flex flex-col items-center justify-center border-b border-slate-800 relative overflow-hidden">
+                  <div className="w-full h-5 bg-white/5 rounded mb-3 flex items-center px-2 gap-1">
+                    <div className="w-2 h-2 rounded-full bg-white/20"></div>
+                    <div className="flex-1 h-1.5 bg-white/10 rounded-full"></div>
+                    <div className="w-12 h-3 bg-amber-700/60 rounded"></div>
+                  </div>
+                  <div className="w-full h-20 bg-white/5 rounded flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="w-24 h-3 bg-amber-700/40 rounded mx-auto mb-2"></div>
+                      <div className="w-16 h-2 bg-white/10 rounded mx-auto"></div>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-4 bg-white dark:bg-dark-card flex-grow">
+                  <div className="flex justify-between items-center mb-1">
+                    <h4 className="font-bold text-slate-800 dark:text-white">Básico</h4>
+                    {siteTemplate === 'basico' && <Icons.CheckCircle className="text-brand-500" size={20} />}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Layout One-Page rápido, focado em alta conversão e direto ao ponto. Fundo escuro elegante.
                   </p>
                 </div>
               </div>
@@ -1512,20 +1949,493 @@ const AdminConfig: React.FC = () => {
             </div>
           </div>
 
-          {/* Botão de Salvar */}
-          <div className="flex justify-end pt-4">
-            <button
-              onClick={handleSaveSiteConfig}
-              disabled={isSavingSite}
-              className="bg-brand-600 hover:bg-brand-700 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 disabled:opacity-50 transition-colors"
-            >
-              {isSavingSite ? (
-                <Icons.RefreshCw size={20} className="animate-spin" />
-              ) : (
-                <Icons.Save size={20} />
-              )}
-              {isSavingSite ? 'Salvando...' : 'Salvar Configurações do Site'}
+          {/* Botão de Salvar - REMOVIDO (agora está no topo) */}
+          </div>
+          )} {/* Fim do siteSubTab === 'templates' */}
+
+          {siteSubTab === 'identity' && (
+            <div className="space-y-6 animate-fade-in">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Identidade Visual</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Defina as cores e logos da sua marca.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <ImageUploader
+                  label="Logo Principal"
+                  currentUrl={siteData.logo_url}
+                  onUpload={(url) => setSiteData({...siteData, logo_url: url})}
+                  assetType="logo"
+                  companyId={user?.company_id || ''}
+                  aspectRatio="aspect-[3/1]"
+                />
+
+                <ImageUploader
+                  label="Logo Símbolo (Rolagem)"
+                  currentUrl={siteData.logo_alt_url || null}
+                  onUpload={(url) => setSiteData({...siteData, logo_alt_url: url})}
+                  assetType="logo_alt"
+                  companyId={user?.company_id || ''}
+                  aspectRatio="aspect-square"
+                />
+
+                <ImageUploader
+                  label="Favicon (Ícone do Site)"
+                  currentUrl={siteData.favicon_url}
+                  onUpload={(url) => setSiteData({...siteData, favicon_url: url})}
+                  assetType="favicon"
+                  companyId={user?.company_id || ''}
+                  aspectRatio="aspect-square"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                    Cor Primária
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={siteData.primary_color}
+                      onChange={(e) => setSiteData({...siteData, primary_color: e.target.value})}
+                      className="w-16 h-16 rounded-xl cursor-pointer border-2 border-slate-200 dark:border-slate-600"
+                    />
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={siteData.primary_color}
+                        onChange={(e) => setSiteData({...siteData, primary_color: e.target.value})}
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none uppercase"
+                        placeholder="#0f172a"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Cor principal da marca</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                    Cor Secundária
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={siteData.secondary_color}
+                      onChange={(e) => setSiteData({...siteData, secondary_color: e.target.value})}
+                      className="w-16 h-16 rounded-xl cursor-pointer border-2 border-slate-200 dark:border-slate-600"
+                    />
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={siteData.secondary_color}
+                        onChange={(e) => setSiteData({...siteData, secondary_color: e.target.value})}
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm font-mono text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none uppercase"
+                        placeholder="#3b82f6"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Cor de destaque e botões</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Seções do Site</h3>
+                <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <div>
+                    <p className="font-bold text-slate-800 dark:text-slate-200">Exibir Seção de Parcerias</p>
+                    <p className="text-sm text-slate-500">Mostra o carrossel contínuo de logomarcas na página inicial.</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer hover:scale-105 transition-transform">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={siteData.show_partnerships !== false}
+                      onChange={(e) => setSiteData({...siteData, show_partnerships: e.target.checked})}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-500"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {siteSubTab === 'hero' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+              <h3 className="text-xl font-serif font-bold text-slate-800 dark:text-white mb-4">
+                Destaque da Página Inicial
+              </h3>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      Título Principal (Headline)
+                    </label>
+                    <input
+                      type="text"
+                      value={siteData.hero_title || ''}
+                      onChange={e => setSiteData({...siteData, hero_title: e.target.value})}
+                      placeholder="Ex: Encontre o imóvel dos seus sonhos"
+                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500/50 transition-all text-slate-800 dark:text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      Subtítulo Descritivo
+                    </label>
+                    <textarea
+                      value={siteData.hero_subtitle || ''}
+                      onChange={e => setSiteData({...siteData, hero_subtitle: e.target.value})}
+                      placeholder="Ex: As melhores opções de casas e apartamentos na região..."
+                      rows={3}
+                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500/50 transition-all text-slate-800 dark:text-white resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <ImageUploader
+                    label="Imagem de Fundo (Capa da Home)"
+                    currentUrl={siteData.hero_image_url}
+                    onUpload={(url) => setSiteData({ ...siteData, hero_image_url: url })}
+                    assetType="hero"
+                    companyId={user?.company_id || ''}
+                    aspectRatio="aspect-video"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {siteSubTab === 'about' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+              <h3 className="text-xl font-serif font-bold text-slate-800 dark:text-white mb-4">
+                Página "Quem Somos"
+              </h3>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      Título da Seção
+                    </label>
+                    <input
+                      type="text"
+                      value={siteData.about_title || ''}
+                      onChange={e => setSiteData({...siteData, about_title: e.target.value})}
+                      placeholder="Ex: Conheça a Nossa História"
+                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500/50 transition-all text-slate-800 dark:text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      Texto Descritivo
+                    </label>
+                    <textarea
+                      value={siteData.about_text || ''}
+                      onChange={e => setSiteData({...siteData, about_text: e.target.value})}
+                      placeholder="Conte um pouco dos valores e da missão da sua imobiliária..."
+                      rows={6}
+                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500/50 transition-all text-slate-800 dark:text-white resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <ImageUploader
+                    label="Foto da Equipe ou Fachada"
+                    currentUrl={siteData.about_image_url}
+                    onUpload={(url) => setSiteData({ ...siteData, about_image_url: url })}
+                    assetType="about"
+                    companyId={user?.company_id || ''}
+                    aspectRatio="aspect-square"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {siteSubTab === 'social' && (
+            <div className="bg-white dark:bg-dark-card rounded-3xl border border-slate-200 dark:border-dark-border p-6 md:p-8 shadow-sm animate-in fade-in slide-in-from-bottom-2">
+              <h3 className="text-xl font-serif font-bold text-slate-800 dark:text-white mb-2">Redes Sociais</h3>
+              <p className="text-sm text-slate-500 mb-6">Cole os links completos para exibir os ícones no rodapé do site.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {['instagram', 'facebook', 'linkedin', 'youtube'].map(social => (
+                  <div key={social} className="flex flex-col gap-2">
+                    <span className="text-sm font-bold text-slate-600 dark:text-slate-400 capitalize">{social}</span>
+                    <input 
+                      type="url" 
+                      value={siteData[`social_${social}`] || ''} 
+                      onChange={e => setSiteData({...siteData, [`social_${social}`]: e.target.value})} 
+                      placeholder={`https://${social}.com/sua-pagina`} 
+                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 outline-none focus:border-brand-500 text-sm" 
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* CONSTRUTOR DE CONTRATOS */}
+      {activeTab === 'contracts' && isAdmin && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-6">
+            <div>
+              <h2 className="text-xl font-black text-slate-800 dark:text-white">Meus Modelos de Contrato</h2>
+              <p className="text-slate-500 dark:text-slate-400">Crie contratos personalizados e deixe o sistema preencher os dados do cliente automaticamente.</p>
+            </div>
+            <button onClick={() => setEditingTemplate({ name: '', type: 'sale', content: '' })} className="flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-xl font-bold hover:bg-brand-600 transition-colors">
+              <Icons.Plus size={18} /> Novo Modelo
             </button>
+          </div>
+
+          {editingTemplate ? (
+            <div className="bg-slate-50 dark:bg-white/5 p-6 rounded-2xl border border-slate-200 dark:border-dark-border">
+              <div className="flex gap-4 mb-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Nome do Modelo</label>
+                  <input type="text" value={editingTemplate.name} onChange={e => setEditingTemplate({...editingTemplate, name: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-dark-border outline-none focus:border-brand-500" placeholder="Nome interno..." />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Tipo</label>
+                  <select value={editingTemplate.type} onChange={e => setEditingTemplate({...editingTemplate, type: e.target.value})} className="px-4 py-3 rounded-xl border border-slate-200 dark:border-dark-border outline-none">
+                    <option value="sale">Venda</option>
+                    <option value="rent">Aluguel</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mb-4 bg-brand-50 dark:bg-brand-500/10 p-4 rounded-xl border border-brand-100 dark:border-brand-500/20">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
+                  <p className="text-xs font-bold text-brand-700 dark:text-brand-300 uppercase tracking-wider">Variáveis Disponíveis</p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!editingTemplate.content || editingTemplate.content.length < 50) {
+                        addToast('Cole o texto do contrato primeiro!', 'error');
+                        return;
+                      }
+                      setIsAnalyzingContract(true);
+                      addToast('A IA está a analisar o seu contrato...', 'info');
+                      try {
+                        const newContent = await autoTagContractTemplate(editingTemplate.content);
+                        setEditingTemplate({ ...editingTemplate, content: newContent });
+                        addToast('Contrato mapeado com sucesso! Revise os campos.', 'success');
+                      } catch (error) {
+                        addToast('Erro ao usar IA no contrato.', 'error');
+                      } finally {
+                        setIsAnalyzingContract(false);
+                      }
+                    }}
+                    disabled={isAnalyzingContract}
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-brand-500 hover:from-purple-600 hover:to-brand-600 text-white rounded-xl font-bold text-xs transition-all shadow-md shadow-purple-500/20 disabled:opacity-50"
+                  >
+                    {isAnalyzingContract ? <Icons.Loader2 size={16} className="animate-spin" /> : <Icons.Sparkles size={16} />}
+                    {isAnalyzingContract ? 'Mapeando...' : 'Mapear com IA'}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500 mb-2">Pode clicar nos botões abaixo para inserir manualmente, ou usar a IA acima para substituir nomes reais do seu documento pelas tags automaticamente.</p>
+                <div className="flex flex-wrap gap-2">
+                  {['{{IMOBILIARIA_NOME}}','{{CORRETOR_NOME}}','{{CORRETOR_CRECI}}',
+                    '{{IMOVEL_TITULO}}','{{IMOVEL_ENDERECO}}','{{IMOVEL_MATRICULA}}',
+                    '{{VALOR_NEGOCIADO}}','{{VALOR_SINAL}}','{{VALOR_FINANCIAMENTO}}','{{VALOR_FGTS}}','{{VALOR_PERMUTA}}','{{QTD_PARCELAS}}',
+                    '{{LOCATARIO_NOME}}','{{LOCATARIO_CPF}}','{{LOCATARIO_RG}}','{{LOCATARIO_PROFISSAO}}','{{LOCATARIO_ESTADO_CIVIL}}',
+                    '{{LOCADOR_NOME}}','{{LOCADOR_CPF}}','{{LOCADOR_RG}}','{{LOCADOR_PROFISSAO}}','{{LOCADOR_ESTADO_CIVIL}}',
+                    '{{FIADOR_NOME}}','{{FIADOR_CPF}}','{{FIADOR_RG}}','{{FIADOR_PROFISSAO}}','{{FIADOR_ESTADO_CIVIL}}',
+                    '{{DATA_ATUAL}}'].map(tag => (
+                    <button key={tag} type="button" onClick={() => { navigator.clipboard.writeText(tag); addToast(`${tag} copiado!`, 'success'); }} className="px-2 py-1 bg-white dark:bg-slate-800 text-[10px] font-mono font-bold text-brand-600 rounded-lg shadow-sm border border-brand-100 hover:scale-105 transition-transform">{tag}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="relative">
+                {isAnalyzingContract && (
+                  <div className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl z-10 border border-brand-200">
+                    <Icons.Sparkles size={40} className="text-purple-500 animate-pulse mb-4" />
+                    <p className="font-bold text-brand-800 dark:text-brand-200 text-lg animate-pulse">A IA está a ler e a etiquetar o seu contrato...</p>
+                    <p className="text-sm text-slate-500">Isto pode demorar alguns segundos.</p>
+                  </div>
+                )}
+                <textarea
+                  value={editingTemplate.content}
+                  onChange={e => setEditingTemplate({...editingTemplate, content: e.target.value})}
+                  className="w-full h-[500px] p-4 rounded-xl border border-slate-200 dark:border-dark-border outline-none focus:border-brand-500 font-mono text-sm leading-relaxed whitespace-pre-wrap resize-y"
+                  placeholder="Cole o texto do seu contrato aqui..."
+                  disabled={isAnalyzingContract}
+                />
+              </div>
+              <div className="flex justify-end gap-3 mt-4">
+                <button onClick={() => setEditingTemplate(null)} className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded-xl">Cancelar</button>
+                <button onClick={async () => {
+                  if (!editingTemplate.name || !editingTemplate.content) return addToast('Preencha nome e conteúdo', 'error');
+                  const tenantId = (await supabase.from('profiles').select('company_id').eq('id', user?.id).single()).data?.company_id;
+                  const { error } = editingTemplate.id
+                    ? await supabase.from('contract_templates').update(editingTemplate).eq('id', editingTemplate.id)
+                    : await supabase.from('contract_templates').insert({ ...editingTemplate, tenant_id: tenantId });
+                  if (error) addToast('Erro ao salvar', 'error');
+                  else {
+                    addToast('Modelo salvo com sucesso!', 'success');
+                    setEditingTemplate(null);
+                    const { data } = await supabase.from('contract_templates').select('*');
+                    if (data) setContractTemplates(data);
+                  }
+                }} className="px-6 py-2 bg-brand-500 text-white font-bold rounded-xl hover:bg-brand-600">Salvar Modelo</button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {contractTemplates.map(template => (
+                <div key={template.id} className="p-5 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-between hover:border-brand-300 transition-colors group">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${template.type === 'sale' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
+                      <Icons.FileText size={20} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-800 dark:text-white">{template.name}</p>
+                      <p className="text-xs text-slate-500 uppercase">{template.type === 'sale' ? 'Venda' : 'Aluguel'}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => setEditingTemplate(template)} className="p-2 text-slate-400 hover:text-brand-500 bg-slate-50 rounded-lg"><Icons.Edit2 size={16} /></button>
+                    <button onClick={async () => {
+                      if (!confirm('Apagar modelo?')) return;
+                      await supabase.from('contract_templates').delete().eq('id', template.id);
+                      setContractTemplates(prev => prev.filter(t => t.id !== template.id));
+                      addToast('Apagado!', 'success');
+                    }} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg"><Icons.Trash size={16} /></button>
+                  </div>
+                </div>
+              ))}
+              {contractTemplates.length === 0 && (
+                <div className="col-span-2 text-center py-12 bg-slate-50 dark:bg-white/5 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                  <Icons.FileSignature size={48} className="mx-auto text-slate-300 mb-4" />
+                  <p className="text-slate-500 font-medium">Nenhum modelo personalizado ainda.</p>
+                  <p className="text-sm text-slate-400">Clique em "Novo Modelo" para criar o seu primeiro contrato customizado.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ABA DE INTEGRAÇÕES */}
+      {activeTab === 'integrations' && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
+            <div>
+              <h2 className="text-2xl font-serif font-bold text-slate-800 dark:text-white">Integração com Portais</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Sincronize seus imóveis com o Zap Imóveis, Viva Real, OLX e outros.</p>
+            </div>
+          </div>
+          <div className="bg-white dark:bg-dark-card rounded-3xl border border-slate-200 dark:border-dark-border p-6 md:p-8 shadow-sm">
+            <div className="flex items-start gap-6">
+              <div className="w-16 h-16 bg-brand-500/10 rounded-2xl flex items-center justify-center shrink-0">
+                <Icons.Code size={32} className="text-brand-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Carga XML (Padrão Zap / Viva Real)</h3>
+                <p className="text-slate-600 dark:text-slate-400 text-sm mb-6 max-w-2xl leading-relaxed">
+                  Gere o arquivo XML contendo todos os seus imóveis ativos. O formato utilizado é o padrão universal aceito por 99% dos portais brasileiros. Você pode enviar este arquivo diretamente para o portal ou utilizar a URL de integração nativa.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <button
+                    onClick={handleDownloadXML}
+                    disabled={isGeneratingXML || properties.length === 0}
+                    className="flex items-center justify-center gap-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-3 rounded-xl font-bold hover:bg-slate-800 dark:hover:bg-slate-100 transition-all disabled:opacity-50"
+                  >
+                    {isGeneratingXML ? <Icons.Loader2 size={20} className="animate-spin" /> : <Icons.Download size={20} />}
+                    {properties.length === 0 ? 'Nenhum imóvel ativo' : 'Baixar Arquivo XML'}
+                  </button>
+                  <div className="flex-1 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 flex items-center justify-between">
+                    <span className="text-sm font-mono text-slate-500 truncate mr-4">
+                      {companySubdomain ? `https://udqychpxnbdaxlorbhyw.supabase.co/functions/v1/zap-feed?subdomain=${companySubdomain}` : 'Configure seu subdomínio primeiro'}
+                    </span>
+                    <button
+                      onClick={() => {
+                        if (companySubdomain) {
+                          navigator.clipboard.writeText(`https://udqychpxnbdaxlorbhyw.supabase.co/functions/v1/zap-feed?subdomain=${companySubdomain}`);
+                        }
+                      }}
+                      className="text-brand-600 hover:text-brand-700 font-bold text-sm shrink-0 flex items-center gap-1"
+                    >
+                      <Copy size={16} /> Copiar URL
+                    </button>
+                  </div>
+                </div>
+                
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ABA FINANCEIRO */}
+      {activeTab === 'finance' && isAdmin && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
+            <div>
+              <h2 className="text-2xl font-serif font-bold text-slate-800 dark:text-white">Gateway de Pagamentos</h2>
+              <p className="text-sm text-slate-500 mt-1">Configure o seu próprio banco para cobrar inquilinos sem taxas da nossa plataforma.</p>
+            </div>
+          </div>
+          <div className="bg-white dark:bg-dark-card rounded-3xl p-6 md:p-8 shadow-sm border border-slate-200 dark:border-dark-border">
+            <div className="max-w-xl space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Provedor de Pagamento</label>
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setPaymentGateway('cora')}
+                    className={`flex-1 py-3 px-4 rounded-xl border-2 flex items-center justify-center gap-2 font-bold transition-all ${
+                      paymentGateway === 'cora'
+                        ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400 shadow-sm'
+                        : 'border-slate-200 dark:border-dark-border text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <Icons.CreditCard size={20} /> Banco Cora (Taxa Zero)
+                  </button>
+                  <button
+                    onClick={() => setPaymentGateway('asaas')}
+                    className={`flex-1 py-3 px-4 rounded-xl border-2 flex items-center justify-center gap-2 font-bold transition-all ${
+                      paymentGateway === 'asaas'
+                        ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400 shadow-sm'
+                        : 'border-slate-200 dark:border-dark-border text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <Icons.Wallet size={20} /> Asaas
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Credencial de Produção (Client ID / API Key)</label>
+                <input
+                  type="password"
+                  value={paymentApiKey}
+                  onChange={(e) => setPaymentApiKey(e.target.value)}
+                  placeholder="Cole sua credencial gerada no painel do banco..."
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-white/5 focus:ring-2 focus:ring-brand-500 outline-none transition-shadow text-slate-800 dark:text-white"
+                />
+                <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
+                  <Icons.Info size={12} className="shrink-0" /> O dinheiro das locações cairá diretamente na sua conta Cora. Zero taxas de intermediação do nosso sistema.
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!user?.company_id) return;
+                  const { error } = await supabase
+                    .from('companies')
+                    .update({ payment_api_key: paymentApiKey, payment_gateway: paymentGateway })
+                    .eq('id', user.company_id);
+                  if (error) alert('Erro ao salvar: ' + error.message);
+                  else alert('Configuração financeira salva com sucesso!');
+                }}
+                className="bg-brand-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-brand-700 transition-colors flex items-center gap-2"
+              >
+                <Icons.Save size={20} /> Salvar Configuração Financeira
+              </button>
+            </div>
           </div>
         </div>
       )}

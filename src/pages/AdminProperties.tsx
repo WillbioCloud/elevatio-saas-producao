@@ -481,20 +481,20 @@ const AdminProperties: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
-          <h1 className="text-3xl font-serif font-bold text-slate-800 flex items-center gap-2">
+          <h1 className="text-3xl font-serif font-bold text-slate-800 dark:text-white tracking-tight flex items-center gap-2">
             {isAdmin ? 'Portfólio Global' : 'Meus Imóveis'}
             <InfoTooltip text={TOOLTIPS.properties.pageTitle} />
           </h1>
-          <p className="text-slate-500">Gerencie a carteira de imóveis da imobiliária.</p>
+          <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Gerencie a carteira de imóveis da imobiliária.</p>
         </div>
         
         {isAdmin && (
           <div className="flex gap-3">
             <button 
               onClick={() => setIsImportModalOpen(true)}
-              className="px-4 py-3 rounded-xl font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm"
+              className="px-5 py-3 rounded-xl font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-all flex items-center gap-2 shadow-sm"
             >
-              <Icons.FileSpreadsheet size={18} className="text-green-600" /> 
+              <Icons.FileSpreadsheet size={18} className="text-emerald-600" /> 
               Importar Excel
             </button>
             
@@ -510,7 +510,7 @@ O seu plano atual (${userPlan.toUpperCase()}) permite gerir até ${maxProperties
 Por favor, faça um upgrade para adicionar mais propriedades.`);
                 }
               }}
-              className="bg-brand-600 text-white px-5 py-3 rounded-xl font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-200 flex items-center gap-2"
+              className="bg-gradient-to-r from-brand-600 to-sky-500 text-white px-6 py-3 rounded-xl font-bold hover:scale-105 transition-all shadow-[0_4px_14px_rgba(14,165,233,0.35)] flex items-center gap-2"
             >
               <Icons.Plus size={20} /> Novo Imóvel
             </Link>
@@ -519,7 +519,7 @@ Por favor, faça um upgrade para adicionar mais propriedades.`);
       </div>
 
       {/* Filtros */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-4">
+      <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-5 rounded-3xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none border border-slate-200/60 dark:border-white/5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap gap-2">
             {listingTabs.map(tab => (
@@ -578,10 +578,10 @@ Por favor, faça um upgrade para adicionar mais propriedades.`);
         salesLoading ? (
           <div className="text-center py-20"><Icons.Loader2 className="animate-spin mx-auto text-brand-600" size={40} /></div>
         ) : (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none border border-slate-200/60 dark:border-white/5 overflow-hidden relative">
             <div className="overflow-x-auto">
               <table className="w-full text-left whitespace-nowrap">
-                <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold uppercase text-xs">
+                <thead className="bg-slate-50/50 dark:bg-white/5 border-b border-slate-100 dark:border-white/5 text-slate-500 dark:text-slate-400 font-bold uppercase text-[11px] tracking-wider">
                   <tr>
                     <th className="p-4">Cliente (Lead)</th>
                     <th className="p-4">Imóvel Vendido</th>
@@ -699,7 +699,7 @@ Por favor, faça um upgrade para adicionar mais propriedades.`);
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <p className="font-bold text-slate-800 line-clamp-1 max-w-[180px]" title={property.title}>{property.title}</p>
+                              <p className="font-bold font-serif text-slate-800 dark:text-white line-clamp-1 max-w-[180px] text-base" title={property.title}>{property.title}</p>
                               <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border ${
                                 isRent
                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'

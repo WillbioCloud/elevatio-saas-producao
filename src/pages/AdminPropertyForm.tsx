@@ -13,7 +13,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
-type WizardStep = 'basic' | 'details' | 'media' | 'seo';
+type WizardStep = 'basic' | 'details' | 'owner' | 'media' | 'seo';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -66,13 +66,23 @@ interface FormState {
   seo_title: string;
   seo_description: string;
   agent_id: string;
+  owner_name: string;
+  owner_phone: string;
+  owner_email: string;
+  owner_document: string;
+  owner_profession: string;
+  owner_marital_status: string;
+  owner_address: string;
+  owner_spouse_name: string;
+  owner_spouse_document: string;
 }
 
-const STEP_ORDER: WizardStep[] = ['basic', 'details', 'media', 'seo'];
+const STEP_ORDER: WizardStep[] = ['basic', 'details', 'owner', 'media', 'seo'];
 
 const STEP_META: Record<WizardStep, { label: string; icon: keyof typeof Icons }> = {
   basic: { label: 'Básico', icon: 'Home' },
   details: { label: 'Detalhes', icon: 'List' },
+  owner: { label: 'Proprietário', icon: 'User' },
   media: { label: 'Multimídia', icon: 'Image' },
   seo: { label: 'SEO', icon: 'Globe' },
 };
@@ -106,6 +116,15 @@ const defaultForm: FormState = {
   seo_title: '',
   seo_description: '',
   agent_id: '',
+  owner_name: '',
+  owner_phone: '',
+  owner_email: '',
+  owner_document: '',
+  owner_profession: '',
+  owner_marital_status: '',
+  owner_address: '',
+  owner_spouse_name: '',
+  owner_spouse_document: '',
 };
 
 const createSlug = (value: string) =>
@@ -245,6 +264,15 @@ const AdminPropertyForm: React.FC = () => {
         seo_title: data.seo_title || '',
         seo_description: data.seo_description || '',
         agent_id: data.agent_id || user?.id || '',
+        owner_name: data.owner_name || '',
+        owner_phone: data.owner_phone || '',
+        owner_email: data.owner_email || '',
+        owner_document: data.owner_document || '',
+        owner_profession: data.owner_profession || '',
+        owner_marital_status: data.owner_marital_status || '',
+        owner_address: data.owner_address || '',
+        owner_spouse_name: data.owner_spouse_name || '',
+        owner_spouse_document: data.owner_spouse_document || '',
       });
 
       setOriginalAgentId(data.agent_id);
@@ -575,6 +603,15 @@ const AdminPropertyForm: React.FC = () => {
         longitude: Number(formData.longitude) || null,
         seo_title: formData.seo_title || formData.title,
         seo_description: formData.seo_description || formData.description.slice(0, 155),
+        owner_name: formData.owner_name,
+        owner_phone: formData.owner_phone,
+        owner_email: formData.owner_email,
+        owner_document: formData.owner_document,
+        owner_profession: formData.owner_profession,
+        owner_marital_status: formData.owner_marital_status,
+        owner_address: formData.owner_address,
+        owner_spouse_name: formData.owner_spouse_name,
+        owner_spouse_document: formData.owner_spouse_document,
         images: images.map((item) => item.url),
         slug: isEditing ? undefined : createSlug(formData.title),
         agent_id: formData.agent_id || user?.id,
@@ -1011,6 +1048,71 @@ const AdminPropertyForm: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === 'owner' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 mb-6">
+                <p className="text-sm text-indigo-800 font-medium flex items-center gap-2">
+                  <Icons.Info size={16} className="text-indigo-500" />
+                  Os dados do proprietário são mantidos em sigilo e servem para <b>pré-preenchimento automático</b> na hora de gerar contratos de venda ou aluguel.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="md:col-span-2">
+                  <label htmlFor="owner_name" className="block text-sm font-bold text-slate-600 mb-2">Nome do Proprietário *</label>
+                  <input id="owner_name" value={formData.owner_name} onChange={(e) => handleInput('owner_name', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500" placeholder="Ex: João da Silva" />
+                </div>
+                <div>
+                  <label htmlFor="owner_document" className="block text-sm font-bold text-slate-600 mb-2">CPF / CNPJ *</label>
+                  <input id="owner_document" value={formData.owner_document} onChange={(e) => handleInput('owner_document', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500" placeholder="000.000.000-00" />
+                </div>
+                <div>
+                  <label htmlFor="owner_marital_status" className="block text-sm font-bold text-slate-600 mb-2">Estado Civil</label>
+                  <select id="owner_marital_status" value={formData.owner_marital_status} onChange={(e) => handleInput('owner_marital_status', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500">
+                    <option value="">Selecione...</option>
+                    <option value="Solteiro(a)">Solteiro(a)</option>
+                    <option value="Casado(a)">Casado(a)</option>
+                    <option value="Divorciado(a)">Divorciado(a)</option>
+                    <option value="Viúvo(a)">Viúvo(a)</option>
+                    <option value="União Estável">União Estável</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="owner_profession" className="block text-sm font-bold text-slate-600 mb-2">Profissão</label>
+                  <input id="owner_profession" value={formData.owner_profession} onChange={(e) => handleInput('owner_profession', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500" placeholder="Ex: Engenheiro" />
+                </div>
+                <div>
+                  <label htmlFor="owner_email" className="block text-sm font-bold text-slate-600 mb-2">E-mail</label>
+                  <input id="owner_email" type="email" value={formData.owner_email} onChange={(e) => handleInput('owner_email', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500" placeholder="joao@email.com" />
+                </div>
+                <div>
+                  <label htmlFor="owner_phone" className="block text-sm font-bold text-slate-600 mb-2">Telefone / WhatsApp</label>
+                  <input id="owner_phone" value={formData.owner_phone} onChange={(e) => handleInput('owner_phone', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500" placeholder="(00) 00000-0000" />
+                </div>
+                <div className="md:col-span-2">
+                  <label htmlFor="owner_address" className="block text-sm font-bold text-slate-600 mb-2">Endereço Residencial Atual</label>
+                  <input id="owner_address" value={formData.owner_address} onChange={(e) => handleInput('owner_address', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500" placeholder="Rua, número, bairro, cidade - UF" />
+                </div>
+              </div>
+
+              {(formData.owner_marital_status === 'Casado(a)' || formData.owner_marital_status === 'União Estável') && (
+                <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 mt-4 animate-fade-in space-y-4">
+                  <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-2">Dados do Cônjuge</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label htmlFor="owner_spouse_name" className="block text-xs font-bold text-slate-500 mb-1">Nome do Cônjuge</label>
+                      <input id="owner_spouse_name" value={formData.owner_spouse_name} onChange={(e) => handleInput('owner_spouse_name', e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-brand-500 text-sm" />
+                    </div>
+                    <div>
+                      <label htmlFor="owner_spouse_document" className="block text-xs font-bold text-slate-500 mb-1">CPF do Cônjuge</label>
+                      <input id="owner_spouse_document" value={formData.owner_spouse_document} onChange={(e) => handleInput('owner_spouse_document', e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-brand-500 text-sm" />
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

@@ -97,3 +97,47 @@ entrypoint = "./functions/list-asaas-payments/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/list-asaas-payments/*.html" ]
+
+[functions.zap-feed]
+enabled = true
+verify_jwt = true
+import_map = "./functions/zap-feed/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/zap-feed/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/zap-feed/*.html" ]
+
+[functions.generate-charge]
+enabled = true
+verify_jwt = true
+import_map = "./functions/generate-charge/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/generate-charge/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/generate-charge/*.html" ]
+
+[functions.generate-asaas-charge]
+enabled = true
+verify_jwt = true
+import_map = "./functions/generate-asaas-charge/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/generate-asaas-charge/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/generate-asaas-charge/*.html" ]
+
+[functions.tenant-webhook]
+enabled = true
+verify_jwt = true
+import_map = "./functions/tenant-webhook/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/tenant-webhook/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/tenant-webhook/*.html" ]

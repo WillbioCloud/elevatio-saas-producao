@@ -46,16 +46,18 @@ const formatDate = (dateString: string) => {
 
 interface LeadDetailsSidebarProps {
   lead: Lead;
+  kanbanConfig: Record<string, string[]>;
   onClose: () => void;
-  onStatusChange?: (status: LeadStatus) => void; // <-- Coloque o ? aqui
+  onStageChange?: (newFunnel: string, newStatus: string) => void;
+  onStatusChange?: (status: LeadStatus | string) => void;
   onLeadUpdate?: (leadId: string, updates: Partial<Lead>) => void;
   onRequestTransfer?: (newFunnel: string, newStatus: string) => void;
 }
 
-type TabId = 'timeline' | 'whatsapp' | 'history' | 'tasks' | 'info';
+type TabId = 'timeline' | 'smart_match' | 'whatsapp' | 'history' | 'tasks' | 'info';
 type InfoTabId = 'profile' | 'smart_match';
 
-const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, onStatusChange, onLeadUpdate, onRequestTransfer }) => {
+const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanConfig, onClose, onStageChange, onStatusChange, onLeadUpdate, onRequestTransfer }) => {
   const { user } = useAuth();
   const { addToast } = useToast();
   const Maps = useNavigate();
@@ -97,17 +99,8 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
     { id: 'perdido', label: 'Perdido', color: 'bg-red-500' }
   ];
 
-  const [kanbanConfig, setKanbanConfig] = useState<Record<string, string[]>>({});
   const [selectedFunnel, setSelectedFunnel] = useState(lead.funnel_step || 'atendimento');
   const [selectedStatus, setSelectedStatus] = useState(lead.status);
-
-  useEffect(() => {
-    const fetchSettings = async () => {
-      const { data } = await supabase.from('settings').select('kanban_config').eq('id', 1).single();
-      if (data?.kanban_config) setKanbanConfig(data.kanban_config);
-    };
-    fetchSettings();
-  }, []);
 
   useEffect(() => {
     setSelectedFunnel(lead.funnel_step || 'atendimento');
@@ -122,6 +115,14 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
       }
     }
 
+    // Se o Pai mandou o onStageChange, DELEGAMOS 100% PARA ELE.
+    // Não damos toast nem gravamos timeline aqui, pois se for Venda Fechada, o modal precisa ser confirmado primeiro!
+    if (onStageChange) {
+      onStageChange(selectedFunnel, selectedStatus);
+      return;
+    }
+
+    // Fallback de segurança
     const now = new Date().toISOString();
     const { error } = await supabase.from('leads').update({ 
       funnel_step: selectedFunnel, 
@@ -129,16 +130,16 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
       stage_updated_at: now
     }).eq('id', lead.id);
 
-    if (!error) {
-      // Trava de segurança: só chama se a função existir
-      if (typeof onStatusChange === 'function') {
-        onStatusChange(selectedStatus as LeadStatus);
-      }
-      
-      // Essa é a função principal que atualiza a tela agora!
-      onLeadUpdate?.(lead.id, { funnel_step: selectedFunnel, status: String(selectedStatus) });
-      await addTimelineLog('status_change', `Etapa alterada para: ${selectedStatus}`);
+    if (error) {
+      console.error(error);
+      addToast('Erro ao atualizar status', 'error');
+      return;
     }
+
+    if (typeof onStatusChange === 'function') onStatusChange(selectedStatus as string);
+    onLeadUpdate?.(lead.id, { funnel_step: selectedFunnel, status: String(selectedStatus) });
+    await addTimelineLog('status_change', `Etapa alterada para: ${selectedStatus}`);
+    addToast('Status atualizado!', 'success');
   };
 
 
@@ -149,12 +150,13 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
     const authorName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Usuário';
     const fullDescription = `${description} (por ${authorName})`;
 
-    await supabase.from('timeline_events').insert([{ 
+    const { error } = await supabase.from('timeline_events').insert([{ 
       lead_id: lead.id, 
       type, 
       description: fullDescription,
-      company_id: user.company_id,
+      company_id: (user as any)?.company_id,
     }]);
+    if (error) console.error("Erro na timeline:", error);
     const { data } = await supabase
       .from('timeline_events')
       .select('*')
@@ -278,12 +280,17 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newNote.trim()) return;
-    const { data } = await supabase.from('timeline_events').insert([{ 
+    const { data, error } = await supabase.from('timeline_events').insert([{ 
       type: 'note', 
       description: newNote, 
       lead_id: lead.id,
-      company_id: user.company_id,
+      company_id: (user as any)?.company_id,
     }]).select().single();
+    if (error) {
+      console.error("Erro ao salvar nota:", error);
+      addToast("Erro ao salvar nota", "error");
+      return;
+    }
     if (data) {
       setEvents((prev) => [data as any, ...prev]);
       setNewNote('');
@@ -672,6 +679,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
         <div className="flex border-b border-slate-200 bg-white/95 backdrop-blur-sm sticky top-0 z-10 shadow-sm">
           {[
             { id: 'timeline', label: 'Timeline', icon: Icons.Clock },
+            { id: 'smart_match', label: 'Match IA', icon: Icons.Sparkles },
             { id: 'whatsapp', label: 'WhatsApp', icon: Icons.MessageCircle },
             { id: 'history', label: 'Navegação', icon: Icons.MapPin },
             { id: 'tasks', label: 'Tarefas', icon: Icons.CheckSquare },
@@ -684,7 +692,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
                 activeTab === tab.id ? 'border-brand-600 text-brand-600 bg-brand-50/30' : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
               }`}
             >
-              <tab.icon size={16} />
+              <tab.icon size={16} className={tab.id === 'smart_match' && activeTab !== 'smart_match' ? 'text-amber-500 animate-pulse' : ''} />
               <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
@@ -692,6 +700,89 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
 
         {/* 4. CONTEÚDO DA ABA (Sem overflow para não conflitar) */}
         <div className="p-6">
+          {activeTab === 'smart_match' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+              <div className="bg-gradient-to-br from-brand-900 via-brand-800 to-indigo-900 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-10">
+                  <Icons.Sparkles size={80} />
+                </div>
+                <h3 className="text-xl font-serif font-bold flex items-center gap-2 mb-2 relative z-10">
+                  <Icons.Sparkles size={20} className="text-amber-400" /> Inteligência Artificial
+                </h3>
+                <p className="text-brand-100 text-sm mb-6 relative z-10 max-w-[90%]">
+                  Nossa IA cruza os dados, orçamento e interesses do lead com todo o seu catálogo para sugerir os imóveis perfeitos.
+                </p>
+                <button
+                  onClick={handleFindSmartMatches}
+                  disabled={loadingSmartMatch}
+                  className="relative z-10 w-full bg-white text-brand-900 hover:bg-brand-50 text-sm font-bold py-3 rounded-xl transition-all disabled:opacity-80 flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+                >
+                  {loadingSmartMatch ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.BrainCircuit size={18} />}
+                  {loadingSmartMatch ? 'Analisando Catálogo...' : hasStoredSmartMatches ? '🔄 Recalcular Compatibilidade' : '🔍 Gerar Sugestões de Imóveis'}
+                </button>
+              </div>
+
+              {smartMatchMessage && (
+                <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 text-amber-700 text-xs p-3 rounded-xl flex gap-2">
+                  <Icons.AlertCircle size={14} className="shrink-0 mt-0.5" />
+                  <p>{smartMatchMessage}</p>
+                </div>
+              )}
+
+              {smartMatches.length > 0 && (
+                <div className="space-y-4">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-1">Melhores Resultados</h4>
+                  {smartMatches.map((match) => (
+                    <div key={match.property.id} className="group bg-white dark:bg-dark-card p-3 rounded-2xl border-2 border-slate-100 dark:border-white/5 hover:border-brand-400 dark:hover:border-brand-500/50 transition-all shadow-sm">
+                      <div className="flex items-start gap-4">
+                        <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0 relative">
+                          <img
+                            src={match.property.images?.[0] || 'https://placehold.co/100'}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                            alt={match.property.title}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0 py-1">
+                          <div className="flex justify-between items-start mb-1">
+                            <h4 className="font-bold text-slate-800 dark:text-white text-sm line-clamp-1 pr-2">{match.property.title}</h4>
+                            <span className="shrink-0 text-[10px] font-bold px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 flex items-center gap-1 shadow-sm">
+                              <Icons.CheckCircle size={10} /> {match.match_score}% Match
+                            </span>
+                          </div>
+                          <p className="text-brand-600 font-bold text-sm mb-2">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(match.property.price)}
+                          </p>
+                          <div className="bg-slate-50 dark:bg-white/5 p-2.5 rounded-lg border border-slate-100 dark:border-white/5 relative">
+                            <div className="absolute -top-2 left-3 bg-white dark:bg-dark-card px-1">
+                              <Icons.Sparkles size={10} className="text-amber-500" />
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-400 italic line-clamp-2">"{match.match_reason}"</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/10 flex gap-2">
+                        <button
+                          onClick={() => Maps(`/admin/imoveis?preview_id=${match.property_id}`)}
+                          className="flex-1 text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                        >
+                          Detalhes do Imóvel
+                        </button>
+                        <a
+                          href={buildWhatsAppSmartMatchLink(match)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex-1 text-xs font-bold px-3 py-2 rounded-xl bg-green-50 hover:bg-green-100 text-green-700 dark:bg-green-500/20 dark:hover:bg-green-500/30 dark:text-green-400 flex items-center justify-center gap-2 transition-colors"
+                        >
+                          <Icons.MessageCircle size={14} /> Enviar Sugestão
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'whatsapp' && (
             <div className="space-y-4">
               <div className="bg-green-50 border border-green-200 p-4 rounded-xl mb-4">
@@ -875,122 +966,56 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, onClose, 
               </div>
 
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="grid grid-cols-2">
+                <div className="p-4 space-y-3">
+                  <label className="block">
+                    <span className="text-xs text-slate-500">Orçamento (R$)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={profileForm.budget}
+                      onChange={(e) => setProfileForm((prev) => ({ ...prev, budget: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-slate-500">Tipo desejado</span>
+                    <input
+                      type="text"
+                      value={profileForm.desired_type}
+                      onChange={(e) => setProfileForm((prev) => ({ ...prev, desired_type: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="Ex.: Apartamento"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-slate-500">Quartos mínimos</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={profileForm.desired_bedrooms}
+                      onChange={(e) => setProfileForm((prev) => ({ ...prev, desired_bedrooms: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-slate-500">Localização desejada</span>
+                    <input
+                      type="text"
+                      value={profileForm.desired_location}
+                      onChange={(e) => setProfileForm((prev) => ({ ...prev, desired_location: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="Ex.: Centro, Itapuã"
+                    />
+                  </label>
+
                   <button
-                    onClick={() => setActiveInfoTab('profile')}
-                    className={`py-2 text-xs font-bold uppercase tracking-wider ${activeInfoTab === 'profile' ? 'bg-brand-50 text-brand-700' : 'text-slate-500 bg-white'}`}
+                    onClick={handleSaveProfile}
+                    disabled={savingProfile}
+                    className="w-full bg-slate-800 hover:bg-slate-700 text-white text-sm font-bold py-2 rounded-lg disabled:opacity-60"
                   >
-                    Perfil (Dados)
-                  </button>
-                  <button
-                    onClick={() => setActiveInfoTab('smart_match')}
-                    className={`py-2 text-xs font-bold uppercase tracking-wider ${activeInfoTab === 'smart_match' ? 'bg-brand-50 text-brand-700' : 'text-slate-500 bg-white'}`}
-                  >
-                    Match IA
+                    {savingProfile ? 'Salvando...' : 'Salvar Perfil'}
                   </button>
                 </div>
-
-                {activeInfoTab === 'profile' && (
-                  <div className="p-4 space-y-3">
-                    <label className="block">
-                      <span className="text-xs text-slate-500">Orçamento (R$)</span>
-                      <input
-                        type="number"
-                        min={0}
-                        value={profileForm.budget}
-                        onChange={(e) => setProfileForm((prev) => ({ ...prev, budget: e.target.value }))}
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-slate-500">Tipo desejado</span>
-                      <input
-                        type="text"
-                        value={profileForm.desired_type}
-                        onChange={(e) => setProfileForm((prev) => ({ ...prev, desired_type: e.target.value }))}
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                        placeholder="Ex.: Apartamento"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-slate-500">Quartos mínimos</span>
-                      <input
-                        type="number"
-                        min={0}
-                        value={profileForm.desired_bedrooms}
-                        onChange={(e) => setProfileForm((prev) => ({ ...prev, desired_bedrooms: e.target.value }))}
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs text-slate-500">Localização desejada</span>
-                      <input
-                        type="text"
-                        value={profileForm.desired_location}
-                        onChange={(e) => setProfileForm((prev) => ({ ...prev, desired_location: e.target.value }))}
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                        placeholder="Ex.: Centro, Itapuã"
-                      />
-                    </label>
-
-                    <button
-                      onClick={handleSaveProfile}
-                      disabled={savingProfile}
-                      className="w-full bg-slate-800 hover:bg-slate-700 text-white text-sm font-bold py-2 rounded-lg disabled:opacity-60"
-                    >
-                      {savingProfile ? 'Salvando...' : 'Salvar Perfil'}
-                    </button>
-                  </div>
-                )}
-
-                {activeInfoTab === 'smart_match' && (
-                  <div className="p-4 space-y-3">
-                    <button
-                      onClick={handleFindSmartMatches}
-                      disabled={loadingSmartMatch}
-                      className="w-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold py-2 rounded-lg disabled:opacity-60 flex items-center justify-center gap-2"
-                    >
-                      <Icons.Search size={16} /> {hasStoredSmartMatches ? '🔄 Recalcular com IA' : '🔍 Gerar Matches com IA'}
-                    </button>
-
-                    {smartMatchMessage && <p className="text-xs text-slate-500">{smartMatchMessage}</p>}
-                    {loadingSmartMatch && <p className="text-xs text-slate-500">Analisando compatibilidade com IA...</p>}
-
-                    <div className="space-y-2">
-                      {smartMatches.map((match) => (
-                        <div key={match.property.id} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                          <div className="flex items-center gap-3">
-                            <img src={match.property.images?.[0] || 'https://placehold.co/100'} className="w-14 h-14 rounded-lg object-cover" alt={match.property.title} />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-bold text-slate-700 truncate">{match.property.title}</p>
-                              <p className="text-[11px] text-slate-500">R$ {Number(match.property.price || 0).toLocaleString('pt-BR')}</p>
-                            </div>
-                            <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">{match.match_score}% Compatível</span>
-                          </div>
-                          <p className="mt-2 text-xs text-slate-600">
-                            <strong>Motivo (IA):</strong> {match.match_reason}
-                          </p>
-                          <div className="mt-3 flex gap-2">
-                            <button
-                              onClick={() => Maps(`/admin/imoveis?preview_id=${match.property_id}`)}
-                              className="text-xs px-3 py-1.5 rounded-md border border-slate-200 bg-white text-slate-600"
-                            >
-                              Ver Imóvel
-                            </button>
-                            <a
-                              href={buildWhatsAppSmartMatchLink(match)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-xs px-3 py-1.5 rounded-md border border-green-200 bg-green-50 text-green-700 font-semibold"
-                            >
-                              Enviar no WhatsApp
-                            </a>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           )}

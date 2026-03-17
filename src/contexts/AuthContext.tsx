@@ -177,14 +177,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Se chegou aqui, é um login novo ou troca de usuário real
     setSession(currentSession);
-    
-    // Define usuário básico imediatamente (Optimistic UI)
-    const basicUser = buildFallbackUser(currentSession.user);
-    setUser(basicUser);
 
-    // Busca dados completos
+    // Busca dados completos primeiro, DEPOIS atualiza o state para evitar falhas de company_id
     const fullUser = await fetchProfileData(currentSession);
-    
+
     if (isMounted.current) {
       setUser(fullUser);
       setLoading(false);
