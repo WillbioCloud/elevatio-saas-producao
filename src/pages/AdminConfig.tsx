@@ -293,16 +293,39 @@ const AdminConfig: React.FC = () => {
   };
 
   const fetchContract = async () => {
+    if (!user?.company_id) return;
     setLoadingContract(true);
     const { data } = await supabase
       .from('saas_contracts')
       .select('*, companies(plan)')
-      .eq('company_id', user?.company_id)
+      .eq('company_id', user.company_id)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    setContract(data as Contract | null);
+    if (data) {
+      setContract(data as Contract);
+    } else {
+      // Se não há contrato oficial (usuário novo), cria um contrato "Virtual" de Teste na tela
+      const { data: comp } = await supabase
+        .from('companies')
+        .select('created_at, plan')
+        .eq('id', user.company_id)
+        .single();
+
+      if (comp) {
+        const trialEnd = new Date(comp.created_at);
+        trialEnd.setDate(trialEnd.getDate() + 7);
+        setContract({
+          id: 'trial-virtual',
+          plan_name: comp.plan || 'essencial',
+          status: 'pending',
+          start_date: comp.created_at,
+          end_date: trialEnd.toISOString(),
+          billing_cycle: 'monthly'
+        } as Contract);
+      }
+    }
     setLoadingContract(false);
   };
 
@@ -1436,7 +1459,7 @@ const AdminConfig: React.FC = () => {
                         {contract.status === 'active'
                           ? 'Ativo'
                           : contract.status === 'pending'
-                            ? 'Aguardando Pagamento'
+                            ? 'Período de Teste (7 Dias)'
                             : contract.status === 'canceled'
                               ? `Cancela em ${new Date(contract.end_date).toLocaleDateString('pt-BR')}`
                               : contract ? 'Inativo' : 'Erro: Contrato não gerado'}
