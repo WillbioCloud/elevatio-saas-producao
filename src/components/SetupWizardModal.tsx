@@ -108,23 +108,20 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
         if (profileError) throw new Error('Erro ao vincular perfil: ' + profileError.message);
 
-        // Criar contrato de SaaS (Baseado no plans.ts)
-        try {
-          const { error: contractError } = await supabase.from('saas_contracts').insert([{
-            company_id: newCompany.id,
-            plan_id: null, // Ignoramos a tabela saas_plans, usamos o config local
-            plan_name: formData.plan, // Nome oficial do plano (ex: 'profissional', 'elite')
-            status: 'pending', // Status vital para liberar o trial via Front-end
-            start_date: new Date().toISOString(),
-            end_date: trialEnds.toISOString(),
-            billing_cycle: formData.billingCycle
-          }]);
+        // Criar contrato de SaaS (obrigatório para liberar fluxo de assinatura/trial)
+        const nowIso = new Date().toISOString();
+        const { error: contractError } = await supabase.from('saas_contracts').insert([{
+          company_id: newCompany.id,
+          plan_id: null, // Ignoramos a tabela saas_plans, usamos o config local
+          plan_name: formData.plan, // Nome oficial do plano (ex: 'profissional', 'elite')
+          status: 'pending', // Status vital para liberar o trial via Front-end
+          start_date: nowIso,
+          end_date: trialEnds.toISOString(),
+          billing_cycle: formData.billingCycle
+        }]);
 
-          if (contractError) {
-            console.error('Erro do Supabase ao inserir contrato:', contractError);
-          }
-        } catch (contractError) {
-          console.error('Crash ao tentar criar contrato:', contractError);
+        if (contractError) {
+          throw new Error('Erro ao criar contrato inicial: ' + contractError.message);
         }
 
         // Fire-and-Forget: Chama a Edge Function do Asaas sem bloquear a UI

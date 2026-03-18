@@ -295,13 +295,17 @@ const AdminConfig: React.FC = () => {
   const fetchContract = async () => {
     if (!user?.company_id) return;
     setLoadingContract(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('saas_contracts')
       .select('*, companies(plan)')
       .eq('company_id', user.company_id)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    if (error) {
+      console.warn('Contrato não retornado, aplicando fallback de período de teste:', error.message);
+    }
 
     if (data) {
       setContract(data as Contract);
@@ -735,8 +739,20 @@ const AdminConfig: React.FC = () => {
 
   const handleUpgrade = async (planId: string) => {
     setIsUpgrading(planId);
+    const previousContract = contract;
     try {
       if (!user?.company_id) throw new Error("ID da empresa não encontrado.");
+
+      // Update otimista para feedback imediato na UI
+      setContract((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          plan_name: planId,
+          billing_cycle: billingCycle,
+          status: prev.status || 'pending',
+        };
+      });
 
       const { data, error } = await supabase.functions.invoke('update-asaas-subscription', {
         body: { 
@@ -753,6 +769,7 @@ const AdminConfig: React.FC = () => {
       alert(`Sucesso! Sua assinatura foi atualizada para o plano ${planId.toUpperCase()}.`);
       await fetchContract(); // Recarrega o contrato para atualizar o card na tela
     } catch (error: any) {
+      setContract(previousContract);
       console.error(error);
       alert('Erro ao atualizar plano: ' + (error.message || 'Tente novamente mais tarde.'));
     } finally {
