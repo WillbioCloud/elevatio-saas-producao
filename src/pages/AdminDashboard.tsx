@@ -207,7 +207,7 @@ const AdminDashboard: React.FC = () => {
           return;
         }
 
-        const { data: contract } = await supabase
+        const { data: contract, error: contractError } = await supabase
           .from('saas_contracts')
           .select('status, created_at')
           .eq('company_id', profile.company_id)
@@ -216,6 +216,10 @@ const AdminDashboard: React.FC = () => {
           .maybeSingle();
 
         if (!isMounted) return;
+
+        if (contractError) {
+          console.warn('Contrato não encontrado/indisponível. Aplicando fallback de trial:', contractError.message);
+        }
 
         // Fallback: Se não houver contrato, assume que é um usuário novo no período de teste (pending)
         const currentStatus = contract?.status || 'pending';
