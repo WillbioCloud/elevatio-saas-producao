@@ -2225,8 +2225,9 @@ const AdminConfig: React.FC = () => {
                         const newContent = await autoTagContractTemplate(editingTemplate.content);
                         setEditingTemplate({ ...editingTemplate, content: newContent });
                         addToast('Contrato mapeado com sucesso! Revise os campos.', 'success');
-                      } catch (error) {
-                        addToast('Erro ao usar IA no contrato.', 'error');
+                      } catch (error: any) {
+                        // Agora a interface vai mostrar exatamente o motivo da falha!
+                        addToast(error.message || 'Erro ao usar IA no contrato.', 'error');
                       } finally {
                         setIsAnalyzingContract(false);
                       }

@@ -49,7 +49,7 @@ export const generateText = async (prompt: string): Promise<string | null> => {
   if (!genAI) return null;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
     const result = await model.generateContent(prompt);
     const response = await result.response;
     return response.text();
@@ -118,7 +118,7 @@ export const findSmartMatches = async (
 ): Promise<SmartMatchResult[]> => {
   if (!genAI || candidateProperties.length === 0) return [];
 
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
   const prompt = `
 Atue como um corretor sênior.
@@ -218,7 +218,8 @@ export const mapPropertyToCandidate = (property: Property): CandidateProperty =>
 export async function autoTagContractTemplate(rawContent: string): Promise<string> {
   if (!genAI) throw new Error("Gemini API Key não configurada.");
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  // Utiliza o nome exato reconhecido pela API v1beta ou cai para o gemini-pro clásico
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const prompt = `Você é um assistente de IA especialista em contratos imobiliários SaaS.
 Sua tarefa é analisar o contrato abaixo e substituir Nomes Próprios, CPFs, RGs, Endereços, Profissões, Estados Civis, Nacionalidades e Valores reais (ou espaços em branco como '________') pelas tags (shortcodes) correspondentes do nosso sistema.
