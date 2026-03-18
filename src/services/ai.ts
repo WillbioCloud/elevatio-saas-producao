@@ -225,12 +225,12 @@ export async function autoTagContractTemplate(rawContent: string): Promise<strin
 Sua tarefa é analisar o contrato abaixo e substituir Nomes Próprios, CPFs, RGs, Endereços, Profissões, Estados Civis, Nacionalidades e Valores reais (ou espaços em branco como '________') pelas tags (shortcodes) correspondentes do nosso sistema.
 
 Lista EXATA de tags permitidas:
-{{IMOBILIARIA_NOME}}, {{CORRETOR_NOME}}, {{CORRETOR_CRECI}}
+{{IMOBILIARIA_NOME}}, {{CORRETOR_NOME}}, {{CORRETOR_CPF}}, {{CORRETOR_CRECI}}
 {{IMOVEL_TITULO}}, {{IMOVEL_ENDERECO}}, {{IMOVEL_MATRICULA}}
 {{VALOR_NEGOCIADO}}, {{VALOR_SINAL}}, {{VALOR_FINANCIAMENTO}}, {{VALOR_FGTS}}, {{VALOR_PERMUTA}}, {{QTD_PARCELAS}}
-{{LOCATARIO_NOME}}, {{LOCATARIO_CPF}}, {{LOCATARIO_RG}}, {{LOCATARIO_PROFISSAO}}, {{LOCATARIO_ESTADO_CIVIL}}
-{{LOCADOR_NOME}}, {{LOCADOR_CPF}}, {{LOCADOR_RG}}, {{LOCADOR_PROFISSAO}}, {{LOCADOR_ESTADO_CIVIL}}
-{{FIADOR_NOME}}, {{FIADOR_CPF}}, {{FIADOR_RG}}, {{FIADOR_PROFISSAO}}, {{FIADOR_ESTADO_CIVIL}}
+{{LOCATARIO_NOME}}, {{LOCATARIO_CPF}}, {{LOCATARIO_RG}}, {{LOCATARIO_PROFISSAO}}, {{LOCATARIO_ESTADO_CIVIL}}, {{LOCATARIO_ENDERECO}}
+{{LOCADOR_NOME}}, {{LOCADOR_CPF}}, {{LOCADOR_RG}}, {{LOCADOR_PROFISSAO}}, {{LOCADOR_ESTADO_CIVIL}}, {{LOCADOR_ENDERECO}}
+{{FIADOR_NOME}}, {{FIADOR_CPF}}, {{FIADOR_RG}}, {{FIADOR_PROFISSAO}}, {{FIADOR_ESTADO_CIVIL}}, {{FIADOR_ENDERECO}}
 {{DATA_ATUAL}}
 
 Regras rigorosas:

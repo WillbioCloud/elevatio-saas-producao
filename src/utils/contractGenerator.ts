@@ -219,6 +219,7 @@ export const generateContract = async (type: string, data: any, tenant: any, com
       // DADOS DA IMOBILIÁRIA / CORRETOR
       .replace(/\{\{IMOBILIARIA_NOME\}\}/g, company_name || tenant?.name || '____________________')
       .replace(/\{\{CORRETOR_NOME\}\}/g, broker_name || '____________________')
+      .replace(/\{\{CORRETOR_CPF\}\}/g, broker_document || '____________________')
       .replace(/\{\{CORRETOR_CRECI\}\}/g, broker_creci || '____________________')
       // DADOS DO IMÓVEL
       .replace(/\{\{IMOVEL_TITULO\}\}/g, data.property?.title || '____________________')
@@ -230,6 +231,7 @@ export const generateContract = async (type: string, data: any, tenant: any, com
       .replace(/\{\{LOCATARIO_RG\}\}/g, data.tenant_rg || data.buyer_rg || '____________________')
       .replace(/\{\{LOCATARIO_PROFISSAO\}\}/g, data.tenant_profession || data.buyer_profession || 'Autônomo')
       .replace(/\{\{LOCATARIO_ESTADO_CIVIL\}\}/g, data.tenant_marital_status || data.buyer_marital_status || '____________________')
+      .replace(/\{\{LOCATARIO_ENDERECO\}\}/g, data.tenant_address || data.buyer_address || '____________________')
       .replace(/\{\{LOCATARIO_EMAIL\}\}/g, data.lead?.email || '____________________')
       .replace(/\{\{LOCATARIO_TELEFONE\}\}/g, data.lead?.phone || '____________________')
       .replace(/\{\{LOCATARIO_CONJUGE_NOME\}\}/g, data.tenant_spouse_name || data.buyer_spouse_name || '____________________')
@@ -249,6 +251,7 @@ export const generateContract = async (type: string, data: any, tenant: any, com
       .replace(/\{\{LOCADOR_RG\}\}/g, data.landlord_rg || data.seller_rg || '____________________')
       .replace(/\{\{LOCADOR_PROFISSAO\}\}/g, data.landlord_profession || data.seller_profession || 'Autônomo')
       .replace(/\{\{LOCADOR_ESTADO_CIVIL\}\}/g, data.landlord_marital_status || data.seller_marital_status || '____________________')
+      .replace(/\{\{LOCADOR_ENDERECO\}\}/g, data.landlord_address || data.seller_address || '____________________')
       .replace(/\{\{LOCADOR_CONJUGE_NOME\}\}/g, data.landlord_spouse_name || data.seller_spouse_name || '____________________')
       .replace(/\{\{LOCADOR_CONJUGE_CPF\}\}/g, data.landlord_spouse_document || data.seller_spouse_document || '____________________')
       .replace(/\{\{LOCADOR_CONJUGE_PROFISSAO\}\}/g, data.landlord_spouse_profession || data.seller_spouse_profession || 'Autônomo')
@@ -264,6 +267,7 @@ export const generateContract = async (type: string, data: any, tenant: any, com
       .replace(/\{\{FIADOR_RG\}\}/g, data.guarantor_rg || '____________________')
       .replace(/\{\{FIADOR_PROFISSAO\}\}/g, data.guarantor_profession || 'Autônomo')
       .replace(/\{\{FIADOR_ESTADO_CIVIL\}\}/g, data.guarantor_marital_status || '____________________')
+      .replace(/\{\{FIADOR_ENDERECO\}\}/g, data.guarantor_address || '____________________')
       // VALORES E CONDIÇÕES
       .replace(/\{\{VALOR_NEGOCIADO\}\}/g, formatCurrency(data.sale_total_value || data.rent_value))
       .replace(/\{\{VALOR_SINAL\}\}/g, formatCurrency(data.sale_down_payment))

@@ -195,21 +195,19 @@ const AdminDashboard: React.FC = () => {
 
     const fetchTrialStatus = async () => {
       try {
+        // Puxa o company_id e também a data de criação da empresa como "Plano B"
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('company_id')
+          .select('company_id, companies(created_at)')
           .eq('id', user.id)
           .single();
 
         if (profileError || !profile?.company_id) {
-          if (isMounted) {
-            setContractStatus(null);
-            setTrialDaysLeft(0);
-          }
+          if (isMounted) { setContractStatus(null); setTrialDaysLeft(0); }
           return;
         }
 
-        const { data: contract, error: contractError } = await supabase
+        const { data: contract } = await supabase
           .from('saas_contracts')
           .select('status, created_at')
           .eq('company_id', profile.company_id)
@@ -217,20 +215,16 @@ const AdminDashboard: React.FC = () => {
           .limit(1)
           .maybeSingle();
 
-        if (contractError || !contract) {
-          if (isMounted) {
-            setContractStatus(null);
-            setTrialDaysLeft(0);
-          }
-          return;
-        }
-
         if (!isMounted) return;
 
-        setContractStatus(contract.status);
+        // Fallback: Se não houver contrato, assume que é um usuário novo no período de teste (pending)
+        const currentStatus = contract?.status || 'pending';
+        const startDate = contract?.created_at || (profile as any).companies?.created_at || new Date().toISOString();
 
-        if (contract.status === 'pending') {
-          const trialEnd = new Date(contract.created_at);
+        setContractStatus(currentStatus);
+
+        if (currentStatus === 'pending') {
+          const trialEnd = new Date(startDate);
           trialEnd.setDate(trialEnd.getDate() + 7);
           const msLeft = trialEnd.getTime() - Date.now();
           const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));

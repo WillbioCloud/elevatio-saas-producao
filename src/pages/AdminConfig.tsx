@@ -2241,12 +2241,12 @@ const AdminConfig: React.FC = () => {
                 </div>
                 <p className="text-[10px] text-slate-500 mb-2">Pode clicar nos botões abaixo para inserir manualmente, ou usar a IA acima para substituir nomes reais do seu documento pelas tags automaticamente.</p>
                 <div className="flex flex-wrap gap-2">
-                  {['{{IMOBILIARIA_NOME}}','{{CORRETOR_NOME}}','{{CORRETOR_CRECI}}',
-                    '{{IMOVEL_TITULO}}','{{IMOVEL_ENDERECO}}','{{IMOVEL_MATRICULA}}',
-                    '{{VALOR_NEGOCIADO}}','{{VALOR_SINAL}}','{{VALOR_FINANCIAMENTO}}','{{VALOR_FGTS}}','{{VALOR_PERMUTA}}','{{QTD_PARCELAS}}',
-                    '{{LOCATARIO_NOME}}','{{LOCATARIO_CPF}}','{{LOCATARIO_RG}}','{{LOCATARIO_PROFISSAO}}','{{LOCATARIO_ESTADO_CIVIL}}',
-                    '{{LOCADOR_NOME}}','{{LOCADOR_CPF}}','{{LOCADOR_RG}}','{{LOCADOR_PROFISSAO}}','{{LOCADOR_ESTADO_CIVIL}}',
-                    '{{FIADOR_NOME}}','{{FIADOR_CPF}}','{{FIADOR_RG}}','{{FIADOR_PROFISSAO}}','{{FIADOR_ESTADO_CIVIL}}',
+                  {['{{IMOBILIARIA_NOME}}', '{{CORRETOR_NOME}}', '{{CORRETOR_CPF}}', '{{CORRETOR_CRECI}}',
+                    '{{IMOVEL_TITULO}}', '{{IMOVEL_ENDERECO}}', '{{IMOVEL_MATRICULA}}',
+                    '{{VALOR_NEGOCIADO}}', '{{VALOR_SINAL}}', '{{VALOR_FINANCIAMENTO}}', '{{VALOR_FGTS}}', '{{VALOR_PERMUTA}}', '{{QTD_PARCELAS}}',
+                    '{{LOCATARIO_NOME}}', '{{LOCATARIO_CPF}}', '{{LOCATARIO_RG}}', '{{LOCATARIO_PROFISSAO}}', '{{LOCATARIO_ESTADO_CIVIL}}', '{{LOCATARIO_ENDERECO}}',
+                    '{{LOCADOR_NOME}}', '{{LOCADOR_CPF}}', '{{LOCADOR_RG}}', '{{LOCADOR_PROFISSAO}}', '{{LOCADOR_ESTADO_CIVIL}}', '{{LOCADOR_ENDERECO}}',
+                    '{{FIADOR_NOME}}', '{{FIADOR_CPF}}', '{{FIADOR_RG}}', '{{FIADOR_PROFISSAO}}', '{{FIADOR_ESTADO_CIVIL}}', '{{FIADOR_ENDERECO}}',
                     '{{DATA_ATUAL}}'].map(tag => (
                     <button key={tag} type="button" onClick={() => { navigator.clipboard.writeText(tag); addToast(`${tag} copiado!`, 'success'); }} className="px-2 py-1 bg-white dark:bg-slate-800 text-[10px] font-mono font-bold text-brand-600 rounded-lg shadow-sm border border-brand-100 hover:scale-105 transition-transform">{tag}</button>
                   ))}
