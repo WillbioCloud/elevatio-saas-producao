@@ -651,6 +651,49 @@ const AdminConfig: React.FC = () => {
     setSavingSettings(false);
   };
 
+  const callEdgeFunction = async <TData = any>(functionName: string, payload: Record<string, unknown>): Promise<TData> => {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw new Error(`Sessão inválida: ${sessionError.message}`);
+
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error('Sessão expirada. Faça login novamente para continuar.');
+
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const raw = await response.text();
+    let parsed: any = {};
+
+    if (raw) {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = { error: raw };
+      }
+    }
+
+    if (!response.ok) {
+      const message =
+        parsed?.error ||
+        parsed?.message ||
+        `A função "${functionName}" retornou erro HTTP ${response.status}.`;
+      throw new Error(message);
+    }
+
+    if (parsed?.error) {
+      throw new Error(parsed.error);
+    }
+
+    return parsed as TData;
+  };
+
   const handleCheckout = async () => {
     const companyId = user?.company_id;
 
@@ -663,13 +706,9 @@ const AdminConfig: React.FC = () => {
     try {
       console.log("🚀 Buscando link de pagamento...");
 
-      const { data, error } = await supabase.functions.invoke('get-asaas-payment-link', {
-        body: { company_id: companyId }
+      const data = await callEdgeFunction<{ checkoutUrl?: string; error?: string }>('get-asaas-payment-link', {
+        company_id: companyId,
       });
-
-      if (error) {
-        throw new Error(error.message);
-      }
 
       if (!data?.checkoutUrl) {
         throw new Error(data?.error || 'Link não retornado pelo Asaas.');
@@ -689,11 +728,9 @@ const AdminConfig: React.FC = () => {
   const handleOpenPortal = async () => {
     setIsOpeningPortal(true);
     try {
-      const { data, error } = await supabase.functions.invoke('get-asaas-portal-link', {
-        body: { company_id: user?.company_id }
+      const data = await callEdgeFunction<{ portalUrl?: string; error?: string }>('get-asaas-portal-link', {
+        company_id: user?.company_id,
       });
-
-      if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
       if (data?.portalUrl) {
@@ -713,16 +750,12 @@ const AdminConfig: React.FC = () => {
     try {
       const priceToPay = billingCycle === 'monthly' ? plan.priceMensal : plan.priceAnual;
 
-      const { data, error } = await supabase.functions.invoke('reactivate-asaas-subscription', {
-        body: { 
-          company_id: user?.company_id,
-          plan_name: plan.id,
-          billing_cycle: billingCycle,
-          price: priceToPay
-        }
+      const data = await callEdgeFunction<{ checkoutUrl?: string; error?: string }>('reactivate-asaas-subscription', {
+        company_id: user?.company_id,
+        plan_name: plan.id,
+        billing_cycle: billingCycle,
+        price: priceToPay,
       });
-
-      if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
       if (data.checkoutUrl) {
@@ -754,16 +787,12 @@ const AdminConfig: React.FC = () => {
         };
       });
 
-      const { data, error } = await supabase.functions.invoke('update-asaas-subscription', {
-        body: { 
-          company_id: user.company_id, 
-          new_plan: planId,
-          billing_cycle: billingCycle,
-          has_fidelity: acceptFidelity
-        }
+      const data = await callEdgeFunction<{ error?: string }>('update-asaas-subscription', {
+        company_id: user.company_id,
+        new_plan: planId,
+        billing_cycle: billingCycle,
+        has_fidelity: acceptFidelity,
       });
-
-      if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
       alert(`Sucesso! Sua assinatura foi atualizada para o plano ${planId.toUpperCase()}.`);
@@ -783,15 +812,11 @@ const AdminConfig: React.FC = () => {
 
     setIsCanceling(true);
     try {
-      const { data, error } = await supabase.functions.invoke('cancel-asaas-subscription', {
-        body: { 
-          company_id: user?.company_id, 
-          reason: cancelReason, 
-          other_reason: otherReason 
-        }
+      const data = await callEdgeFunction<{ error?: string }>('cancel-asaas-subscription', {
+        company_id: user?.company_id,
+        reason: cancelReason,
+        other_reason: otherReason,
       });
-
-      if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
       alert('Assinatura cancelada com sucesso. Você terá acesso até o final do período pago.');

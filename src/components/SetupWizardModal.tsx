@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Building2, CheckCircle, Globe, Loader2, Palette } from 'lucide-react';
+import { Building2, CheckCircle, Globe, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { PlanType } from '../config/plans';
 import { supabase } from '../lib/supabase';
@@ -151,27 +151,27 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-      <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="p-6 border-b border-white/10 bg-[#111]">
-          <h2 className="text-2xl font-bold text-white">Bem-vindo ao Elevatio Vendas! 🎉</h2>
-          <p className="text-gray-400 mt-1 text-sm">Faltam apenas alguns detalhes para liberar o seu CRM com 7 dias grátis.</p>
+    <div className="fixed inset-0 bg-slate-900/35 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="p-6 border-b border-slate-200 bg-gradient-to-r from-white via-brand-50/40 to-white">
+          <h2 className="text-2xl font-bold text-slate-900">Bem-vindo ao Elevatio Vendas! 🎉</h2>
+          <p className="text-slate-600 mt-1 text-sm">Faltam apenas alguns detalhes para liberar o seu CRM com 7 dias grátis.</p>
         </div>
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
             <div className="space-y-6">
               <div className="space-y-4">
-                <h3 className="text-brand-400 font-bold flex items-center gap-2">
+                <h3 className="text-brand-700 font-bold flex items-center gap-2">
                   <Building2 className="w-5 h-5" /> Dados da Imobiliária
                 </h3>
-                <div className="mb-4 flex bg-[#1a1a1a] p-1 rounded-xl w-fit border border-white/10">
+                <div className="mb-4 flex bg-slate-100 p-1 rounded-xl w-fit border border-slate-200">
                   <button
                     type="button"
                     onClick={() => setFormData({...formData, billingCycle: 'monthly'})}
                     className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
                       formData.billingCycle === 'monthly' 
-                        ? 'bg-white text-slate-900' 
-                        : 'text-slate-400 hover:text-white'
+                        ? 'bg-white text-slate-900 shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-900'
                     }`}
                   >
                     Mensal
@@ -182,19 +182,19 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
                       formData.billingCycle === 'yearly' 
                         ? 'bg-brand-600 text-white' 
-                        : 'text-slate-400 hover:text-white'
+                        : 'text-slate-500 hover:text-slate-900'
                     }`}
                   >
                     Anual
-                    <span className="bg-brand-500/30 text-brand-200 text-[10px] px-1.5 py-0.5 rounded-md border border-brand-400/20">-20%</span>
+                    <span className="bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded-md border border-emerald-200">-20%</span>
                   </button>
                 </div>
                 <div className="mb-4">
-                  <label className="block text-sm font-bold text-gray-400 mb-1">Confirme seu Plano</label>
+                  <label className="block text-sm font-bold text-slate-600 mb-1">Confirme seu Plano</label>
                   <select
                     value={formData.plan}
                     onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
-                    className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500"
+                    className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
                   >
                     <option value="starter">Starter</option>
                     <option value="basic">Basic</option>
@@ -206,51 +206,51 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm text-gray-400 mb-1">Nome da Imobiliária</label>
+                    <label className="block text-sm text-slate-600 mb-1">Nome da Imobiliária</label>
                     <input
                       required
                       type="text"
                       value={formData.companyName}
                       onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
                       placeholder="Nome da Sua Imobiliária"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-400 mb-1">CPF ou CNPJ (Para a fatura)</label>
+                    <label className="block text-sm text-slate-600 mb-1">CPF ou CNPJ (Para a fatura)</label>
                     <input
                       required
                       type="text"
                       value={formData.document}
                       onChange={(e) => setFormData({ ...formData, document: e.target.value })}
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
                       placeholder="000.000.000-00"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-400 mb-1">Telefone (WhatsApp)</label>
+                    <label className="block text-sm text-slate-600 mb-1">Telefone (WhatsApp)</label>
                     <input
                       required
                       type="tel"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500"
+                      className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
                       placeholder="(11) 99999-9999"
                     />
                   </div>
                 </div>
               </div>
-              <hr className="border-white/5" />
+              <hr className="border-slate-200" />
               <div className="space-y-4">
-                <h3 className="text-brand-400 font-bold flex items-center gap-2">
+                <h3 className="text-brand-700 font-bold flex items-center gap-2">
                   <Globe className="w-5 h-5" /> Endereço do Site
                 </h3>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2">Você já possui um domínio registrado?</label>
+                  <label className="block text-sm text-slate-600 mb-2">Você já possui um domínio registrado?</label>
                   <select
                     value={formData.hasDomain}
                     onChange={(e) => setFormData({ ...formData, hasDomain: e.target.value })}
-                    className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500 mb-3"
+                    className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500 mb-3"
                   >
                     <option value="nao">Não, quero usar um subdomínio grátis do Elevatio</option>
                     <option value="sim">Sim, já tenho o meu próprio domínio</option>
@@ -260,23 +260,23 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     type="text"
                     value={formData.domain}
                     onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-                    className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500"
+                    className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
                     placeholder={formData.hasDomain === 'sim' ? 'Ex: minhacorretora.com.br' : 'Ex: minhacorretora'}
                   />
                 </div>
               </div>
-              <hr className="border-white/5" />
+              <hr className="border-slate-200" />
               <div className="space-y-4">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <span className="w-8 h-8 rounded-full bg-brand-500/20 text-brand-500 flex items-center justify-center text-sm">3</span>
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm">3</span>
                   Visual do Site
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <label
                     className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
                       formData.template === 'minimalist'
-                        ? 'border-brand-500 bg-brand-500/10'
-                        : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
+                        ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-100'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
                     <input
@@ -287,14 +287,14 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                       checked={formData.template === 'minimalist'}
                       onChange={(e) => setFormData({ ...formData, template: e.target.value })}
                     />
-                    <div className="font-bold text-white mb-1">Minimalista</div>
-                    <p className="text-xs text-slate-400">Design limpo, claro e focado nos imóveis.</p>
+                    <div className="font-bold text-slate-900 mb-1">Minimalista</div>
+                    <p className="text-xs text-slate-500">Design limpo, claro e focado nos imóveis.</p>
                   </label>
                   <label
                     className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
                       formData.template === 'luxury'
-                        ? 'border-amber-500 bg-amber-500/10'
-                        : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
+                        ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-100'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
                     <input
@@ -308,13 +308,13 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     <div className="font-bold text-amber-400 mb-1 flex items-center gap-1">
                       Luxo <Icons.Crown size={14} />
                     </div>
-                    <p className="text-xs text-slate-400">Tons escuros e elegantes para alto padrão.</p>
+                    <p className="text-xs text-slate-500">Tons escuros e elegantes para alto padrão.</p>
                   </label>
                   <label
                     className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
                       formData.template === 'modern'
-                        ? 'border-blue-500 bg-blue-500/10'
-                        : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
+                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
                     <input
@@ -328,40 +328,23 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     <div className="font-bold text-blue-400 mb-1 flex items-center gap-1">
                       Moderno <Icons.Zap size={14} />
                     </div>
-                    <p className="text-xs text-slate-400">Layout arrojado, cantos arredondados e cores vivas.</p>
-                  </label>
-                  <label
-                    className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
-                      formData.template === 'custom'
-                        ? 'border-purple-500 bg-purple-500/10'
-                        : 'border-white/10 bg-[#1a1a1a] hover:border-white/30'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="template"
-                      className="hidden"
-                      value="custom"
-                      checked={formData.template === 'custom'}
-                      onChange={(e) => setFormData({ ...formData, template: e.target.value })}
-                    />
-                    <div className="font-bold text-purple-400 mb-1 flex items-center gap-1">
-                      Sob Medida <Icons.Code size={14} />
-                    </div>
-                    <p className="text-xs text-slate-400">Design exclusivo feito pela nossa equipe.</p>
+                    <p className="text-xs text-slate-500">Layout arrojado, cantos arredondados e cores vivas.</p>
                   </label>
                 </div>
+                <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                  Trabalhamos somente com templates pré-definidos para garantir velocidade, estabilidade e suporte contínuo.
+                </p>
               </div>
               {errorMsg && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-lg">{errorMsg}</div>
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">{errorMsg}</div>
               )}
             </div>
           </div>
-          <div className="p-6 border-t border-white/10 bg-[#111] flex justify-end">
+          <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-end">
             <button
               type="submit"
               disabled={isLoading}
-              className="bg-brand-600 hover:bg-brand-500 text-white px-8 py-3 rounded-lg font-bold flex items-center gap-2 disabled:opacity-50"
+              className="bg-brand-600 hover:bg-brand-500 text-white px-8 py-3 rounded-lg font-bold flex items-center gap-2 disabled:opacity-50 shadow-sm"
             >
               {isLoading ? (
                 <>
