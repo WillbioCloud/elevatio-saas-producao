@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useLayoutEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
 // ============================================================
 // ELEVATIO VENDAS — Login / Cadastro Unificado
@@ -132,7 +133,7 @@ const RightPanel: React.FC<{ isSignup: boolean }> = ({ isSignup }) => {
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, signIn, signUp } = useAuth();
+  const { user, signIn } = useAuth();
 
   // Detectar modo: se vier ?mode=signup ou ?plan=xxx, abre cadastro
   const [isLogin, setIsLogin] = useState(() => {
@@ -186,7 +187,16 @@ const Login: React.FC = () => {
         // Salva plano no localStorage para o wizard consumir depois
         if (selectedPlan) localStorage.setItem('selectedPlan', selectedPlan);
 
-        const { error } = await signUp(name.trim(), email.trim(), password);
+        const { error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: {
+              full_name: name.trim(),
+              company_name: companyName.trim(),
+            },
+          },
+        });
         if (error) throw error;
 
         navigate('/admin/dashboard', { replace: true });

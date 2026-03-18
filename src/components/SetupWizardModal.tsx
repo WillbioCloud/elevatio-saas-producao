@@ -35,13 +35,15 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [domainExtension, setDomainExtension] = useState('.com.br');
+  const [domainStatus, setDomainStatus] = useState<'idle' | 'loading' | 'available' | 'taken' | 'error'>('idle');
   
   // Normaliza o nome do plano para evitar falhas na busca do banco de dados (ex: professional -> profissional)
   const initialPlanRaw = location.state?.plan || localStorage.getItem('trimoveis_selected_plan') || localStorage.getItem('elevatio_selected_plan') || 'profissional';
   const initialPlan = normalizePlanFromNav(initialPlanRaw) || 'profissional';
   
   const [formData, setFormData] = useState({
-    companyName: '',
+    companyName: user?.user_metadata?.company_name || '',
     document: '',
     phone: '',
     domain: '',
@@ -50,6 +52,44 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     plan: initialPlan,
     billingCycle: location.state?.cycle || localStorage.getItem('trimoveis_billing_cycle') || 'monthly'
   });
+
+  const checkDomainAvailability = async () => {
+    const sanitizedDomain = (formData.domain || '')
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, '')
+      .replace(/[^a-z0-9-]/g, '');
+
+    if (!sanitizedDomain) {
+      setDomainStatus('error');
+      return;
+    }
+
+    const fullDomain = `${sanitizedDomain}${domainExtension}`;
+    const endpoint = domainExtension === '.com.br'
+      ? `https://rdap.registro.br/domain/${fullDomain}`
+      : `https://rdap.verisign.com/com/v1/domain/${fullDomain}`;
+
+    setDomainStatus('loading');
+
+    try {
+      const response = await fetch(endpoint);
+
+      if (response.status === 404) {
+        setDomainStatus('available');
+        return;
+      }
+
+      if (response.status === 200) {
+        setDomainStatus('taken');
+        return;
+      }
+
+      setDomainStatus('error');
+    } catch (_error) {
+      setDomainStatus('error');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,6 +143,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
             role: 'admin',
             active: true,
             phone: formData.phone,
+            cpf_cnpj: formData.document,
           })
           .eq('id', user.id);
 
@@ -249,20 +290,77 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                   <label className="block text-sm text-gray-400 mb-2">Você já possui um domínio registrado?</label>
                   <select
                     value={formData.hasDomain}
-                    onChange={(e) => setFormData({ ...formData, hasDomain: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, hasDomain: e.target.value });
+                      setDomainStatus('idle');
+                    }}
                     className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500 mb-3"
                   >
                     <option value="nao">Não, quero usar um subdomínio grátis do Elevatio</option>
                     <option value="sim">Sim, já tenho o meu próprio domínio</option>
+                    <option value="registrar">Quero registrar um novo domínio</option>
                   </select>
-                  <input
-                    required
-                    type="text"
-                    value={formData.domain}
-                    onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-                    className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500"
-                    placeholder={formData.hasDomain === 'sim' ? 'Ex: minhacorretora.com.br' : 'Ex: minhacorretora'}
-                  />
+                  {formData.hasDomain === 'registrar' ? (
+                    <div>
+                      <div className="flex gap-2">
+                        <input
+                          required
+                          type="text"
+                          value={formData.domain}
+                          onChange={(e) => {
+                            setFormData({ ...formData, domain: e.target.value });
+                            setDomainStatus('idle');
+                          }}
+                          className="flex-1 bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500"
+                          placeholder="Ex: minhacorretora"
+                        />
+                        <select
+                          value={domainExtension}
+                          onChange={(e) => {
+                            setDomainExtension(e.target.value);
+                            setDomainStatus('idle');
+                          }}
+                          className="bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-2.5 text-white outline-none focus:border-brand-500"
+                        >
+                          <option value=".com.br">.com.br</option>
+                          <option value=".com">.com</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={checkDomainAvailability}
+                          className="bg-brand-600 hover:bg-brand-500 text-white rounded-lg px-4 py-2.5 font-semibold transition-colors"
+                        >
+                          Verificar
+                        </button>
+                      </div>
+                      <div className="mt-2 min-h-[20px] text-sm">
+                        {domainStatus === 'loading' && (
+                          <span className="text-gray-300 inline-flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Verificando...
+                          </span>
+                        )}
+                        {domainStatus === 'available' && (
+                          <span className="text-green-400">Uhull! Domínio disponível! 🎉</span>
+                        )}
+                        {domainStatus === 'taken' && (
+                          <span className="text-red-400">Este domínio já está em uso. Tente outro.</span>
+                        )}
+                        {domainStatus === 'error' && (
+                          <span className="text-red-400">Não foi possível verificar o domínio agora.</span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <input
+                      required
+                      type="text"
+                      value={formData.domain}
+                      onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-2.5 text-white outline-none focus:border-brand-500"
+                      placeholder={formData.hasDomain === 'sim' ? 'Ex: minhacorretora.com.br' : 'Ex: minhacorretora'}
+                    />
+                  )}
                 </div>
               </div>
               <hr className="border-white/5" />
