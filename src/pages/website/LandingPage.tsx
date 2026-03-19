@@ -794,13 +794,17 @@ const PlanComparison: React.FC<{ plans: any[]; features: PlanComparisonFeature[]
   };
 
   // Helper: renderiza célula de valor
-  const renderCell = (val: any, type?: PlanComparisonFeature['type']) => {
+  const renderCell = (val: any, type?: PlanComparisonFeature['type'], featureKey?: string) => {
     if (type === 'boolean') {
       return val ? (
         <Check className="w-5 h-5 mx-auto text-green-400" strokeWidth={2.5} />
       ) : (
         <X className="w-5 h-5 mx-auto text-red-400" strokeWidth={2.5} />
       );
+    }
+
+    if (featureKey === 'max_contracts' && val === 0) {
+      return <X className="w-5 h-5 mx-auto text-red-400" strokeWidth={2.5} />;
     }
 
     if (val === null || val === undefined || val === '') {
@@ -885,7 +889,7 @@ const PlanComparison: React.FC<{ plans: any[]; features: PlanComparisonFeature[]
                     const isPro = plan.is_popular;
                     return (
                       <td key={pi} style={{ padding: '14px 16px', textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.04)', background: isPro ? 'rgba(14,165,233,0.03)' : 'transparent' }}>
-                        {renderCell(value, feature.type)}
+                        {renderCell(value, feature.type, feature.key)}
                       </td>
                     );
                   })}
@@ -1080,6 +1084,7 @@ export default function LandingPage() {
     comparisonData = [
       { name: 'Usuários', key: 'max_users' },
       { name: 'Imóveis', key: 'max_properties' },
+      { name: 'Contratos Ativos', key: 'max_contracts', type: 'text' },
       { name: 'Fotos/Imóvel', key: 'max_photos' },
       { name: 'CRM Básico', key: 'has_funnel', type: 'boolean' },
       { name: 'CRM Pipeline', key: 'has_pipeline', type: 'boolean' },

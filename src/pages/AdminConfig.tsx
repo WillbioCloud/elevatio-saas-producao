@@ -923,6 +923,11 @@ const AdminConfig: React.FC = () => {
     (p) => String(p.id || '').toLowerCase() === activePlanId || String(p.name || '').toLowerCase() === activePlanId,
   );
   const currentPlanDetails = currentPlanIndex !== -1 ? plans[currentPlanIndex] : null;
+  const getPlanHighlights = (plan: any) => [
+    ...(plan?.max_contracts > 0 ? [`Até ${plan.max_contracts} contratos ativos`] : []),
+    ...(Array.isArray(plan?.features) ? plan.features : []),
+  ];
+  const currentPlanFeatureList = currentPlanDetails ? getPlanHighlights(currentPlanDetails) : [];
   const displayPlanName = currentPlanDetails?.name || (rawPlan ? rawPlan.toUpperCase() : 'PLANO PADRÃO');
 
   const toggleSound = () => {
@@ -1631,6 +1636,7 @@ const AdminConfig: React.FC = () => {
                     const planId = String(plan.id || plan.name || '').toLowerCase();
                     const planIndex = plans.findIndex((p) => String(p.id || p.name || '').toLowerCase() === planId);
                     const isDowngrade = currentPlanIndex !== -1 && planIndex < currentPlanIndex;
+                    const planFeatureList = getPlanHighlights(plan);
                     
                     // Verifica se é mudança de ciclo no mesmo plano
                     const isCycleUpgrade = planId === activePlanId && contract?.billing_cycle === 'monthly' && billingCycle === 'yearly';
@@ -1667,15 +1673,15 @@ const AdminConfig: React.FC = () => {
                           </div>
                         </div>
                         <ul className="space-y-3 mb-8 flex-grow">
-                          {(plan.features || []).slice(0, 4).map((feature: string, i: number) => (
+                          {planFeatureList.slice(0, 4).map((feature: string, i: number) => (
                             <li key={i} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
                               <Icons.Check size={16} className="text-brand-500 shrink-0 mt-0.5" />
                               <span>{feature}</span>
                             </li>
                           ))}
-                          {(plan.features || []).length > 4 && (
+                          {planFeatureList.length > 4 && (
                             <li className="text-xs text-brand-600 font-medium pl-6">
-                              + {(plan.features || []).length - 4} outras vantagens
+                              + {planFeatureList.length - 4} outras vantagens
                             </li>
                           )}
                         </ul>
@@ -2582,7 +2588,7 @@ const AdminConfig: React.FC = () => {
                 O que está incluído:
               </h4>
               <ul className="space-y-3 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
-                {currentPlanDetails.features.map((feature, i) => (
+                {currentPlanFeatureList.map((feature, i) => (
                   <li key={i} className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300">
                     <div className="bg-brand-100 dark:bg-brand-900/30 p-1 rounded-full shrink-0 mt-0.5">
                       <Icons.Check size={14} className="text-brand-600 dark:text-brand-400" />

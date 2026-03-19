@@ -13,6 +13,7 @@ interface Plan {
   features: string[];
   max_users: number;
   max_properties: number;
+  max_contracts: number;
   max_photos: number;
   has_funnel: boolean;
   has_pipeline: boolean;
@@ -38,6 +39,7 @@ const newPlanTemplate: Plan = {
   features: [],
   max_users: 0,
   max_properties: 0,
+  max_contracts: 0,
   max_photos: 0,
   has_funnel: false,
   has_pipeline: false,
@@ -94,7 +96,7 @@ export default function SaasPlans() {
     const { data, error } = await supabase
       .from("saas_plans")
       .select(
-        "id, name, price, description, icon, badge, is_popular, features, max_users, max_properties, max_photos, has_funnel, has_pipeline, has_gamification, has_erp, ia_limit, aura_access, has_site, has_portals, has_email_auto, has_api, support_level"
+        "id, name, price, description, icon, badge, is_popular, features, max_users, max_properties, max_contracts, max_photos, has_funnel, has_pipeline, has_gamification, has_erp, ia_limit, aura_access, has_site, has_portals, has_email_auto, has_api, support_level"
       )
       .order("price", { ascending: true });
 
@@ -140,9 +142,10 @@ export default function SaasPlans() {
       badge: editingPlan.badge,
       is_popular: editingPlan.is_popular,
       features: editingPlan.features,
-      max_users: editingPlan.max_users,
-      max_properties: editingPlan.max_properties,
-      max_photos: editingPlan.max_photos,
+      max_users: Number(editingPlan.max_users),
+      max_properties: Number(editingPlan.max_properties),
+      max_contracts: Number(editingPlan.max_contracts),
+      max_photos: Number(editingPlan.max_photos),
       has_funnel: editingPlan.has_funnel,
       has_pipeline: editingPlan.has_pipeline,
       has_gamification: editingPlan.has_gamification,
@@ -253,6 +256,7 @@ export default function SaasPlans() {
               </div>
 
               <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
+                <span className="col-span-2 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">Contratos Ativos: {plan.max_contracts > 0 ? plan.max_contracts : "Não incluído"}</span>
                 <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">👥 {plan.max_users} usuários</span>
                 <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">🏠 {plan.max_properties} imóveis</span>
                 <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">📸 {plan.max_photos} fotos</span>
@@ -366,7 +370,7 @@ export default function SaasPlans() {
 
               <div className="pt-4 border-t border-slate-100 dark:border-dark-border space-y-4">
                 <h4 className="font-bold text-slate-900 dark:text-white">Limites Numéricos</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Usuários</label>
                     <input
@@ -382,6 +386,15 @@ export default function SaasPlans() {
                       type="number"
                       value={editingPlan.max_properties}
                       onChange={(e) => setEditingPlan({ ...editingPlan, max_properties: Number(e.target.value) })}
+                      className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Máx. Contratos Ativos</label>
+                    <input
+                      type="number"
+                      value={editingPlan.max_contracts}
+                      onChange={(e) => setEditingPlan({ ...editingPlan, max_contracts: Number(e.target.value) })}
                       className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
                     />
                   </div>
