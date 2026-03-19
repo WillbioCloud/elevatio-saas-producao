@@ -1,11 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Icons } from "../../components/Icons";
-import { supabase } from '../../lib/supabase';
-
-interface PlanFeature {
-  text: string;
-  highlight?: string;
-}
+import { supabase } from "../../lib/supabase";
 
 interface Plan {
   id: string;
@@ -13,8 +8,23 @@ interface Plan {
   price: number;
   description: string;
   icon: string;
+  badge: string;
   is_popular: boolean;
-  features: PlanFeature[];
+  features: string[];
+  max_users: number;
+  max_properties: number;
+  max_photos: number;
+  has_funnel: boolean;
+  has_pipeline: boolean;
+  has_gamification: boolean;
+  has_erp: boolean;
+  ia_limit: string;
+  aura_access: string;
+  has_site: boolean;
+  has_portals: boolean;
+  has_email_auto: boolean;
+  has_api: boolean;
+  support_level: string;
 }
 
 const newPlanTemplate: Plan = {
@@ -23,9 +33,35 @@ const newPlanTemplate: Plan = {
   price: 0,
   description: "",
   icon: "star",
+  badge: "",
   is_popular: false,
-  features: []
+  features: [],
+  max_users: 0,
+  max_properties: 0,
+  max_photos: 0,
+  has_funnel: false,
+  has_pipeline: false,
+  has_gamification: false,
+  has_erp: false,
+  ia_limit: "",
+  aura_access: "",
+  has_site: false,
+  has_portals: false,
+  has_email_auto: false,
+  has_api: false,
+  support_level: ""
 };
+
+const moduleLabels: Array<{ key: keyof Plan; label: string }> = [
+  { key: "has_funnel", label: "Funil" },
+  { key: "has_pipeline", label: "Pipeline" },
+  { key: "has_gamification", label: "Gamificação" },
+  { key: "has_erp", label: "ERP" },
+  { key: "has_site", label: "Site" },
+  { key: "has_portals", label: "Portais" },
+  { key: "has_email_auto", label: "E-mail automático" },
+  { key: "has_api", label: "API" }
+];
 
 export default function SaasPlans() {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -35,17 +71,17 @@ export default function SaasPlans() {
 
   const renderPlanIcon = (iconName: string) => {
     switch (iconName?.toLowerCase()) {
-      case 'rocket':
+      case "rocket":
         return <Icons.Rocket size={28} className="text-brand-500" />;
-      case 'star':
+      case "star":
         return <Icons.Star size={28} className="text-brand-500" />;
-      case 'crown':
+      case "crown":
         return <Icons.Crown size={28} className="text-brand-500" />;
-      case 'building':
+      case "building":
         return <Icons.Building2 size={28} className="text-brand-500" />;
-      case 'zap':
+      case "zap":
         return <Icons.Zap size={28} className="text-brand-500" />;
-      case 'shield':
+      case "shield":
         return <Icons.Shield size={28} className="text-brand-500" />;
       default:
         return <Icons.Package size={28} className="text-brand-500" />;
@@ -57,11 +93,19 @@ export default function SaasPlans() {
 
     const { data, error } = await supabase
       .from("saas_plans")
-      .select("id, name, price, description, icon, is_popular, features")
+      .select(
+        "id, name, price, description, icon, badge, is_popular, features, max_users, max_properties, max_photos, has_funnel, has_pipeline, has_gamification, has_erp, ia_limit, aura_access, has_site, has_portals, has_email_auto, has_api, support_level"
+      )
       .order("price", { ascending: true });
 
     if (!error && data) {
-      setPlans(data as Plan[]);
+      const normalizedPlans = (data as Partial<Plan>[]).map((plan) => ({
+        ...newPlanTemplate,
+        ...plan,
+        features: Array.isArray(plan.features) ? plan.features : []
+      }));
+
+      setPlans(normalizedPlans);
     }
 
     setIsLoading(false);
@@ -72,7 +116,11 @@ export default function SaasPlans() {
   }, []);
 
   const handleEdit = (plan: Plan) => {
-    setEditingPlan({ ...plan, features: plan.features || [] });
+    setEditingPlan({
+      ...newPlanTemplate,
+      ...plan,
+      features: Array.isArray(plan.features) ? plan.features : []
+    });
     setIsEditing(true);
   };
 
@@ -89,16 +137,35 @@ export default function SaasPlans() {
       price: editingPlan.price,
       description: editingPlan.description,
       icon: editingPlan.icon,
+      badge: editingPlan.badge,
       is_popular: editingPlan.is_popular,
-      features: editingPlan.features
+      features: editingPlan.features,
+      max_users: editingPlan.max_users,
+      max_properties: editingPlan.max_properties,
+      max_photos: editingPlan.max_photos,
+      has_funnel: editingPlan.has_funnel,
+      has_pipeline: editingPlan.has_pipeline,
+      has_gamification: editingPlan.has_gamification,
+      has_erp: editingPlan.has_erp,
+      ia_limit: editingPlan.ia_limit,
+      aura_access: editingPlan.aura_access,
+      has_site: editingPlan.has_site,
+      has_portals: editingPlan.has_portals,
+      has_email_auto: editingPlan.has_email_auto,
+      has_api: editingPlan.has_api,
+      support_level: editingPlan.support_level
     };
 
-    if (!editingPlan.id) {
-      await supabase.from("saas_plans").insert([payload]);
-    } else {
-      await supabase.from("saas_plans").update(payload).eq("id", editingPlan.id);
+    const { error } = editingPlan.id
+      ? await supabase.from("saas_plans").update(payload).eq("id", editingPlan.id)
+      : await supabase.from("saas_plans").insert([payload]);
+
+    if (error) {
+      alert("Erro ao salvar o plano. Verifique os dados e tente novamente.");
+      return;
     }
 
+    alert("Plano salvo com sucesso!");
     await fetchPlans();
     setIsEditing(false);
     setEditingPlan(null);
@@ -140,7 +207,7 @@ export default function SaasPlans() {
             <div
               key={plan.id}
               className={`relative flex flex-col bg-white dark:bg-dark-card border rounded-3xl p-6 transition-all shadow-sm hover:shadow-md ${
-                plan.is_popular ? 'border-brand-500 ring-1 ring-brand-500/50' : 'border-slate-200 dark:border-dark-border'
+                plan.is_popular ? "border-brand-500 ring-1 ring-brand-500/50" : "border-slate-200 dark:border-dark-border"
               }`}
             >
               {plan.is_popular && (
@@ -152,10 +219,15 @@ export default function SaasPlans() {
 
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-brand-50 dark:bg-brand-900/20 rounded-xl">
-                    {renderPlanIcon(plan.icon)}
+                  <div className="p-2.5 bg-brand-50 dark:bg-brand-900/20 rounded-xl">{renderPlanIcon(plan.icon)}</div>
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">{plan.name}</h3>
+                    {plan.badge && (
+                      <span className="inline-flex mt-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
+                        {plan.badge}
+                      </span>
+                    )}
                   </div>
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">{plan.name}</h3>
                 </div>
                 <div className="flex gap-1">
                   <button
@@ -173,22 +245,40 @@ export default function SaasPlans() {
                 </div>
               </div>
 
-              <p className="text-sm text-slate-500 dark:text-slate-400 min-h-[40px] mb-4">
-                {plan.description}
-              </p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 min-h-[40px] mb-4">{plan.description}</p>
 
-              <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">
-                  R$ {plan.price.toFixed(2).replace('.', ',')}
-                </span>
+              <div className="flex items-baseline gap-1 mb-4">
+                <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">R$ {plan.price.toFixed(2).replace(".", ",")}</span>
                 <span className="text-sm font-medium text-slate-500 dark:text-slate-400">/mês</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
+                <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">👥 {plan.max_users} usuários</span>
+                <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">🏠 {plan.max_properties} imóveis</span>
+                <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">📸 {plan.max_photos} fotos</span>
+                <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">🧠 IA {plan.ia_limit || "-"}</span>
+                <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">✨ Aura {plan.aura_access || "-"}</span>
+                <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">🛟 {plan.support_level || "Suporte"}</span>
+              </div>
+
+              <div className="flex flex-wrap gap-2 mb-4">
+                {moduleLabels.map((module) =>
+                  plan[module.key] ? (
+                    <span
+                      key={module.key}
+                      className="inline-flex px-2 py-1 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                    >
+                      {module.label}
+                    </span>
+                  ) : null
+                )}
               </div>
 
               <div className="space-y-3 flex-1 border-t border-slate-100 dark:border-dark-border pt-4">
                 {plan.features?.map((feature, idx) => (
                   <div key={idx} className="flex items-start gap-3">
                     <Icons.CheckCircle2 size={18} className="text-brand-500 shrink-0 mt-0.5" />
-                    <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{feature.text}</span>
+                    <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{feature}</span>
                   </div>
                 ))}
               </div>
@@ -197,10 +287,9 @@ export default function SaasPlans() {
         </div>
       )}
 
-      {/* EDITOR MODAL LADO DIREITO */}
       {isEditing && editingPlan && (
         <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md bg-white dark:bg-dark-card h-full border-l border-slate-200 dark:border-dark-border shadow-2xl flex flex-col animate-slide-left">
+          <div className="w-full max-w-2xl bg-white dark:bg-dark-card h-full border-l border-slate-200 dark:border-dark-border shadow-2xl flex flex-col animate-slide-left">
             <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-dark-border">
               <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
                 <Icons.Settings size={20} className="text-brand-500" />
@@ -214,75 +303,176 @@ export default function SaasPlans() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Nome do Plano</label>
-                <input
-                  value={editingPlan.name}
-                  onChange={e => setEditingPlan({...editingPlan, name: e.target.value})}
-                  className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Preço (R$)</label>
-                <input
-                  type="number"
-                  value={editingPlan.price}
-                  onChange={e => setEditingPlan({...editingPlan, price: Number(e.target.value)})}
-                  className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
-                />
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Nome do Plano</label>
+                  <input
+                    value={editingPlan.name}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, name: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Badge do Plano</label>
+                  <input
+                    value={editingPlan.badge}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, badge: e.target.value })}
+                    placeholder="Ex: Recomendado"
+                    className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Preço (R$)</label>
+                  <input
+                    type="number"
+                    value={editingPlan.price}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, price: Number(e.target.value) })}
+                    className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Ícone (Nome)</label>
+                  <input
+                    value={editingPlan.icon}
+                    onChange={(e) => setEditingPlan({ ...editingPlan, icon: e.target.value })}
+                    placeholder="Ex: rocket, star, crown"
+                    className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                  />
+                </div>
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Descrição Curta</label>
                 <textarea
                   value={editingPlan.description}
-                  onChange={e => setEditingPlan({...editingPlan, description: e.target.value})}
+                  onChange={(e) => setEditingPlan({ ...editingPlan, description: e.target.value })}
                   className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all resize-none h-20"
                 />
               </div>
 
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5">Ícone (Nome)</label>
-                  <input
-                    value={editingPlan.icon}
-                    onChange={e => setEditingPlan({...editingPlan, icon: e.target.value})}
-                    placeholder="Ex: rocket, star, crown"
-                    className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
-                  />
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="is_popular"
+                  checked={editingPlan.is_popular}
+                  onChange={(e) => setEditingPlan({ ...editingPlan, is_popular: e.target.checked })}
+                  className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500 cursor-pointer"
+                />
+                <label htmlFor="is_popular" className="text-sm font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+                  Destacar como Mais Popular
+                </label>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 dark:border-dark-border space-y-4">
+                <h4 className="font-bold text-slate-900 dark:text-white">Limites Numéricos</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Usuários</label>
+                    <input
+                      type="number"
+                      value={editingPlan.max_users}
+                      onChange={(e) => setEditingPlan({ ...editingPlan, max_users: Number(e.target.value) })}
+                      className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Imóveis</label>
+                    <input
+                      type="number"
+                      value={editingPlan.max_properties}
+                      onChange={(e) => setEditingPlan({ ...editingPlan, max_properties: Number(e.target.value) })}
+                      className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Fotos</label>
+                    <input
+                      type="number"
+                      value={editingPlan.max_photos}
+                      onChange={(e) => setEditingPlan({ ...editingPlan, max_photos: Number(e.target.value) })}
+                      className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 mt-7">
-                  <input
-                    type="checkbox"
-                    id="is_popular"
-                    checked={editingPlan.is_popular}
-                    onChange={e => setEditingPlan({...editingPlan, is_popular: e.target.checked})}
-                    className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500 cursor-pointer"
-                  />
-                  <label htmlFor="is_popular" className="text-sm font-bold text-slate-700 dark:text-slate-300 cursor-pointer">Destaque</label>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="font-bold text-slate-900 dark:text-white">Limites de Texto</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Limite IA</label>
+                    <input
+                      value={editingPlan.ia_limit}
+                      onChange={(e) => setEditingPlan({ ...editingPlan, ia_limit: e.target.value })}
+                      placeholder="Ex: 50/dia"
+                      className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Acesso Aura</label>
+                    <input
+                      value={editingPlan.aura_access}
+                      onChange={(e) => setEditingPlan({ ...editingPlan, aura_access: e.target.value })}
+                      placeholder="Ex: Liberada"
+                      className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Nível de Suporte</label>
+                    <input
+                      value={editingPlan.support_level}
+                      onChange={(e) => setEditingPlan({ ...editingPlan, support_level: e.target.value })}
+                      placeholder="Ex: Prioritário"
+                      className="w-full bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="font-bold text-slate-900 dark:text-white">Módulos do CRM</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {moduleLabels.map((module) => (
+                    <label
+                      key={module.key}
+                      className="flex items-center justify-between bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2"
+                    >
+                      <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{module.label}</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editingPlan[module.key])}
+                        onChange={(e) =>
+                          setEditingPlan({
+                            ...editingPlan,
+                            [module.key]: e.target.checked
+                          })
+                        }
+                        className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500 cursor-pointer"
+                      />
+                    </label>
+                  ))}
                 </div>
               </div>
 
               <div className="pt-4 border-t border-slate-100 dark:border-dark-border">
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Funcionalidades</label>
                 <div className="space-y-2">
-                  {editingPlan.features?.map((feat, idx) => (
+                  {editingPlan.features?.map((feature, idx) => (
                     <div key={idx} className="flex gap-2">
                       <input
-                        value={feat.text}
-                        onChange={e => {
+                        value={feature}
+                        onChange={(e) => {
                           const newFeats = [...editingPlan.features];
-                          newFeats[idx].text = e.target.value;
-                          setEditingPlan({...editingPlan, features: newFeats});
+                          newFeats[idx] = e.target.value;
+                          setEditingPlan({ ...editingPlan, features: newFeats });
                         }}
                         className="flex-1 bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 outline-none transition-all"
                       />
                       <button
                         onClick={() => {
                           const newFeats = editingPlan.features.filter((_, i) => i !== idx);
-                          setEditingPlan({...editingPlan, features: newFeats});
+                          setEditingPlan({ ...editingPlan, features: newFeats });
                         }}
                         className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
                       >
@@ -291,7 +481,7 @@ export default function SaasPlans() {
                     </div>
                   ))}
                   <button
-                    onClick={() => setEditingPlan({...editingPlan, features: [...(editingPlan.features || []), { text: '' }]})}
+                    onClick={() => setEditingPlan({ ...editingPlan, features: [...(editingPlan.features || []), ""] })}
                     className="w-full py-2.5 border-2 border-dashed border-slate-200 dark:border-dark-border rounded-xl text-sm font-bold text-slate-500 hover:text-brand-600 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center justify-center gap-2 mt-2"
                   >
                     <Icons.Plus size={16} />
