@@ -6,6 +6,7 @@ import { autoTagContractTemplate } from '../services/ai';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import GamificationModal from '../components/GamificationModal';
+import FidelityTermsModal from '../components/FidelityTermsModal';
 import { PLANS } from '../config/plans';
 import { uploadCompanyAsset } from '../lib/storage';
 import { SiteData } from '../types';
@@ -241,6 +242,7 @@ const AdminConfig: React.FC = () => {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [acceptFidelity, setAcceptFidelity] = useState(false);
   const [acceptedFidelityTerms, setAcceptedFidelityTerms] = useState(false);
+  const [showFidelityModal, setShowFidelityModal] = useState(false);
   const [isUpgrading, setIsUpgrading] = useState<string | null>(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [contractTemplates, setContractTemplates] = useState<any[]>([]);
@@ -749,11 +751,6 @@ const AdminConfig: React.FC = () => {
   };
 
   const handleUpgrade = async (planId: string) => {
-    if (billingCycle === 'monthly' && acceptFidelity && !acceptedFidelityTerms) {
-      alert('Você precisa aceitar os termos de fidelidade para continuar.');
-      return;
-    }
-
     setIsUpgrading(planId);
     const previousContract = contract;
     try {
@@ -1440,39 +1437,39 @@ const AdminConfig: React.FC = () => {
 
             {/* Checkbox de Fidelidade para o plano Mensal */}
             {billingCycle === 'monthly' && (
-              <label className="flex items-center gap-2 mt-4 cursor-pointer bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 p-3 rounded-xl w-fit transition-colors hover:bg-brand-100 dark:hover:bg-brand-900/40">
-                <input
-                  type="checkbox"
-                  checked={acceptFidelity}
-                  onChange={(e) => {
-                    setAcceptFidelity(e.target.checked);
-                    if (!e.target.checked) {
-                      setAcceptedFidelityTerms(false);
-                    }
-                  }}
-                  className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 cursor-pointer"
-                />
-                <span className="text-sm font-medium text-brand-900 dark:text-brand-100">
-                  Aceito o contrato de fidelidade (12 meses) para ganhar <strong className="text-brand-600 dark:text-brand-400">20% de desconto</strong>
-                </span>
-              </label>
-            )}
-
-            {billingCycle === 'monthly' && acceptFidelity && (
-              <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl p-4 max-w-2xl">
-                <p className="text-sm text-slate-700 leading-relaxed">
-                  Ao ativar o desconto de fidelidade, você se compromete a permanecer no plano por 12 meses. O cancelamento antecipado estará sujeito a uma multa rescisória de 30% sobre o valor dos meses restantes.
-                </p>
-                <label className="mt-3 flex items-start gap-2 text-sm font-medium text-slate-800 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={acceptedFidelityTerms}
-                    onChange={(e) => setAcceptedFidelityTerms(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 text-brand-600 rounded focus:ring-brand-500 cursor-pointer"
-                  />
-                  <span>Li e aceito os Termos de Fidelidade de 12 meses.</span>
-                </label>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (acceptFidelity) {
+                    setAcceptFidelity(false);
+                    setAcceptedFidelityTerms(false);
+                    return;
+                  }
+                  setShowFidelityModal(true);
+                }}
+                className={`mt-4 w-fit rounded-xl border p-3 transition-colors ${
+                  acceptFidelity
+                    ? 'bg-brand-100 dark:bg-brand-900/30 border-brand-300 dark:border-brand-700'
+                    : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      acceptFidelity ? 'bg-brand-600' : 'bg-slate-400 dark:bg-slate-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                        acceptFidelity ? 'translate-x-5' : 'translate-x-1'
+                      }`}
+                    />
+                  </span>
+                  <span className="text-sm font-medium text-slate-800 dark:text-slate-100 text-left">
+                    Ativar fidelidade de 12 meses para ganhar <strong className="text-brand-600 dark:text-brand-400">20% de desconto</strong>
+                  </span>
+                </div>
+              </button>
             )}
           </div>
 
@@ -1613,7 +1610,6 @@ const AdminConfig: React.FC = () => {
                     // Verifica se é mudança de ciclo no mesmo plano
                     const isCycleUpgrade = plan.id === activePlanId && contract?.billing_cycle === 'monthly' && billingCycle === 'yearly';
                     const isCycleDowngrade = plan.id === activePlanId && contract?.billing_cycle === 'yearly' && billingCycle === 'monthly';
-                    const requiresAcceptedFidelityTerms = billingCycle === 'monthly' && acceptFidelity && !acceptedFidelityTerms;
                     const isReactivationFlow = contract?.status === 'canceled' || contract?.status === 'expired';
                     
                     return (
@@ -1664,12 +1660,12 @@ const AdminConfig: React.FC = () => {
                               handleUpgrade(plan.id);
                             }
                           }}
-                          disabled={isUpgrading === plan.id || isGeneratingCheckout || isReactivating || (!isReactivationFlow && requiresAcceptedFidelityTerms)}
+                          disabled={isUpgrading === plan.id || isGeneratingCheckout || isReactivating}
                           className={`w-full py-2.5 rounded-xl font-bold transition-colors ${
                             isDowngrade || isCycleDowngrade
                               ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400'
                               : 'bg-brand-50 hover:bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 dark:text-brand-400'
-                          } ${(!isReactivationFlow && requiresAcceptedFidelityTerms) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          }`}
                         >
                           {(isUpgrading === plan.id || isReactivating)
                             ? 'Processando...' 
@@ -1703,6 +1699,19 @@ const AdminConfig: React.FC = () => {
         isOpen={isXpModalOpen}
         onClose={() => setIsXpModalOpen(false)}
         xpPoints={Number(user?.xp_points || 0)}
+      />
+
+      <FidelityTermsModal
+        isOpen={showFidelityModal}
+        onClose={() => setShowFidelityModal(false)}
+        onAccept={() => {
+          setShowFidelityModal(false);
+          setAcceptFidelity(true);
+          setAcceptedFidelityTerms(true);
+        }}
+        companyName={user?.user_metadata?.company_name || profileForm.name || 'Empresa não informada'}
+        ownerName={user?.user_metadata?.full_name || user?.name || 'Responsável não informado'}
+        document={profileForm.cpf_cnpj || 'Documento não informado'}
       />
 
       {/* Modal de Cancelamento */}
