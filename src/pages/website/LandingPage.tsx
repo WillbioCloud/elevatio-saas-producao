@@ -4,6 +4,7 @@ import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ScrollSmoother } from 'gsap/ScrollSmoother';
 import { Check, Minus, Bot, Target, FileSignature, Headset, Kanban, Zap } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 gsap.registerPlugin(ScrollTrigger, ScrollSmoother);
 
@@ -12,80 +13,16 @@ gsap.registerPlugin(ScrollTrigger, ScrollSmoother);
 // Cards: novo design Webflow | Comparação: tabela completa
 // ============================================================
 
-// ── Dados dos planos (campos expandidos da tabela completa) ──
-const PLANS = [
-  {
-    name: 'Starter', price: 54.90,
-    desc: 'Ideal para corretores independentes que estão começando.',
-    highlight: false,
-    features: ['Até 2 usuários', 'Até 50 imóveis', 'Até 25 fotos/imóvel', '50 descrições com IA/mês', 'CRM Básico'],
-    // Capacidade
-    users: '2', properties: '50', photos: '40',
-    // CRM
-    funnel: true, pipeline: true, gamification: false, erp: false,
-    // IA
-    ia: '50/dia', aura: false,
-    // Marketing
-    site: true, portals: true, email_auto: false, api: false,
-    // Suporte
-    support: 'Email',
-  },
-  {
-    name: 'Basic', price: 74.90,
-    desc: 'Para pequenas imobiliárias com foco em crescimento.',
-    highlight: false,
-    features: ['Até 5 usuários', 'Até 400 imóveis', 'Até 35 fotos/imóvel', 'Pipeline de Leads', 'Gestão de Tarefas'],
-    users: '5', properties: '400', photos: '60',
-    funnel: true, pipeline: true, gamification: false, erp: false,
-    ia: '200/dia', aura: false,
-    site: true, portals: true, email_auto: false, api: false,
-    support: 'Email / Chat',
-  },
-  {
-    name: 'Profissional', price: 119.90,
-    desc: 'O padrão da indústria para imobiliárias consolidadas.',
-    highlight: true, badge: 'Mais popular',
-    features: ['Até 8 usuários', 'Até 1.000 imóveis', 'Até 50 fotos/imóvel', 'Contratos e Finanças/15 contratos ativos', 'Gamificação', 'Relatórios Avançados'],
-    users: '8', properties: '1.000', photos: 'Ilimitado',
-    funnel: true, pipeline: true, gamification: true, erp: true,
-    ia: '600/dia', aura: false,
-    site: true, portals: true, email_auto: false, api: true,
-    support: 'Chat Prioritário',
-  },
-  {
-    name: 'Business', price: 179.90,
-    desc: 'Para quem precisa de controle total e automação.',
-    highlight: false,
-    features: ['Até 12 usuários', 'Até 2.000 imóveis', 'Até 50 fotos/imóvel', 'Até 25 contratos ativos', 'Automação de Marketing'],
-    users: '12', properties: '2.000', photos: 'Ilimitado',
-    funnel: true, pipeline: true, gamification: true, erp: true,
-    ia: '1.000/dia', aura: false,
-    site: true, portals: true, email_auto: true, api: true,
-    support: 'WhatsApp',
-  },
-  {
-    name: 'Premium', price: 249.90,
-    desc: 'Tecnologia de ponta com IA para alta performance.',
-    highlight: false,
-    features: ['Até 20 usuários', 'Até 3.500 imóveis', 'Até 65 fotos/imóvel', 'Até 50 contratos ativos', 'Aura AI (Assistente)', 'Integração de Portais'],
-    users: '20', properties: '3.500', photos: 'Ilimitado',
-    funnel: true, pipeline: true, gamification: true, erp: true,
-    ia: '1.450/dia', aura: 'Liberada',
-    site: true, portals: true, email_auto: true, api: true,
-    support: 'WhatsApp VIP',
-  },
-  {
-    name: 'Elite', price: 349.90,
-    desc: 'Sem limites. Para os maiores players do mercado.',
-    highlight: false,
-    features: ['Usuários Ilimitados', 'Imóveis Ilimitados', 'Até 65 fotos/imóvel', 'Até 100 contratos ativos', 'IA Ilimitada', 'Suporte Dedicado 24/7'],
-    users: 'Ilimitado', properties: 'Ilimitado', photos: 'Ilimitado',
-    funnel: true, pipeline: true, gamification: true, erp: true,
-    ia: 'Ilimitado', aura: 'Prioridade VIP',
-    site: true, portals: true, email_auto: true, api: true,
-    support: 'VIP 24/7',
-  },
-];
+interface SaaSPlan {
+  id?: string;
+  name: string;
+  price: number | string;
+  description?: string;
+  is_popular?: boolean;
+  badge?: string;
+  features?: string[];
+  [key: string]: any;
+}
 
 // ── Linhas da tabela de comparação (completa do antigo) ──────
 type CompareRow =
@@ -757,7 +694,7 @@ const Features: React.FC = () => {
 };
 
 // ── PRICING CARDS (novo design Webflow) ───────────────────────
-const Pricing: React.FC = () => {
+const Pricing: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans, loadingPlans }) => {
   const navigate = useNavigate();
   const [annual, setAnnual] = useState(false);
   const ref = useRef<HTMLElement>(null);
@@ -783,41 +720,59 @@ const Pricing: React.FC = () => {
           </div>
         </div>
 
+        {loadingPlans ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+            {[1, 2, 3].map((skeleton) => (
+              <div
+                key={skeleton}
+                style={{
+                  borderRadius: 20,
+                  padding: '32px 28px',
+                  border: '1px solid #e2e8f0',
+                  background: '#f8fafc',
+                  minHeight: 360,
+                  animation: 'ev-pulse 1.2s ease-in-out infinite',
+                }}
+              />
+            ))}
+          </div>
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-          {PLANS.map((plan, i) => {
-            const price = annual ? plan.price * 0.85 : plan.price;
+          {plans.map((plan, i) => {
+            const basePrice = Number(plan.price || 0);
+            const price = annual ? basePrice * 0.85 : basePrice;
             return (
-              <div key={i} className={`ev-plan ${!plan.highlight ? 'ev-card-hover' : ''}`} style={{
+              <div key={i} className={`ev-plan ${!plan.is_popular ? 'ev-card-hover' : ''}`} style={{
                 borderRadius: 20, padding: '32px 28px', position: 'relative', overflow: 'hidden',
-                background: plan.highlight ? 'linear-gradient(150deg, #1a3a7a, #0f2460)' : '#fff',
-                border: plan.highlight ? '1px solid rgba(14,165,233,0.4)' : '1px solid #e2e8f0',
-                boxShadow: plan.highlight ? '0 24px 64px rgba(26,86,219,0.25)' : '0 2px 12px rgba(0,0,0,0.04)',
-                transform: plan.highlight ? 'scale(1.03)' : 'scale(1)',
-                zIndex: plan.highlight ? 10 : 1,
+                background: plan.is_popular ? 'linear-gradient(150deg, #1a3a7a, #0f2460)' : '#fff',
+                border: plan.is_popular ? '1px solid rgba(14,165,233,0.4)' : '1px solid #e2e8f0',
+                boxShadow: plan.is_popular ? '0 24px 64px rgba(26,86,219,0.25)' : '0 2px 12px rgba(0,0,0,0.04)',
+                transform: plan.is_popular ? 'scale(1.03)' : 'scale(1)',
+                zIndex: plan.is_popular ? 10 : 1,
               }}>
                 {plan.badge && (
                   <div style={{ position: 'absolute', top: 16, right: 16, background: 'linear-gradient(135deg, #0ea5e9, #38bdf8)', color: '#fff', fontSize: 11, fontWeight: 700, fontFamily: "'DM Sans',sans-serif", padding: '4px 12px', borderRadius: 100 }}>{plan.badge}</div>
                 )}
-                <h3 style={{ fontFamily: "'Sora',sans-serif", fontSize: 18, fontWeight: 800, color: plan.highlight ? '#fff' : '#0f172a', marginBottom: 8 }}>{plan.name}</h3>
-                <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: plan.highlight ? 'rgba(255,255,255,0.7)' : '#64748b', marginBottom: 20 }}>{plan.desc}</p>
+                <h3 style={{ fontFamily: "'Sora',sans-serif", fontSize: 18, fontWeight: 800, color: plan.is_popular ? '#fff' : '#0f172a', marginBottom: 8 }}>{plan.name}</h3>
+                <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: plan.is_popular ? 'rgba(255,255,255,0.7)' : '#64748b', marginBottom: 20 }}>{plan.description}</p>
                 <div style={{ marginBottom: 24 }}>
-                  <span style={{ fontFamily: "'Sora',sans-serif", fontSize: 36, fontWeight: 900, letterSpacing: '-1.5px', color: plan.highlight ? '#7dd3fc' : '#1a56db' }}>R${price.toFixed(2).replace('.',',')}</span>
-                  <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, color: plan.highlight ? 'rgba(255,255,255,0.6)' : '#94a3b8' }}>/mês</span>
+                  <span style={{ fontFamily: "'Sora',sans-serif", fontSize: 36, fontWeight: 900, letterSpacing: '-1.5px', color: plan.is_popular ? '#7dd3fc' : '#1a56db' }}>R${price.toFixed(2).replace('.',',')}</span>
+                  <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, color: plan.is_popular ? 'rgba(255,255,255,0.6)' : '#94a3b8' }}>/mês</span>
                 </div>
                 <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 28px 0', display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
-                  {plan.features.map((feat, j) => (
+                  {(plan.features || []).map((feat, j) => (
                     <li key={j} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                        <circle cx="12" cy="12" r="10" fill={plan.highlight ? 'rgba(14,165,233,0.2)' : 'rgba(26,86,219,0.08)'}/>
-                        <path d="M8 12l3 3 5-6" stroke={plan.highlight ? '#7dd3fc' : '#1a56db'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <circle cx="12" cy="12" r="10" fill={plan.is_popular ? 'rgba(14,165,233,0.2)' : 'rgba(26,86,219,0.08)'}/>
+                        <path d="M8 12l3 3 5-6" stroke={plan.is_popular ? '#7dd3fc' : '#1a56db'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
-                      <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, color: plan.highlight ? 'rgba(255,255,255,0.9)' : '#475569' }}>{feat}</span>
+                      <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, color: plan.is_popular ? 'rgba(255,255,255,0.9)' : '#475569' }}>{feat}</span>
                     </li>
                   ))}
                 </ul>
                 <button
                   onClick={() => navigate(`/admin/login?mode=signup&plan=${plan.name.toLowerCase()}`)}
-                  className={plan.highlight ? 'ev-btn-primary' : 'ev-btn-light'}
+                  className={plan.is_popular ? 'ev-btn-primary' : 'ev-btn-light'}
                   style={{ display: 'block', width: '100%', textAlign: 'center', fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 700, padding: '13px 0', borderRadius: 12, border: 'none', cursor: 'pointer' }}
                 >
                   Testar grátis
@@ -826,6 +781,7 @@ const Pricing: React.FC = () => {
             );
           })}
         </div>
+        )}
 
         {/* CTA para ir à comparação */}
         <div style={{ textAlign: 'center', marginTop: 40 }}>
@@ -843,7 +799,7 @@ const Pricing: React.FC = () => {
 };
 
 // ── COMPARAÇÃO DE PLANOS (tabela completa do antigo, visual novo) ──
-const PlanComparison: React.FC = () => {
+const PlanComparison: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans, loadingPlans }) => {
   const navigate = useNavigate();
   const ref = useRef<HTMLElement>(null);
   const [annual, setAnnual] = useState(false);
@@ -893,6 +849,12 @@ const PlanComparison: React.FC = () => {
 
         {/* Tabela */}
         <div className="ev-custom-scrollbar" style={{ overflowX: 'auto', paddingBottom: 8 }}>
+          {loadingPlans && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 220, color: '#94a3b8', fontFamily: "'DM Sans',sans-serif" }}>
+              Carregando planos...
+            </div>
+          )}
+          {!loadingPlans && (
           <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', minWidth: 1020 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
@@ -900,9 +862,9 @@ const PlanComparison: React.FC = () => {
                 <th style={{ padding: '16px 20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 20, minWidth: 230, fontFamily: "'Sora',sans-serif", color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const }}>
                   Recurso
                 </th>
-                {PLANS.map((plan, i) => {
-                  const price = annual ? plan.price * 0.85 : plan.price;
-                  const isPro = plan.highlight;
+                {plans.map((plan, i) => {
+                  const price = annual ? Number(plan.price || 0) * 0.85 : Number(plan.price || 0);
+                  const isPro = plan.is_popular;
                   return (
                     <th key={i} style={{ padding: '12px 16px', textAlign: 'center', minWidth: 130, background: isPro ? 'rgba(14,165,233,0.08)' : '#070d1f', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
                       {isPro && <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 9, fontWeight: 800, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' as const, marginBottom: 4 }}>⭐ Popular</div>}
@@ -925,7 +887,7 @@ const PlanComparison: React.FC = () => {
                     {/* Linha de categoria */}
                     {newCat && (
                       <tr>
-                        <td colSpan={PLANS.length + 1} style={{ padding: '10px 20px', background: 'rgba(255,255,255,0.03)', borderTop: ri > 0 ? '1px solid rgba(255,255,255,0.08)' : 'none', borderBottom: '1px solid rgba(255,255,255,0.08)', fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' as const, position: 'sticky', left: 0 }}>
+                        <td colSpan={plans.length + 1} style={{ padding: '10px 20px', background: 'rgba(255,255,255,0.03)', borderTop: ri > 0 ? '1px solid rgba(255,255,255,0.08)' : 'none', borderBottom: '1px solid rgba(255,255,255,0.08)', fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' as const, position: 'sticky', left: 0 }}>
                           {row.category}
                         </td>
                       </tr>
@@ -936,9 +898,9 @@ const PlanComparison: React.FC = () => {
                         {row.icon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{row.icon}</span>}
                         <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 500, color: '#cbd5e1' }}>{row.label}</span>
                       </td>
-                      {PLANS.map((plan, pi) => {
+                      {plans.map((plan, pi) => {
                         const val = (plan as any)[row.field];
-                        const isPro = plan.highlight;
+                        const isPro = plan.is_popular;
                         return (
                           <td key={pi} style={{ padding: '14px 16px', textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.04)', background: isPro ? 'rgba(14,165,233,0.03)' : 'transparent' }}>
                             {renderCell(val, isPro)}
@@ -955,16 +917,16 @@ const PlanComparison: React.FC = () => {
                 <td style={{ padding: '20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 10 }}>
                   <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Começar</span>
                 </td>
-                {PLANS.map((plan, i) => (
-                  <td key={i} style={{ padding: '20px 12px', textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.04)', background: plan.highlight ? 'rgba(14,165,233,0.04)' : 'transparent' }}>
+                {plans.map((plan, i) => (
+                  <td key={i} style={{ padding: '20px 12px', textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.04)', background: plan.is_popular ? 'rgba(14,165,233,0.04)' : 'transparent' }}>
                     <button
                       onClick={() => navigate(`/admin/login?mode=signup&plan=${plan.name.toLowerCase()}`)}
                       style={{
                         fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 700, cursor: 'pointer',
                         padding: '9px 18px', borderRadius: 10, border: 'none', width: '100%', transition: 'all 0.2s',
-                        background: plan.highlight ? 'linear-gradient(135deg, #1a56db, #0ea5e9)' : 'rgba(255,255,255,0.07)',
-                        color: plan.highlight ? '#fff' : 'rgba(255,255,255,0.7)',
-                        boxShadow: plan.highlight ? '0 4px 14px rgba(14,165,233,0.35)' : 'none',
+                        background: plan.is_popular ? 'linear-gradient(135deg, #1a56db, #0ea5e9)' : 'rgba(255,255,255,0.07)',
+                        color: plan.is_popular ? '#fff' : 'rgba(255,255,255,0.7)',
+                        boxShadow: plan.is_popular ? '0 4px 14px rgba(14,165,233,0.35)' : 'none',
                       }}
                       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.04)'; (e.currentTarget as HTMLElement).style.opacity = '0.9'; }}
                       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; (e.currentTarget as HTMLElement).style.opacity = '1'; }}
@@ -976,6 +938,12 @@ const PlanComparison: React.FC = () => {
               </tr>
             </tbody>
           </table>
+          )}
+          {!loadingPlans && plans.length === 0 && (
+            <div style={{ fontFamily: "'DM Sans',sans-serif", color: '#94a3b8', textAlign: 'center', padding: '24px 0' }}>
+              Nenhum plano disponível no momento.
+            </div>
+          )}
         </div>
 
         <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: '#334155', textAlign: 'center', marginTop: 16 }}>
@@ -1110,6 +1078,21 @@ const Footer: React.FC = () => (
 // ── ROOT ──────────────────────────────────────────────────────
 export default function LandingPage() {
   useScrollSmoother();
+  const [plans, setPlans] = useState<any[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(true);
+
+  useEffect(() => {
+    const fetchPlans = async () => {
+      try {
+        const { data } = await supabase.from('saas_plans').select('*').order('price', { ascending: true });
+        setPlans(data || []);
+      } finally {
+        setLoadingPlans(false);
+      }
+    };
+
+    fetchPlans();
+  }, []);
 
   return (
     <>
@@ -1186,8 +1169,8 @@ export default function LandingPage() {
           <Stats />
           <Solucoes />
           <Features />
-          <Pricing />
-          <PlanComparison />
+          <Pricing plans={plans} loadingPlans={loadingPlans} />
+          <PlanComparison plans={plans} loadingPlans={loadingPlans} />
           <Testimonials />
           <FAQ />
           <FinalCTA />

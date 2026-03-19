@@ -7,7 +7,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import GamificationModal from '../components/GamificationModal';
 import FidelityTermsModal from '../components/FidelityTermsModal';
-import { PLANS } from '../config/plans';
 import { uploadCompanyAsset } from '../lib/storage';
 import { SiteData } from '../types';
 import { Copy, Loader2, Upload, X } from 'lucide-react';
@@ -261,6 +260,8 @@ const AdminConfig: React.FC = () => {
   const [isOpeningPortal, setIsOpeningPortal] = useState(false);
   const [paymentApiKey, setPaymentApiKey] = useState('');
   const [paymentGateway, setPaymentGateway] = useState<'asaas' | 'cora'>('cora');
+  const [plans, setPlans] = useState<any[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(true);
 
   useEffect(() => {
     setAcceptedFidelityTerms(false);
@@ -302,6 +303,15 @@ const AdminConfig: React.FC = () => {
         central_whatsapp: data.central_whatsapp ?? '',
         central_user_id: data.central_user_id ?? '',
       });
+    }
+  };
+
+  const fetchPlans = async () => {
+    try {
+      const { data } = await supabase.from('saas_plans').select('*').order('price', { ascending: true });
+      setPlans(data || []);
+    } finally {
+      setLoadingPlans(false);
     }
   };
 
@@ -380,6 +390,7 @@ const AdminConfig: React.FC = () => {
       fetchSettings();
       fetchContract();
       fetchCompanyData();
+      fetchPlans();
     }
   }, [isAdmin, user?.id]);
 
@@ -724,12 +735,15 @@ const AdminConfig: React.FC = () => {
   const handleReactivate = async (plan: any) => {
     setIsReactivating(true);
     try {
-      const priceToPay = billingCycle === 'monthly' ? plan.priceMensal : plan.priceAnual;
+      const monthlyPrice = Number(plan.price || 0);
+      const yearlyPrice = monthlyPrice * 0.85;
+      const priceToPay = billingCycle === 'monthly' ? monthlyPrice : yearlyPrice;
+      const planId = String(plan.id || plan.name || '').toLowerCase();
 
       const { data, error } = await supabase.functions.invoke('reactivate-asaas-subscription', {
         body: { 
           company_id: user?.company_id,
-          plan_name: plan.id,
+          plan_name: planId,
           billing_cycle: billingCycle,
           price: priceToPay
         }
@@ -905,8 +919,10 @@ const AdminConfig: React.FC = () => {
 
   const rawPlan = contract?.plan_name || contract?.plan || contract?.companies?.plan || '';
   const activePlanId = rawPlan.toLowerCase();
-  const currentPlanIndex = PLANS.findIndex(p => p.id === activePlanId);
-  const currentPlanDetails = currentPlanIndex !== -1 ? PLANS[currentPlanIndex] : null;
+  const currentPlanIndex = plans.findIndex(
+    (p) => String(p.id || '').toLowerCase() === activePlanId || String(p.name || '').toLowerCase() === activePlanId,
+  );
+  const currentPlanDetails = currentPlanIndex !== -1 ? plans[currentPlanIndex] : null;
   const displayPlanName = currentPlanDetails?.name || (rawPlan ? rawPlan.toUpperCase() : 'PLANO PADRÃO');
 
   const toggleSound = () => {
@@ -1537,8 +1553,10 @@ const AdminConfig: React.FC = () => {
                       <button
                         onClick={() => {
                           if (contract?.status === 'canceled') {
-                            const currentPlanData = PLANS.find(p => p.id === contract.plan_name) || PLANS[0];
-                            handleReactivate(currentPlanData);
+                            const currentPlanData =
+                              plans.find((p) => String(p.id || '').toLowerCase() === String(contract.plan_name || '').toLowerCase())
+                              || plans[0];
+                            if (currentPlanData) handleReactivate(currentPlanData);
                           } else {
                             handleCheckout();
                           }
@@ -1597,24 +1615,33 @@ const AdminConfig: React.FC = () => {
               {/* Grade de Upgrades */}
               <div>
                 <h4 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Opções de Upgrade</h4>
+                {loadingPlans ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Icons.RefreshCw size={22} className="animate-spin text-brand-500" />
+                  </div>
+                ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {PLANS.filter((plan) => {
-                    const isCurrentPlan = plan.id === activePlanId;
+                  {plans.filter((plan) => {
+                    const planId = String(plan.id || plan.name || '').toLowerCase();
+                    const isCurrentPlan = planId === activePlanId;
                     const isCurrentCycle = contract?.billing_cycle === billingCycle;
                     // SÓ esconde se for o mesmo plano E o mesmo ciclo que ele já paga
                     return !(isCurrentPlan && isCurrentCycle);
                   }).map((plan) => {
-                    const planIndex = PLANS.findIndex(p => p.id === plan.id);
+                    const planId = String(plan.id || plan.name || '').toLowerCase();
+                    const planIndex = plans.findIndex((p) => String(p.id || p.name || '').toLowerCase() === planId);
                     const isDowngrade = currentPlanIndex !== -1 && planIndex < currentPlanIndex;
                     
                     // Verifica se é mudança de ciclo no mesmo plano
-                    const isCycleUpgrade = plan.id === activePlanId && contract?.billing_cycle === 'monthly' && billingCycle === 'yearly';
-                    const isCycleDowngrade = plan.id === activePlanId && contract?.billing_cycle === 'yearly' && billingCycle === 'monthly';
+                    const isCycleUpgrade = planId === activePlanId && contract?.billing_cycle === 'monthly' && billingCycle === 'yearly';
+                    const isCycleDowngrade = planId === activePlanId && contract?.billing_cycle === 'yearly' && billingCycle === 'monthly';
                     const isReactivationFlow = contract?.status === 'canceled' || contract?.status === 'expired';
+                    const monthlyPrice = Number(plan.price || 0);
+                    const yearlyPrice = monthlyPrice * 0.85;
                     
                     return (
                       <div
-                        key={plan.id}
+                        key={plan.id || plan.name}
                         className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 flex flex-col h-full hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
                       >
                         <div className="mb-4">
@@ -1626,29 +1653,29 @@ const AdminConfig: React.FC = () => {
                             <span className="text-3xl font-bold text-slate-900 dark:text-white">
                               R${' '}
                               {billingCycle === 'monthly'
-                                ? (acceptFidelity ? plan.priceMensal * 0.8 : plan.priceMensal).toFixed(2).replace('.', ',')
-                                : plan.priceAnual.toFixed(2).replace('.', ',')}
+                                ? (acceptFidelity ? monthlyPrice * 0.8 : monthlyPrice).toFixed(2).replace('.', ',')
+                                : yearlyPrice.toFixed(2).replace('.', ',')}
                             </span>
                             <span className="text-sm text-slate-500">/mês</span>
                           </div>
                           <div className="h-4 mt-1">
                             {billingCycle === 'yearly' && (
                               <span className="text-xs text-brand-600 dark:text-brand-400 font-medium">
-                                Faturado R$ {(plan.priceAnual * 12).toFixed(2).replace('.', ',')} / ano
+                                Faturado R$ {(yearlyPrice * 12).toFixed(2).replace('.', ',')} / ano
                               </span>
                             )}
                           </div>
                         </div>
                         <ul className="space-y-3 mb-8 flex-grow">
-                          {plan.features.slice(0, 4).map((feature, i) => (
+                          {(plan.features || []).slice(0, 4).map((feature: string, i: number) => (
                             <li key={i} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
                               <Icons.Check size={16} className="text-brand-500 shrink-0 mt-0.5" />
                               <span>{feature}</span>
                             </li>
                           ))}
-                          {plan.features.length > 4 && (
+                          {(plan.features || []).length > 4 && (
                             <li className="text-xs text-brand-600 font-medium pl-6">
-                              + {plan.features.length - 4} outras vantagens
+                              + {(plan.features || []).length - 4} outras vantagens
                             </li>
                           )}
                         </ul>
@@ -1657,17 +1684,17 @@ const AdminConfig: React.FC = () => {
                             if (isReactivationFlow) {
                               handleReactivate(plan);
                             } else {
-                              handleUpgrade(plan.id);
+                              handleUpgrade(planId);
                             }
                           }}
-                          disabled={isUpgrading === plan.id || isGeneratingCheckout || isReactivating}
+                          disabled={isUpgrading === planId || isGeneratingCheckout || isReactivating}
                           className={`w-full py-2.5 rounded-xl font-bold transition-colors ${
                             isDowngrade || isCycleDowngrade
                               ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400'
                               : 'bg-brand-50 hover:bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 dark:text-brand-400'
                           }`}
                         >
-                          {(isUpgrading === plan.id || isReactivating)
+                          {(isUpgrading === planId || isReactivating)
                             ? 'Processando...' 
                             : isReactivationFlow
                               ? 'Reativar Assinatura'
@@ -1683,6 +1710,7 @@ const AdminConfig: React.FC = () => {
                     );
                   })}
                 </div>
+                )}
               </div>
             </>
           ) : (
