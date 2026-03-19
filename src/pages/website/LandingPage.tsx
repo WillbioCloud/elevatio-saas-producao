@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ScrollSmoother } from 'gsap/ScrollSmoother';
-import { Check, Minus, Bot, Target, FileSignature, Headset, Kanban, Zap } from 'lucide-react';
+import { Bot, Check, FileSignature, Headset, Kanban, Target, X, Zap } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 gsap.registerPlugin(ScrollTrigger, ScrollSmoother);
@@ -25,31 +25,11 @@ interface SaaSPlan {
 }
 
 // ── Linhas da tabela de comparação (completa do antigo) ──────
-type CompareRow =
-  | { category: string; label: string; field: string; bool?: false; icon?: React.ReactNode }
-  | { category: string; label: string; field: string; bool: true; icon?: React.ReactNode };
-
-const COMPARE_ROWS: CompareRow[] = [
-  // Recursos Principais
-  { category: 'Recursos Principais', label: 'Limite de Imóveis', field: 'properties' },
-  { category: 'Recursos Principais', label: 'Fotos por Imóvel', field: 'photos' },
-  { category: 'Recursos Principais', label: 'Usuários do Sistema', field: 'users' },
-  // CRM & Gestão
-  { category: 'CRM & Gestão Imobiliária', label: 'Funil de Vendas (Kanban)', field: 'funnel', bool: true, icon: <Kanban className="w-4 h-4 text-blue-400" /> },
-  { category: 'CRM & Gestão Imobiliária', label: 'Esteira de Leads', field: 'pipeline', bool: true },
-  { category: 'CRM & Gestão Imobiliária', label: 'Módulo de Gamificação', field: 'gamification', bool: true, icon: <Target className="w-4 h-4 text-yellow-400" /> },
-  { category: 'CRM & Gestão Imobiliária', label: 'Módulo Contratos e Finanças', field: 'erp', bool: true, icon: <FileSignature className="w-4 h-4 text-green-400" /> },
-  // IA
-  { category: 'Inteligência Artificial', label: 'Gerador de Descrições (IA)', field: 'ia' },
-  { category: 'Inteligência Artificial', label: 'Assistente Virtual Aura 24/7', field: 'aura', icon: <Bot className="w-4 h-4 text-purple-400" /> },
-  // Marketing & Integrações
-  { category: 'Marketing & Integrações', label: 'Site Premium Exclusivo', field: 'site', bool: true },
-  { category: 'Marketing & Integrações', label: 'Integração Portais Zap/VivaReal', field: 'portals', bool: true },
-  { category: 'Marketing & Integrações', label: 'Automação de E-mail/WhatsApp', field: 'email_auto', bool: true },
-  { category: 'Marketing & Integrações', label: 'API de Integração', field: 'api', bool: true },
-  // Suporte
-  { category: 'Atendimento ao Cliente', label: 'Canal de Suporte', field: 'support', icon: <Headset className="w-4 h-4 text-sky-400" /> },
-];
+type PlanComparisonFeature = {
+  name: string;
+  key: string;
+  type?: 'boolean' | 'text';
+};
 
 const TESTIMONIALS = [
   { name: 'Rafael Duarte', company: 'Horizonte Imóveis', role: 'Diretor Comercial', quote: 'O sistema otimizou nosso fluxo de trabalho e facilitou a gestão dos leads. A integração com o site foi rápida e prática.', avatar: 'RD' },
@@ -799,18 +779,33 @@ const Pricing: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans
 };
 
 // ── COMPARAÇÃO DE PLANOS (tabela completa do antigo, visual novo) ──
-const PlanComparison: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans, loadingPlans }) => {
+const PlanComparison: React.FC<{ plans: any[]; features: PlanComparisonFeature[]; loadingPlans: boolean }> = ({ plans, features, loadingPlans }) => {
   const navigate = useNavigate();
   const ref = useRef<HTMLElement>(null);
   const [annual, setAnnual] = useState(false);
   useFadeIn(ref, { y: 30 });
 
-  let lastCat = '';
+  const featureIcons: Record<string, React.ReactNode> = {
+    has_funnel: <Kanban className="w-4 h-4 text-blue-400" />,
+    has_gamification: <Target className="w-4 h-4 text-yellow-400" />,
+    has_erp: <FileSignature className="w-4 h-4 text-green-400" />,
+    aura_access: <Bot className="w-4 h-4 text-purple-400" />,
+    support_level: <Headset className="w-4 h-4 text-sky-400" />,
+  };
 
   // Helper: renderiza célula de valor
-  const renderCell = (val: any, isProCol: boolean) => {
-    if (val === true)  return <Check className={`w-5 h-5 mx-auto ${isProCol ? 'text-blue-400' : 'text-green-400'}`} strokeWidth={2.5} />;
-    if (val === false) return <Minus className="w-5 h-5 mx-auto text-gray-600" />;
+  const renderCell = (val: any, type?: PlanComparisonFeature['type']) => {
+    if (type === 'boolean') {
+      return val ? (
+        <Check className="w-5 h-5 mx-auto text-green-400" strokeWidth={2.5} />
+      ) : (
+        <X className="w-5 h-5 mx-auto text-red-400" strokeWidth={2.5} />
+      );
+    }
+
+    if (val === null || val === undefined || val === '') {
+      return <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>Não</span>;
+    }
     if (typeof val === 'string' && val.length > 0) {
       const isIlimitado = val.toLowerCase().includes('ilimitado') || val.toLowerCase().includes('prioridade');
       const isSpecial   = val.toLowerCase().includes('vip') || val.toLowerCase().includes('liberada');
@@ -821,7 +816,7 @@ const PlanComparison: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = (
         }}>{val}</span>
       );
     }
-    return <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>{val}</span>;
+    return <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>{String(val)}</span>;
   };
 
   return (
@@ -879,38 +874,23 @@ const PlanComparison: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = (
             </thead>
 
             <tbody style={{ fontSize: 14, color: '#cbd5e1' }}>
-              {COMPARE_ROWS.map((row, ri) => {
-                const newCat = row.category !== lastCat;
-                lastCat = row.category;
-                return (
-                  <React.Fragment key={ri}>
-                    {/* Linha de categoria */}
-                    {newCat && (
-                      <tr>
-                        <td colSpan={plans.length + 1} style={{ padding: '10px 20px', background: 'rgba(255,255,255,0.03)', borderTop: ri > 0 ? '1px solid rgba(255,255,255,0.08)' : 'none', borderBottom: '1px solid rgba(255,255,255,0.08)', fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' as const, position: 'sticky', left: 0 }}>
-                          {row.category}
-                        </td>
-                      </tr>
-                    )}
-                    {/* Linha de recurso */}
-                    <tr className="ev-row-hover" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                      <td style={{ padding: '14px 20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '4px 0 20px -8px rgba(0,0,0,0.6)' }}>
-                        {row.icon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{row.icon}</span>}
-                        <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 500, color: '#cbd5e1' }}>{row.label}</span>
+              {features.map((feature) => (
+                <tr key={feature.key} className="ev-row-hover" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <td style={{ padding: '14px 20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '4px 0 20px -8px rgba(0,0,0,0.6)' }}>
+                    {featureIcons[feature.key] && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{featureIcons[feature.key]}</span>}
+                    <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 500, color: '#cbd5e1' }}>{feature.name}</span>
+                  </td>
+                  {plans.map((plan, pi) => {
+                    const value = plan[feature.key];
+                    const isPro = plan.is_popular;
+                    return (
+                      <td key={pi} style={{ padding: '14px 16px', textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.04)', background: isPro ? 'rgba(14,165,233,0.03)' : 'transparent' }}>
+                        {renderCell(value, feature.type)}
                       </td>
-                      {plans.map((plan, pi) => {
-                        const val = (plan as any)[row.field];
-                        const isPro = plan.is_popular;
-                        return (
-                          <td key={pi} style={{ padding: '14px 16px', textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.04)', background: isPro ? 'rgba(14,165,233,0.03)' : 'transparent' }}>
-                            {renderCell(val, isPro)}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  </React.Fragment>
-                );
-              })}
+                    );
+                  })}
+                </tr>
+              ))}
 
               {/* Linha de botões CTA */}
               <tr style={{ borderTop: '2px solid rgba(255,255,255,0.1)' }}>
@@ -1094,6 +1074,27 @@ export default function LandingPage() {
     fetchPlans();
   }, []);
 
+  let comparisonData: PlanComparisonFeature[] = [];
+
+  if (plans.length > 0) {
+    comparisonData = [
+      { name: 'Usuários', key: 'max_users' },
+      { name: 'Imóveis', key: 'max_properties' },
+      { name: 'Fotos/Imóvel', key: 'max_photos' },
+      { name: 'CRM Básico', key: 'has_funnel', type: 'boolean' },
+      { name: 'CRM Pipeline', key: 'has_pipeline', type: 'boolean' },
+      { name: 'CRM Gamificação', key: 'has_gamification', type: 'boolean' },
+      { name: 'ERP Finanças', key: 'has_erp', type: 'boolean' },
+      { name: 'IA Descrições/Mês', key: 'ia_limit' },
+      { name: 'IA Aura', key: 'aura_access', type: 'text' },
+      { name: 'Site Profissional', key: 'has_site', type: 'boolean' },
+      { name: 'Integração Portais Zap/VivaReal', key: 'has_portals', type: 'boolean' },
+      { name: 'E-mail Marketing', key: 'has_email_auto', type: 'boolean' },
+      { name: 'API de Integração com Checkout', key: 'has_api', type: 'boolean' },
+      { name: 'Nível Suporte', key: 'support_level', type: 'text' },
+    ];
+  }
+
   return (
     <>
       <style>{`
@@ -1170,7 +1171,7 @@ export default function LandingPage() {
           <Solucoes />
           <Features />
           <Pricing plans={plans} loadingPlans={loadingPlans} />
-          <PlanComparison plans={plans} loadingPlans={loadingPlans} />
+          <PlanComparison plans={plans} features={comparisonData} loadingPlans={loadingPlans} />
           <Testimonials />
           <FAQ />
           <FinalCTA />
