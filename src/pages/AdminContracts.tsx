@@ -12,6 +12,10 @@ const AdminContracts: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const currentTab = searchParams.get('tab') || 'geral';
+  const isSuperAdmin = user?.role === 'super_admin';
+  const directUserPlan = typeof (user as { plan?: string } | null)?.plan === 'string'
+    ? (user as { plan?: string }).plan ?? ''
+    : '';
   
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
   const [isRentModalOpen, setIsRentModalOpen] = useState(false);
@@ -21,15 +25,18 @@ const AdminContracts: React.FC = () => {
   const [installments, setInstallments] = useState<any[]>([]);
   const [showOverdue, setShowOverdue] = useState(false);
   const [contractTab, setContractTab] = useState<'pending' | 'active' | 'archived'>('active');
+  const [maxContracts, setMaxContracts] = useState<number | null>(null);
+  const [loadingPlanLimit, setLoadingPlanLimit] = useState(true);
 
   const fetchContracts = async () => {
+    if (!user) return;
     setLoading(true);
     
     // Multi-Tenant: Filtra por company_id se não for super admin
     let contractsQuery = supabase.from('contracts').select('*, lead:leads(name), property:properties(title)');
     let installmentsQuery = supabase.from('installments').select('*');
     
-    if (user?.role !== 'admin' && user?.company_id) {
+    if (!isSuperAdmin && user.company_id) {
       contractsQuery = contractsQuery.eq('company_id', user.company_id);
       installmentsQuery = installmentsQuery.eq('company_id', user.company_id);
     }
@@ -49,8 +56,96 @@ const AdminContracts: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchContracts();
-  }, []);
+    if (user) {
+      fetchContracts();
+    }
+  }, [user?.company_id, user?.role]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchPlanLimit = async () => {
+      if (!user) return;
+
+      if (isSuperAdmin) {
+        if (isMounted) {
+          setMaxContracts(null);
+          setLoadingPlanLimit(false);
+        }
+        return;
+      }
+
+      if (!user.company_id) {
+        if (isMounted) {
+          setMaxContracts(0);
+          setLoadingPlanLimit(false);
+        }
+        return;
+      }
+
+      setLoadingPlanLimit(true);
+
+      try {
+        const { data: currentSaasContract, error: contractError } = await supabase
+          .from('saas_contracts')
+          .select('plan_id, plan_name, companies(plan)')
+          .eq('company_id', user.company_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (contractError) {
+          console.error('Erro ao buscar contrato SaaS atual:', contractError);
+        }
+
+        const planCandidates = [
+          currentSaasContract?.plan_id,
+          currentSaasContract?.plan_name,
+          currentSaasContract?.companies?.plan,
+          user.company?.plan,
+          directUserPlan,
+        ]
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          .map((value) => value.trim().toLowerCase());
+
+        if (planCandidates.length === 0) {
+          if (isMounted) setMaxContracts(0);
+          return;
+        }
+
+        const { data: plansData, error: plansError } = await supabase
+          .from('saas_plans')
+          .select('id, name, max_contracts');
+
+        if (plansError) throw plansError;
+
+        const matchedPlan = (plansData || []).find((plan) => {
+          const planId = String(plan.id || '').toLowerCase();
+          const planName = String(plan.name || '').toLowerCase();
+          return planCandidates.some((candidate) => candidate === planId || candidate === planName);
+        });
+
+        if (isMounted) {
+          setMaxContracts(Number(matchedPlan?.max_contracts ?? 0));
+        }
+      } catch (error) {
+        console.error('Erro ao buscar limite de contratos do plano:', error);
+        if (isMounted) {
+          setMaxContracts(0);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingPlanLimit(false);
+        }
+      }
+    };
+
+    fetchPlanLimit();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [directUserPlan, isSuperAdmin, user?.company?.plan, user?.company_id, user?.id]);
 
   const handleDeleteContract = async (id: string) => {
     if (window.confirm('CUIDADO: Deseja excluir permanentemente este contrato e todas as suas parcelas?')) {
@@ -158,6 +253,41 @@ const AdminContracts: React.FC = () => {
 
   const salesContracts = contracts.filter((c) => c.type === 'sale');
   const rentContracts = contracts.filter((c) => c.type === 'rent');
+  const activeContractsCount = useMemo(
+    () => contracts.filter((contract) => contract.status === 'active').length,
+    [contracts]
+  );
+  const contractsUsageLabel = isSuperAdmin
+    ? 'Sem limite'
+    : loadingPlanLimit
+      ? '...'
+      : maxContracts === 0
+        ? 'Bloqueado'
+        : String(maxContracts ?? '--');
+
+  const handleOpenContractModal = (type: 'sale' | 'rent') => {
+    if (loadingPlanLimit) {
+      alert('Estamos carregando os limites do seu plano. Tente novamente em alguns segundos.');
+      return;
+    }
+
+    if (!isSuperAdmin && maxContracts === 0) {
+      alert('O seu plano atual não inclui o módulo de Gestão de Contratos. Faça o upgrade para desbloquear.');
+      return;
+    }
+
+    if (!isSuperAdmin && typeof maxContracts === 'number' && activeContractsCount >= maxContracts) {
+      alert(`Você atingiu o limite de contratos ativos do seu plano (${maxContracts}). Faça o upgrade para criar novos contratos.`);
+      return;
+    }
+
+    if (type === 'rent') {
+      setIsRentModalOpen(true);
+      return;
+    }
+
+    setIsSaleModalOpen(true);
+  };
 
   const setTab = (tab: string) => {
     setSearchParams({ tab });
@@ -173,17 +303,21 @@ const AdminContracts: React.FC = () => {
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             Gestão de vendas, locações e acompanhamento de parcelas.
           </p>
+          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-white/10 bg-white/80 dark:bg-[#0a0f1c]/80 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
+            <Icons.FileText size={14} className="text-brand-500" />
+            <span>Contratos: {activeContractsCount} / {contractsUsageLabel}</span>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
           <button 
-            onClick={() => setIsRentModalOpen(true)}
+            onClick={() => handleOpenContractModal('rent')}
             className="inline-flex items-center gap-2 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl border border-slate-200/60 dark:border-white/5 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors shadow-sm">
             <Icons.Plus size={16} /> Novo Aluguel
           </button>
           
           <button 
-            onClick={() => setIsSaleModalOpen(true)}
+            onClick={() => handleOpenContractModal('sale')}
             className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-600 to-sky-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:shadow-lg transition-all shadow-sm"
           >
             <Icons.Plus size={16} /> Nova Venda
@@ -505,7 +639,7 @@ const AdminContracts: React.FC = () => {
                 </div>
                 <h3 className="text-xl font-bold font-serif text-slate-800 dark:text-white">Nenhuma locação</h3>
                 <p className="text-slate-500 dark:text-slate-400 mt-2 mb-6 max-w-md">Registre os contratos de aluguel para acompanhar mensalidades, garantias e reajustes.</p>
-                <button onClick={() => setIsRentModalOpen(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                <button onClick={() => handleOpenContractModal('rent')} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2">
                   <Icons.Plus size={20} /> Novo Contrato de Locação
                 </button>
               </div>
