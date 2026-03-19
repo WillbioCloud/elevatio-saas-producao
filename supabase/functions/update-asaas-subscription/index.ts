@@ -1,190 +1,150 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, accept, accept-encoding',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
     const { company_id, new_plan, billing_cycle, has_fidelity } = await req.json()
-    
-    if (!company_id || !new_plan || !billing_cycle) {
-      throw new Error("Dados incompletos para atualização.")
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')!
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+    const { data: contract } = await supabase.from('saas_contracts').select('*').eq('company_id', company_id).single()
+    const { data: company } = await supabase.from('companies').select('*').eq('id', company_id).single()
+    const { data: profile } = await supabase.from('profiles').select('email, full_name, phone').eq('company_id', company_id).order('created_at', { ascending: true }).limit(1).single()
+
+    let customerId = company?.asaas_customer_id;
+    let subscriptionId = contract?.subscription_id || company?.asaas_subscription_id;
+
+    const { data: planRecord } = await supabase.from('saas_plans').select('id').ilike('name', new_plan).maybeSingle();
+    const plan_id = planRecord?.id || null;
+
+    if (!customerId) {
+      const document = company?.document?.replace(/\D/g, '') || company?.cpf_cnpj?.replace(/\D/g, '') || '';
+      
+      if (document) {
+        const searchRes = await fetch(`https://sandbox.asaas.com/api/v3/customers?cpfCnpj=${document}`, {
+          headers: { 'access_token': ASAAS_API_KEY }
+        });
+        const searchData = await searchRes.json();
+        if (searchData.data && searchData.data.length > 0) customerId = searchData.data[0].id;
+      }
+
+      if (!customerId) {
+        const customerRes = await fetch(`https://sandbox.asaas.com/api/v3/customers`, {
+          method: 'POST',
+          headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: company?.name || profile?.full_name || 'Empresa Sem Nome',
+            email: profile?.email || 'email@padrao.com',
+            cpfCnpj: company?.document || company?.cpf_cnpj || '',
+            phone: company?.phone || profile?.phone || ''
+          })
+        });
+        const customerData = await customerRes.json();
+        if (customerData.id) customerId = customerData.id;
+        else throw new Error('Falha ao criar cliente: ' + JSON.stringify(customerData.errors));
+      }
+
+      await supabase.from('companies').update({ asaas_customer_id: customerId }).eq('id', company_id);
     }
 
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    // ✨ 3. REGRAS DE PREÇO E AMARRAÇÃO DE FIDELIDADE
+    const plans = { starter: { price: 97.90 }, basic: { price: 197.90 }, profissional: { price: 349.90 }, business: { price: 549.90 }, premium: { price: 849.90 }, elite: { price: 1249.90 } }
+    const planData = plans[new_plan.toLowerCase() as keyof typeof plans];
+    if (!planData) throw new Error('Plano inválido');
 
-    // 1. Busca os IDs do Asaas da empresa
-    const { data: company, error: companyError } = await supabaseAdmin
-      .from('companies')
-      .select('asaas_subscription_id, asaas_customer_id')
-      .eq('id', company_id)
-      .single()
+    let price = planData.price;
+    let finalHasFidelity = has_fidelity;
+    let fidelityEndDate = null;
 
-    if (companyError) {
-      throw new Error(`Erro ao buscar empresa: ${companyError.message}`)
+    if (billing_cycle === 'yearly') {
+      price = price * 12 * 0.8; 
+      finalHasFidelity = false; // O Anual já é uma fidelidade por natureza (paga 1 ano), não precisa da flag mensal
+    } 
+    else if (has_fidelity) {
+      price = price * 0.9; 
+      // Calcula o Fim da Fidelidade (Hoje + 12 Meses)
+      const futureDate = new Date();
+      futureDate.setFullYear(futureDate.getFullYear() + 1);
+      fidelityEndDate = futureDate.toISOString();
     }
 
-    if (!company?.asaas_customer_id) {
-      throw new Error('Empresa sem customer_id no Asaas. Faça o setup de cobrança antes do upgrade.')
-    }
+    const targetCycle = billing_cycle === 'yearly' ? 'YEARLY' : 'MONTHLY';
+    let newSubscriptionId = subscriptionId;
 
-    // 2. Calcula o novo preço
-    const planPrices: Record<string, { monthly: number, yearly: number }> = {
-      starter: { monthly: 54.90, yearly: 527.04 },
-      basic: { monthly: 74.90, yearly: 719.04 },
-      profissional: { monthly: 119.90, yearly: 1151.04 },
-      business: { monthly: 179.90, yearly: 1727.04 },
-      premium: { monthly: 249.90, yearly: 2399.04 },
-      elite: { monthly: 349.90, yearly: 3359.04 }
-    };
+    if (subscriptionId) {
+      const subGet = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions/${subscriptionId}`, { headers: { 'access_token': ASAAS_API_KEY } });
+      const subData = await subGet.json();
 
-    const planKey = new_plan.toLowerCase();
-    const isYearly = billing_cycle === 'yearly';
-    const selectedPlan = planPrices[planKey]
-    if (!selectedPlan) {
-      throw new Error(`Plano inválido para upgrade: ${new_plan}`)
-    }
-
-    const planValue = isYearly ? selectedPlan.yearly : selectedPlan.monthly;
-    const asaasCycle = isYearly ? 'YEARLY' : 'MONTHLY';
-
-    // 3. Atualiza a assinatura no Asaas
-    const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
-    const ASAAS_URL = 'https://sandbox.asaas.com/api/v3'
-
-    let asaasRes: Response
-
-    if (company.asaas_subscription_id) {
-      asaasRes = await fetch(`${ASAAS_URL}/subscriptions/${company.asaas_subscription_id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'access_token': ASAAS_API_KEY!
-        },
-        body: JSON.stringify({
-          value: planValue,
-          cycle: asaasCycle,
-          description: `Assinatura Elevatio CRM - Plano ${planKey.toUpperCase()} (${isYearly ? 'Anual' : 'Mensal'})`,
-          updatePendingPayments: true // Atualiza faturas que já foram geradas mas ainda não pagas
-        })
-      });
+      if (subData && !subData.errors) {
+        if (subData.cycle !== targetCycle || subData.status === 'INACTIVE') {
+          await fetch(`https://sandbox.asaas.com/api/v3/subscriptions/${subscriptionId}`, { method: 'DELETE', headers: { 'access_token': ASAAS_API_KEY } });
+          const createRes = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions`, {
+            method: 'POST',
+            headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              customer: customerId, billingType: subData.billingType || 'UNDEFINED',
+              nextDueDate: subData.nextDueDate, value: price, cycle: targetCycle,
+              description: `Plano ${new_plan.toUpperCase()} - Elevatio Vendas (${targetCycle})`
+            })
+          });
+          const createData = await createRes.json();
+          if (!createData.errors) newSubscriptionId = createData.id;
+        } else {
+          await fetch(`https://sandbox.asaas.com/api/v3/subscriptions/${subscriptionId}`, {
+            method: 'PUT',
+            headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: price, description: `Plano ${new_plan.toUpperCase()} - Elevatio Vendas (${targetCycle})`, updatePendingPayments: true })
+          });
+        }
+      }
     } else {
-      // Fallback robusto: não existe assinatura anterior, então cria uma nova no Asaas
-      asaasRes = await fetch(`${ASAAS_URL}/subscriptions`, {
+      let nextDueDate = new Date();
+      if (company?.trial_ends_at && new Date(company.trial_ends_at) > new Date()) nextDueDate = new Date(company.trial_ends_at);
+      else nextDueDate.setDate(nextDueDate.getDate() + 7);
+
+      const createRes = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'access_token': ASAAS_API_KEY!
-        },
+        headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer: company.asaas_customer_id,
-          billingType: 'BOLETO',
-          value: planValue,
-          nextDueDate: new Date().toISOString().split('T')[0],
-          cycle: asaasCycle,
-          description: `Assinatura Elevatio CRM - Plano ${planKey.toUpperCase()} (${isYearly ? 'Anual' : 'Mensal'})`
+          customer: customerId, billingType: 'UNDEFINED',
+          nextDueDate: nextDueDate.toISOString().split('T')[0], value: price, cycle: targetCycle,
+          description: `Plano ${new_plan.toUpperCase()} - Elevatio Vendas (${targetCycle})`
         })
       });
+      const createData = await createRes.json();
+      if (!createData.errors) newSubscriptionId = createData.id;
     }
 
-    const asaasData = await asaasRes.json();
+    // ✨ 4. GRAVA TUDO NO BANCO (Incluindo a data de fim da fidelidade!)
+    await supabase.from('saas_contracts').update({
+        plan_name: new_plan, 
+        plan_id: plan_id, 
+        billing_cycle: billing_cycle,
+        has_fidelity: finalHasFidelity, 
+        fidelity_end_date: fidelityEndDate, // Agora o contrato sabe quando acaba!
+        subscription_id: newSubscriptionId, 
+        price: price
+    }).eq('company_id', company_id);
 
-    if (!asaasRes.ok) {
-      throw new Error(`Erro no Asaas: ${asaasData.errors?.[0]?.description || 'Erro desconhecido'}`);
-    }
+    await supabase.from('companies').update({
+        plan: new_plan, asaas_subscription_id: newSubscriptionId
+    }).eq('id', company_id);
 
-    // Se criou assinatura nova, salva o ID para os próximos upgrades/cancelamentos
-    if (!company.asaas_subscription_id && asaasData?.id) {
-      const { error: saveSubError } = await supabaseAdmin
-        .from('companies')
-        .update({ asaas_subscription_id: asaasData.id })
-        .eq('id', company_id)
+    return new Response(JSON.stringify({ success: true, subscription_id: newSubscriptionId }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
 
-      if (saveSubError) {
-        throw new Error(`Falha ao salvar nova assinatura da empresa: ${saveSubError.message}`)
-      }
-    }
-
-    // 4. Atualiza o banco de dados (companies e saas_contracts)
-    const { error: compError } = await supabaseAdmin
-      .from('companies')
-      .update({ plan: planKey })
-      .eq('id', company_id);
-
-    if (compError) throw new Error(`Falha ao atualizar a empresa: ${compError.message}`);
-
-    // Calcula a data de fim da fidelidade (1 ano a partir de hoje) se o cliente aceitou
-    const fidelityEndDate = has_fidelity 
-      ? new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString() 
-      : null;
-
-    const { data: currentContract } = await supabaseAdmin
-      .from('saas_contracts')
-      .select('id')
-      .eq('company_id', company_id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (currentContract?.id) {
-      const { error: contractError } = await supabaseAdmin
-        .from('saas_contracts')
-        .update({ 
-          plan_name: planKey,
-          billing_cycle: billing_cycle,
-          has_fidelity: has_fidelity || false,
-          fidelity_end_date: fidelityEndDate
-        })
-        .eq('id', currentContract.id);
-
-      if (contractError) throw new Error(`Falha ao atualizar o contrato: ${contractError.message}`);
-    } else {
-      const startDate = new Date()
-      const endDate = new Date(startDate)
-      endDate.setDate(endDate.getDate() + 7)
-
-      const { error: contractInsertError } = await supabaseAdmin
-        .from('saas_contracts')
-        .insert({
-          company_id,
-          plan_id: null,
-          plan_name: planKey,
-          status: 'pending',
-          billing_cycle,
-          start_date: startDate.toISOString(),
-          end_date: endDate.toISOString(),
-          has_fidelity: has_fidelity || false,
-          fidelity_end_date: fidelityEndDate
-        })
-
-      if (contractInsertError) throw new Error(`Falha ao criar contrato base: ${contractInsertError.message}`);
-    }
-
-    return new Response(
-      JSON.stringify({ success: true, plan: planKey }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
-    )
   } catch (error: any) {
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      }
-    )
+    console.error('Erro na função:', error)
+    return new Response(JSON.stringify({ error: error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
   }
 })
