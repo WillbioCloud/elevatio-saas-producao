@@ -240,6 +240,7 @@ const AdminConfig: React.FC = () => {
   const [isReactivating, setIsReactivating] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [acceptFidelity, setAcceptFidelity] = useState(false);
+  const [acceptedFidelityTerms, setAcceptedFidelityTerms] = useState(false);
   const [isUpgrading, setIsUpgrading] = useState<string | null>(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [contractTemplates, setContractTemplates] = useState<any[]>([]);
@@ -258,6 +259,16 @@ const AdminConfig: React.FC = () => {
   const [isOpeningPortal, setIsOpeningPortal] = useState(false);
   const [paymentApiKey, setPaymentApiKey] = useState('');
   const [paymentGateway, setPaymentGateway] = useState<'asaas' | 'cora'>('cora');
+
+  useEffect(() => {
+    setAcceptedFidelityTerms(false);
+  }, [billingCycle]);
+
+  useEffect(() => {
+    if (!acceptFidelity) {
+      setAcceptedFidelityTerms(false);
+    }
+  }, [acceptFidelity]);
   const [siteSubTab, setSiteSubTab] = useState<'templates' | 'identity' | 'hero' | 'about' | 'social'>('templates');
   const [siteData, setSiteData] = useState<SiteData>({
     logo_url: null,
@@ -738,6 +749,11 @@ const AdminConfig: React.FC = () => {
   };
 
   const handleUpgrade = async (planId: string) => {
+    if (billingCycle === 'monthly' && acceptFidelity && !acceptedFidelityTerms) {
+      alert('Você precisa aceitar os termos de fidelidade para continuar.');
+      return;
+    }
+
     setIsUpgrading(planId);
     const previousContract = contract;
     try {
@@ -768,6 +784,7 @@ const AdminConfig: React.FC = () => {
 
       alert(`Sucesso! Sua assinatura foi atualizada para o plano ${planId.toUpperCase()}.`);
       await fetchContract(); // Recarrega o contrato para atualizar o card na tela
+      setAcceptedFidelityTerms(false);
     } catch (error: any) {
       setContract(previousContract);
       console.error(error);
@@ -1427,13 +1444,35 @@ const AdminConfig: React.FC = () => {
                 <input
                   type="checkbox"
                   checked={acceptFidelity}
-                  onChange={(e) => setAcceptFidelity(e.target.checked)}
+                  onChange={(e) => {
+                    setAcceptFidelity(e.target.checked);
+                    if (!e.target.checked) {
+                      setAcceptedFidelityTerms(false);
+                    }
+                  }}
                   className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 cursor-pointer"
                 />
                 <span className="text-sm font-medium text-brand-900 dark:text-brand-100">
                   Aceito o contrato de fidelidade (12 meses) para ganhar <strong className="text-brand-600 dark:text-brand-400">20% de desconto</strong>
                 </span>
               </label>
+            )}
+
+            {billingCycle === 'monthly' && acceptFidelity && (
+              <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl p-4 max-w-2xl">
+                <p className="text-sm text-slate-700 leading-relaxed">
+                  Ao ativar o desconto de fidelidade, você se compromete a permanecer no plano por 12 meses. O cancelamento antecipado estará sujeito a uma multa rescisória de 30% sobre o valor dos meses restantes.
+                </p>
+                <label className="mt-3 flex items-start gap-2 text-sm font-medium text-slate-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={acceptedFidelityTerms}
+                    onChange={(e) => setAcceptedFidelityTerms(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 text-brand-600 rounded focus:ring-brand-500 cursor-pointer"
+                  />
+                  <span>Li e aceito os Termos de Fidelidade de 12 meses.</span>
+                </label>
+              </div>
             )}
           </div>
 
@@ -1574,6 +1613,8 @@ const AdminConfig: React.FC = () => {
                     // Verifica se é mudança de ciclo no mesmo plano
                     const isCycleUpgrade = plan.id === activePlanId && contract?.billing_cycle === 'monthly' && billingCycle === 'yearly';
                     const isCycleDowngrade = plan.id === activePlanId && contract?.billing_cycle === 'yearly' && billingCycle === 'monthly';
+                    const requiresAcceptedFidelityTerms = billingCycle === 'monthly' && acceptFidelity && !acceptedFidelityTerms;
+                    const isReactivationFlow = contract?.status === 'canceled' || contract?.status === 'expired';
                     
                     return (
                       <div
@@ -1617,22 +1658,22 @@ const AdminConfig: React.FC = () => {
                         </ul>
                         <button
                           onClick={() => {
-                            if (contract?.status === 'canceled' || contract?.status === 'expired') {
+                            if (isReactivationFlow) {
                               handleReactivate(plan);
                             } else {
                               handleUpgrade(plan.id);
                             }
                           }}
-                          disabled={isUpgrading === plan.id || isGeneratingCheckout || isReactivating}
+                          disabled={isUpgrading === plan.id || isGeneratingCheckout || isReactivating || (!isReactivationFlow && requiresAcceptedFidelityTerms)}
                           className={`w-full py-2.5 rounded-xl font-bold transition-colors ${
                             isDowngrade || isCycleDowngrade
                               ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400'
                               : 'bg-brand-50 hover:bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 dark:text-brand-400'
-                          }`}
+                          } ${(!isReactivationFlow && requiresAcceptedFidelityTerms) ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           {(isUpgrading === plan.id || isReactivating)
                             ? 'Processando...' 
-                            : (contract?.status === 'canceled' || contract?.status === 'expired')
+                            : isReactivationFlow
                               ? 'Reativar Assinatura'
                               : isCycleUpgrade 
                                 ? 'Migrar para Anual' 
