@@ -22,6 +22,7 @@ interface Plan {
   ia_limit: string;
   aura_access: string;
   has_site: boolean;
+  has_free_domain: boolean;
   has_portals: boolean;
   has_email_auto: boolean;
   has_api: boolean;
@@ -48,6 +49,7 @@ const newPlanTemplate: Plan = {
   ia_limit: "",
   aura_access: "",
   has_site: false,
+  has_free_domain: false,
   has_portals: false,
   has_email_auto: false,
   has_api: false,
@@ -96,7 +98,7 @@ export default function SaasPlans() {
     const { data, error } = await supabase
       .from("saas_plans")
       .select(
-        "id, name, price, description, icon, badge, is_popular, features, max_users, max_properties, max_contracts, max_photos, has_funnel, has_pipeline, has_gamification, has_erp, ia_limit, aura_access, has_site, has_portals, has_email_auto, has_api, support_level"
+        "id, name, price, description, icon, badge, is_popular, features, max_users, max_properties, max_contracts, max_photos, has_funnel, has_pipeline, has_gamification, has_erp, ia_limit, aura_access, has_site, has_free_domain, has_portals, has_email_auto, has_api, support_level"
       )
       .order("price", { ascending: true });
 
@@ -153,6 +155,7 @@ export default function SaasPlans() {
       ia_limit: editingPlan.ia_limit,
       aura_access: editingPlan.aura_access,
       has_site: editingPlan.has_site,
+      has_free_domain: editingPlan.has_free_domain,
       has_portals: editingPlan.has_portals,
       has_email_auto: editingPlan.has_email_auto,
       has_api: editingPlan.has_api,
@@ -266,6 +269,11 @@ export default function SaasPlans() {
               </div>
 
               <div className="flex flex-wrap gap-2 mb-4">
+                {plan.has_free_domain && (
+                  <span className="inline-flex px-2 py-1 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                    🎁 Domínio Grátis (Anual)
+                  </span>
+                )}
                 {moduleLabels.map((module) =>
                   plan[module.key] ? (
                     <span
@@ -466,6 +474,24 @@ export default function SaasPlans() {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="font-bold text-slate-900 dark:text-white">Benefícios</h4>
+                <label className="flex items-center justify-between bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-dark-border rounded-xl px-3 py-2">
+                  <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">Domínio Grátis no Anual</span>
+                  <input
+                    type="checkbox"
+                    checked={editingPlan.has_free_domain}
+                    onChange={(e) =>
+                      setEditingPlan({
+                        ...editingPlan,
+                        has_free_domain: e.target.checked
+                      })
+                    }
+                    className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500 cursor-pointer"
+                  />
+                </label>
               </div>
 
               <div className="pt-4 border-t border-slate-100 dark:border-dark-border">

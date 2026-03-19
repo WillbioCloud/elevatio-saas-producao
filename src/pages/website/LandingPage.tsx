@@ -677,6 +677,7 @@ const Features: React.FC = () => {
 const Pricing: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans, loadingPlans }) => {
   const navigate = useNavigate();
   const [annual, setAnnual] = useState(false);
+  const isYearly = annual;
   const ref = useRef<HTMLElement>(null);
   useFadeIn(ref, { selector: '.ev-plan', stagger: 0.08, y: 30 });
 
@@ -740,6 +741,12 @@ const Pricing: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans
                   <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, color: plan.is_popular ? 'rgba(255,255,255,0.6)' : '#94a3b8' }}>/mês</span>
                 </div>
                 <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 28px 0', display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+                  {isYearly && plan.has_free_domain && (
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 700, color: plan.is_popular ? '#7dd3fc' : '#1a56db' }}>
+                      <Check size={20} className="shrink-0" />
+                      <span>🎁 Domínio Grátis (1º Ano)</span>
+                    </li>
+                  )}
                   {(plan.features || []).map((feat, j) => (
                     <li key={j} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
@@ -1093,6 +1100,7 @@ export default function LandingPage() {
       { name: 'IA Descrições/Mês', key: 'ia_limit' },
       { name: 'IA Aura', key: 'aura_access', type: 'text' },
       { name: 'Site Profissional', key: 'has_site', type: 'boolean' },
+      { name: 'Domínio Grátis 1º Ano (No Plano Anual)', key: 'has_free_domain', type: 'boolean' },
       { name: 'Integração Portais Zap/VivaReal', key: 'has_portals', type: 'boolean' },
       { name: 'E-mail Marketing', key: 'has_email_auto', type: 'boolean' },
       { name: 'API de Integração com Checkout', key: 'has_api', type: 'boolean' },

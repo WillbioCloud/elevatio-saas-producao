@@ -924,6 +924,7 @@ const AdminConfig: React.FC = () => {
   );
   const currentPlanDetails = currentPlanIndex !== -1 ? plans[currentPlanIndex] : null;
   const getPlanHighlights = (plan: any) => [
+    ...(billingCycle === 'yearly' && plan?.has_free_domain ? ['🎁 Domínio Grátis (1º ano)'] : []),
     ...(plan?.max_contracts > 0 ? [`Até ${plan.max_contracts} contratos ativos`] : []),
     ...(Array.isArray(plan?.features) ? plan.features : []),
   ];
