@@ -30,15 +30,11 @@ serve(async (req) => {
 
     if (!customerId) {
       const document = company?.document?.replace(/\D/g, '') || company?.cpf_cnpj?.replace(/\D/g, '') || '';
-      
       if (document) {
-        const searchRes = await fetch(`https://sandbox.asaas.com/api/v3/customers?cpfCnpj=${document}`, {
-          headers: { 'access_token': ASAAS_API_KEY }
-        });
+        const searchRes = await fetch(`https://sandbox.asaas.com/api/v3/customers?cpfCnpj=${document}`, { headers: { 'access_token': ASAAS_API_KEY } });
         const searchData = await searchRes.json();
         if (searchData.data && searchData.data.length > 0) customerId = searchData.data[0].id;
       }
-
       if (!customerId) {
         const customerRes = await fetch(`https://sandbox.asaas.com/api/v3/customers`, {
           method: 'POST',
@@ -54,12 +50,11 @@ serve(async (req) => {
         if (customerData.id) customerId = customerData.id;
         else throw new Error('Falha ao criar cliente: ' + JSON.stringify(customerData.errors));
       }
-
       await supabase.from('companies').update({ asaas_customer_id: customerId }).eq('id', company_id);
     }
 
-    // ✨ 3. REGRAS DE PREÇO E AMARRAÇÃO DE FIDELIDADE
-    const plans = { starter: { price: 97.90 }, basic: { price: 197.90 }, profissional: { price: 349.90 }, business: { price: 549.90 }, premium: { price: 849.90 }, elite: { price: 1249.90 } }
+    // ✨ MATEMÁTICA CORRIGIDA AQUI ✨
+    const plans = { starter: { price: 54.90 }, basic: { price: 74.90 }, profissional: { price: 119.90 }, business: { price: 179.90 }, premium: { price: 249.90 }, elite: { price: 479.90 } }
     const planData = plans[new_plan.toLowerCase() as keyof typeof plans];
     if (!planData) throw new Error('Plano inválido');
 
@@ -68,12 +63,11 @@ serve(async (req) => {
     let fidelityEndDate = null;
 
     if (billing_cycle === 'yearly') {
-      price = price * 12 * 0.8; 
-      finalHasFidelity = false; // O Anual já é uma fidelidade por natureza (paga 1 ano), não precisa da flag mensal
+      price = price * 12 * 0.85; // ✨ 15% DE DESCONTO NO ANUAL
+      finalHasFidelity = false; 
     } 
     else if (has_fidelity) {
-      price = price * 0.9; 
-      // Calcula o Fim da Fidelidade (Hoje + 12 Meses)
+      price = price * 0.90; // ✨ 10% DE DESCONTO NA FIDELIDADE MENSAL
       const futureDate = new Date();
       futureDate.setFullYear(futureDate.getFullYear() + 1);
       fidelityEndDate = futureDate.toISOString();
@@ -92,11 +86,7 @@ serve(async (req) => {
           const createRes = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions`, {
             method: 'POST',
             headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              customer: customerId, billingType: subData.billingType || 'UNDEFINED',
-              nextDueDate: subData.nextDueDate, value: price, cycle: targetCycle,
-              description: `Plano ${new_plan.toUpperCase()} - Elevatio Vendas (${targetCycle})`
-            })
+            body: JSON.stringify({ customer: customerId, billingType: subData.billingType || 'UNDEFINED', nextDueDate: subData.nextDueDate, value: price, cycle: targetCycle, description: `Plano ${new_plan.toUpperCase()} - Elevatio Vendas (${targetCycle})` })
           });
           const createData = await createRes.json();
           if (!createData.errors) newSubscriptionId = createData.id;
@@ -116,35 +106,17 @@ serve(async (req) => {
       const createRes = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions`, {
         method: 'POST',
         headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer: customerId, billingType: 'UNDEFINED',
-          nextDueDate: nextDueDate.toISOString().split('T')[0], value: price, cycle: targetCycle,
-          description: `Plano ${new_plan.toUpperCase()} - Elevatio Vendas (${targetCycle})`
-        })
+        body: JSON.stringify({ customer: customerId, billingType: 'UNDEFINED', nextDueDate: nextDueDate.toISOString().split('T')[0], value: price, cycle: targetCycle, description: `Plano ${new_plan.toUpperCase()} - Elevatio Vendas (${targetCycle})` })
       });
       const createData = await createRes.json();
       if (!createData.errors) newSubscriptionId = createData.id;
     }
 
-    // ✨ 4. GRAVA TUDO NO BANCO (Incluindo a data de fim da fidelidade!)
-    await supabase.from('saas_contracts').update({
-        plan_name: new_plan, 
-        plan_id: plan_id, 
-        billing_cycle: billing_cycle,
-        has_fidelity: finalHasFidelity, 
-        fidelity_end_date: fidelityEndDate, // Agora o contrato sabe quando acaba!
-        subscription_id: newSubscriptionId, 
-        price: price
-    }).eq('company_id', company_id);
-
-    await supabase.from('companies').update({
-        plan: new_plan, asaas_subscription_id: newSubscriptionId
-    }).eq('id', company_id);
+    await supabase.from('saas_contracts').update({ plan_name: new_plan, plan_id: plan_id, billing_cycle: billing_cycle, has_fidelity: finalHasFidelity, fidelity_end_date: fidelityEndDate, subscription_id: newSubscriptionId, price: price }).eq('company_id', company_id);
+    await supabase.from('companies').update({ plan: new_plan, asaas_subscription_id: newSubscriptionId }).eq('id', company_id);
 
     return new Response(JSON.stringify({ success: true, subscription_id: newSubscriptionId }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
-
   } catch (error: any) {
-    console.error('Erro na função:', error)
     return new Response(JSON.stringify({ error: error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 })
   }
 })

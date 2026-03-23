@@ -298,6 +298,8 @@ const AdminConfig: React.FC = () => {
     seo: { title: null, description: null },
   });
 
+  const formatPlanPrice = (value: number) => value.toFixed(2).replace('.', ',');
+
   const fetchSettings = async () => {
     const { data } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
     if (data) {
@@ -1528,8 +1530,7 @@ const AdminConfig: React.FC = () => {
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
                 }`}
               >
-                Anual
-                <span className="bg-brand-100 text-brand-700 text-[10px] px-1.5 py-0.5 rounded-md">-20%</span>
+                Anual (15% OFF)
               </button>
             </div>
 
@@ -1564,7 +1565,7 @@ const AdminConfig: React.FC = () => {
                     />
                   </span>
                   <span className="text-sm font-medium text-slate-800 dark:text-slate-100 text-left">
-                    Ativar fidelidade de 12 meses para ganhar <strong className="text-brand-600 dark:text-brand-400">20% de desconto</strong>
+                    Desconto Fidelidade (10% OFF)
                   </span>
                 </div>
               </button>
@@ -1812,6 +1813,10 @@ const AdminConfig: React.FC = () => {
                     const isReactivationFlow = contract?.status === 'canceled' || contract?.status === 'expired';
                     const monthlyPrice = Number(plan.price || 0);
                     const yearlyPrice = monthlyPrice * 0.85;
+                    const fidelityPrice = monthlyPrice * 0.90;
+                    const displayPrice = isYearly ? yearlyPrice : (acceptFidelity ? fidelityPrice : monthlyPrice);
+                    const yearlyTotalPrice = monthlyPrice * 12 * 0.85;
+                    const hasDiscount = displayPrice < monthlyPrice;
                     
                     return (
                       <div
@@ -1834,19 +1839,23 @@ const AdminConfig: React.FC = () => {
                           <p className="text-sm text-slate-500 mt-1 line-clamp-2">{plan.description}</p>
                         </div>
                         <div className="mb-6 flex flex-col">
+                          <div className="h-5">
+                            {hasDiscount && (
+                              <span className="text-sm text-slate-500">
+                                De <span className="line-through">R$ {formatPlanPrice(monthlyPrice)}</span> por
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-baseline gap-1">
                             <span className="text-3xl font-bold text-slate-900 dark:text-white">
-                              R${' '}
-                              {billingCycle === 'monthly'
-                                ? (acceptFidelity ? monthlyPrice * 0.8 : monthlyPrice).toFixed(2).replace('.', ',')
-                                : yearlyPrice.toFixed(2).replace('.', ',')}
+                              R$ {formatPlanPrice(displayPrice)}
                             </span>
                             <span className="text-sm text-slate-500">/mês</span>
                           </div>
                           <div className="h-4 mt-1">
                             {billingCycle === 'yearly' && (
                               <span className="text-xs text-brand-600 dark:text-brand-400 font-medium">
-                                Faturado R$ {(yearlyPrice * 12).toFixed(2).replace('.', ',')} / ano
+                                Faturado R$ {formatPlanPrice(yearlyTotalPrice)} / ano
                               </span>
                             )}
                           </div>
