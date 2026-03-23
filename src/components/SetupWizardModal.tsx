@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Building2, CheckCircle, Globe, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,13 +10,16 @@ type SetupWizardModalProps = {
   onComplete: () => void;
 };
 
+type DomainMode = 'novo' | 'sim';
+type DomainStatus = 'idle' | 'loading' | 'available' | 'taken' | 'error';
+
 const normalizePlanFromNav = (value: unknown): PlanType | undefined => {
   if (typeof value !== 'string') return undefined;
 
   const v = value.trim().toLowerCase();
   if (!v) return undefined;
 
-  // Compatibilidade com slugs antigos/inglês vindos da Landing Page
+  // Compatibilidade com slugs antigos/ingles vindos da Landing Page
   if (v === 'professional' || v === 'profissional') return 'profissional';
 
   if (v === 'free') return 'free';
@@ -35,21 +38,43 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  
-  // Normaliza o nome do plano para evitar falhas na busca do banco de dados (ex: professional -> profissional)
-  const initialPlanRaw = location.state?.plan || localStorage.getItem('trimoveis_selected_plan') || localStorage.getItem('elevatio_selected_plan') || 'profissional';
+
+  // Normaliza o nome do plano para evitar falhas na busca do banco de dados
+  const initialPlanRaw =
+    location.state?.plan ||
+    localStorage.getItem('trimoveis_selected_plan') ||
+    localStorage.getItem('elevatio_selected_plan') ||
+    'profissional';
   const initialPlan = normalizePlanFromNav(initialPlanRaw) || 'profissional';
-  
-  const [formData, setFormData] = useState({
+
+  const [formData, setFormData] = useState<{
+    companyName: string;
+    document: string;
+    phone: string;
+    domain: string;
+    hasDomain: DomainMode;
+    template: string;
+    plan: PlanType;
+    billingCycle: string;
+  }>({
     companyName: '',
     document: '',
     phone: '',
     domain: '',
-    hasDomain: 'nao',
-    template: 'minimalist', // Default para o template minimalista
+    hasDomain: 'novo',
+    template: 'minimalist',
     plan: initialPlan,
-    billingCycle: location.state?.cycle || localStorage.getItem('trimoveis_billing_cycle') || 'monthly'
+    billingCycle:
+      location.state?.cycle ||
+      localStorage.getItem('trimoveis_billing_cycle') ||
+      'monthly',
   });
+  const [domainExtension, setDomainExtension] = useState('.com.br');
+  const [domainStatus, setDomainStatus] = useState<DomainStatus>('idle');
+
+  useEffect(() => {
+    setDomainStatus('idle');
+  }, [formData.domain, formData.hasDomain, domainExtension]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,43 +82,48 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     setErrorMsg('');
 
     try {
-      // Validações manuais antes de qualquer chamada ao Supabase
+      // Validacoes manuais antes de qualquer chamada ao Supabase
       if (!formData.companyName.trim()) {
-        throw new Error('Por favor, preencha o nome da imobiliária.');
+        throw new Error('Por favor, preencha o nome da imobiliaria.');
       }
       if (!formData.document.trim()) {
-        throw new Error('Por favor, preencha o CPF ou CNPJ para emissão da fatura.');
+        throw new Error('Por favor, preencha o CPF ou CNPJ para emissao da fatura.');
       }
       if (!formData.phone.trim()) {
         throw new Error('Por favor, preencha o telefone de contato.');
       }
       if (!formData.domain.trim()) {
-        throw new Error('Por favor, preencha o endereço do site.');
+        throw new Error('Por favor, preencha o endereco do site.');
       }
 
-      if (!user?.id) throw new Error('Sessão inválida. Faça login novamente.');
+      if (!user?.id) throw new Error('Sessao invalida. Faca login novamente.');
 
       const trialEnds = new Date();
       trialEnds.setDate(trialEnds.getDate() + 7);
 
-      const slug = formData.companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+      const slug = formData.companyName
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '-')
+        .replace(/-+/g, '-');
 
       const { data: newCompany, error: companyError } = await supabase
         .from('companies')
-        .insert([{
-          name: formData.companyName,
-          subdomain: slug,
-          document: formData.document,
-          phone: formData.phone,
-          template: formData.template, // Agora lê o template escolhido nos radio buttons
-          plan_status: 'trial',
-          plan: formData.plan,
-          trial_ends_at: trialEnds.toISOString(),
-        }])
+        .insert([
+          {
+            name: formData.companyName,
+            subdomain: slug,
+            document: formData.document,
+            phone: formData.phone,
+            template: formData.template,
+            plan_status: 'trial',
+            plan: formData.plan,
+            trial_ends_at: trialEnds.toISOString(),
+          },
+        ])
         .select()
         .single();
 
-      if (companyError) throw new Error('Erro ao criar imobiliária: ' + companyError.message);
+      if (companyError) throw new Error('Erro ao criar imobiliaria: ' + companyError.message);
 
       if (newCompany) {
         const { error: profileError } = await supabase
@@ -108,69 +138,114 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
         if (profileError) throw new Error('Erro ao vincular perfil: ' + profileError.message);
 
-        // Criar contrato de SaaS (obrigatório para liberar fluxo de assinatura/trial)
+        // Criar contrato de SaaS obrigatorio para liberar fluxo de assinatura/trial
         const nowIso = new Date().toISOString();
-        const { error: contractError } = await supabase.from('saas_contracts').insert([{
-          company_id: newCompany.id,
-          plan_id: null, // Ignoramos a tabela saas_plans, usamos o config local
-          plan_name: formData.plan, // Nome oficial do plano (ex: 'profissional', 'elite')
-          status: 'pending', // Status vital para liberar o trial via Front-end
-          start_date: nowIso,
-          end_date: trialEnds.toISOString(),
-          billing_cycle: formData.billingCycle
-        }]);
+        const { error: contractError } = await supabase.from('saas_contracts').insert([
+          {
+            company_id: newCompany.id,
+            plan_id: null,
+            plan_name: formData.plan,
+            status: 'pending',
+            start_date: nowIso,
+            end_date: trialEnds.toISOString(),
+            billing_cycle: formData.billingCycle,
+          },
+        ]);
 
         if (contractError) {
           throw new Error('Erro ao criar contrato inicial: ' + contractError.message);
         }
 
-        // Fire-and-Forget: Chama a Edge Function do Asaas sem bloquear a UI
-        supabase.functions.invoke('create-asaas-checkout', {
-          body: { company_id: newCompany.id, plan: formData.plan, cycle: formData.billingCycle }
-        }).catch((e) => {
-          console.error('Falha ao chamar webhook Asaas (Fire-and-Forget):', e);
-        });
+        // Fire-and-forget: chama a Edge Function do Asaas sem bloquear a UI
+        supabase.functions
+          .invoke('create-asaas-checkout', {
+            body: { company_id: newCompany.id, plan: formData.plan, cycle: formData.billingCycle },
+          })
+          .catch((invokeError) => {
+            console.error('Falha ao chamar webhook Asaas (fire-and-forget):', invokeError);
+          });
       }
 
-      // Limpar o cache do navegador após sucesso
+      // Limpar o cache do navegador apos sucesso
       localStorage.removeItem('trimoveis_selected_plan');
       localStorage.removeItem('elevatio_selected_plan');
-      localStorage.removeItem('trimoveis_billing_cycle'); // CORREÇÃO DO BUG ANUAL
+      localStorage.removeItem('trimoveis_billing_cycle');
 
       onComplete();
 
-      // Força o recarregamento total da aplicação para o SessionManager 
-      // ler a nova empresa (trial) e o novo contrato (pending) direto do banco!
+      // Forca o recarregamento total da aplicacao para o SessionManager
+      // ler a nova empresa e o novo contrato direto do banco
       window.location.href = '/admin/dashboard';
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Erro inesperado ao configurar a sua conta.';
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Erro inesperado ao configurar a sua conta.';
       setErrorMsg(message);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const isEligibleForFreeDomain =
+    formData.billingCycle === 'yearly' &&
+    ['profissional', 'business', 'premium', 'elite'].includes(formData.plan.toLowerCase());
+
+  const trialSubdomainPreview =
+    formData.companyName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'sua-imobiliaria';
+
+  const checkDomainAvailability = async () => {
+    if (!formData.domain) return;
+    setDomainStatus('loading');
+    const cleanDomain = formData.domain.toLowerCase().replace(/[^a-z0-9-]/g, '');
+
+    try {
+      const fullDomain = `${cleanDomain}${domainExtension}`;
+      const url =
+        domainExtension === '.com.br'
+          ? `https://rdap.registro.br/domain/${fullDomain}`
+          : `https://rdap.verisign.com/com/v1/domain/${fullDomain}`;
+
+      const response = await fetch(url);
+      if (response.status === 404) setDomainStatus('available');
+      else if (response.status === 200) setDomainStatus('taken');
+      else setDomainStatus('error');
+    } catch (error) {
+      setDomainStatus('error');
+    }
+  };
+
+  const sanitizedProductionDomain =
+    formData.domain.toLowerCase().replace(/[^a-z0-9-]/g, '') || 'minhacorretora';
+
   return (
-    <div className="fixed inset-0 bg-slate-900/35 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="p-6 border-b border-slate-200 bg-gradient-to-r from-white via-brand-50/40 to-white">
-          <h2 className="text-2xl font-bold text-slate-900">Bem-vindo ao Elevatio Vendas! 🎉</h2>
-          <p className="text-slate-600 mt-1 text-sm">Faltam apenas alguns detalhes para liberar o seu CRM com 7 dias grátis.</p>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="border-b border-slate-200 bg-gradient-to-r from-white via-brand-50/40 to-white p-6">
+          <h2 className="text-2xl font-bold text-slate-900">Bem-vindo ao Elevatio Vendas!</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Faltam apenas alguns detalhes para liberar o seu CRM com 7 dias gratis.
+          </p>
         </div>
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+
+        <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
+          <div className="custom-scrollbar flex-1 overflow-y-auto p-6">
             <div className="space-y-6">
               <div className="space-y-4">
-                <h3 className="text-brand-700 font-bold flex items-center gap-2">
-                  <Building2 className="w-5 h-5" /> Dados da Imobiliária
+                <h3 className="flex items-center gap-2 font-bold text-brand-700">
+                  <Building2 className="h-5 w-5" /> Dados da Imobiliaria
                 </h3>
-                <div className="mb-4 flex bg-slate-100 p-1 rounded-xl w-fit border border-slate-200">
+
+                <div className="mb-4 flex w-fit rounded-xl border border-slate-200 bg-slate-100 p-1">
                   <button
                     type="button"
-                    onClick={() => setFormData({...formData, billingCycle: 'monthly'})}
-                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                      formData.billingCycle === 'monthly' 
-                        ? 'bg-white text-slate-900 shadow-sm' 
+                    onClick={() => setFormData({ ...formData, billingCycle: 'monthly' })}
+                    className={`rounded-lg px-4 py-2 text-sm font-bold transition-all ${
+                      formData.billingCycle === 'monthly'
+                        ? 'bg-white text-slate-900 shadow-sm'
                         : 'text-slate-500 hover:text-slate-900'
                     }`}
                   >
@@ -178,23 +253,28 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFormData({...formData, billingCycle: 'yearly'})}
-                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${
-                      formData.billingCycle === 'yearly' 
-                        ? 'bg-brand-600 text-white' 
+                    onClick={() => setFormData({ ...formData, billingCycle: 'yearly' })}
+                    className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-all ${
+                      formData.billingCycle === 'yearly'
+                        ? 'bg-brand-600 text-white'
                         : 'text-slate-500 hover:text-slate-900'
                     }`}
                   >
                     Anual
-                    <span className="bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded-md border border-emerald-200">-20%</span>
+                    <span className="rounded-md border border-emerald-200 bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700">
+                      -20%
+                    </span>
                   </button>
                 </div>
+
                 <div className="mb-4">
-                  <label className="block text-sm font-bold text-slate-600 mb-1">Confirme seu Plano</label>
+                  <label className="mb-1 block text-sm font-bold text-slate-600">
+                    Confirme seu Plano
+                  </label>
                   <select
                     value={formData.plan}
-                    onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
+                    onChange={(e) => setFormData({ ...formData, plan: e.target.value as PlanType })}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
                   >
                     <option value="starter">Starter</option>
                     <option value="basic">Basic</option>
@@ -204,76 +284,194 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     <option value="elite">Elite</option>
                   </select>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div>
-                    <label className="block text-sm text-slate-600 mb-1">Nome da Imobiliária</label>
+                    <label className="mb-1 block text-sm text-slate-600">Nome da Imobiliaria</label>
                     <input
                       required
                       type="text"
                       value={formData.companyName}
-                      onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
-                      placeholder="Nome da Sua Imobiliária"
+                      onChange={(e) =>
+                        setFormData({ ...formData, companyName: e.target.value })
+                      }
+                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
+                      placeholder="Nome da sua imobiliaria"
                     />
                   </div>
+
                   <div>
-                    <label className="block text-sm text-slate-600 mb-1">CPF ou CNPJ (Para a fatura)</label>
+                    <label className="mb-1 block text-sm text-slate-600">
+                      CPF ou CNPJ (para a fatura)
+                    </label>
                     <input
                       required
                       type="text"
                       value={formData.document}
                       onChange={(e) => setFormData({ ...formData, document: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
                       placeholder="000.000.000-00"
                     />
                   </div>
+
                   <div>
-                    <label className="block text-sm text-slate-600 mb-1">Telefone (WhatsApp)</label>
+                    <label className="mb-1 block text-sm text-slate-600">Telefone (WhatsApp)</label>
                     <input
                       required
                       type="tel"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
                       placeholder="(11) 99999-9999"
                     />
                   </div>
                 </div>
               </div>
+
               <hr className="border-slate-200" />
+
               <div className="space-y-4">
-                <h3 className="text-brand-700 font-bold flex items-center gap-2">
-                  <Globe className="w-5 h-5" /> Endereço do Site
+                <h3 className="flex items-center gap-2 font-bold text-brand-700">
+                  <Globe className="h-5 w-5" /> Endereco do Site
                 </h3>
-                <div>
-                  <label className="block text-sm text-slate-600 mb-2">Você já possui um domínio registrado?</label>
+
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-brand-100 bg-brand-50/70 px-4 py-3">
+                    <p className="text-sm font-semibold text-brand-900">
+                      Ambiente de teste incluso automaticamente
+                    </p>
+                    <p className="mt-1 text-sm text-brand-700">
+                      Um subdominio temporario sera criado para voce comecar rapido:
+                      {' '}
+                      <span className="font-semibold">{trialSubdomainPreview}.elevatio.com.br</span>
+                    </p>
+                  </div>
+
+                  <label className="block text-sm text-slate-600">
+                    Para o dominio de producao, o que voce precisa?
+                  </label>
+
                   <select
                     value={formData.hasDomain}
-                    onChange={(e) => setFormData({ ...formData, hasDomain: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500 mb-3"
+                    onChange={(e) => {
+                      const nextMode = e.target.value as DomainMode;
+                      setFormData({ ...formData, hasDomain: nextMode, domain: '' });
+                      setDomainStatus('idle');
+                    }}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
                   >
-                    <option value="nao">Não, quero usar um subdomínio grátis do Elevatio</option>
-                    <option value="sim">Sim, já tenho o meu próprio domínio</option>
+                    <option value="novo">Quero registrar um novo dominio</option>
+                    <option value="sim">Ja possuo um dominio registrado</option>
                   </select>
-                  <input
-                    required
-                    type="text"
-                    value={formData.domain}
-                    onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
-                    placeholder={formData.hasDomain === 'sim' ? 'Ex: minhacorretora.com.br' : 'Ex: minhacorretora'}
-                  />
+
+                  {formData.hasDomain === 'sim' && (
+                    <div className="space-y-2">
+                      <input
+                        required
+                        type="text"
+                        value={formData.domain}
+                        onChange={(e) => {
+                          setFormData({ ...formData, domain: e.target.value });
+                          setDomainStatus('idle');
+                        }}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
+                        placeholder="Ex: minhacorretora.com.br"
+                      />
+                      <p className="text-xs text-slate-500">
+                        Informe o dominio completo, sem https://
+                      </p>
+                    </div>
+                  )}
+
+                  {formData.hasDomain === 'novo' && (
+                    <div className="space-y-3">
+                      {isEligibleForFreeDomain && (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                          Seu plano anual inclui o 1o ano do dominio de producao como cortesia.
+                        </div>
+                      )}
+
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          required
+                          type="text"
+                          value={formData.domain}
+                          onChange={(e) => {
+                            setFormData({ ...formData, domain: e.target.value });
+                            setDomainStatus('idle');
+                          }}
+                          className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
+                          placeholder="Ex: minhacorretora"
+                        />
+                        <select
+                          value={domainExtension}
+                          onChange={(e) => {
+                            setDomainExtension(e.target.value);
+                            setDomainStatus('idle');
+                          }}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-slate-900 outline-none focus:border-brand-500"
+                        >
+                          <option value=".com.br">.com.br</option>
+                          <option value=".com">.com</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={checkDomainAvailability}
+                          disabled={!formData.domain.trim() || domainStatus === 'loading'}
+                          className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 font-semibold text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {domainStatus === 'loading' && (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          )}
+                          Verificar
+                        </button>
+                      </div>
+
+                      <p className="text-xs text-slate-500">
+                        Digite apenas o nome desejado. Vamos consultar a disponibilidade de
+                        {' '}
+                        <span className="font-semibold text-slate-700">
+                          {sanitizedProductionDomain}
+                          {domainExtension}
+                        </span>
+                        .
+                      </p>
+
+                      {domainStatus === 'available' && (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                          Dominio disponivel para registro.
+                        </div>
+                      )}
+
+                      {domainStatus === 'taken' && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                          Esse dominio ja esta em uso. Tente outra combinacao.
+                        </div>
+                      )}
+
+                      {domainStatus === 'error' && (
+                        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                          Nao foi possivel verificar o dominio agora. Tente novamente em instantes.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
+
               <hr className="border-slate-200" />
+
               <div className="space-y-4">
-                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <span className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm">3</span>
+                <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-sm text-brand-700">
+                    3
+                  </span>
                   Visual do Site
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <label
-                    className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
+                    className={`relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-all ${
                       formData.template === 'minimalist'
                         ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-100'
                         : 'border-slate-200 bg-white hover:border-slate-300'
@@ -287,11 +485,14 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                       checked={formData.template === 'minimalist'}
                       onChange={(e) => setFormData({ ...formData, template: e.target.value })}
                     />
-                    <div className="font-bold text-slate-900 mb-1">Minimalista</div>
-                    <p className="text-xs text-slate-500">Design limpo, claro e focado nos imóveis.</p>
+                    <div className="mb-1 font-bold text-slate-900">Minimalista</div>
+                    <p className="text-xs text-slate-500">
+                      Design limpo, claro e focado nos imoveis.
+                    </p>
                   </label>
+
                   <label
-                    className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
+                    className={`relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-all ${
                       formData.template === 'luxury'
                         ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-100'
                         : 'border-slate-200 bg-white hover:border-slate-300'
@@ -305,13 +506,16 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                       checked={formData.template === 'luxury'}
                       onChange={(e) => setFormData({ ...formData, template: e.target.value })}
                     />
-                    <div className="font-bold text-amber-400 mb-1 flex items-center gap-1">
+                    <div className="mb-1 flex items-center gap-1 font-bold text-amber-400">
                       Luxo <Icons.Crown size={14} />
                     </div>
-                    <p className="text-xs text-slate-500">Tons escuros e elegantes para alto padrão.</p>
+                    <p className="text-xs text-slate-500">
+                      Tons escuros e elegantes para alto padrao.
+                    </p>
                   </label>
+
                   <label
-                    className={`cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden ${
+                    className={`relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-all ${
                       formData.template === 'modern'
                         ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100'
                         : 'border-slate-200 bg-white hover:border-slate-300'
@@ -325,34 +529,42 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                       checked={formData.template === 'modern'}
                       onChange={(e) => setFormData({ ...formData, template: e.target.value })}
                     />
-                    <div className="font-bold text-blue-400 mb-1 flex items-center gap-1">
+                    <div className="mb-1 flex items-center gap-1 font-bold text-blue-400">
                       Moderno <Icons.Zap size={14} />
                     </div>
-                    <p className="text-xs text-slate-500">Layout arrojado, cantos arredondados e cores vivas.</p>
+                    <p className="text-xs text-slate-500">
+                      Layout arrojado, cantos arredondados e cores vivas.
+                    </p>
                   </label>
                 </div>
-                <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                  Trabalhamos somente com templates pré-definidos para garantir velocidade, estabilidade e suporte contínuo.
+
+                <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                  Trabalhamos somente com templates pre-definidos para garantir velocidade,
+                  estabilidade e suporte continuo.
                 </p>
               </div>
+
               {errorMsg && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">{errorMsg}</div>
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {errorMsg}
+                </div>
               )}
             </div>
           </div>
-          <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-end">
+
+          <div className="flex justify-end border-t border-slate-200 bg-slate-50 p-6">
             <button
               type="submit"
               disabled={isLoading}
-              className="bg-brand-600 hover:bg-brand-500 text-white px-8 py-3 rounded-lg font-bold flex items-center gap-2 disabled:opacity-50 shadow-sm"
+              className="flex items-center gap-2 rounded-lg bg-brand-600 px-8 py-3 font-bold text-white shadow-sm hover:bg-brand-500 disabled:opacity-50"
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" /> Configurando...
+                  <Loader2 className="h-5 w-5 animate-spin" /> Configurando...
                 </>
               ) : (
                 <>
-                  <CheckCircle className="w-5 h-5" /> Concluir e Acessar CRM
+                  <CheckCircle className="h-5 w-5" /> Concluir e Acessar CRM
                 </>
               )}
             </button>
