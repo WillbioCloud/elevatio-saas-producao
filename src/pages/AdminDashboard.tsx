@@ -26,8 +26,8 @@ const InfoTooltip = ({ text }: { text: string }) => (
   <TooltipProvider delayDuration={200}>
     <Tooltip>
       <TooltipTrigger asChild>
-        <button type="button" className="ml-2 focus:outline-none flex items-center justify-center">
-          <Icons.Info size={15} className="text-slate-400 hover:text-brand-500 transition-colors cursor-help" />
+        <button type="button" className="ml-2 flex cursor-pointer items-center justify-center focus:outline-none">
+          <Icons.Info size={15} className="text-slate-400 transition-colors hover:text-brand-500" />
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" align="center" className="bg-slate-900 text-white border-none shadow-xl max-w-xs text-center font-sans">
@@ -338,7 +338,7 @@ const AdminDashboard: React.FC = () => {
   };
 
   // --- CLASSES CSS PREMIUM COMPARTILHADAS ---
-  const glassCardClasses = "h-full bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col justify-between transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]";
+  const glassCardClasses = "h-full bg-white/80 dark:bg-[#0a0f1c]/80 p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col justify-between transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]";
 
   const renderWidgetContent = (id: string) => {
     switch(id) {
@@ -347,7 +347,7 @@ const AdminDashboard: React.FC = () => {
           <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full bg-sky-400/20 blur-2xl pointer-events-none"></div>
           <div className="relative z-10">
             <div className="flex justify-between items-start mb-4">
-              <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-md"><Icons.TrendingUp size={24} className="text-sky-300" /></div>
+              <div className="p-3 bg-white/10 rounded-2xl"><Icons.TrendingUp size={24} className="text-sky-300" /></div>
               <span className="text-[10px] font-bold uppercase tracking-widest bg-sky-500/20 text-sky-300 px-3 py-1 rounded-full border border-sky-500/20">Histórico</span>
             </div>
             <div className="text-sky-100/70 text-sm mb-1 flex items-center font-medium">VGV Total <InfoTooltip text="Soma de todas as vendas fechadas." /></div>
@@ -390,7 +390,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'funil': return (
-        <div className="h-full bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-4 md:p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
+        <div className="h-full bg-white/80 dark:bg-[#0a0f1c]/80 p-4 md:p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
           <h3 className="text-lg font-bold font-serif text-slate-800 dark:text-white mb-4 flex items-center">Funil de Vendas <InfoTooltip text="Conversão de leads." />{leadsLoading && <span className="ml-2"><InlineLoading /></span>}</h3>
           <div className="flex-1 h-[250px] w-full overflow-x-auto overflow-y-hidden custom-scrollbar pb-2">
             {leadsLoading ? <div className="flex h-full items-center justify-center"><InlineLoading /></div> : (
@@ -409,7 +409,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'agenda': return (
-        <div className="h-full bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
+        <div className="h-full bg-white/80 dark:bg-[#0a0f1c]/80 p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-bold font-serif text-slate-800 dark:text-white">Minha Agenda</h3>
             <span className="text-[10px] font-bold uppercase tracking-widest bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 px-3 py-1 rounded-full">Próximas</span>
@@ -428,9 +428,9 @@ const AdminDashboard: React.FC = () => {
       );
       case 'financeiroAdmin': return (
         <div className="h-full grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
-          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-5 md:p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none relative overflow-hidden flex flex-col transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
+          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 p-5 md:p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none relative overflow-hidden flex flex-col transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
             {!canAccessGamification && (
-              <div className="absolute inset-0 bg-white/60 dark:bg-[#0a0f1c]/60 backdrop-blur-md z-20 flex flex-col items-center justify-center text-center p-6">
+              <div className="absolute inset-0 bg-white/60 dark:bg-[#0a0f1c]/60 z-20 flex flex-col items-center justify-center text-center p-6">
                 <div className="w-12 h-12 md:w-16 md:h-16 bg-white dark:bg-[#0c1445] border border-slate-100 dark:border-white/10 rounded-2xl flex items-center justify-center text-slate-400 dark:text-slate-300 mb-3 md:mb-4 shadow-xl">
                   <Icons.Lock size={24} className="md:w-8 md:h-8" />
                 </div>
@@ -455,9 +455,9 @@ const AdminDashboard: React.FC = () => {
               </div>
             </div>
           </div>
-          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-5 md:p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none relative overflow-hidden flex flex-col transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
+          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 p-5 md:p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none relative overflow-hidden flex flex-col transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
             {!canAccessFinance && (
-              <div className="absolute inset-0 bg-white/60 dark:bg-[#0a0f1c]/60 backdrop-blur-md z-20 flex flex-col items-center justify-center text-center p-6">
+              <div className="absolute inset-0 bg-white/60 dark:bg-[#0a0f1c]/60 z-20 flex flex-col items-center justify-center text-center p-6">
                 <div className="w-12 h-12 md:w-16 md:h-16 bg-white dark:bg-[#0c1445] border border-slate-100 dark:border-white/10 rounded-2xl flex items-center justify-center text-slate-400 dark:text-slate-300 mb-3 md:mb-4 shadow-xl">
                   <Icons.Lock size={24} className="md:w-8 md:h-8" />
                 </div>
@@ -487,7 +487,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'calendario': return (
-        <div className="h-full bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none">
+        <div className="h-full bg-white/80 dark:bg-[#0a0f1c]/80 rounded-3xl border border-slate-200/60 dark:border-white/5 overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none">
           <DashboardCalendar />
         </div>
       );
@@ -611,7 +611,7 @@ const AdminDashboard: React.FC = () => {
           return (
             <div
               key={w.id}
-              className={`${config.size} relative group cursor-grab active:cursor-grabbing transition-transform duration-200`}
+              className={`${config.size} relative group cursor-pointer transition-transform duration-200`}
               draggable
               onDragStart={(e) => handleDragStart(e, w.id)}
               onDragOver={(e) => { e.preventDefault(); setDragOverWidget(w.id); }}
@@ -621,7 +621,7 @@ const AdminDashboard: React.FC = () => {
               {/* Indicador visual de arraste */}
               <div className={`h-full transition-all duration-300 ${dragOverWidget === w.id ? 'scale-[1.02] ring-4 ring-brand-500/50 rounded-2xl' : ''} ${draggedWidget === w.id ? 'opacity-40' : 'opacity-100'}`}>
                 {/* Ícone para agarrar */}
-                <div className="absolute top-4 right-4 z-20 opacity-0 group-hover:opacity-100 p-1.5 bg-slate-100/80 dark:bg-slate-700/80 backdrop-blur-sm rounded-lg text-slate-400 hover:text-brand-500 transition-all cursor-grab shadow-sm">
+                <div className="absolute top-4 right-4 z-20 cursor-pointer rounded-lg bg-slate-100/80 p-1.5 text-slate-400 opacity-0 shadow-sm transition-all hover:text-brand-500 group-hover:opacity-100 dark:bg-slate-700/80">
                   <Icons.GripHorizontal size={16} />
                 </div>
                 

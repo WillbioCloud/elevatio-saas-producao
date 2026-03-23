@@ -9,7 +9,7 @@ import GamificationModal from '../components/GamificationModal';
 import FidelityTermsModal from '../components/FidelityTermsModal';
 import { uploadCompanyAsset } from '../lib/storage';
 import { SiteData } from '../types';
-import { Copy, Loader2, Upload, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle } from 'lucide-react';
 import { useProperties } from '../hooks/useProperties';
 import { generateZapXML } from '../utils/zapXmlGenerator';
 
@@ -221,7 +221,7 @@ const AdminConfig: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isAdmin = user?.role === 'admin';
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance'>('profile');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [distRules, setDistRules] = useState<{ enabled: boolean; types: string[] }>({ enabled: false, types: [] });
   const [profileForm, setProfileForm] = useState({ name: '', phone: '', email: '', company_logo: '', cpf_cnpj: '', creci: '' });
@@ -262,6 +262,8 @@ const AdminConfig: React.FC = () => {
   const [paymentGateway, setPaymentGateway] = useState<'asaas' | 'cora'>('cora');
   const [plans, setPlans] = useState<any[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
+  const [isUsageExpanded, setIsUsageExpanded] = useState(false);
+  const [usageStats, setUsageStats] = useState({ users: 1, properties: 0, activeContracts: 0 });
 
   useEffect(() => {
     setAcceptedFidelityTerms(false);
@@ -393,6 +395,53 @@ const AdminConfig: React.FC = () => {
       fetchPlans();
     }
   }, [isAdmin, user?.id]);
+
+  useEffect(() => {
+    if (activeTab !== 'subscription' || !user?.company_id) return;
+
+    let ignore = false;
+
+    const fetchUsageStats = async () => {
+      try {
+        const [profilesResult, propertiesResult, contractsResult] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('id', { count: 'exact' })
+            .eq('company_id', user.company_id),
+          supabase
+            .from('properties')
+            .select('id', { count: 'exact' })
+            .eq('company_id', user.company_id)
+            .in('status', ['Disponível', 'ativo', 'active']),
+          supabase
+            .from('contracts')
+            .select('id', { count: 'exact' })
+            .eq('company_id', user.company_id)
+            .eq('status', 'active'),
+        ]);
+
+        if (profilesResult.error) throw profilesResult.error;
+        if (propertiesResult.error) throw propertiesResult.error;
+        if (contractsResult.error) throw contractsResult.error;
+
+        if (ignore) return;
+
+        setUsageStats({
+          users: profilesResult.count ?? 1,
+          properties: propertiesResult.count ?? 0,
+          activeContracts: contractsResult.count ?? 0,
+        });
+      } catch (error) {
+        console.error('Erro ao buscar uso da assinatura:', error);
+      }
+    };
+
+    fetchUsageStats();
+
+    return () => {
+      ignore = true;
+    };
+  }, [activeTab, user?.company_id]);
 
   useEffect(() => {
     const fetchCompleteProfile = async () => {
@@ -931,6 +980,29 @@ const AdminConfig: React.FC = () => {
   const currentPlanFeatureList = currentPlanDetails ? getPlanHighlights(currentPlanDetails) : [];
   const displayPlanName = currentPlanDetails?.name || (rawPlan ? rawPlan.toUpperCase() : 'PLANO PADRÃO');
 
+  const getUsagePercentage = (used: number, max: number) => {
+    if (!max || max <= 0) return 0;
+    return Math.min(100, Math.round((used / max) * 100));
+  };
+  const usageItems = currentPlanDetails
+    ? [
+        { label: 'Usuarios', used: usageStats.users, max: Number(currentPlanDetails.max_users ?? 0) },
+        { label: 'Imoveis', used: usageStats.properties, max: Number(currentPlanDetails.max_properties ?? 0) },
+        { label: 'Contratos', used: usageStats.activeContracts, max: Number(currentPlanDetails.max_contracts ?? 0) },
+      ]
+    : [];
+  const crmModules = currentPlanDetails
+    ? [
+        { key: 'has_funnel', label: 'Funil de Vendas', enabled: Boolean(currentPlanDetails.has_funnel) },
+        { key: 'has_pipeline', label: 'Pipeline', enabled: Boolean(currentPlanDetails.has_pipeline) },
+        { key: 'has_gamification', label: 'Gamificacao', enabled: Boolean(currentPlanDetails.has_gamification) },
+        { key: 'has_erp', label: 'ERP', enabled: Boolean(currentPlanDetails.has_erp) },
+        { key: 'has_site', label: 'Site', enabled: Boolean(currentPlanDetails.has_site) },
+        { key: 'has_portals', label: 'Portais', enabled: Boolean(currentPlanDetails.has_portals) },
+        { key: 'has_api', label: 'API', enabled: Boolean(currentPlanDetails.has_api) },
+      ]
+    : [];
+
   const toggleSound = () => {
     const newValue = !soundEnabled;
     setSoundEnabled(newValue);
@@ -953,7 +1025,6 @@ const AdminConfig: React.FC = () => {
       <div className="flex overflow-x-auto ev-main-scroll gap-2 p-1.5 bg-slate-200/50 dark:bg-[#0a0f1c]/50 backdrop-blur-md rounded-2xl w-fit border border-slate-300/50 dark:border-white/5 shadow-inner">
         {[
           { id: 'profile', label: 'Perfil', icon: Icons.User },
-          { id: 'security', label: 'Segurança', icon: Icons.Lock },
           { id: 'team', label: 'Equipe', icon: Icons.Users, adminOnly: true },
           { id: 'traffic', label: 'Tráfego', icon: Icons.Globe, adminOnly: true },
           { id: 'subscription', label: 'Assinatura', icon: Icons.CreditCard, adminOnly: true },
@@ -1105,6 +1176,56 @@ const AdminConfig: React.FC = () => {
               </button>
             </form>
 
+            <div className="my-10 border-t border-slate-200 dark:border-slate-700/50"></div>
+
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                  <Icons.Lock size={18} className="text-brand-600" /> Segurança da Conta
+                </h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Atualize a sua senha para manter o acesso ao CRM protegido.
+                </p>
+              </div>
+
+              <form onSubmit={handleUpdatePassword} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nova Senha</label>
+                  <input
+                    type="password"
+                    className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
+                    value={passwordForm.password}
+                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, password: e.target.value }))}
+                    required
+                    minLength={6}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Confirmar Nova Senha</label>
+                  <input
+                    type="password"
+                    className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
+                    value={passwordForm.confirmPassword}
+                    onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                    required
+                    minLength={6}
+                  />
+                </div>
+
+                {passwordForm.confirmPassword && passwordForm.password !== passwordForm.confirmPassword && (
+                  <p className="text-xs text-red-500">As senhas não coincidem.</p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={savingPassword || passwordForm.password !== passwordForm.confirmPassword}
+                  className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {savingPassword ? 'Atualizando...' : 'Atualizar Senha'}
+                </button>
+              </form>
+            </div>
 
           <div className="bg-white dark:bg-dark-card p-6 rounded-2xl border border-gray-200 dark:border-dark-border mt-6">
             <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-6">
@@ -1149,52 +1270,6 @@ const AdminConfig: React.FC = () => {
               <p className="text-xs text-slate-300 mt-2">Faltam {pointsToNext} pontos para o próximo nível.</p>
             </div>
           </button>
-        </div>
-      )}
-
-      {activeTab === 'security' && (
-        <div className="max-w-2xl bg-white dark:bg-dark-card p-6 rounded-2xl border border-gray-200 dark:border-dark-border">
-          <h3 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-            <Icons.Lock size={18} /> Alterar Senha
-          </h3>
-
-          <form onSubmit={handleUpdatePassword} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nova Senha</label>
-              <input
-                type="password"
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
-                value={passwordForm.password}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, password: e.target.value }))}
-                required
-                minLength={6}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Confirmar Nova Senha</label>
-              <input
-                type="password"
-                className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
-                value={passwordForm.confirmPassword}
-                onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
-                required
-                minLength={6}
-              />
-            </div>
-
-            {passwordForm.confirmPassword && passwordForm.password !== passwordForm.confirmPassword && (
-              <p className="text-xs text-red-500">As senhas não coincidem.</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={savingPassword || passwordForm.password !== passwordForm.confirmPassword}
-              className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 disabled:opacity-60"
-            >
-              {savingPassword ? 'Atualizando...' : 'Atualizar Senha'}
-            </button>
-          </form>
         </div>
       )}
 
@@ -1502,33 +1577,34 @@ const AdminConfig: React.FC = () => {
           ) : contract ? (
             <>
               {/* Card do Plano Atual */}
-              <div className="bg-gradient-to-br from-brand-900 to-slate-900 rounded-3xl p-1 shadow-xl">
-                <div className="bg-white/10 backdrop-blur-md rounded-[22px] p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-8">
-                  <div className="text-white w-full md:w-auto">
+              <div className="bg-gradient-to-r from-brand-600 to-brand-800 rounded-3xl p-[1px] shadow-xl shadow-brand-900/10">
+                <div className="bg-white/10 backdrop-blur-md rounded-[22px] p-6 md:p-8">
+                  <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="w-full text-white">
                     <div className="flex items-center gap-3 mb-2">
-                      <span className="bg-brand-500/20 text-brand-200 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border border-brand-400/30">
+                      <span className="bg-white/10 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border border-white/15">
                         Plano Atual
                       </span>
                       <span
                         className={`flex items-center gap-1.5 text-xs font-bold ${
                           contract.status === 'active'
-                            ? 'text-emerald-400'
+                            ? 'text-emerald-200'
                             : contract.status === 'pending'
-                              ? 'text-blue-400'
+                              ? 'text-blue-100'
                               : contract.status === 'canceled'
-                                ? 'text-amber-400'
-                                : 'text-red-400'
+                                ? 'text-amber-200'
+                                : 'text-red-200'
                         }`}
                       >
                         <span
                           className={`w-2 h-2 rounded-full ${
                             contract.status === 'active'
-                              ? 'bg-emerald-400'
+                              ? 'bg-emerald-300'
                               : contract.status === 'pending'
-                                ? 'bg-blue-400'
+                                ? 'bg-blue-200'
                                 : contract.status === 'canceled'
-                                  ? 'bg-amber-400'
-                                  : 'bg-red-400'
+                                  ? 'bg-amber-300'
+                                  : 'bg-red-300'
                           }`}
                         ></span>
                         {contract.status === 'active'
@@ -1541,20 +1617,28 @@ const AdminConfig: React.FC = () => {
                       </span>
                     </div>
                     <h2 className="text-4xl font-serif font-bold uppercase tracking-tight">{displayPlanName}</h2>
-                    <div className="flex items-center gap-6 mt-6 opacity-80 text-sm">
+                    <div className="flex flex-wrap items-center gap-6 mt-6 text-sm text-white/85">
                       <div>
                         <p className="text-brand-300 text-xs uppercase mb-0.5">Renovação em</p>
-                        <p className="font-medium">{new Date(contract.end_date).toLocaleDateString('pt-BR')}</p>
+                        <p className="font-medium text-white">{new Date(contract.end_date).toLocaleDateString('pt-BR')}</p>
                       </div>
-                      <div className="w-px h-8 bg-white/20"></div>
+                      <div className="hidden h-8 w-px bg-white/20 sm:block"></div>
                       <div>
                         <p className="text-brand-300 text-xs uppercase mb-0.5">Ciclo Atual</p>
-                        <p className="font-medium">{contract.billing_cycle === 'yearly' ? 'Anual' : 'Mensal'}</p>
+                        <p className="font-medium text-white">{contract.billing_cycle === 'yearly' ? 'Anual' : 'Mensal'}</p>
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsUsageExpanded(!isUsageExpanded)}
+                      className="mt-5 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20"
+                    >
+                      {isUsageExpanded ? 'Ocultar detalhes' : 'Ver detalhes de uso'}
+                      {isUsageExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </button>
                   </div>
                   {/* Ações da Assinatura */}
-                  <div className="w-full md:w-auto flex flex-col gap-3 min-w-[240px]">
+                  <div className="w-full lg:w-auto flex flex-col gap-3 min-w-[240px]">
                     {(contract?.status === 'trial' || contract?.status === 'past_due' || contract?.status === 'canceled' || contract?.status === 'pending') && (
                       <button
                         onClick={() => {
@@ -1573,7 +1657,7 @@ const AdminConfig: React.FC = () => {
                             ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20'
                             : contract?.status === 'canceled'
                             ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/20'
-                            : 'bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-500/20'
+                            : 'bg-white text-brand-700 hover:bg-brand-50 shadow-lg shadow-black/10'
                         }`}
                       >
                         {(isGeneratingCheckout || isReactivating) ? (
@@ -1596,7 +1680,7 @@ const AdminConfig: React.FC = () => {
                         <button
                           onClick={handleOpenPortal}
                           disabled={isOpeningPortal}
-                          className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                          className="w-full bg-white/10 hover:bg-white/20 text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 border border-white/10"
                         >
                           {isOpeningPortal ? (
                             <Icons.RefreshCw size={20} className="animate-spin" />
@@ -1608,13 +1692,85 @@ const AdminConfig: React.FC = () => {
 
                         <button
                           onClick={() => setIsCancelModalOpen(true)}
-                          className="w-full bg-transparent hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-500 hover:text-red-500 py-3 rounded-xl font-bold transition-colors"
+                          className="w-full bg-transparent hover:bg-red-500/10 text-white/80 hover:text-white py-3 rounded-xl font-bold transition-colors border border-white/10"
                         >
                           Cancelar Assinatura
                         </button>
                       </>
                     )}
                   </div>
+                  </div>
+                  {isUsageExpanded && (
+                    <div className="mt-6 pt-6 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/60">Uso atual</p>
+                        <div className="mt-4 space-y-4">
+                          {usageItems.map((item) => {
+                            const percentage = getUsagePercentage(item.used, item.max);
+                            const isBlocked = item.max === 0;
+                            const isOverLimit = item.max > 0 && item.used > item.max;
+
+                            return (
+                              <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="text-sm font-semibold text-white">{item.label}</p>
+                                  <span className={`text-xs font-semibold ${isBlocked ? 'text-red-200' : isOverLimit ? 'text-amber-200' : 'text-white/70'}`}>
+                                    {isBlocked ? 'Bloqueado' : `${item.used} / ${item.max}`}
+                                  </span>
+                                </div>
+                                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      isBlocked
+                                        ? 'bg-transparent'
+                                        : isOverLimit
+                                          ? 'bg-amber-300'
+                                          : 'bg-emerald-300'
+                                    }`}
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                </div>
+                                <p className="mt-2 text-xs text-white/60">
+                                  {isBlocked
+                                    ? 'Recurso indisponivel no plano atual.'
+                                    : isOverLimit
+                                      ? 'Uso acima do limite contratado.'
+                                      : `${percentage}% da capacidade em uso.`}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/60">Ferramentas do CRM</p>
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          {crmModules.map((module) => (
+                            <div
+                              key={module.key}
+                              className={`rounded-2xl border p-3 ${
+                                module.enabled
+                                  ? 'border-emerald-300/20 bg-emerald-400/10'
+                                  : 'border-white/10 bg-white/5'
+                              }`}
+                            >
+                              <div className="flex items-start gap-2">
+                                {module.enabled ? (
+                                  <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-300" />
+                                ) : (
+                                  <XCircle size={16} className="mt-0.5 shrink-0 text-red-200/80" />
+                                )}
+                                <span className={`text-xs font-medium leading-relaxed ${module.enabled ? 'text-emerald-50' : 'text-white/70'}`}>
+                                  {module.label}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1627,14 +1783,10 @@ const AdminConfig: React.FC = () => {
                   </div>
                 ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {plans.filter((plan) => {
-                    const planId = String(plan.id || plan.name || '').toLowerCase();
-                    const isCurrentPlan = planId === activePlanId;
-                    const isCurrentCycle = contract?.billing_cycle === billingCycle;
+                  {plans.map((plan) => {
                     // SÓ esconde se for o mesmo plano E o mesmo ciclo que ele já paga
-                    return !(isCurrentPlan && isCurrentCycle);
-                  }).map((plan) => {
                     const planId = String(plan.id || plan.name || '').toLowerCase();
+                    const isCurrentPlan = contract?.plan_name?.toLowerCase() === plan.name.toLowerCase();
                     const planIndex = plans.findIndex((p) => String(p.id || p.name || '').toLowerCase() === planId);
                     const isDowngrade = currentPlanIndex !== -1 && planIndex < currentPlanIndex;
                     const planFeatureList = getPlanHighlights(plan);
@@ -1649,8 +1801,19 @@ const AdminConfig: React.FC = () => {
                     return (
                       <div
                         key={plan.id || plan.name}
-                        className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 flex flex-col h-full hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
+                        className={`relative bg-white dark:bg-dark-card rounded-2xl border p-6 flex flex-col h-full transition-colors ${
+                          isCurrentPlan
+                            ? 'border-brand-200 dark:border-brand-700 ring-2 ring-brand-500 bg-brand-50/10 dark:bg-brand-900/10'
+                            : 'border-slate-200 dark:border-dark-border hover:border-brand-300 dark:hover:border-brand-700'
+                        }`}
                       >
+                        {isCurrentPlan && (
+                          <div className="mb-4">
+                            <span className="inline-flex items-center rounded-full border border-brand-200 bg-brand-500/10 px-3 py-1 text-xs font-bold text-brand-700 dark:border-brand-500/20 dark:text-brand-300">
+                              ⭐ Seu Plano
+                            </span>
+                          </div>
+                        )}
                         <div className="mb-4">
                           <h5 className="text-xl font-bold text-slate-800 dark:text-white uppercase">{plan.name}</h5>
                           <p className="text-sm text-slate-500 mt-1 line-clamp-2">{plan.description}</p>
@@ -1686,33 +1849,44 @@ const AdminConfig: React.FC = () => {
                             </li>
                           )}
                         </ul>
-                        <button
-                          onClick={() => {
-                            if (isReactivationFlow) {
-                              handleReactivate(plan);
-                            } else {
-                              handleUpgrade(planId);
-                            }
-                          }}
-                          disabled={isUpgrading === planId || isGeneratingCheckout || isReactivating}
-                          className={`w-full py-2.5 rounded-xl font-bold transition-colors ${
-                            isDowngrade || isCycleDowngrade
-                              ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400'
-                              : 'bg-brand-50 hover:bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 dark:text-brand-400'
-                          }`}
-                        >
-                          {(isUpgrading === planId || isReactivating)
-                            ? 'Processando...' 
-                            : isReactivationFlow
-                              ? 'Reativar Assinatura'
-                              : isCycleUpgrade 
-                                ? 'Migrar para Anual' 
-                                : isCycleDowngrade 
-                                  ? 'Migrar para Mensal' 
-                                  : isDowngrade 
-                                    ? 'Fazer Downgrade' 
-                                    : 'Fazer Upgrade'}
-                        </button>
+                        {isCurrentPlan ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="inline-flex w-full items-center justify-center rounded-xl border border-brand-200 bg-transparent py-2.5 text-sm font-bold text-brand-700 dark:border-brand-500/30 dark:text-brand-300 disabled:cursor-not-allowed disabled:opacity-100"
+                          >
+                            ✅ Plano Atual
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isReactivationFlow) {
+                                handleReactivate(plan);
+                              } else {
+                                handleUpgrade(planId);
+                              }
+                            }}
+                            disabled={isUpgrading === planId || isGeneratingCheckout || isReactivating}
+                            className={`w-full py-2.5 rounded-xl font-bold transition-colors ${
+                              isDowngrade || isCycleDowngrade
+                                ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400'
+                                : 'bg-brand-50 hover:bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 dark:text-brand-400'
+                            }`}
+                          >
+                            {(isUpgrading === planId || isReactivating)
+                              ? 'Processando...'
+                              : isReactivationFlow
+                                ? 'Reativar Assinatura'
+                                : isCycleUpgrade
+                                  ? 'Migrar para Anual'
+                                  : isCycleDowngrade
+                                    ? 'Migrar para Mensal'
+                                    : isDowngrade
+                                      ? 'Fazer Downgrade'
+                                      : 'Fazer Upgrade'}
+                          </button>
+                        )}
                       </div>
                     );
                   })}
