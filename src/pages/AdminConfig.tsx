@@ -30,6 +30,7 @@ interface Profile {
 
 interface Contract {
   id: string;
+  company_id?: string;
   plan_name?: string;
   plan?: string;
   plan_id?: string;
@@ -350,6 +351,7 @@ const AdminConfig: React.FC = () => {
         trialEnd.setDate(trialEnd.getDate() + 7);
         setContract({
           id: 'trial-virtual',
+          company_id: user.company_id,
           plan_name: comp.plan || 'essencial',
           status: 'pending',
           start_date: comp.created_at,
@@ -822,6 +824,11 @@ const AdminConfig: React.FC = () => {
     try {
       if (!user?.company_id) throw new Error("ID da empresa não encontrado.");
 
+      const plan = plans.find((item) => String(item.id || item.name || '').toLowerCase() === planId);
+      const isYearly = billingCycle === 'yearly';
+
+      if (!plan) throw new Error('Plano nao encontrado.');
+
       // Update otimista para feedback imediato na UI
       setContract((prev) => {
         if (!prev) return prev;
@@ -833,17 +840,28 @@ const AdminConfig: React.FC = () => {
         };
       });
 
-      const { data, error } = await supabase.functions.invoke('update-asaas-subscription', {
-        body: { 
-          company_id: user.company_id, 
-          new_plan: planId,
-          billing_cycle: billingCycle,
-          has_fidelity: acceptFidelity
-        }
+      // Pega a sessão atual para o Token JWT
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-asaas-subscription`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({
+          company_id: contract?.company_id, // Certifique-se de que contract.company_id existe no escopo
+          new_plan: plan.name,
+          billing_cycle: isYearly ? 'yearly' : 'monthly',
+          has_fidelity: isYearly ? false : acceptFidelity
+        })
       });
 
-      if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
+      const responseData = await response.json();
+      if (!response.ok) {
+        throw new Error(responseData.error || 'Erro desconhecido ao comunicar com o servidor de pagamentos.');
+      }
 
       alert(`Sucesso! Sua assinatura foi atualizada para o plano ${planId.toUpperCase()}.`);
       await fetchContract(); // Recarrega o contrato para atualizar o card na tela
