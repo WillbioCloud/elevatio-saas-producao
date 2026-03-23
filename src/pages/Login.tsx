@@ -134,11 +134,21 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, signIn } = useAuth();
+  const selectedPlan =
+    searchParams.get('plan') ||
+    localStorage.getItem('trimoveis_selected_plan') ||
+    localStorage.getItem('elevatio_selected_plan') ||
+    localStorage.getItem('selectedPlan') ||
+    '';
 
   // Detectar modo: se vier ?mode=signup ou ?plan=xxx, abre cadastro
   const [isLogin, setIsLogin] = useState(() => {
     const mode = searchParams.get('mode');
-    const plan = searchParams.get('plan') || localStorage.getItem('selectedPlan');
+    const plan =
+      searchParams.get('plan') ||
+      localStorage.getItem('trimoveis_selected_plan') ||
+      localStorage.getItem('elevatio_selected_plan') ||
+      localStorage.getItem('selectedPlan');
     return mode !== 'signup' && !plan;
   });
 
@@ -146,13 +156,15 @@ const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Plano vindo da landing page
-  const selectedPlan = searchParams.get('plan') || localStorage.getItem('selectedPlan') || '';
-
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [companyName, setCompanyName] = useState('');
+  const [companyName, setCompanyName] = useState(
+    () =>
+      localStorage.getItem('trimoveis_company_name') ||
+      localStorage.getItem('elevatio_company_name') ||
+      ''
+  );
   const [keepLogged, setKeepLogged] = useState(true);
 
   // Tratar error_description do OAuth
@@ -184,8 +196,14 @@ const Login: React.FC = () => {
         if (!name.trim()) throw new Error('Por favor, informe seu nome.');
         if (!companyName.trim()) throw new Error('Por favor, informe o nome da sua imobiliária.');
 
-        // Salva plano no localStorage para o wizard consumir depois
-        if (selectedPlan) localStorage.setItem('selectedPlan', selectedPlan);
+        // Salva plano e nome da imobiliaria para o wizard consumir depois
+        if (selectedPlan) {
+          localStorage.setItem('selectedPlan', selectedPlan);
+          localStorage.setItem('trimoveis_selected_plan', selectedPlan);
+          localStorage.setItem('elevatio_selected_plan', selectedPlan);
+        }
+        localStorage.setItem('trimoveis_company_name', companyName.trim());
+        localStorage.setItem('elevatio_company_name', companyName.trim());
 
         const { error } = await supabase.auth.signUp({
           email: email.trim(),
@@ -199,7 +217,13 @@ const Login: React.FC = () => {
         });
         if (error) throw error;
 
-        navigate('/admin/dashboard', { replace: true });
+        navigate('/admin/dashboard', {
+          replace: true,
+          state: {
+            plan: selectedPlan || undefined,
+            companyName: companyName.trim(),
+          },
+        });
       }
     } catch (err: any) {
       let msg = 'Ocorreu um erro inesperado.';

@@ -44,8 +44,14 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     location.state?.plan ||
     localStorage.getItem('trimoveis_selected_plan') ||
     localStorage.getItem('elevatio_selected_plan') ||
+    localStorage.getItem('selectedPlan') ||
     'profissional';
   const initialPlan = normalizePlanFromNav(initialPlanRaw) || 'profissional';
+  const initialCompanyName =
+    location.state?.companyName ||
+    localStorage.getItem('trimoveis_company_name') ||
+    localStorage.getItem('elevatio_company_name') ||
+    '';
 
   const [formData, setFormData] = useState<{
     companyName: string;
@@ -57,7 +63,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     plan: PlanType;
     billingCycle: string;
   }>({
-    companyName: '',
+    companyName: initialCompanyName,
     document: '',
     phone: '',
     domain: '',
@@ -138,15 +144,20 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
         if (profileError) throw new Error('Erro ao vincular perfil: ' + profileError.message);
 
-        // Criar contrato de SaaS obrigatorio para liberar fluxo de assinatura/trial
-        const nowIso = new Date().toISOString();
+        // Busca o UUID real do plano selecionado na nova tabela saas_plans
+        const { data: planRecord } = await supabase
+          .from('saas_plans')
+          .select('id')
+          .ilike('name', formData.plan)
+          .maybeSingle();
+
         const { error: contractError } = await supabase.from('saas_contracts').insert([
           {
             company_id: newCompany.id,
-            plan_id: null,
+            plan_id: planRecord?.id || null,
             plan_name: formData.plan,
             status: 'pending',
-            start_date: nowIso,
+            start_date: new Date().toISOString(),
             end_date: trialEnds.toISOString(),
             billing_cycle: formData.billingCycle,
           },
@@ -169,7 +180,10 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       // Limpar o cache do navegador apos sucesso
       localStorage.removeItem('trimoveis_selected_plan');
       localStorage.removeItem('elevatio_selected_plan');
+      localStorage.removeItem('selectedPlan');
       localStorage.removeItem('trimoveis_billing_cycle');
+      localStorage.removeItem('trimoveis_company_name');
+      localStorage.removeItem('elevatio_company_name');
 
       onComplete();
 
