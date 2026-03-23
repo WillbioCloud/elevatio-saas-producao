@@ -33,6 +33,7 @@ interface Contract {
   plan_name?: string;
   plan?: string;
   plan_id?: string;
+  price?: number | string;
   status: string;
   start_date: string;
   end_date: string;
@@ -1617,6 +1618,12 @@ const AdminConfig: React.FC = () => {
                       </span>
                     </div>
                     <h2 className="text-4xl font-serif font-bold uppercase tracking-tight">{displayPlanName}</h2>
+                    <div className="mt-2 text-3xl font-bold text-white">
+                      {contract?.price
+                        ? Number(contract.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                        : 'R$ 0,00'}
+                      <span className="text-sm font-normal text-brand-200 ml-1">{contract?.billing_cycle === 'yearly' ? '/ano' : '/mês'}</span>
+                    </div>
                     <div className="flex flex-wrap items-center gap-6 mt-6 text-sm text-white/85">
                       <div>
                         <p className="text-brand-300 text-xs uppercase mb-0.5">Renovação em</p>
@@ -1625,7 +1632,11 @@ const AdminConfig: React.FC = () => {
                       <div className="hidden h-8 w-px bg-white/20 sm:block"></div>
                       <div>
                         <p className="text-brand-300 text-xs uppercase mb-0.5">Ciclo Atual</p>
-                        <p className="font-medium text-white">{contract.billing_cycle === 'yearly' ? 'Anual' : 'Mensal'}</p>
+                        <p className="font-medium text-white">
+                          {contract?.billing_cycle === 'yearly'
+                            ? 'Anual'
+                            : (contract?.has_fidelity ? 'Mensal (Com Fidelidade)' : 'Mensal')}
+                        </p>
                       </div>
                     </div>
                     <button
@@ -1786,7 +1797,11 @@ const AdminConfig: React.FC = () => {
                   {plans.map((plan) => {
                     // SÓ esconde se for o mesmo plano E o mesmo ciclo que ele já paga
                     const planId = String(plan.id || plan.name || '').toLowerCase();
-                    const isCurrentPlan = contract?.plan_name?.toLowerCase() === plan.name.toLowerCase();
+                    const isYearly = billingCycle === 'yearly';
+                    const isCurrentPlan =
+                      contract?.plan_name?.toLowerCase() === plan.name.toLowerCase() &&
+                      contract?.billing_cycle === (isYearly ? 'yearly' : 'monthly') &&
+                      (isYearly ? true : !!contract?.has_fidelity === acceptFidelity);
                     const planIndex = plans.findIndex((p) => String(p.id || p.name || '').toLowerCase() === planId);
                     const isDowngrade = currentPlanIndex !== -1 && planIndex < currentPlanIndex;
                     const planFeatureList = getPlanHighlights(plan);

@@ -167,14 +167,20 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
           throw new Error('Erro ao criar contrato inicial: ' + contractError.message);
         }
 
-        // Fire-and-forget: chama a Edge Function do Asaas sem bloquear a UI
-        supabase.functions
-          .invoke('create-asaas-checkout', {
-            body: { company_id: newCompany.id, plan: formData.plan, cycle: formData.billingCycle },
-          })
-          .catch((invokeError) => {
-            console.error('Falha ao chamar webhook Asaas (fire-and-forget):', invokeError);
+        try {
+          // Chama a Edge Function para criar o cliente e a assinatura no Asaas
+          await supabase.functions.invoke('update-asaas-subscription', {
+            body: {
+              company_id: newCompany.id,
+              new_plan: formData.plan,
+              billing_cycle: formData.billingCycle,
+              has_fidelity: false,
+            },
           });
+        } catch (asaasError) {
+          console.error('Erro ao sincronizar com Asaas no Wizard:', asaasError);
+          // Nao travamos o fluxo se o Asaas falhar, o auto-heal da function resolve no futuro
+        }
       }
 
       // Limpar o cache do navegador apos sucesso
@@ -374,7 +380,11 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                     }}
                     className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
                   >
-                    <option value="novo">Quero registrar um novo dominio</option>
+                    <option value="novo">
+                      {isEligibleForFreeDomain
+                        ? '🎁 Quero resgatar meu Domínio Grátis (1º Ano)'
+                        : '🛒 Comprar e registrar um novo domínio (R$ 40,00/ano)'}
+                    </option>
                     <option value="sim">Ja possuo um dominio registrado</option>
                   </select>
 
@@ -442,7 +452,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                       </div>
 
                       <p className="text-xs text-slate-500">
-                        Digite apenas o nome desejado. Vamos consultar a disponibilidade de
+                        Digite apenas o nome desejado sem acentos ou espaços. Vamos consultar a disponibilidade de
                         {' '}
                         <span className="font-semibold text-slate-700">
                           {sanitizedProductionDomain}
