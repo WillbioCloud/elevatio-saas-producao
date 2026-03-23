@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Building2, CheckCircle, Globe, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -50,6 +50,14 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     plan: initialPlan,
     billingCycle: location.state?.cycle || localStorage.getItem('trimoveis_billing_cycle') || 'monthly'
   });
+  const [freeDomainExtension, setFreeDomainExtension] = useState('.com.br');
+
+  useEffect(() => {
+    const eligible = formData.billingCycle === 'yearly' && ['profissional', 'business', 'premium', 'elite'].includes(formData.plan.toLowerCase());
+    if (!eligible && formData.hasDomain === 'gratis') {
+      setFormData(prev => ({ ...prev, hasDomain: 'nao' }));
+    }
+  }, [formData.billingCycle, formData.plan, formData.hasDomain]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,6 +157,8 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       setIsLoading(false);
     }
   };
+
+  const isEligibleForFreeDomain = formData.billingCycle === 'yearly' && ['profissional', 'business', 'premium', 'elite'].includes(formData.plan.toLowerCase());
 
   return (
     <div className="fixed inset-0 bg-slate-900/35 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
@@ -254,15 +264,61 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                   >
                     <option value="nao">Não, quero usar um subdomínio grátis do Elevatio</option>
                     <option value="sim">Sim, já tenho o meu próprio domínio</option>
+                    {isEligibleForFreeDomain && <option value="gratis">🎁 Quero resgatar meu Domínio Grátis (1º Ano)</option>}
                   </select>
-                  <input
-                    required
-                    type="text"
-                    value={formData.domain}
-                    onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
-                    placeholder={formData.hasDomain === 'sim' ? 'Ex: minhacorretora.com.br' : 'Ex: minhacorretora'}
-                  />
+                  {formData.hasDomain === 'sim' && (
+                    <input
+                      required
+                      type="text"
+                      value={formData.domain}
+                      onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
+                      placeholder="Ex: minhacorretora.com.br"
+                    />
+                  )}
+
+                  {formData.hasDomain === 'nao' && (
+                    <div className="relative">
+                      <input
+                        required
+                        type="text"
+                        value={formData.domain}
+                        onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 pr-36 text-slate-900 outline-none focus:border-brand-500"
+                        placeholder="Ex: minhacorretora"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-500">
+                        .elevatio.com.br
+                      </span>
+                    </div>
+                  )}
+
+                  {formData.hasDomain === 'gratis' && (
+                    <div className="flex gap-2">
+                      <input
+                        required
+                        type="text"
+                        value={formData.domain}
+                        onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+                        className="flex-1 bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
+                        placeholder="Ex: minhacorretora"
+                      />
+                      <select
+                        value={freeDomainExtension}
+                        onChange={(e) => setFreeDomainExtension(e.target.value)}
+                        className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-slate-900 outline-none focus:border-brand-500"
+                      >
+                        <option value=".com.br">.com.br</option>
+                        <option value=".com">.com</option>
+                      </select>
+                      <button
+                        type="button"
+                        className="px-4 py-2.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-semibold hover:bg-slate-200 transition-colors"
+                      >
+                        Verificar
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
               <hr className="border-slate-200" />
