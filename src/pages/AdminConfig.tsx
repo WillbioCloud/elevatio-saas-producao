@@ -825,16 +825,22 @@ const AdminConfig: React.FC = () => {
     }
   };
 
-  const handleUpgrade = async (planId: string) => {
-    setIsUpgrading(planId);
+  const handleUpgrade = async (planParam: any) => {
+    const upgradeKey = typeof planParam === 'string'
+      ? planParam
+      : String(planParam?.id || planParam?.name || '');
+    setIsUpgrading(String(upgradeKey).toLowerCase());
     const previousContract = contract;
     try {
       if (!user?.company_id) throw new Error("ID da empresa não encontrado.");
 
-      const plan = plans.find((item) => String(item.id || item.name || '').toLowerCase() === planId);
+      const plan = typeof planParam === 'string'
+        ? plans.find((p) => p.id === planParam || p.name.toLowerCase() === planParam.toLowerCase())
+        : planParam;
+      const planId = String(plan?.id || plan?.name || upgradeKey).toLowerCase();
       const isYearly = billingCycle === 'yearly';
 
-      if (!plan) throw new Error('Plano nao encontrado.');
+      if (!plan || !plan.name) throw new Error('Plano não encontrado.');
 
       // Update otimista para feedback imediato na UI
       setContract((prev) => {
