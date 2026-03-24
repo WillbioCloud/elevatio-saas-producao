@@ -41,6 +41,8 @@ interface Contract {
   billing_cycle?: string;
   has_fidelity?: boolean;
   fidelity_end_date?: string;
+  domain_status?: 'pending' | 'active' | 'expired' | null;
+  domain_renewal_date?: string | null;
   companies?: { plan?: string };
 }
 
@@ -2787,9 +2789,11 @@ const AdminConfig: React.FC = () => {
       {/* MODAL DE CHECKOUT COM ORDER BUMP (INTELIGENTE) */}
       {isCheckoutModalOpen && selectedPlanForCheckout && (
         (() => {
-          // Garante a leitura em tempo real do ciclo diretamente do estado
-          const isModalYearly = billingCycle === 'yearly';
-          const isModalFidelity = acceptFidelity;
+          // Lê os dados REAIS do banco (contract) e não o estado visual da tela
+          const isModalYearly = contract?.billing_cycle === 'yearly';
+          const isModalFidelity = contract?.has_fidelity;
+          const isDomainActive = contract?.domain_status === 'active';
+          const isDomainPending = contract?.domain_status === 'pending';
           
           // Inteligência de extração do domínio do cliente baseada no estado já disponível no componente
           const companyDomain = siteDomain || (companySubdomain ? `${companySubdomain}.elevatio.app` : '');
@@ -2854,26 +2858,30 @@ const AdminConfig: React.FC = () => {
                     
                     <div className="space-y-3">
                       {/* Domínio Principal (Escolhido no Wizard) */}
-                      <label className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${isPrimaryFree ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : (checkoutAddons.buyDomainBr ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800')}`}>
+                      <label className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${isPrimaryFree || isDomainActive ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : (checkoutAddons.buyDomainBr ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800')}`}>
                         <div className="flex items-center gap-3">
                           <input 
                             type="checkbox" 
-                            checked={isPrimaryFree ? true : checkoutAddons.buyDomainBr} 
-                            onChange={(e) => !isPrimaryFree && setCheckoutAddons(p => ({...p, buyDomainBr: e.target.checked}))} 
-                            disabled={isPrimaryFree}
+                            checked={isPrimaryFree || isDomainActive || isDomainPending ? true : checkoutAddons.buyDomainBr} 
+                            onChange={(e) => !isPrimaryFree && !isDomainActive && !isDomainPending && setCheckoutAddons(p => ({...p, buyDomainBr: e.target.checked}))} 
+                            disabled={isPrimaryFree || isDomainActive || isDomainPending}
                             className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600 disabled:opacity-50" 
                           />
                           <div>
                             <span className="font-medium text-slate-700 dark:text-slate-200 block">
                               {primaryDomainStr}
                             </span>
-                            {isPrimaryFree && (
+                            {isDomainActive ? (
+                              <span className="text-xs text-green-600 dark:text-green-400 font-bold">Domínio Ativo</span>
+                            ) : isDomainPending && !isPrimaryFree ? (
+                              <span className="text-xs text-amber-600 dark:text-amber-400 font-bold">Aguardando Pagamento</span>
+                            ) : isPrimaryFree ? (
                               <span className="text-xs text-green-600 dark:text-green-400 font-bold">Incluso no plano Anual</span>
-                            )}
+                            ) : null}
                           </div>
                         </div>
                         <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
-                          {isPrimaryFree ? 'R$ 0,00' : `+ R$ ${primaryPrice.toFixed(2).replace('.', ',')} /ano`}
+                          {isPrimaryFree || isDomainActive ? 'R$ 0,00' : `+ R$ ${primaryPrice.toFixed(2).replace('.', ',')} /ano`}
                         </span>
                       </label>
 
