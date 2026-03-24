@@ -2784,102 +2784,152 @@ const AdminConfig: React.FC = () => {
       )}
 
       {/* Modal de Detalhes do Plano Atual */}
-      {/* MODAL DE CHECKOUT COM ORDER BUMP */}
+      {/* MODAL DE CHECKOUT COM ORDER BUMP (INTELIGENTE) */}
       {isCheckoutModalOpen && selectedPlanForCheckout && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-              <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                <Icons.ShoppingCart className="text-brand-500" /> Resumo do Pedido
-              </h3>
-              <button onClick={() => setIsCheckoutModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <Icons.X size={24} />
-              </button>
-            </div>
+        (() => {
+          // Garante a leitura em tempo real do ciclo diretamente do estado
+          const isModalYearly = billingCycle === 'yearly';
+          const isModalFidelity = acceptFidelity;
+          
+          // Inteligência de extração do domínio do cliente (ajuste 'company' conforme o seu estado local)
+          const companyDomain = company?.domain || company?.website || contract?.companies?.domain || '';
+          const hasCustomDomain = companyDomain && !companyDomain.includes('elevatio');
+          const isCom = companyDomain.endsWith('.com');
+          const isComBr = companyDomain.endsWith('.com.br') || !hasCustomDomain;
+          
+          const baseName = hasCustomDomain ? companyDomain.replace('.com.br', '').replace('.com', '') : 'seudominio';
+          const primaryDomainStr = hasCustomDomain ? companyDomain : 'seudominio.com.br';
+          const secondaryDomainStr = hasCustomDomain ? (isComBr ? `${baseName}.com` : `${baseName}.com.br`) : 'seudominio.com';
+          
+          const primaryPrice = isCom ? 73.00 : 53.00;
+          const secondaryPrice = isCom ? 53.00 : 73.00;
+          const isPrimaryFree = isModalYearly && selectedPlanForCheckout.has_free_domain;
 
-            <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
-              {/* Item 1: O Plano */}
-              <div className="border border-brand-200 dark:border-brand-800 bg-brand-50/50 dark:bg-brand-900/20 rounded-xl p-5">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <h4 className="font-bold text-slate-800 dark:text-white text-lg">
-                      Plano {selectedPlanForCheckout.name}
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                  <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                    <Icons.ShoppingCart className="text-brand-500" /> Resumo do Pedido
+                  </h3>
+                  <button onClick={() => setIsCheckoutModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                    <Icons.X size={24} />
+                  </button>
+                </div>
+
+                <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
+                  {/* Item 1: O Plano */}
+                  <div className="border border-brand-200 dark:border-brand-800 bg-brand-50/50 dark:bg-brand-900/20 rounded-xl p-5">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h4 className="font-bold text-slate-800 dark:text-white text-lg">
+                          Plano {selectedPlanForCheckout.name}
+                        </h4>
+                        <p className="text-sm text-slate-500">
+                          Ciclo: {isModalYearly ? 'Anual' : (isModalFidelity ? 'Mensal (Fidelidade 12m)' : 'Mensal')}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-bold text-lg text-brand-600 dark:text-brand-400">
+                          {Number(selectedPlanForCheckout.price * (isModalYearly ? 12 * 0.85 : (isModalFidelity ? 0.90 : 1))).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-brand-200/50 dark:border-brand-800/50 text-sm text-slate-600 dark:text-slate-400 flex flex-wrap gap-2">
+                      <span className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md shadow-sm">Até {selectedPlanForCheckout.max_users} usuários</span>
+                      <span className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md shadow-sm">{selectedPlanForCheckout.max_properties} imóveis</span>
+                      {isPrimaryFree && (
+                        <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded-md shadow-sm font-medium">
+                          🎁 Domínio Grátis (1º Ano)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Item 2: Upsell de Domínio (Dinâmico) */}
+                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-800/50">
+                    <h4 className="font-bold text-slate-800 dark:text-white mb-3 flex items-center gap-2">
+                      <Icons.Globe size={18} className="text-slate-400" /> Seu Domínio Profissional
                     </h4>
-                    <p className="text-sm text-slate-500">
-                      Ciclo: {isYearly ? 'Anual' : (acceptFidelity ? 'Mensal (Fidelidade 12m)' : 'Mensal')}
+                    
+                    <div className="space-y-3">
+                      {/* Domínio Principal (Escolhido no Wizard) */}
+                      <label className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${isPrimaryFree ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : (checkoutAddons.buyDomainBr ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800')}`}>
+                        <div className="flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            checked={isPrimaryFree ? true : checkoutAddons.buyDomainBr} 
+                            onChange={(e) => !isPrimaryFree && setCheckoutAddons(p => ({...p, buyDomainBr: e.target.checked}))} 
+                            disabled={isPrimaryFree}
+                            className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600 disabled:opacity-50" 
+                          />
+                          <div>
+                            <span className="font-medium text-slate-700 dark:text-slate-200 block">
+                              {primaryDomainStr}
+                            </span>
+                            {isPrimaryFree && (
+                              <span className="text-xs text-green-600 dark:text-green-400 font-bold">Incluso no plano Anual</span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                          {isPrimaryFree ? 'R$ 0,00' : `+ R$ ${primaryPrice.toFixed(2).replace('.', ',')} /ano`}
+                        </span>
+                      </label>
+
+                      {/* Domínio Adicional (Upsell para proteger a marca) */}
+                      <label className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${checkoutAddons.buyDomainCom ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                        <div className="flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            checked={checkoutAddons.buyDomainCom} 
+                            onChange={(e) => setCheckoutAddons(p => ({...p, buyDomainCom: e.target.checked}))} 
+                            className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600" 
+                          />
+                          <div>
+                            <span className="font-medium text-slate-700 dark:text-slate-200 block">
+                              {secondaryDomainStr}
+                            </span>
+                            <span className="text-xs text-slate-500">Opcional (Proteja sua marca)</span>
+                          </div>
+                        </div>
+                        <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                          + R$ {secondaryPrice.toFixed(2).replace('.', ',')} /ano
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer do Checkout */}
+                <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex justify-between items-center">
+                  <div>
+                    <p className="text-sm text-slate-500">Total a pagar hoje</p>
+                    <p className="text-2xl font-black text-slate-800 dark:text-white">
+                      {(() => {
+                        let total = Number(selectedPlanForCheckout.price * (isModalYearly ? 12 * 0.85 : (isModalFidelity ? 0.90 : 1)));
+                        if (!isPrimaryFree && checkoutAddons.buyDomainBr) total += primaryPrice;
+                        if (checkoutAddons.buyDomainCom) total += secondaryPrice;
+                        return total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                      })()}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <span className="font-bold text-lg text-brand-600 dark:text-brand-400">
-                      {Number(selectedPlanForCheckout.price * (isYearly ? 12 * 0.85 : (acceptFidelity ? 0.90 : 1))).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-4 pt-4 border-t border-brand-200/50 dark:border-brand-800/50 text-sm text-slate-600 dark:text-slate-400 flex flex-wrap gap-2">
-                  <span className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md shadow-sm">Até {selectedPlanForCheckout.max_users} usuários</span>
-                  <span className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md shadow-sm">{selectedPlanForCheckout.max_properties} imóveis</span>
-                  {isYearly && selectedPlanForCheckout.has_free_domain && (
-                    <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded-md shadow-sm font-medium">🎁 Domínio Grátis (1º Ano)</span>
-                  )}
+                  <button 
+                    onClick={() => {
+                      setIsCheckoutModalOpen(false);
+                      handleCheckout(); // Chama o pagamento
+                    }}
+                    disabled={isLoading}
+                    className="px-8 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/30 transition-all active:scale-95"
+                  >
+                    {isLoading ? <Icons.Loader2 className="animate-spin" /> : <Icons.CreditCard />}
+                    Finalizar Compra
+                  </button>
                 </div>
               </div>
-
-              {/* Item 2: Upsell de Domínio (Order Bump) */}
-              {(!isYearly || !selectedPlanForCheckout.has_free_domain) && (
-                <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-800/50">
-                  <h4 className="font-bold text-slate-800 dark:text-white mb-1 flex items-center gap-2">
-                    <Icons.Globe size={18} className="text-slate-400" /> Precisa de um Domínio Profissional?
-                  </h4>
-                  <p className="text-sm text-slate-500 mb-4">Evite dor de cabeça com configurações técnicas. Nós registramos e conectamos tudo para você automaticamente.</p>
-                  
-                  <div className="space-y-3">
-                    <label className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${checkoutAddons.buyDomainBr ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
-                      <div className="flex items-center gap-3">
-                        <input type="checkbox" checked={checkoutAddons.buyDomainBr} onChange={(e) => setCheckoutAddons(p => ({...p, buyDomainBr: e.target.checked}))} className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600" />
-                        <span className="font-medium text-slate-700 dark:text-slate-200">Domínio .com.br</span>
-                      </div>
-                      <span className="text-sm font-bold text-slate-600 dark:text-slate-300">+ R$ 53,00 /ano</span>
-                    </label>
-
-                    <label className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${checkoutAddons.buyDomainCom ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
-                      <div className="flex items-center gap-3">
-                        <input type="checkbox" checked={checkoutAddons.buyDomainCom} onChange={(e) => setCheckoutAddons(p => ({...p, buyDomainCom: e.target.checked}))} className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600" />
-                        <span className="font-medium text-slate-700 dark:text-slate-200">Domínio .com (Global)</span>
-                      </div>
-                      <span className="text-sm font-bold text-slate-600 dark:text-slate-300">+ R$ 73,00 /ano</span>
-                    </label>
-                  </div>
-                </div>
-              )}
             </div>
-
-            {/* Footer do Checkout */}
-            <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex justify-between items-center">
-              <div>
-                <p className="text-sm text-slate-500">Total a pagar hoje</p>
-                <p className="text-2xl font-black text-slate-800 dark:text-white">
-                  {(() => {
-                    let total = Number(selectedPlanForCheckout.price * (isYearly ? 12 * 0.85 : (acceptFidelity ? 0.90 : 1)));
-                    if (checkoutAddons.buyDomainBr) total += 53.00;
-                    if (checkoutAddons.buyDomainCom) total += 73.00;
-                    return total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                  })()}
-                </p>
-              </div>
-              <button 
-                onClick={() => {
-                  setIsCheckoutModalOpen(false);
-                  handleCheckout();
-                }}
-                disabled={isLoading}
-                className="px-8 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/30 transition-all active:scale-95"
-              >
-                {isLoading ? <Icons.Loader2 className="animate-spin" /> : <Icons.CreditCard />}
-                Finalizar Compra
-              </button>
-            </div>
-          </div>
-        </div>
+          );
+        })()
       )}
 
       {isDetailsModalOpen && currentPlanDetails && (
