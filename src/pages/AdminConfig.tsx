@@ -241,6 +241,7 @@ const AdminConfig: React.FC = () => {
   const [isGeneratingCheckout, setIsGeneratingCheckout] = useState(false);
   const [isReactivating, setIsReactivating] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const isYearly = billingCycle === 'yearly';
   const [acceptFidelity, setAcceptFidelity] = useState(false);
   const [acceptedFidelityTerms, setAcceptedFidelityTerms] = useState(false);
   const [showFidelityModal, setShowFidelityModal] = useState(false);
