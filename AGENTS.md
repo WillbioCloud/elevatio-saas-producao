@@ -77,3 +77,25 @@ Para a Fase 2 (Monetização Avançada), considere implementar o **Modelo de Sub
 - **Como funciona:** O SaaS atua como sub-adquirente. A imobiliária não cria conta no Asaas, ela faz o KYC dentro do nosso painel.
 - **Vantagem:** Permite cobrar "Taxa de Software" (Split de Pagamento) em cada boleto pago pelo inquilino (Ex: Inquilino paga R$ 2.000 -> Asaas retém R$ 2 da taxa -> SaaS retém R$ 3 de lucro -> R$ 1.995 cai na subconta da imobiliária).
 - **Aviso de Arquitetura:** Exigirá webhook complexo para split de pagamentos, fluxo de aprovação de documentos (KYC) e lidar com transferências/saques para a conta bancária final da imobiliária.
+
+## 🚨 AVISOS CRÍTICOS E TROUBLESHOOTING (LEIA ANTES DE CODAR)
+
+#### 1. Edge Functions vs AdBlockers (O Bug Silencioso)
+**O Problema:** Nunca use `supabase.functions.invoke('nome-da-funcao')` para rotas financeiras (ex: rotas que contenham as palavras `subscription`, `charge`, `payment`). AdBlockers (como uBlock Origin) e escudos de navegadores (como Brave) bloqueiam essas requisições silenciosamente no front-end. A biblioteca `supabase-js` mascara esse bloqueio e retorna um erro genérico inútil: `Failed to send a request to the Edge Function`.
+
+**A Solução:** Para chamadas críticas, **SEMPRE use `fetch` nativo**. Isso garante que, se houver falha, o payload do erro seja lido corretamente no `response.json()`.
+
+```typescript
+// ✅ PADRÃO OBRIGATÓRIO PARA EDGE FUNCTIONS FINANCEIRAS
+const { data: { session } } = await supabase.auth.getSession();
+const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-asaas-subscription`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${session?.access_token}`,
+    'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+  },
+  body: JSON.stringify({ ...payload })
+});
+if (!response.ok) throw new Error('Erro...');
+```
