@@ -253,6 +253,12 @@ const AdminConfig: React.FC = () => {
   const [otherReason, setOtherReason] = useState('');
   const [isCanceling, setIsCanceling] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+  const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState<any>(null);
+  const [checkoutAddons, setCheckoutAddons] = useState({
+    buyDomainBr: false,
+    buyDomainCom: false
+  });
   const [siteTemplate, setSiteTemplate] = useState('classic');
   const [siteDomain, setSiteDomain] = useState('');
   const [companySubdomain, setCompanySubdomain] = useState('');
@@ -266,6 +272,7 @@ const AdminConfig: React.FC = () => {
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [isUsageExpanded, setIsUsageExpanded] = useState(false);
   const [usageStats, setUsageStats] = useState({ users: 1, properties: 0, activeContracts: 0 });
+  const isLoading = isGeneratingCheckout || isReactivating || isUpgrading !== null;
 
   useEffect(() => {
     setAcceptedFidelityTerms(false);
@@ -1893,40 +1900,35 @@ const AdminConfig: React.FC = () => {
                         </ul>
                         {isCurrentPlan ? (
                           <button
-                            type="button"
                             disabled
-                            className="inline-flex w-full items-center justify-center rounded-xl border border-brand-200 bg-transparent py-2.5 text-sm font-bold text-brand-700 dark:border-brand-500/30 dark:text-brand-300 disabled:cursor-not-allowed disabled:opacity-100"
+                            className="w-full py-3 rounded-xl font-bold border-2 border-brand-500 text-brand-600 dark:text-brand-400 opacity-70 flex items-center justify-center gap-2"
                           >
-                            ✅ Plano Atual
+                            <Icons.Check size={20} /> Plano Atual
+                          </button>
+                        ) : (acceptFidelity && contract?.plan_name?.toLowerCase() === plan.name.toLowerCase() && !contract?.has_fidelity) ? (
+                          <button
+                            onClick={() => {
+                              setSelectedPlanForCheckout(plan);
+                              setCheckoutAddons({ buyDomainBr: false, buyDomainCom: false });
+                              setIsCheckoutModalOpen(true);
+                            }}
+                            disabled={isLoading}
+                            className="w-full py-3 rounded-xl font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
+                          >
+                             Ativar Fidelidade
                           </button>
                         ) : (
                           <button
-                            type="button"
                             onClick={() => {
-                              if (isReactivationFlow) {
-                                handleReactivate(plan);
-                              } else {
-                                handleUpgrade(planId);
-                              }
+                              setSelectedPlanForCheckout(plan);
+                              setCheckoutAddons({ buyDomainBr: false, buyDomainCom: false });
+                              setIsCheckoutModalOpen(true);
                             }}
-                            disabled={isUpgrading === planId || isGeneratingCheckout || isReactivating}
-                            className={`w-full py-2.5 rounded-xl font-bold transition-colors ${
-                              isDowngrade || isCycleDowngrade
-                                ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-400'
-                                : 'bg-brand-50 hover:bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:hover:bg-brand-900/50 dark:text-brand-400'
-                            }`}
+                            disabled={isLoading}
+                            className="w-full py-3 rounded-xl font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
                           >
-                            {(isUpgrading === planId || isReactivating)
-                              ? 'Processando...'
-                              : isReactivationFlow
-                                ? 'Reativar Assinatura'
-                                : isCycleUpgrade
-                                  ? 'Migrar para Anual'
-                                  : isCycleDowngrade
-                                    ? 'Migrar para Mensal'
-                                    : isDowngrade
-                                      ? 'Fazer Downgrade'
-                                      : 'Fazer Upgrade'}
+                            {isLoading ? <Icons.Loader2 className="animate-spin" /> : null}
+                            Atualizar Plano
                           </button>
                         )}
                       </div>
@@ -2783,6 +2785,104 @@ const AdminConfig: React.FC = () => {
       )}
 
       {/* Modal de Detalhes do Plano Atual */}
+      {/* MODAL DE CHECKOUT COM ORDER BUMP */}
+      {isCheckoutModalOpen && selectedPlanForCheckout && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <Icons.ShoppingCart className="text-brand-500" /> Resumo do Pedido
+              </h3>
+              <button onClick={() => setIsCheckoutModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <Icons.X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
+              {/* Item 1: O Plano */}
+              <div className="border border-brand-200 dark:border-brand-800 bg-brand-50/50 dark:bg-brand-900/20 rounded-xl p-5">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h4 className="font-bold text-slate-800 dark:text-white text-lg">
+                      Plano {selectedPlanForCheckout.name}
+                    </h4>
+                    <p className="text-sm text-slate-500">
+                      Ciclo: {isYearly ? 'Anual' : (acceptFidelity ? 'Mensal (Fidelidade 12m)' : 'Mensal')}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold text-lg text-brand-600 dark:text-brand-400">
+                      {Number(selectedPlanForCheckout.price * (isYearly ? 12 * 0.85 : (acceptFidelity ? 0.90 : 1))).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-brand-200/50 dark:border-brand-800/50 text-sm text-slate-600 dark:text-slate-400 flex flex-wrap gap-2">
+                  <span className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md shadow-sm">Até {selectedPlanForCheckout.max_users} usuários</span>
+                  <span className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md shadow-sm">{selectedPlanForCheckout.max_properties} imóveis</span>
+                  {isYearly && selectedPlanForCheckout.has_free_domain && (
+                    <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded-md shadow-sm font-medium">🎁 Domínio Grátis (1º Ano)</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Item 2: Upsell de Domínio (Order Bump) */}
+              {(!isYearly || !selectedPlanForCheckout.has_free_domain) && (
+                <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-800/50">
+                  <h4 className="font-bold text-slate-800 dark:text-white mb-1 flex items-center gap-2">
+                    <Icons.Globe size={18} className="text-slate-400" /> Precisa de um Domínio Profissional?
+                  </h4>
+                  <p className="text-sm text-slate-500 mb-4">Evite dor de cabeça com configurações técnicas. Nós registramos e conectamos tudo para você automaticamente.</p>
+                  
+                  <div className="space-y-3">
+                    <label className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${checkoutAddons.buyDomainBr ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                      <div className="flex items-center gap-3">
+                        <input type="checkbox" checked={checkoutAddons.buyDomainBr} onChange={(e) => setCheckoutAddons(p => ({...p, buyDomainBr: e.target.checked}))} className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600" />
+                        <span className="font-medium text-slate-700 dark:text-slate-200">Domínio .com.br</span>
+                      </div>
+                      <span className="text-sm font-bold text-slate-600 dark:text-slate-300">+ R$ 53,00 /ano</span>
+                    </label>
+
+                    <label className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${checkoutAddons.buyDomainCom ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                      <div className="flex items-center gap-3">
+                        <input type="checkbox" checked={checkoutAddons.buyDomainCom} onChange={(e) => setCheckoutAddons(p => ({...p, buyDomainCom: e.target.checked}))} className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600" />
+                        <span className="font-medium text-slate-700 dark:text-slate-200">Domínio .com (Global)</span>
+                      </div>
+                      <span className="text-sm font-bold text-slate-600 dark:text-slate-300">+ R$ 73,00 /ano</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer do Checkout */}
+            <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex justify-between items-center">
+              <div>
+                <p className="text-sm text-slate-500">Total a pagar hoje</p>
+                <p className="text-2xl font-black text-slate-800 dark:text-white">
+                  {(() => {
+                    let total = Number(selectedPlanForCheckout.price * (isYearly ? 12 * 0.85 : (acceptFidelity ? 0.90 : 1)));
+                    if (checkoutAddons.buyDomainBr) total += 53.00;
+                    if (checkoutAddons.buyDomainCom) total += 73.00;
+                    return total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                  })()}
+                </p>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsCheckoutModalOpen(false);
+                  handleUpgrade(selectedPlanForCheckout); // A função fetch nativa original que já configuramos
+                }}
+                disabled={isLoading}
+                className="px-8 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/30 transition-all active:scale-95"
+              >
+                {isLoading ? <Icons.Loader2 className="animate-spin" /> : <Icons.CreditCard />}
+                Finalizar Compra
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isDetailsModalOpen && currentPlanDetails && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white dark:bg-dark-card w-full max-w-md rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
