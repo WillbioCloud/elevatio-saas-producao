@@ -428,7 +428,7 @@ export default function Clients() {
                 >
                   <option value="starter">Starter</option>
                   <option value="basic">Basic</option>
-                  <option value="professional">Professional</option>
+                  <option value="profissional">Profissional</option>
                   <option value="business">Business</option>
                   <option value="premium">Premium</option>
                   <option value="elite">Elite</option>

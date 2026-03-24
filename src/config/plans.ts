@@ -46,6 +46,28 @@ export const PLAN_CONFIG: Record<PlanType, PlanLimits> = {
   }
 };
 
+const PLAN_ALIASES: Record<string, PlanType> = {
+  professional: 'profissional',
+};
+
+export const normalizePlanType = (value: unknown, fallback?: PlanType): PlanType | undefined => {
+  if (typeof value !== 'string') return fallback;
+
+  const normalizedValue = value.trim().toLowerCase();
+  if (!normalizedValue) return fallback;
+
+  if (normalizedValue in PLAN_CONFIG) {
+    return normalizedValue as PlanType;
+  }
+
+  return PLAN_ALIASES[normalizedValue] ?? fallback;
+};
+
+export const getPlanConfig = (value: unknown, fallback: PlanType = 'free'): PlanLimits => {
+  const normalizedPlan = normalizePlanType(value, fallback) ?? fallback;
+  return PLAN_CONFIG[normalizedPlan];
+};
+
 export const PLANS = [
   {
     id: 'starter',

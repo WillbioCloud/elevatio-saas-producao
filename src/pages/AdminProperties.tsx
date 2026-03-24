@@ -5,7 +5,7 @@ import { Lead, Property } from '../types';
 import { Icons } from '../components/Icons';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../contexts/AuthContext';
-import { PLAN_CONFIG, PlanType } from '../config/plans';
+import { getPlanConfig, normalizePlanType } from '../config/plans';
 import { TOOLTIPS } from '../constants/tooltips';
 import PropertyPreviewModal from '../components/PropertyPreviewModal';
 import {
@@ -44,7 +44,8 @@ const InfoTooltip = ({ text }: { text: string }) => (
 
 const AdminProperties: React.FC = () => {
   const { user } = useAuth();
-  const userPlan = (user?.company?.plan as PlanType) || 'free';
+  const userPlan = normalizePlanType(user?.company?.plan) ?? 'free';
+  const planConfig = getPlanConfig(user?.company?.plan);
   const isAdmin = user?.role === 'admin';
 
   const [properties, setProperties] = useState<Property[]>([]);
@@ -77,7 +78,7 @@ const AdminProperties: React.FC = () => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importPreview, setImportPreview] = useState<any[]>([]);
-  const maxProperties = PLAN_CONFIG[userPlan].maxProperties;
+  const maxProperties = planConfig.maxProperties;
   const currentPropertiesCount = properties.length;
   const canAddProperty = currentPropertiesCount < maxProperties;
 

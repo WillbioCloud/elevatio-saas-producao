@@ -12,7 +12,7 @@ import { useLeads } from '../hooks/useLeads';
 import { useProperties } from '../hooks/useProperties';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
-import { PLAN_CONFIG, PlanType } from '../config/plans';
+import { getPlanConfig } from '../config/plans';
 import Loading from '../components/Loading';
 import DashboardCalendar from '../components/DashboardCalendar';
 import {
@@ -64,9 +64,9 @@ const WIDGET_CONFIG = [
 const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const userPlan = (user?.company?.plan as PlanType) || 'free';
-  const canAccessFinance = PLAN_CONFIG[userPlan].features.contractsAndFinance;
-  const canAccessGamification = PLAN_CONFIG[userPlan].features.gamification;
+  const planConfig = getPlanConfig(user?.company?.plan);
+  const canAccessFinance = planConfig.features.contractsAndFinance;
+  const canAccessGamification = planConfig.features.gamification;
   const { leads, loading: leadsLoading } = useLeads();
   const { properties, loading: propsLoading } = useProperties();
 
