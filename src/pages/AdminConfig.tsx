@@ -242,7 +242,7 @@ const AdminConfig: React.FC = () => {
   const [loadingContract, setLoadingContract] = useState(false);
   const [isGeneratingCheckout, setIsGeneratingCheckout] = useState(false);
   const [isReactivating, setIsReactivating] = useState(false);
-  const [checkoutMode] = useState<'upgrade' | 'pay'>('pay');
+  const [checkoutMode, setCheckoutMode] = useState<'upgrade' | 'pay'>('pay');
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const isYearly = billingCycle === 'yearly';
   const [acceptFidelity, setAcceptFidelity] = useState(false);
@@ -1694,7 +1694,12 @@ const AdminConfig: React.FC = () => {
                           const currentPlanObj = plans.find(p => p.name.toLowerCase() === contract?.plan_name?.toLowerCase());
                           if (currentPlanObj) {
                             setSelectedPlanForCheckout(currentPlanObj);
-                            setCheckoutAddons({ buyDomainBr: false, buyDomainCom: false });
+                            // Se o domínio está pendente, já deixa a caixinha marcada para incentivar o pagamento junto
+                            setCheckoutAddons({
+                              buyDomainBr: contract?.domain_status === 'pending' || contract?.domain_status == null,
+                              buyDomainCom: false
+                            });
+                            setCheckoutMode('pay');
                             setIsCheckoutModalOpen(true);
                           } else {
                             handleCheckout();
@@ -2863,12 +2868,12 @@ const AdminConfig: React.FC = () => {
                       {/* Domínio Principal (Escolhido no Wizard) */}
                       <label className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${isPrimaryFree || isDomainActive ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : (checkoutAddons.buyDomainBr ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800')}`}>
                         <div className="flex items-center gap-3">
-                          <input 
-                            type="checkbox" 
-                            checked={isPrimaryFree || isDomainActive || isDomainPending ? true : checkoutAddons.buyDomainBr} 
-                            onChange={(e) => !isPrimaryFree && !isDomainActive && !isDomainPending && setCheckoutAddons(p => ({...p, buyDomainBr: e.target.checked}))} 
-                            disabled={isPrimaryFree || isDomainActive || isDomainPending}
-                            className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600 disabled:opacity-50" 
+                          <input
+                            type="checkbox"
+                            checked={isPrimaryFree || isDomainActive ? true : checkoutAddons.buyDomainBr}
+                            onChange={(e) => !isPrimaryFree && !isDomainActive && setCheckoutAddons(p => ({...p, buyDomainBr: e.target.checked}))}
+                            disabled={isPrimaryFree || isDomainActive}
+                            className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600 disabled:opacity-50"
                           />
                           <div>
                             <span className="font-medium text-slate-700 dark:text-slate-200 block">
@@ -2876,8 +2881,6 @@ const AdminConfig: React.FC = () => {
                             </span>
                             {isDomainActive ? (
                               <span className="text-xs text-green-600 dark:text-green-400 font-bold">Domínio Ativo</span>
-                            ) : isDomainPending && !isPrimaryFree ? (
-                              <span className="text-xs text-amber-600 dark:text-amber-400 font-bold">Aguardando Pagamento</span>
                             ) : isPrimaryFree ? (
                               <span className="text-xs text-green-600 dark:text-green-400 font-bold">Incluso no plano Anual</span>
                             ) : null}

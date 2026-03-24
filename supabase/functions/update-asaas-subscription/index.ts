@@ -29,7 +29,7 @@ serve(async (req) => {
     const plan_id = planRecord?.id || null;
     const has_free_domain = planRecord?.has_free_domain || false;
 
-    // --- CRIAÇÃO DO CLIENTE ASAAS (SE NÃO EXISTIR) ---
+    // --- 1. CLIENTE ASAAS ---
     if (!customerId) {
       const document = company?.document?.replace(/\D/g, '') || company?.cpf_cnpj?.replace(/\D/g, '') || '';
       if (document) {
@@ -50,26 +50,26 @@ serve(async (req) => {
         });
         const customerData = await customerRes.json();
         if (customerData.id) customerId = customerData.id;
-        else throw new Error('Falha ao criar cliente no Asaas: ' + JSON.stringify(customerData.errors));
+        else throw new Error('Falha criar cliente Asaas: ' + JSON.stringify(customerData.errors));
       }
       await supabase.from('companies').update({ asaas_customer_id: customerId }).eq('id', company_id);
     }
 
-    // --- LÓGICA DE PREÇOS E DESCONTOS ---
+    // --- 2. VALOR BASE DA MENSALIDADE/ANUIDADE ---
     const plans = { starter: { price: 54.90 }, basic: { price: 74.90 }, profissional: { price: 119.90 }, business: { price: 179.90 }, premium: { price: 249.90 }, elite: { price: 479.90 } }
     const planData = plans[new_plan.toLowerCase() as keyof typeof plans];
     if (!planData) throw new Error('Plano inválido');
 
-    let price = planData.price;
+    let basePrice = planData.price;
     let finalHasFidelity = has_fidelity;
     let fidelityEndDate = contract?.fidelity_end_date || null;
 
     if (billing_cycle === 'yearly') {
-      price = price * 12 * 0.85; 
-      finalHasFidelity = false; 
-    } 
+      basePrice = basePrice * 12 * 0.85;
+      finalHasFidelity = false;
+    }
     else if (has_fidelity) {
-      price = price * 0.90;
+      basePrice = basePrice * 0.90;
       if (!fidelityEndDate || new Date(fidelityEndDate) < new Date()) {
           const futureDate = new Date();
           futureDate.setFullYear(futureDate.getFullYear() + 1);
@@ -77,40 +77,34 @@ serve(async (req) => {
       }
     }
 
-    // --- LÓGICA DOS DOMÍNIOS (ORDER BUMP) ---
-    let invoiceDescription = `Plano ${new_plan.toUpperCase()} - Elevatio Vendas (${billing_cycle === 'yearly' ? 'Anual' : 'Mensal'})`;
-    let domainStatusToSave = contract?.domain_status || 'pending';
+    // --- 3. VALOR DOS DOMÍNIOS (APENAS 1ª COBRANÇA) ---
     let domainPriceToCharge = 0;
-    
-    // Calcula o preço dinâmico do domínio extra
+    let extraDescription = "";
+    let domainStatusToSave = contract?.domain_status || 'pending';
+ 
     const isCom = (company?.domain || '').endsWith('.com');
     const primaryPrice = isCom ? 73.00 : 53.00;
     const secondaryPrice = isCom ? 53.00 : 73.00;
 
-    // Se ele está comprando o BR e não tem direito a ele de graça
     if (addons?.buyDomainBr && !(billing_cycle === 'yearly' && has_free_domain)) {
         domainPriceToCharge += primaryPrice;
-        invoiceDescription += ` + Registro de Domínio Principal`;
+        extraDescription += ` + Registro de Domínio Principal`;
         domainStatusToSave = 'pending';
-    }
-    // Se ele tem de graça
-    else if (billing_cycle === 'yearly' && has_free_domain) {
-        domainStatusToSave = 'pending'; // Fica pendente até o Asaas confirmar o pagamento do anual
+    } else if (billing_cycle === 'yearly' && has_free_domain) {
+        domainStatusToSave = 'pending';
     }
 
     if (addons?.buyDomainCom) {
         domainPriceToCharge += secondaryPrice;
-        invoiceDescription += ` + Registro de Domínio Alternativo (.com)`;
+        extraDescription += ` + Domínio Alternativo (.com)`;
         domainStatusToSave = 'pending';
     }
 
-    // Adiciona o valor dos domínios ao total da assinatura no Asaas
-    price = price + domainPriceToCharge;
-    
     const targetCycle = billing_cycle === 'yearly' ? 'YEARLY' : 'MONTHLY';
+    const baseDescription = `Plano ${new_plan.toUpperCase()} - Elevatio Vendas (${targetCycle === 'YEARLY' ? 'Anual' : 'Mensal'})`;
     let newSubscriptionId = subscriptionId;
 
-    // --- COMUNICAÇÃO COM ASAAS ---
+    // --- 4. CRIAR/ATUALIZAR ASSINATURA (SÓ PLANO BASE) ---
     if (subscriptionId) {
       const subGet = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions/${subscriptionId}`, { headers: { 'access_token': ASAAS_API_KEY } });
       const subData = await subGet.json();
@@ -121,7 +115,7 @@ serve(async (req) => {
           const createRes = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions`, {
             method: 'POST',
             headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customer: customerId, billingType: subData.billingType || 'UNDEFINED', nextDueDate: subData.nextDueDate, value: price, cycle: targetCycle, description: invoiceDescription })
+            body: JSON.stringify({ customer: customerId, billingType: subData.billingType || 'UNDEFINED', nextDueDate: subData.nextDueDate, value: basePrice, cycle: targetCycle, description: baseDescription })
           });
           const createData = await createRes.json();
           if (!createData.errors) newSubscriptionId = createData.id;
@@ -129,7 +123,7 @@ serve(async (req) => {
           await fetch(`https://sandbox.asaas.com/api/v3/subscriptions/${subscriptionId}`, {
             method: 'PUT',
             headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ value: price, description: invoiceDescription, updatePendingPayments: true })
+            body: JSON.stringify({ value: basePrice, description: baseDescription, updatePendingPayments: true })
           });
         }
       }
@@ -141,22 +135,40 @@ serve(async (req) => {
       const createRes = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions`, {
         method: 'POST',
         headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer: customerId, billingType: 'UNDEFINED', nextDueDate: nextDueDate.toISOString().split('T')[0], value: price, cycle: targetCycle, description: invoiceDescription })
+        body: JSON.stringify({ customer: customerId, billingType: 'UNDEFINED', nextDueDate: nextDueDate.toISOString().split('T')[0], value: basePrice, cycle: targetCycle, description: baseDescription })
       });
       const createData = await createRes.json();
       if (!createData.errors) newSubscriptionId = createData.id;
     }
 
-    // --- ATUALIZAÇÃO NO SUPABASE ---
-    await supabase.from('saas_contracts').update({ 
-        plan_name: new_plan, 
-        plan_id: plan_id, 
-        billing_cycle: billing_cycle, 
-        has_fidelity: finalHasFidelity, 
-        fidelity_end_date: fidelityEndDate, 
-        subscription_id: newSubscriptionId, 
-        price: planData.price, // Salvamos no banco o preço base sem o domínio para não confundir o UI
-        domain_status: domainStatusToSave 
+    // --- 5. INJETAR DOMÍNIO NO BOLETO ATUAL ---
+    if (domainPriceToCharge > 0 && newSubscriptionId) {
+      const paymentsRes = await fetch(`https://sandbox.asaas.com/api/v3/payments?subscription=${newSubscriptionId}&status=PENDING`, { headers: { 'access_token': ASAAS_API_KEY } });
+      const paymentsData = await paymentsRes.json();
+ 
+      if (paymentsData.data && paymentsData.data.length > 0) {
+        const currentPayment = paymentsData.data.sort((a:any, b:any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
+        const finalPaymentValue = basePrice + domainPriceToCharge;
+        const finalPaymentDesc = baseDescription + extraDescription;
+
+        await fetch(`https://sandbox.asaas.com/api/v3/payments/${currentPayment.id}`, {
+          method: 'POST',
+          headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value: finalPaymentValue, description: finalPaymentDesc })
+        });
+      }
+    }
+
+    // --- 6. ATUALIZAÇÃO NO SUPABASE ---
+    await supabase.from('saas_contracts').update({
+        plan_name: new_plan,
+        plan_id: plan_id,
+        billing_cycle: billing_cycle,
+        has_fidelity: finalHasFidelity,
+        fidelity_end_date: fidelityEndDate,
+        subscription_id: newSubscriptionId,
+        price: planData.price,
+        domain_status: domainStatusToSave
     }).eq('company_id', company_id);
 
     await supabase.from('companies').update({ plan: new_plan, asaas_subscription_id: newSubscriptionId }).eq('id', company_id);
