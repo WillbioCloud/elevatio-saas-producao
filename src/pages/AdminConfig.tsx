@@ -825,16 +825,22 @@ const AdminConfig: React.FC = () => {
     }
   };
 
-  const handleUpgrade = async (planId: string) => {
-    setIsUpgrading(planId);
+  const handleUpgrade = async (planParam: any) => {
+    const upgradeKey = typeof planParam === 'string'
+      ? planParam
+      : String(planParam?.id || planParam?.name || '');
+    setIsUpgrading(String(upgradeKey).toLowerCase());
     const previousContract = contract;
     try {
       if (!user?.company_id) throw new Error("ID da empresa não encontrado.");
 
-      const plan = plans.find((item) => String(item.id || item.name || '').toLowerCase() === planId);
+      const plan = typeof planParam === 'string'
+        ? plans.find((p) => p.id === planParam || p.name.toLowerCase() === planParam.toLowerCase())
+        : planParam;
+      const planId = String(plan?.id || plan?.name || upgradeKey).toLowerCase();
       const isYearly = billingCycle === 'yearly';
 
-      if (!plan) throw new Error('Plano nao encontrado.');
+      if (!plan || !plan.name) throw new Error('Plano não encontrado.');
 
       // Update otimista para feedback imediato na UI
       setContract((prev) => {
@@ -1679,11 +1685,11 @@ const AdminConfig: React.FC = () => {
                     {(contract?.status === 'trial' || contract?.status === 'past_due' || contract?.status === 'canceled' || contract?.status === 'pending') && (
                       <button
                         onClick={() => {
-                          if (contract?.status === 'canceled') {
-                            const currentPlanData =
-                              plans.find((p) => String(p.id || '').toLowerCase() === String(contract.plan_name || '').toLowerCase())
-                              || plans[0];
-                            if (currentPlanData) handleReactivate(currentPlanData);
+                          const currentPlanObj = plans.find(p => p.name.toLowerCase() === contract?.plan_name?.toLowerCase());
+                          if (currentPlanObj) {
+                            setSelectedPlanForCheckout(currentPlanObj);
+                            setCheckoutAddons({ buyDomainBr: false, buyDomainCom: false });
+                            setIsCheckoutModalOpen(true);
                           } else {
                             handleCheckout();
                           }
@@ -1907,11 +1913,7 @@ const AdminConfig: React.FC = () => {
                           </button>
                         ) : (acceptFidelity && contract?.plan_name?.toLowerCase() === plan.name.toLowerCase() && !contract?.has_fidelity) ? (
                           <button
-                            onClick={() => {
-                              setSelectedPlanForCheckout(plan);
-                              setCheckoutAddons({ buyDomainBr: false, buyDomainCom: false });
-                              setIsCheckoutModalOpen(true);
-                            }}
+                            onClick={() => handleUpgrade(plan)}
                             disabled={isLoading}
                             className="w-full py-3 rounded-xl font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
                           >
@@ -1919,11 +1921,7 @@ const AdminConfig: React.FC = () => {
                           </button>
                         ) : (
                           <button
-                            onClick={() => {
-                              setSelectedPlanForCheckout(plan);
-                              setCheckoutAddons({ buyDomainBr: false, buyDomainCom: false });
-                              setIsCheckoutModalOpen(true);
-                            }}
+                            onClick={() => handleUpgrade(plan)}
                             disabled={isLoading}
                             className="w-full py-3 rounded-xl font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
                           >
@@ -2870,7 +2868,7 @@ const AdminConfig: React.FC = () => {
               <button 
                 onClick={() => {
                   setIsCheckoutModalOpen(false);
-                  handleUpgrade(selectedPlanForCheckout); // A função fetch nativa original que já configuramos
+                  handleCheckout();
                 }}
                 disabled={isLoading}
                 className="px-8 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/30 transition-all active:scale-95"
