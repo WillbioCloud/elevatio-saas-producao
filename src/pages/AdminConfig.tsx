@@ -242,6 +242,7 @@ const AdminConfig: React.FC = () => {
   const [loadingContract, setLoadingContract] = useState(false);
   const [isGeneratingCheckout, setIsGeneratingCheckout] = useState(false);
   const [isReactivating, setIsReactivating] = useState(false);
+  const [checkoutMode] = useState<'upgrade' | 'pay'>('pay');
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const isYearly = billingCycle === 'yearly';
   const [acceptFidelity, setAcceptFidelity] = useState(false);
@@ -276,6 +277,7 @@ const AdminConfig: React.FC = () => {
   const [isUsageExpanded, setIsUsageExpanded] = useState(false);
   const [usageStats, setUsageStats] = useState({ users: 1, properties: 0, activeContracts: 0 });
   const isLoading = isGeneratingCheckout || isReactivating || isUpgrading !== null;
+  const setIsLoading = setIsGeneratingCheckout;
 
   useEffect(() => {
     setAcceptedFidelityTerms(false);
@@ -870,7 +872,8 @@ const AdminConfig: React.FC = () => {
           company_id: contract?.company_id, // Certifique-se de que contract.company_id existe no escopo
           new_plan: plan.name,
           billing_cycle: isYearly ? 'yearly' : 'monthly',
-          has_fidelity: isYearly ? false : acceptFidelity
+          has_fidelity: isYearly ? false : acceptFidelity,
+          addons: planParam.addons || { buyDomainBr: false, buyDomainCom: false }
         })
       });
 
@@ -2923,9 +2926,42 @@ const AdminConfig: React.FC = () => {
                     </p>
                   </div>
                   <button 
-                    onClick={() => {
+                    onClick={async () => {
                       setIsCheckoutModalOpen(false);
-                      handleCheckout(); // Chama o pagamento
+                      if (checkoutMode === 'upgrade') {
+                        handleUpgrade({ ...selectedPlanForCheckout, addons: checkoutAddons });
+                      } else {
+                        // Modo Pay (Pagar Agora) - Como é um pagamento da fatura atual, primeiro garantimos que
+                        // o valor extra do domínio está no Asaas chamando a mesma Edge Function de atualização.
+                        try {
+                          setIsLoading(true);
+                          const { data: { session } } = await supabase.auth.getSession();
+                          const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-asaas-subscription`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${session?.access_token}`,
+                              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+                            },
+                            body: JSON.stringify({
+                              company_id: contract?.company_id,
+                              new_plan: contract?.plan_name || 'Starter',
+                              billing_cycle: contract?.billing_cycle || 'monthly',
+                              has_fidelity: contract?.has_fidelity || false,
+                              addons: checkoutAddons
+                            })
+                          });
+                          if (response.ok) {
+                            handleCheckout(); // Após atualizar o Asaas, gera o link
+                          } else {
+                            throw new Error('Falha ao adicionar domínios na fatura.');
+                          }
+                        } catch (e) {
+                          console.error(e);
+                          addToast('Erro ao processar pagamento.', 'error');
+                          setIsLoading(false);
+                        }
+                      }
                     }}
                     disabled={isLoading}
                     className="px-8 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/30 transition-all active:scale-95"
