@@ -1,40 +1,35 @@
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 import { useTenant } from '../contexts/TenantContext';
 
-// Layouts
-import MinimalistLayout from './minimalist/MinimalistLayout';
-import LuxuryLayout from './luxury/LuxuryLayout';
-import ModernLayout from './modern/ModernLayout';
-import ClassicLayout from './classic/ClassicLayout';
-
-// Home Pages
-import MinimalistHome from './minimalist/pages/Home';
-import LuxuryHome from './luxury/pages/Home';
-import ModernHome from './modern/pages/Home';
-import ClassicHome from './classic/pages/Home';
-import BasicoHome from './basico/pages/Home';
-
-// Layout Básico
 import BasicoLayout from './basico/BasicoLayout';
+import BasicoHome from './basico/pages/Home';
+import BasicoProperties from './basico/pages/BasicoProperties';
+import BasicoPropertyDetail from './basico/pages/BasicoPropertyDetail';
 
-// Páginas Internas Compartilhadas (Classic / fallback)
-import Properties from './classic/pages/Properties';
-import PropertyDetail from './classic/pages/PropertyDetail';
-import About from './classic/pages/About';
-import Services from './classic/pages/Services';
+import ClassicLayout from './classic/ClassicLayout';
+import ClassicHome from './classic/pages/Home';
+import ClassicProperties from './classic/pages/Properties';
+import ClassicPropertyDetail from './classic/pages/PropertyDetail';
+import ClassicAbout from './classic/pages/About';
+import ClassicServices from './classic/pages/Services';
+import ClassicFinanciamentos from './classic/pages/Financiamentos';
 
-// Páginas específicas Modern
-import ModernProperties from './modern/pages/ModernProperties';
-import ModernPropertyDetail from './modern/pages/ModernPropertyDetail';
-
-// Páginas específicas Luxury
+import LuxuryLayout from './luxury/LuxuryLayout';
+import LuxuryHome from './luxury/pages/Home';
 import LuxuryProperties from './luxury/pages/Properties';
 import LuxuryPropertyDetail from './luxury/pages/PropertyDetail';
 
-// Páginas específicas Básico
-import BasicoProperties from './basico/pages/BasicoProperties';
-import BasicoPropertyDetail from './basico/pages/BasicoPropertyDetail';
+import MinimalistLayout from './minimalist/MinimalistLayout';
+import MinimalistHome from './minimalist/pages/Home';
+
+import ModernLayout from './modern/ModernLayout';
+import ModernHome from './modern/pages/Home';
+import ModernProperties from './modern/pages/Properties';
+import ModernPropertyDetail from './modern/pages/PropertyDetail';
+import ModernAbout from './modern/pages/About';
+import ModernServices from './modern/pages/Services';
+import ModernFinanciamentos from './modern/pages/Financiamentos';
 
 export default function TenantRouter() {
   const { tenant, isLoadingTenant } = useTenant();
@@ -42,7 +37,7 @@ export default function TenantRouter() {
   if (isLoadingTenant) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
       </div>
     );
   }
@@ -55,21 +50,19 @@ export default function TenantRouter() {
     );
   }
 
-  // Define 'classic' como o template Premium padrão se não houver nenhum selecionado
-  const templateName = tenant?.template || 'classic';
+  const templateName = tenant?.site_data?.template || tenant?.template || 'classic';
 
-  // Componentes Dinâmicos (Agora com o Classic incluído!)
-  const Layout = 
-    templateName === 'luxury' ? LuxuryLayout : 
-    templateName === 'modern' ? ModernLayout : 
-    templateName === 'minimalist' ? MinimalistLayout : 
+  const Layout =
+    templateName === 'luxury' ? LuxuryLayout :
+    templateName === 'modern' ? ModernLayout :
+    templateName === 'minimalist' ? MinimalistLayout :
     templateName === 'basico' ? BasicoLayout :
     ClassicLayout;
 
-  const Home = 
-    templateName === 'luxury' ? LuxuryHome : 
-    templateName === 'modern' ? ModernHome : 
-    templateName === 'minimalist' ? MinimalistHome : 
+  const Home =
+    templateName === 'luxury' ? LuxuryHome :
+    templateName === 'modern' ? ModernHome :
+    templateName === 'minimalist' ? MinimalistHome :
     templateName === 'basico' ? BasicoHome :
     ClassicHome;
 
@@ -77,27 +70,34 @@ export default function TenantRouter() {
     templateName === 'luxury' ? LuxuryProperties :
     templateName === 'modern' ? ModernProperties :
     templateName === 'basico' ? BasicoProperties :
-    Properties;
+    ClassicProperties;
 
   const PropertyDetailPage =
     templateName === 'luxury' ? LuxuryPropertyDetail :
     templateName === 'modern' ? ModernPropertyDetail :
     templateName === 'basico' ? BasicoPropertyDetail :
-    PropertyDetail;
+    ClassicPropertyDetail;
+
+  const AboutPage =
+    templateName === 'modern' ? ModernAbout : ClassicAbout;
+
+  const ServicesPage =
+    templateName === 'modern' ? ModernServices : ClassicServices;
+
+  const FinancingPage =
+    templateName === 'modern' ? ModernFinanciamentos : ClassicFinanciamentos;
 
   return (
     <Routes>
       <Route element={<Layout />}>
-        {/* Home dinâmica dependendo do template */}
         <Route index element={<Home />} />
-
-        {/* Páginas internas */}
         <Route path="imoveis" element={<PropertiesPage />} />
-        {/* Aceita tanto id quanto slug como parâmetro genérico */}
         <Route path="imovel/:id" element={<PropertyDetailPage />} />
         <Route path="imovel/:slug" element={<PropertyDetailPage />} />
-        <Route path="sobre" element={<About />} />
-        <Route path="servicos" element={<Services />} />
+        <Route path="sobre" element={<AboutPage />} />
+        <Route path="servicos" element={<ServicesPage />} />
+        <Route path="financiamentos" element={<FinancingPage />} />
+        <Route path="financiamento" element={<FinancingPage />} />
       </Route>
     </Routes>
   );
