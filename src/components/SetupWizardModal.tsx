@@ -168,17 +168,27 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
         }
 
         try {
-          // Chama a Edge Function para criar o cliente e a assinatura no Asaas
-          await supabase.functions.invoke('update-asaas-subscription', {
-            body: {
+          const { data: { session } } = await supabase.auth.getSession();
+          const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-asaas-subscription`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session?.access_token}`,
+              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({
               company_id: newCompany.id,
               new_plan: formData.plan,
               billing_cycle: formData.billingCycle,
-              has_fidelity: false,
-            },
+              has_fidelity: false
+            })
           });
+
+          if (!response.ok) {
+            console.error("Erro na Edge Function Asaas:", await response.text());
+          }
         } catch (asaasError) {
-          console.error('Erro ao sincronizar com Asaas no Wizard:', asaasError);
+          console.error("Erro ao sincronizar com Asaas no Wizard:", asaasError);
           // Nao travamos o fluxo se o Asaas falhar, o auto-heal da function resolve no futuro
         }
       }
