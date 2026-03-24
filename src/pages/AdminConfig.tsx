@@ -2791,8 +2791,8 @@ const AdminConfig: React.FC = () => {
           const isModalYearly = billingCycle === 'yearly';
           const isModalFidelity = acceptFidelity;
           
-          // Inteligência de extração do domínio do cliente (ajuste 'company' conforme o seu estado local)
-          const companyDomain = company?.domain || company?.website || contract?.companies?.domain || '';
+          // Inteligência de extração do domínio do cliente baseada no estado já disponível no componente
+          const companyDomain = siteDomain || (companySubdomain ? `${companySubdomain}.elevatio.app` : '');
           const hasCustomDomain = companyDomain && !companyDomain.includes('elevatio');
           const isCom = companyDomain.endsWith('.com');
           const isComBr = companyDomain.endsWith('.com.br') || !hasCustomDomain;
