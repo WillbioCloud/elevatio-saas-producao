@@ -300,10 +300,10 @@ const AdminContractDetails: React.FC = () => {
           <button
             onClick={handleGenerateInvoices}
             disabled={isGeneratingInvoices || installments.length === 0}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white rounded-2xl font-bold transition-all shadow-lg hover:shadow-xl hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
           >
-            {isGeneratingInvoices ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.Receipt size={18} />}
-            {isGeneratingInvoices ? 'Gerando...' : `Gerar ${installments.length} Faturas`}
+            {isGeneratingInvoices ? <Icons.Loader2 size={20} className="animate-spin" /> : <Icons.Receipt size={20} />}
+            {isGeneratingInvoices ? 'Processando Faturas...' : `Sincronizar ${installments.length} Faturas com o Financeiro`}
           </button>
         </div>
       )}

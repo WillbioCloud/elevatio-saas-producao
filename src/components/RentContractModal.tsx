@@ -274,8 +274,11 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
 
       if (contract) {
         const installments = [];
-        // Tenta capturar o valor da caução/garantia do formulário (ajuste a variável se o seu form usar outro nome, ex: guarantee_amount)
-        const guaranteeValue = Number(formData.guarantee_value || formData.deposit_amount || 0);
+        // Lógica de Caução: Multiplica o valor do aluguel puro pela quantidade de meses escolhida
+        let guaranteeValue = 0;
+        if (formData.rent_guarantee_type === 'caucao_1') guaranteeValue = rentVal * 1;
+        else if (formData.rent_guarantee_type === 'caucao_2') guaranteeValue = rentVal * 2;
+        else if (formData.rent_guarantee_type === 'caucao_3') guaranteeValue = rentVal * 3;
 
         for (let i = 1; i <= months; i++) {
           const dueDate = new Date(startDate);
