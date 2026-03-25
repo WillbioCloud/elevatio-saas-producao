@@ -27,12 +27,19 @@ const AdminContractDetails: React.FC = () => {
   const [keysNotes, setKeysNotes] = useState('');
   const [isUpdatingKeys, setIsUpdatingKeys] = useState(false);
 
-  const handlePayInstallment = async (installmentId: string) => {
+  const handlePayInstallment = async (installmentId: string, dueDate: string) => {
     if (!window.confirm('Confirmar o recebimento desta parcela?')) return;
     try {
+      // Atualiza a installment
       const { error } = await supabase.from('installments').update({ status: 'pago' }).eq('id', installmentId);
       if (error) throw error;
-      alert('Parcela baixada com sucesso!');
+
+      // Atualiza a invoice correspondente no financeiro (se já estiver sincronizada)
+      await supabase.from('invoices').update({ status: 'paga' })
+        .eq('contract_id', contract?.id)
+        .eq('due_date', dueDate);
+
+      alert('Parcela baixada com sucesso no contrato e no financeiro!');
       fetchContractData(); // Recarrega os dados
     } catch (err: any) {
       alert('Erro ao dar baixa: ' + err.message);
@@ -64,7 +71,11 @@ const AdminContractDetails: React.FC = () => {
         if (propError) throw new Error('Erro ao atualizar o status do imóvel: ' + propError.message);
       }
 
-      alert('Contrato encerrado! O imóvel agora está disponível para uma nova negociação.');
+      // 3. LIMPEZA FINANCEIRA: Remove as parcelas e faturas futuras/pendentes
+      await supabase.from('installments').delete().eq('contract_id', id).eq('status', 'pending');
+      await supabase.from('invoices').delete().eq('contract_id', id).eq('status', 'pendente');
+
+      alert('Contrato encerrado! O imóvel está disponível e as cobranças futuras foram canceladas.');
       fetchContractData();
       navigate('/admin/contratos?tab=archived');
     } catch (error: any) {
@@ -181,7 +192,7 @@ const AdminContractDetails: React.FC = () => {
           description: `Aluguel - Parcela ${index + 1}/${duration}`,
           amount: inst.amount,
           due_date: inst.due_date,
-          status: 'pendente',
+          status: inst.status === 'pago' ? 'paga' : 'pendente',
         };
       });
 
@@ -466,7 +477,7 @@ const AdminContractDetails: React.FC = () => {
                             </div>
                           ) : (
                             <button
-                              onClick={() => handlePayInstallment(installments[0].id)}
+                              onClick={() => handlePayInstallment(installments[0].id, installments[0].due_date)}
                               className="w-full md:w-auto px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
                             >
                               <Icons.Check size={18} /> Dar Baixa Agora
