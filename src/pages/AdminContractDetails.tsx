@@ -190,24 +190,26 @@ const AdminContractDetails: React.FC = () => {
   const remainingCount = pendingInstallments.length;
 
   const handleGenerateInvoices = async () => {
-    if (!contract || contract.type !== 'rent' || !contract.duration_months) {
-      alert('Contrato inválido ou sem duração de meses definida.');
+    // A duração real é a quantidade de parcelas já geradas
+    const duration = installments.length;
+
+    if (!contract || contract.type !== 'rent' || duration === 0) {
+      alert('Contrato inválido ou sem parcelas geradas para converter em faturas.');
       return;
     }
 
     setIsGeneratingInvoices(true);
     try {
-      const invoicesToInsert = Array.from({ length: contract.duration_months }).map((_, index) => {
-        const dueDate = new Date(contract.start_date || new Date());
-        dueDate.setMonth(dueDate.getMonth() + index + 1);
+      // Mapeia as parcelas já existentes e transforma em Faturas (Invoices)
+      const invoicesToInsert = installments.map((inst, index) => {
         return {
           company_id: contract.company_id,
           property_id: contract.property_id,
           contract_id: contract.id,
           client_name: contract.lead?.name || 'Inquilino',
-          description: `Aluguel - Parcela ${index + 1}/${contract.duration_months}`,
-          amount: contract.rent_value || 0,
-          due_date: dueDate.toISOString().split('T')[0],
+          description: `Aluguel - Parcela ${index + 1}/${duration}`,
+          amount: inst.amount,
+          due_date: inst.due_date,
           status: 'pendente',
         };
       });
@@ -218,7 +220,7 @@ const AdminContractDetails: React.FC = () => {
         throw new Error(error.message);
       }
 
-      alert(`${contract.duration_months} faturas geradas com sucesso no Financeiro!`);
+      alert(`${duration} faturas geradas com sucesso no Financeiro!`);
     } catch (error: any) {
       console.error('Erro ao gerar faturas:', error);
       alert('Erro ao gerar faturas: ' + error.message);
@@ -297,13 +299,11 @@ const AdminContractDetails: React.FC = () => {
           </div>
           <button
             onClick={handleGenerateInvoices}
-            disabled={isGeneratingInvoices}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold transition-all flex items-center gap-2 disabled:opacity-50 shrink-0 shadow-sm"
+            disabled={isGeneratingInvoices || installments.length === 0}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isGeneratingInvoices
-              ? <Icons.Loader2 size={18} className="animate-spin" />
-              : <Icons.Settings size={18} />}
-            Gerar {contract.duration_months} Faturas
+            {isGeneratingInvoices ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.Receipt size={18} />}
+            {isGeneratingInvoices ? 'Gerando...' : `Gerar ${installments.length} Faturas`}
           </button>
         </div>
       )}
