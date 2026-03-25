@@ -278,6 +278,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
 
           installments.push({
             contract_id: contract.id,
+            company_id: user?.company_id,
             type: 'rent_monthly',
             installment_number: i,
             amount: totalMonthly,
@@ -285,7 +286,12 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
             status: 'pending'
           });
         }
-        await supabase.from('installments').insert(installments);
+
+        const { error: installmentsError } = await supabase.from('installments').insert(installments);
+        if (installmentsError) {
+          console.error("Erro ao gerar parcelas:", installmentsError);
+          throw new Error("Contrato criado, mas houve uma falha ao gerar as parcelas mensais.");
+        }
       }
 
       if (formData.property_id) {
