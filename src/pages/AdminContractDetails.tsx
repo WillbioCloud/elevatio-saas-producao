@@ -190,7 +190,11 @@ const AdminContractDetails: React.FC = () => {
   const remainingCount = pendingInstallments.length;
 
   const handleGenerateInvoices = async () => {
-    if (!contract || contract.type !== 'rent' || !contract.duration_months) return;
+    if (!contract || contract.type !== 'rent' || !contract.duration_months) {
+      alert('Contrato inválido ou sem duração de meses definida.');
+      return;
+    }
+
     setIsGeneratingInvoices(true);
     try {
       const invoicesToInsert = Array.from({ length: contract.duration_months }).map((_, index) => {
@@ -202,14 +206,18 @@ const AdminContractDetails: React.FC = () => {
           contract_id: contract.id,
           client_name: contract.lead?.name || 'Inquilino',
           description: `Aluguel - Parcela ${index + 1}/${contract.duration_months}`,
-          amount: contract.value,
+          amount: contract.rent_value || 0,
           due_date: dueDate.toISOString().split('T')[0],
           status: 'pendente',
         };
       });
 
       const { error } = await supabase.from('invoices').insert(invoicesToInsert);
-      if (error) throw error;
+      if (error) {
+        console.error("Erro do Supabase:", error);
+        throw new Error(error.message);
+      }
+
       alert(`${contract.duration_months} faturas geradas com sucesso no Financeiro!`);
     } catch (error: any) {
       console.error('Erro ao gerar faturas:', error);
