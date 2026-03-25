@@ -14,7 +14,6 @@ const AdminContractDetails: React.FC = () => {
   const [contract, setContract] = useState<any>(null);
   const [installments, setInstallments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
   const [isGeneratingInvoices, setIsGeneratingInvoices] = useState(false);
   const [generatedInvoices, setGeneratedInvoices] = useState<any[]>([]);
   
@@ -22,10 +21,23 @@ const AdminContractDetails: React.FC = () => {
   const [vistoriaList, setVistoriaList] = useState<any[]>([]);
   const [savingVistoria, setSavingVistoria] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [isInstallmentsExpanded, setIsInstallmentsExpanded] = useState(false);
 
   const [keysStatus, setKeysStatus] = useState('na_imobiliaria');
   const [keysNotes, setKeysNotes] = useState('');
   const [isUpdatingKeys, setIsUpdatingKeys] = useState(false);
+
+  const handlePayInstallment = async (installmentId: string) => {
+    if (!window.confirm('Confirmar o recebimento desta parcela?')) return;
+    try {
+      const { error } = await supabase.from('installments').update({ status: 'pago' }).eq('id', installmentId);
+      if (error) throw error;
+      alert('Parcela baixada com sucesso!');
+      fetchContractData(); // Recarrega os dados
+    } catch (err: any) {
+      alert('Erro ao dar baixa: ' + err.message);
+    }
+  };
 
   const handleFinalizeContract = async () => {
     if (!window.confirm('Tem certeza que deseja encerrar este contrato? O contrato será arquivado e o imóvel voltará a ficar "Disponível" no sistema.')) return;
@@ -116,64 +128,6 @@ const AdminContractDetails: React.FC = () => {
     if (id) fetchContractData();
   }, [id]);
 
-  const handleGenerateInstallment = async () => {
-    const value = prompt('Qual o valor da parcela? (Ex: 1500)');
-    if (!value) return;
-    
-    const dueDate = prompt('Qual a data de vencimento? (Formato: AAAA-MM-DD)');
-    if (!dueDate) return;
-
-    setGenerating(true);
-    const { error } = await supabase.from('installments').insert([{
-      contract_id: id,
-      company_id: user?.company_id,
-      type: contract?.type === 'rent' ? 'rent_monthly' : 'monthly',
-      amount: Number(value),
-      due_date: dueDate,
-      status: 'pending',
-      installment_number: installments.length + 1
-    }]);
-
-    if (error) alert('Erro ao gerar parcela: ' + error.message);
-    else fetchContractData();
-    setGenerating(false);
-  };
-
-  const handleMarkAsPaid = async (instId: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'paid' ? 'pending' : 'paid';
-    const paidDate = newStatus === 'paid' ? new Date().toISOString().split('T')[0] : null;
-
-    const { error } = await supabase
-      .from('installments')
-      .update({ status: newStatus, paid_date: paidDate })
-      .eq('id', instId);
-
-    if (!error) fetchContractData();
-  };
-
-  const handleSendWhatsAppReminder = (inst: any) => {
-    if (!contract?.lead?.phone) {
-      alert('O cliente não possui um telefone válido cadastrado.');
-      return;
-    }
-
-    const cleanPhone = contract.lead.phone.replace(/\D/g, '');
-    const firstName = contract.lead.name?.split(' ')[0] || 'Cliente';
-    const valueFormatted = Number(inst.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    const dateFormatted = new Date(inst.due_date).toLocaleDateString('pt-BR');
-
-    const isOverdue = new Date(inst.due_date) < new Date() && inst.status !== 'paid';
-
-    let text = '';
-    if (isOverdue) {
-      text = `Olá ${firstName}, tudo bem? Aqui é da imobiliária. Consta em nosso sistema uma parcela em aberto no valor de *${valueFormatted}*, referente ao imóvel *${contract.property?.title}*, com vencimento original em *${dateFormatted}*. Como podemos ajudar para regularizar?`;
-    } else {
-      text = `Olá ${firstName}, tudo bem? Aqui é da imobiliária. Passando para lembrar que a parcela de *${valueFormatted}* referente ao imóvel *${contract.property?.title}* vence no dia *${dateFormatted}*. Se já efetuou o pagamento, por favor, desconsidere esta mensagem!`;
-    }
-
-    window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
-  };
-
   const updateVistoriaItem = (index: number, field: string, value: any) => {
     const newList = [...vistoriaList];
     newList[index] = { ...newList[index], [field]: value };
@@ -199,8 +153,7 @@ const AdminContractDetails: React.FC = () => {
   const isCash = contract.sale_is_cash;
 
   const totalRepairCost = vistoriaList.reduce((acc, item) => acc + (Number(item.repair_cost) || 0), 0);
-  const totalPaid = installments.filter(i => i.status === 'paid').reduce((acc, i) => acc + Number(i.amount), 0);
-  const pendingInstallments = installments.filter(i => i.status !== 'paid');
+  const pendingInstallments = installments.filter(i => i.status !== 'paid' && i.status !== 'pago');
   const remainingBalance = pendingInstallments.reduce((acc, i) => acc + Number(i.amount), 0);
   const remainingCount = pendingInstallments.length;
 
@@ -463,88 +416,115 @@ const AdminContractDetails: React.FC = () => {
 
       {/* ABA: FINANCEIRO */}
       {activeTab === 'finance' && (
-        <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden animate-fade-in">
-          <div className="p-6 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-slate-50/50 dark:bg-white/[0.02]">
-            <div>
-              <h2 className="text-lg font-bold font-serif text-slate-800 dark:text-white flex items-center gap-2">Cronograma de Pagamentos</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Valor total já recebido: <strong className="text-emerald-600 dark:text-emerald-400">{totalPaid.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></p>
-            </div>
-            <button 
-              onClick={handleGenerateInstallment}
-              disabled={generating}
-              className="bg-slate-900 dark:bg-white/10 hover:bg-slate-800 dark:hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2"
-            >
-              <Icons.Plus size={16} /> Nova Parcela/Boleto
-            </button>
-          </div>
-
+        <>
           {installments.length === 0 ? (
-            <div className="p-10 text-center">
-              <Icons.Receipt className="mx-auto text-slate-300 dark:text-slate-600 mb-3" size={40} />
-              <p className="text-slate-500 dark:text-slate-400 font-medium">Nenhuma parcela gerada.</p>
-              {isCash && <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-2 font-bold">A venda foi à vista, não há parcelas futuras.</p>}
+            <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden animate-fade-in">
+              <div className="p-10 text-center">
+                <Icons.Receipt className="mx-auto text-slate-300 dark:text-slate-600 mb-3" size={40} />
+                <p className="text-slate-500 dark:text-slate-400 font-medium">Nenhuma parcela gerada.</p>
+                {isCash && <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-2 font-bold">A venda foi à vista, não há parcelas futuras.</p>}
+              </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-white dark:bg-[#0a0f1c] border-b border-slate-100 dark:border-white/5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
-                    <th className="p-4">Descrição</th>
-                    <th className="p-4">Vencimento</th>
-                    <th className="p-4">Valor</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4 text-center">Ação</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-white/5 text-sm">
-                  {installments.map((inst, index) => (
-                    <tr key={inst.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
-                      <td className="p-4 font-bold font-serif text-slate-700 dark:text-slate-300">
-                        {inst.installment_number ? `${inst.installment_number}ª Parcela` : `Parcela Extra`}
-                      </td>
-                      <td className="p-4 text-slate-600 dark:text-slate-400">
-                        {new Date(inst.due_date).toLocaleDateString('pt-BR')}
-                      </td>
-                      <td className="p-4 font-bold font-serif text-slate-800 dark:text-white">
-                        {Number(inst.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                      </td>
-                      <td className="p-4">
-                        {inst.status === 'paid' ? (
-                          <span className="bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 w-fit"><Icons.CheckCircle size={12} /> Pago</span>
-                        ) : new Date(inst.due_date) < new Date() ? (
-                          <span className="bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 w-fit"><Icons.AlertCircle size={12} /> Atrasado</span>
-                        ) : (
-                          <span className="bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 w-fit"><Icons.Clock size={12} /> Pendente</span>
-                        )}
-                      </td>
-                      <td className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          {inst.status !== 'paid' && (
+            <>
+              {/* CRONOGRAMA DE PARCELAS - CARD EXPANSÍVEL */}
+              {installments.length > 0 && (
+                <div className="mt-8 bg-white dark:bg-dark-card rounded-3xl border border-slate-200 dark:border-dark-border overflow-hidden shadow-sm">
+                  <div className="p-6 border-b border-slate-100 dark:border-dark-border flex justify-between items-center bg-slate-50/50 dark:bg-white/5">
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                      <Icons.Calendar size={20} className="text-brand-500" />
+                      Cronograma de Pagamentos
+                    </h3>
+                    <span className="bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 px-3 py-1 rounded-full text-xs font-bold">
+                      {installments.length} Parcelas
+                    </span>
+                  </div>
+
+                  <div className="p-6">
+                    {/* A PRIMEIRA PARCELA (DESTAQUE) */}
+                    <div className="relative bg-gradient-to-r from-slate-900 to-slate-800 dark:from-brand-900/40 dark:to-indigo-900/40 rounded-2xl p-1 shadow-lg mb-4">
+                      <div className="absolute -top-3 left-6 bg-emerald-500 text-white text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full shadow-sm z-10">
+                        Pagamento no Ato (Caução + Aluguel)
+                      </div>
+                      <div className="bg-white dark:bg-[#0a0f1c] rounded-xl p-5 flex flex-col md:flex-row items-center justify-between gap-4 relative z-0">
+                        <div className="flex items-center gap-4 w-full md:w-auto">
+                          <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
+                            <Icons.DollarSign className="text-emerald-600 dark:text-emerald-400" size={24} />
+                          </div>
+                          <div>
+                            <p className="text-sm text-slate-500 font-medium">1ª Parcela • Vence em {new Date(installments[0].due_date).toLocaleDateString('pt-BR')}</p>
+                            <p className="text-2xl font-black text-slate-900 dark:text-white">
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(installments[0].amount)}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+                          {installments[0].status === 'pago' || installments[0].status === 'paid' ? (
+                            <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 px-4 py-2 rounded-lg font-bold text-sm border border-emerald-200 dark:border-emerald-800">
+                              <Icons.CheckCircle2 size={18} /> Parcela Paga
+                            </div>
+                          ) : (
                             <button
-                              onClick={() => handleSendWhatsAppReminder(inst)}
-                              title="Cobrar via WhatsApp"
-                              className="p-2 rounded-lg border border-[#25D366]/30 bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366] hover:text-white transition-colors"
+                              onClick={() => handlePayInstallment(installments[0].id)}
+                              className="w-full md:w-auto px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
                             >
-                              <Icons.MessageCircle size={16} />
+                              <Icons.Check size={18} /> Dar Baixa Agora
                             </button>
                           )}
-                          <button
-                            onClick={() => handleMarkAsPaid(inst.id, inst.status)}
-                            className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${
-                              inst.status === 'paid' ? 'border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5' : 'border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20'
-                            }`}
-                          >
-                            {inst.status === 'paid' ? 'Desfazer' : 'Dar Baixa'}
-                          </button>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </div>
+                    </div>
+
+                    {/* BOTÃO EXPANDIR DEMAIS PARCELAS */}
+                    {installments.length > 1 && (
+                      <button
+                        onClick={() => setIsInstallmentsExpanded(!isInstallmentsExpanded)}
+                        className="w-full py-3 flex items-center justify-center gap-2 text-sm font-bold text-slate-500 hover:text-brand-600 transition-colors bg-slate-50 hover:bg-slate-100 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl"
+                      >
+                        {isInstallmentsExpanded ? <Icons.ChevronUp size={18} /> : <Icons.ChevronDown size={18} />}
+                        {isInstallmentsExpanded ? 'Ocultar Mensalidades Seguintes' : `Ver as outras ${installments.length - 1} Mensalidades`}
+                      </button>
+                    )}
+
+                    {/* DEMAIS PARCELAS (ACORDEÃO) */}
+                    {isInstallmentsExpanded && installments.length > 1 && (
+                      <div className="mt-4 space-y-3 animate-fade-in">
+                        {installments.slice(1).map((inst, index) => (
+                          <div key={inst.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-100 dark:border-dark-border bg-slate-50/50 dark:bg-dark-card hover:bg-slate-50 transition-colors">
+                            <div className="flex items-center gap-3 mb-3 sm:mb-0">
+                              <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-400 shrink-0">
+                                {index + 2}
+                              </div>
+                              <div>
+                                <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                                  Mensalidade Normal
+                                </p>
+                                <p className="text-xs text-slate-500 flex items-center gap-1">
+                                  <Icons.Calendar size={12} /> Vence em: {new Date(inst.due_date).toLocaleDateString('pt-BR')}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between sm:justify-end gap-6 sm:w-1/2">
+                              <span className="font-bold text-slate-700 dark:text-slate-300">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(inst.amount)}
+                              </span>
+                              {inst.status === 'pago' || inst.status === 'paid' ? (
+                                <span className="text-xs font-bold px-2 py-1 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 flex items-center gap-1"><Icons.Check size={12}/> Pago</span>
+                              ) : (
+                                <span className="text-xs font-bold px-2 py-1 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Pendente</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
           )}
-        </div>
+        </>
       )}
 
       {/* ABA: VISTORIA (APENAS ALUGUEL) */}
