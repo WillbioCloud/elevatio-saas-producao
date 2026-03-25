@@ -51,6 +51,8 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
     iptu_value: '',
     rent_guarantee_type: '',
     rent_readjustment_index: 'IGPM',
+    guarantee_value: '',
+    deposit_amount: '',
     commission_percentage: '',
     due_day: '5',
   });
@@ -272,16 +274,27 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
 
       if (contract) {
         const installments = [];
+        // Tenta capturar o valor da caução/garantia do formulário (ajuste a variável se o seu form usar outro nome, ex: guarantee_amount)
+        const guaranteeValue = Number(formData.guarantee_value || formData.deposit_amount || 0);
+
         for (let i = 1; i <= months; i++) {
           const dueDate = new Date(startDate);
-          dueDate.setMonth(dueDate.getMonth() + i);
+          let installmentAmount = totalMonthly;
+
+          if (i === 1) {
+            // 1ª PARCELA: Vence no ato (startDate) e soma o valor da Caução
+            installmentAmount = totalMonthly + guaranteeValue;
+          } else {
+            // DEMAIS PARCELAS: Vencem nos meses subsequentes
+            dueDate.setMonth(dueDate.getMonth() + (i - 1));
+          }
 
           installments.push({
             contract_id: contract.id,
             company_id: user?.company_id,
             type: 'rent_monthly',
             installment_number: i,
-            amount: totalMonthly,
+            amount: installmentAmount,
             due_date: dueDate.toISOString().split('T')[0],
             status: 'pending'
           });
