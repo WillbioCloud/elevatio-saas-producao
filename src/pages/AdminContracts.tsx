@@ -253,8 +253,8 @@ const AdminContracts: React.FC = () => {
 
   const salesContracts = contracts.filter((c) => c.type === 'sale');
   const rentContracts = contracts.filter((c) => c.type === 'rent');
-  const activeContractsCount = useMemo(
-    () => contracts.filter((contract) => contract.status === 'active').length,
+  const activeRentContractsCount = useMemo(
+    () => contracts.filter((contract) => contract.type === 'rent' && contract.status === 'active').length,
     [contracts]
   );
   const contractsUsageLabel = isSuperAdmin
@@ -271,22 +271,24 @@ const AdminContracts: React.FC = () => {
       return;
     }
 
-    if (!isSuperAdmin && maxContracts === 0) {
-      alert('O seu plano atual não inclui o módulo de Gestão de Contratos. Faça o upgrade para desbloquear.');
-      return;
-    }
-
-    if (!isSuperAdmin && typeof maxContracts === 'number' && activeContractsCount >= maxContracts) {
-      alert(`Você atingiu o limite de contratos ativos do seu plano (${maxContracts}). Faça o upgrade para criar novos contratos.`);
-      return;
-    }
-
     if (type === 'rent') {
+      if (!isSuperAdmin && maxContracts === 0) {
+        alert('O seu plano atual não inclui o módulo de Gestão de Locações. Faça o upgrade para desbloquear.');
+        return;
+      }
+
+      if (!isSuperAdmin && typeof maxContracts === 'number' && activeRentContractsCount >= maxContracts) {
+        alert(`Você atingiu o limite de locações ativas do seu plano (${maxContracts}). Faça o upgrade para adicionar novos aluguéis.`);
+        return;
+      }
+
       setIsRentModalOpen(true);
       return;
     }
 
+    // Vendas são ilimitadas, sempre abre o modal
     setIsSaleModalOpen(true);
+    return;
   };
 
   const setTab = (tab: string) => {
@@ -304,8 +306,8 @@ const AdminContracts: React.FC = () => {
             Gestão de vendas, locações e acompanhamento de parcelas.
           </p>
           <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-white/10 bg-white/80 dark:bg-[#0a0f1c]/80 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
-            <Icons.FileText size={14} className="text-brand-500" />
-            <span>Contratos: {activeContractsCount} / {contractsUsageLabel}</span>
+            <Icons.KeyRound size={14} className="text-indigo-500" />
+            <span>Locações Ativas: {activeRentContractsCount} / {contractsUsageLabel}</span>
           </div>
         </div>
 

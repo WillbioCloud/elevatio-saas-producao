@@ -259,7 +259,7 @@ export default function SaasPlans() {
               </div>
 
               <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
-                <span className="col-span-2 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">Contratos Ativos: {plan.max_contracts > 0 ? plan.max_contracts : "Não incluído"}</span>
+                <span className="col-span-2 px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">Locações Ativas: {plan.max_contracts > 0 ? plan.max_contracts : "Não incluído"}</span>
                 <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">👥 {plan.max_users} usuários</span>
                 <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">🏠 {plan.max_properties} imóveis</span>
                 <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">📸 {plan.max_photos} fotos</span>
@@ -398,7 +398,7 @@ export default function SaasPlans() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Máx. Contratos Ativos</label>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1">Máx. Locações Ativas</label>
                     <input
                       type="number"
                       value={editingPlan.max_contracts}

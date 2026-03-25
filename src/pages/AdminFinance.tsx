@@ -10,6 +10,10 @@ import { useToast } from '../contexts/ToastContext';
 export default function AdminFinance() {
   const { tenant } = useTenant();
   const { user } = useAuth();
+  const [maxContracts, setMaxContracts] = useState<number | null>(null);
+  const [activeRentCount, setActiveRentCount] = useState(0);
+  const [loadingPlanLimit, setLoadingPlanLimit] = useState(true);
+  const isSuperAdmin = user?.role === 'super_admin';
   const [activeTab, setActiveTab] = useState<'recebimentos' | 'repasses'>('recebimentos');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [generatingLinkFor, setGeneratingLinkFor] = useState<string | null>(null);
@@ -20,6 +24,90 @@ export default function AdminFinance() {
 
   // Usamos user?.company_id pois é 100% garantido no painel admin
   const { invoices, loading } = useInvoices(user?.company_id);
+
+  React.useEffect(() => {
+    let isMounted = true;
+
+    const fetchLimitAndCount = async () => {
+      if (!user) return;
+
+      if (isSuperAdmin) {
+        if (isMounted) {
+          setMaxContracts(null);
+          setLoadingPlanLimit(false);
+        }
+        return;
+      }
+
+      if (!user.company_id) {
+        if (isMounted) {
+          setMaxContracts(0);
+          setLoadingPlanLimit(false);
+        }
+        return;
+      }
+
+      setLoadingPlanLimit(true);
+
+      try {
+        const { count } = await supabase
+          .from('contracts')
+          .select('*', { count: 'exact', head: true })
+          .eq('company_id', user.company_id)
+          .eq('type', 'rent')
+          .eq('status', 'active');
+
+        if (isMounted) setActiveRentCount(count || 0);
+
+        const { data: currentSaasContract } = await supabase
+          .from('saas_contracts')
+          .select('plan_id, plan_name, companies(plan)')
+          .eq('company_id', user.company_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const planCandidates = [
+          currentSaasContract?.plan_id,
+          currentSaasContract?.plan_name,
+          currentSaasContract?.companies?.plan,
+          user.company?.plan
+        ]
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          .map((value) => value.trim().toLowerCase());
+
+        const { data: plansData } = await supabase
+          .from('saas_plans')
+          .select('id, name, max_contracts');
+
+        const matchedPlan = (plansData || []).find((plan) => {
+          const planId = String(plan.id || '').toLowerCase();
+          const planName = String(plan.name || '').toLowerCase();
+          return planCandidates.some((candidate) => candidate === planId || candidate === planName);
+        });
+
+        if (isMounted) setMaxContracts(Number(matchedPlan?.max_contracts ?? 0));
+      } catch (error) {
+        console.error('Erro ao buscar limites no financeiro:', error);
+      } finally {
+        if (isMounted) setLoadingPlanLimit(false);
+      }
+    };
+
+    fetchLimitAndCount();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isSuperAdmin, user]);
+
+  const contractsUsageLabel = isSuperAdmin
+    ? 'Sem limite'
+    : loadingPlanLimit
+      ? '...'
+      : maxContracts === 0
+        ? 'Bloqueado'
+        : String(maxContracts ?? '--');
 
   const totalRecebido = invoices.filter(i => i.status === 'pago').reduce((acc, curr) => acc + curr.amount, 0);
   const totalAReceber = invoices.filter(i => i.status === 'pendente').reduce((acc, curr) => acc + curr.amount, 0);
@@ -141,6 +229,10 @@ export default function AdminFinance() {
             <Icons.Wallet className="text-brand-500" /> Gestão Financeira
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-1">Acompanhe recebimentos de aluguéis e repasses.</p>
+          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-white/10 bg-white/80 dark:bg-[#0a0f1c]/80 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
+            <Icons.KeyRound size={14} className="text-indigo-500" />
+            <span>Locações Ativas: {activeRentCount} / {contractsUsageLabel}</span>
+          </div>
         </div>
         {tenant && !tenant.payment_api_key && (
           <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 text-amber-700 dark:text-amber-400 px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow-sm">
