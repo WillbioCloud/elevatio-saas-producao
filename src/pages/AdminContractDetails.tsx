@@ -28,10 +28,11 @@ const AdminContractDetails: React.FC = () => {
   const [isUpdatingKeys, setIsUpdatingKeys] = useState(false);
 
   const handleFinalizeContract = async () => {
-    if (!window.confirm('CUIDADO: Tem certeza que deseja encerrar/dar baixa neste contrato? O imóvel associado será marcado como "Inativo" e oculto do sistema.')) return;
+    if (!window.confirm('Tem certeza que deseja encerrar este contrato? O contrato será arquivado e o imóvel voltará a ficar "Disponível" no sistema.')) return;
 
     setFinalizing(true);
     try {
+      // 1. Arquiva o contrato
       const { data: contractData, error: contractError } = await supabase
         .from('contracts')
         .update({ status: 'archived' })
@@ -41,18 +42,19 @@ const AdminContractDetails: React.FC = () => {
       if (contractError) throw contractError;
       if (!contractData || contractData.length === 0) throw new Error('Acesso negado: O contrato não pôde ser atualizado. Verifique as permissões (RLS).');
 
+      // 2. Libera o imóvel (Volta para Disponível)
       if (contract.property_id) {
         const { error: propError } = await supabase
           .from('properties')
-          .delete()
+          .update({ status: 'Disponível' })
           .eq('id', contract.property_id);
 
-        if (propError) throw new Error('Erro ao deletar imóvel do banco: ' + propError.message);
+        if (propError) throw new Error('Erro ao atualizar o status do imóvel: ' + propError.message);
       }
 
-      alert('Contrato e Imóvel finalizados com sucesso!');
+      alert('Contrato encerrado! O imóvel agora está disponível para uma nova negociação.');
       fetchContractData();
-      navigate('/admin/contratos');
+      navigate('/admin/contratos?tab=archived');
     } catch (error: any) {
       alert('Erro ao finalizar: ' + error.message);
     } finally {
@@ -290,17 +292,6 @@ const AdminContractDetails: React.FC = () => {
           </div>
         </div>
 
-        {contract.status !== 'archived' && (
-          <button
-            onClick={handleFinalizeContract}
-            disabled={finalizing}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
-            title="Encerrar contrato e inativar o imóvel"
-          >
-            {finalizing ? <Icons.Loader2 size={16} className="animate-spin" /> : <Icons.CheckCircle size={16} />}
-            Dar Baixa no Contrato
-          </button>
-        )}
       </div>
 
       {/* INTEGRAÇÃO FINANCEIRA */}
@@ -673,6 +664,29 @@ const AdminContractDetails: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {contract.status !== 'archived' && (
+        <div className="mt-12 p-6 rounded-3xl border border-red-200/50 dark:border-red-500/10 bg-red-50/50 dark:bg-red-500/5">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <h3 className="text-red-800 dark:text-red-400 font-bold flex items-center gap-2">
+                <Icons.AlertTriangle size={18} /> Zona de Perigo: Encerrar Contrato
+              </h3>
+              <p className="text-sm text-red-600/80 dark:text-red-400/80 mt-1 max-w-xl">
+                Ao encerrar, este contrato será arquivado e deixará de contar no limite do seu plano. O imóvel associado voltará imediatamente para o status "Disponível".
+              </p>
+            </div>
+            <button
+              onClick={handleFinalizeContract}
+              disabled={finalizing}
+              className="px-6 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-all disabled:opacity-50 shadow-sm shrink-0 whitespace-nowrap flex items-center gap-2"
+            >
+              {finalizing ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.Archive size={18} />}
+              {finalizing ? 'Processando...' : 'Dar Baixa no Contrato'}
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );
