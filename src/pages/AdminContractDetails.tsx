@@ -16,6 +16,7 @@ const AdminContractDetails: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [isGeneratingInvoices, setIsGeneratingInvoices] = useState(false);
+  const [generatedInvoices, setGeneratedInvoices] = useState<any[]>([]);
   
   const [activeTab, setActiveTab] = useState<'finance' | 'vistoria'>('finance');
   const [vistoriaList, setVistoriaList] = useState<any[]>([]);
@@ -94,6 +95,18 @@ const AdminContractDetails: React.FC = () => {
     const { data: installmentsData } = await installmentsQuery;
 
     if (installmentsData) setInstallments(installmentsData);
+
+    let invoicesQuery = supabase
+      .from('invoices')
+      .select('id')
+      .eq('contract_id', id);
+      
+    if (user?.role !== 'admin' && user?.company_id) {
+      invoicesQuery = invoicesQuery.eq('company_id', user.company_id);
+    }
+
+    const { data: invoicesData } = await invoicesQuery;
+    if (invoicesData) setGeneratedInvoices(invoicesData);
     setLoading(false);
   };
 
@@ -190,7 +203,6 @@ const AdminContractDetails: React.FC = () => {
   const remainingCount = pendingInstallments.length;
 
   const handleGenerateInvoices = async () => {
-    // A duração real é a quantidade de parcelas já geradas
     const duration = installments.length;
 
     if (!contract || contract.type !== 'rent' || duration === 0) {
@@ -198,9 +210,13 @@ const AdminContractDetails: React.FC = () => {
       return;
     }
 
+    if (generatedInvoices.length > 0) {
+      alert('Este contrato já possui faturas sincronizadas no financeiro!');
+      return;
+    }
+
     setIsGeneratingInvoices(true);
     try {
-      // Mapeia as parcelas já existentes e transforma em Faturas (Invoices)
       const invoicesToInsert = installments.map((inst, index) => {
         return {
           company_id: contract.company_id,
@@ -221,6 +237,7 @@ const AdminContractDetails: React.FC = () => {
       }
 
       alert(`${duration} faturas geradas com sucesso no Financeiro!`);
+      fetchContractData();
     } catch (error: any) {
       console.error('Erro ao gerar faturas:', error);
       alert('Erro ao gerar faturas: ' + error.message);
@@ -288,23 +305,50 @@ const AdminContractDetails: React.FC = () => {
 
       {/* INTEGRAÇÃO FINANCEIRA */}
       {contract.type === 'rent' && (
-        <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-bold text-emerald-800 dark:text-emerald-400 flex items-center gap-2">
-              <Icons.Wallet size={20} /> Integração Financeira
+        <div className={`relative overflow-hidden rounded-3xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 border transition-all duration-500 ${generatedInvoices.length > 0 ? 'bg-white/50 dark:bg-[#0a0f1c]/50 border-slate-200 dark:border-white/5 shadow-sm' : 'bg-gradient-to-br from-indigo-50 to-brand-50 dark:from-indigo-950/20 dark:to-brand-950/20 border-indigo-100 dark:border-indigo-500/20 shadow-[0_8px_30px_rgba(79,70,229,0.06)]'}`}>
+
+          {/* Brilho de Fundo (Apenas quando não sincronizado) */}
+          {generatedInvoices.length === 0 && (
+            <div className="absolute -top-24 -right-24 w-64 h-64 bg-brand-500/10 dark:bg-brand-500/20 rounded-full blur-3xl pointer-events-none"></div>
+          )}
+
+          <div className="relative z-10">
+            <h3 className={`text-xl font-bold flex items-center gap-2 ${generatedInvoices.length > 0 ? 'text-slate-700 dark:text-slate-300' : 'text-indigo-900 dark:text-indigo-300'}`}>
+              {generatedInvoices.length > 0 ? <Icons.CheckCircle2 className="text-emerald-500" size={24} /> : <Icons.Network className="text-indigo-600 dark:text-indigo-400" size={24} />}
+              {generatedInvoices.length > 0 ? 'Sincronização Ativa' : 'Integração Financeira'}
             </h3>
-            <p className="text-sm text-emerald-600 dark:text-emerald-500 mt-1">
-              Gere as cobranças mensais deste contrato automaticamente no painel Financeiro.
+            <p className={`mt-2 text-sm max-w-md leading-relaxed ${generatedInvoices.length > 0 ? 'text-slate-500' : 'text-indigo-700/80 dark:text-indigo-300/80'}`}>
+              {generatedInvoices.length > 0
+                ? `Excelente! Este contrato já possui ${generatedInvoices.length} faturas ativas e automatizadas no seu painel financeiro.`
+                : 'Automatize suas cobranças. Transforme as parcelas deste contrato em faturas gerenciáveis no painel financeiro da sua imobiliária.'}
             </p>
           </div>
-          <button
-            onClick={handleGenerateInvoices}
-            disabled={isGeneratingInvoices || installments.length === 0}
-            className="w-full flex items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white rounded-2xl font-bold transition-all shadow-lg hover:shadow-xl hover:-translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
-          >
-            {isGeneratingInvoices ? <Icons.Loader2 size={20} className="animate-spin" /> : <Icons.Receipt size={20} />}
-            {isGeneratingInvoices ? 'Processando Faturas...' : `Sincronizar ${installments.length} Faturas com o Financeiro`}
-          </button>
+
+          <div className="relative z-10 w-full md:w-auto shrink-0">
+            <button
+              onClick={handleGenerateInvoices}
+              disabled={isGeneratingInvoices || installments.length === 0 || generatedInvoices.length > 0}
+              className={`w-full md:w-auto flex items-center justify-center gap-2 px-8 py-4 rounded-2xl font-bold transition-all duration-300 ${
+                generatedInvoices.length > 0
+                  ? 'bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-200/50 dark:border-white/5'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-[0_8px_30px_rgba(79,70,229,0.25)] hover:shadow-[0_8px_30px_rgba(79,70,229,0.4)] hover:-translate-y-1'
+              }`}
+            >
+              {isGeneratingInvoices ? (
+                <Icons.Loader2 size={20} className="animate-spin" />
+              ) : generatedInvoices.length > 0 ? (
+                <Icons.Check size={20} />
+              ) : (
+                <Icons.ArrowRightLeft size={20} />
+              )}
+
+              {isGeneratingInvoices
+                ? 'Sincronizando...'
+                : generatedInvoices.length > 0
+                  ? 'Faturas Sincronizadas'
+                  : `Sincronizar ${installments.length} Faturas`}
+            </button>
+          </div>
         </div>
       )}
 
