@@ -129,6 +129,7 @@ const AdminLayout: React.FC = () => {
   const menuItems = [
     { label: 'Dashboard', path: '/admin/dashboard', icon: Icons.Dashboard },
     { label: 'Imóveis', path: '/admin/imoveis', icon: Icons.Building },
+    { label: 'Quadro de Chaves', path: '/admin/chaves', icon: Icons.Key },
     { label: 'Tarefas', path: '/admin/tarefas', icon: Icons.Calendar },
     { label: 'Relatórios', path: '/admin/analytics', icon: Icons.PieChart, adminOnly: true },
     { label: 'Configurações', path: '/admin/config', icon: Icons.Settings },
