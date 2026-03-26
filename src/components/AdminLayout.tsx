@@ -129,7 +129,6 @@ const AdminLayout: React.FC = () => {
   const menuItems = [
     { label: 'Dashboard', path: '/admin/dashboard', icon: Icons.Dashboard },
     { label: 'Imóveis', path: '/admin/imoveis', icon: Icons.Building },
-    { label: 'Quadro de Chaves', path: '/admin/chaves', icon: Icons.Key },
     { label: 'Tarefas', path: '/admin/tarefas', icon: Icons.Calendar },
     { label: 'Relatórios', path: '/admin/analytics', icon: Icons.PieChart, adminOnly: true },
     { label: 'Configurações', path: '/admin/config', icon: Icons.Settings },
@@ -292,6 +291,23 @@ const AdminLayout: React.FC = () => {
                   {!isSidebarCollapsed && <span className="whitespace-nowrap">Financeiro</span>}
                 </NavLink>
               )}
+
+              {item.path === '/admin/imoveis' && (
+                <NavLink
+                  to="/admin/chaves"
+                  onClick={() => isMobileMenuOpen && setIsMobileMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${
+                      isActive
+                        ? 'bg-brand-500 text-white shadow-md'
+                        : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white'
+                    } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`
+                  }
+                >
+                  <Icons.Key size={20} />
+                  <span className={`${isSidebarCollapsed ? 'hidden' : 'block'}`}>Quadro de Chaves</span>
+                </NavLink>
+              )}
             </React.Fragment>
           ))}
 
@@ -399,6 +415,21 @@ const AdminLayout: React.FC = () => {
               </div>
             )}
           </div>
+
+          <NavLink
+            to="/admin/clientes"
+            onClick={() => isMobileMenuOpen && setIsMobileMenuOpen(false)}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${
+                isActive
+                  ? 'bg-brand-500 text-white shadow-md'
+                  : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white'
+              } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`
+            }
+          >
+            <Icons.Users size={20} />
+            <span className={`${isSidebarCollapsed ? 'hidden' : 'block'}`}>Carteira de Clientes</span>
+          </NavLink>
 
           {user?.role === 'super_admin' && (
             <NavLink
@@ -511,18 +542,32 @@ const AdminLayout: React.FC = () => {
           <div className="md:hidden absolute top-[70px] left-0 right-0 bg-white border-b border-slate-100 shadow-xl z-50 p-4 max-h-[calc(100vh-70px)] overflow-y-auto custom-scrollbar flex flex-col gap-2 animate-in fade-in slide-in-from-top-4 duration-200">
             {/* 1. Itens Padrões */}
             {menuItems.filter((item) => !item.adminOnly || isAdmin).map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={({ isActive }) => `
-                  flex items-center gap-3 px-4 py-3 rounded-lg
-                  ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
-                `}
-              >
-                <item.icon size={20} />
-                {item.label}
-              </NavLink>
+              <React.Fragment key={item.path}>
+                <NavLink
+                  to={item.path}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={({ isActive }) => `
+                    flex items-center gap-3 px-4 py-3 rounded-lg
+                    ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
+                  `}
+                >
+                  <item.icon size={20} />
+                  {item.label}
+                </NavLink>
+                {item.path === '/admin/imoveis' && (
+                  <NavLink
+                    to="/admin/chaves"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={({ isActive }) => `
+                      flex items-center gap-3 px-4 py-3 rounded-lg
+                      ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
+                    `}
+                  >
+                    <Icons.Key size={20} />
+                    Quadro de Chaves
+                  </NavLink>
+                )}
+              </React.Fragment>
             ))}
 
             {/* 2. Menu Contratos (Mobile) */}
@@ -574,6 +619,18 @@ const AdminLayout: React.FC = () => {
                 </div>
               )}
             </div>
+
+            <NavLink
+              to="/admin/clientes"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={({ isActive }) => `
+                flex items-center gap-3 px-4 py-3 rounded-lg
+                ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
+              `}
+            >
+              <Icons.Users size={20} />
+              Carteira de Clientes
+            </NavLink>
 
             {user?.role === 'super_admin' && (
               <NavLink

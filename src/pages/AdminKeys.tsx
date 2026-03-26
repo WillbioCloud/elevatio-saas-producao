@@ -1,254 +1,186 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Icons } from '../components/Icons';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
+import { Icons } from '../components/Icons';
 
-type KeyProperty = {
-  id: string;
-  title: string;
-  status?: string | null;
-  location?: {
-    neighborhood?: string;
-    address?: string;
-    city?: string;
-  } | null;
-  neighborhood?: string | null;
-  address?: string | null;
-  city?: string | null;
-  listing_type?: 'sale' | 'rent' | null;
-  bedrooms?: number | null;
-  price?: number | null;
-  rent_price?: number | null;
-  images?: string[] | null;
-};
-
-const formatBRL = (value: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-
-const getKeyStatusMeta = (status?: string | null) => {
-  if (status === 'Disponível') {
-    return {
-      label: '🔑 Chave na Imobiliária',
-      className: 'bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/20',
-    };
-  }
-
-  if (status === 'Alugado') {
-    return {
-      label: '🏠 Com Inquilino',
-      className: 'bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/20',
-    };
-  }
-
-  if (status === 'Vendido') {
-    return {
-      label: '🔒 Chave Entregue',
-      className: 'bg-red-100 text-red-700 border border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/20',
-    };
-  }
-
-  return {
-    label: '📍 Status não mapeado',
-    className: 'bg-slate-100 text-slate-700 border border-slate-200 dark:bg-white/10 dark:text-slate-300 dark:border-white/10',
-  };
-};
-
-const AdminKeys: React.FC = () => {
-  const { user } = useAuth();
-  const [properties, setProperties] = useState<KeyProperty[]>([]);
+export default function AdminKeys() {
+  const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [listingTypeFilter, setListingTypeFilter] = useState<'all' | 'sale' | 'rent'>('all');
-  const [bedroomsFilter, setBedroomsFilter] = useState<'all' | '1' | '2' | '3' | '4'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('todos');
+  const [updatingKeyId, setUpdatingKeyId] = useState<string | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchProperties = async () => {
-      setLoading(true);
-
-      try {
-        let query = supabase
-          .from('properties')
-          .select('id, title, status, location, neighborhood, address, city, listing_type, bedrooms, price, rent_price:rent_package_price, images')
-          .order('created_at', { ascending: false });
-
-        if (user?.role !== 'super_admin' && user?.company_id) {
-          query = query.eq('company_id', user.company_id);
-        }
-
-        const { data, error } = await query;
-
-        if (error) throw error;
-        if (isMounted) setProperties((data as KeyProperty[]) || []);
-      } catch (error) {
-        console.error('Erro ao buscar quadro de chaves:', error);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-
     fetchProperties();
+  }, []);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [user?.company_id, user?.role]);
+  const fetchProperties = async () => {
+    try {
+      // Busca imóveis, incluindo a nova coluna key_status
+      const { data, error } = await supabase
+        .from('properties')
+        .select('id, title, status, location, bedrooms, price, rent_price:rent_package_price, images, key_status')
+        .order('created_at', { ascending: false });
 
-  const filteredProperties = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+      if (error) throw error;
 
-    return properties.filter((property) => {
-      const neighborhood = property.location?.neighborhood || property.neighborhood || '';
-      const address = property.location?.address || property.address || '';
-      const city = property.location?.city || property.city || '';
-      const listingType = property.listing_type || (Number(property.rent_price || 0) > 0 ? 'rent' : 'sale');
-      const bedrooms = Number(property.bedrooms || 0);
+      setProperties(data || []);
+    } catch (error) {
+      console.error('Erro ao buscar imóveis:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      const matchesSearch =
-        normalizedSearch.length === 0 ||
-        neighborhood.toLowerCase().includes(normalizedSearch) ||
-        address.toLowerCase().includes(normalizedSearch) ||
-        city.toLowerCase().includes(normalizedSearch);
+  const handleUpdateKeyStatus = async (propertyId: string, newStatus: string) => {
+    if (!window.confirm('Tem certeza que deseja alterar a localização desta chave?')) return;
 
-      const matchesListingType = listingTypeFilter === 'all' || listingType === listingTypeFilter;
-      const matchesBedrooms = bedroomsFilter === 'all' || bedrooms >= Number(bedroomsFilter);
+    setUpdatingKeyId(propertyId);
+    try {
+      const { error } = await supabase
+        .from('properties')
+        .update({ key_status: newStatus })
+        .eq('id', propertyId);
 
-      return matchesSearch && matchesListingType && matchesBedrooms;
-    });
-  }, [bedroomsFilter, listingTypeFilter, properties, search]);
+      if (error) throw error;
+      fetchProperties(); // Recarrega os dados
+    } catch (error: any) {
+      alert('Erro ao atualizar status da chave: ' + error.message);
+    } finally {
+      setUpdatingKeyId(null);
+    }
+  };
+
+  const filteredProperties = properties.filter((prop) => {
+    const locationText =
+      typeof prop.location === 'string'
+        ? prop.location
+        : [prop.location?.neighborhood, prop.location?.address, prop.location?.city].filter(Boolean).join(' ');
+
+    const matchesSearch =
+      prop.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (locationText && locationText.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    const matchesType =
+      filterType === 'todos' ||
+      (filterType === 'venda' && prop.price > 0) ||
+      (filterType === 'locacao' && prop.rent_price > 0);
+
+    return matchesSearch && matchesType;
+  });
+
+  const KEY_STATUS_MAP = {
+    agency: { label: '🔑 Na Imobiliária', color: 'bg-emerald-500', icon: Icons.Key },
+    broker: { label: '🏃‍♀️ Com Corretor', color: 'bg-indigo-500', icon: Icons.UserCircle },
+    client: { label: '🏠 Com Inquilino', color: 'bg-amber-500', icon: Icons.Home },
+    owner: { label: '📦 Com Proprietário', color: 'bg-slate-500', icon: Icons.Package },
+  };
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+    <div className="animate-fade-in">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-300 text-xs font-bold uppercase tracking-[0.18em]">
-            <Icons.Key size={14} /> Gestão de Chaves
-          </div>
-          <h1 className="mt-3 text-3xl font-serif font-bold text-slate-800 dark:text-white">Quadro de Chaves</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Visualize rapidamente onde estão as chaves de todos os imóveis da carteira.
+          <h1 className="flex items-center gap-3 text-3xl font-black text-slate-900 dark:text-white">
+            <Icons.Key className="text-brand-500" size={32} /> Quadro de Chaves
+          </h1>
+          <p className="mt-2 max-w-2xl leading-relaxed text-slate-500">
+            Gerencie a logística e localização das chaves de todos os imóveis da imobiliária.
           </p>
-        </div>
-
-        <div className="rounded-2xl bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border px-4 py-3 shadow-sm">
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-bold">Resumo Atual</p>
-          <p className="mt-1 text-2xl font-bold text-slate-800 dark:text-white">{filteredProperties.length}</p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">imóveis no quadro filtrado</p>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-dark-card rounded-3xl border border-slate-200 dark:border-dark-border shadow-sm p-5 md:p-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="relative">
-            <Icons.Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por bairro ou endereço..."
-              className="w-full pl-11 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-slate-900/40 text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
-            />
-          </div>
-
-          <select
-            value={listingTypeFilter}
-            onChange={(e) => setListingTypeFilter(e.target.value as 'all' | 'sale' | 'rent')}
-            className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-slate-900/40 text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
-          >
-            <option value="all">Tipo: Todos</option>
-            <option value="sale">Tipo: Venda</option>
-            <option value="rent">Tipo: Locação</option>
-          </select>
-
-          <select
-            value={bedroomsFilter}
-            onChange={(e) => setBedroomsFilter(e.target.value as 'all' | '1' | '2' | '3' | '4')}
-            className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-slate-900/40 text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
-          >
-            <option value="all">Quartos: Todos</option>
-            <option value="1">1+ quartos</option>
-            <option value="2">2+ quartos</option>
-            <option value="3">3+ quartos</option>
-            <option value="4">4+ quartos</option>
-          </select>
+      <div className="mb-8 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-dark-border dark:bg-dark-card md:flex-row">
+        <div className="relative flex-1">
+          <Icons.Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+          <input
+            type="text"
+            placeholder="Buscar por bairro, endereço ou título..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-brand-500 dark:border-dark-border dark:bg-white/5"
+          />
         </div>
+        <select
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-medium text-slate-700 outline-none focus:ring-2 focus:ring-brand-500 dark:border-dark-border dark:bg-white/5 dark:text-slate-300"
+        >
+          <option value="todos">Todos os Imóveis</option>
+          <option value="locacao">Para Locação</option>
+          <option value="venda">Para Venda</option>
+        </select>
       </div>
 
       {loading ? (
-        <div className="min-h-[280px] rounded-3xl bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm flex items-center justify-center">
-          <div className="text-center">
-            <Icons.Loader2 size={28} className="animate-spin mx-auto text-brand-500" />
-            <p className="mt-3 text-sm font-medium text-slate-500 dark:text-slate-400">Carregando quadro de chaves...</p>
-          </div>
-        </div>
-      ) : filteredProperties.length === 0 ? (
-        <div className="min-h-[280px] rounded-3xl bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm flex items-center justify-center">
-          <div className="text-center max-w-md px-6">
-            <div className="w-16 h-16 rounded-2xl mx-auto bg-slate-100 dark:bg-white/5 flex items-center justify-center text-slate-400 dark:text-slate-500">
-              <Icons.Key size={28} />
-            </div>
-            <h2 className="mt-4 text-lg font-bold text-slate-800 dark:text-white">Nenhum imóvel encontrado</h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Ajuste os filtros para localizar o imóvel desejado no quadro de chaves.
-            </p>
-          </div>
+        <div className="flex justify-center py-20">
+          <Icons.Loader2 className="animate-spin text-brand-500" size={40} />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {filteredProperties.map((property) => {
-            const keyStatus = getKeyStatusMeta(property.status);
-            const neighborhood = property.location?.neighborhood || property.neighborhood || 'Bairro não informado';
-            const address = property.location?.address || property.address || property.location?.city || property.city || 'Endereço não informado';
-            const cover = property.images?.[0];
-            const listingType = property.listing_type || (Number(property.rent_price || 0) > 0 ? 'rent' : 'sale');
-            const displayPrice = listingType === 'rent'
-              ? Number(property.rent_price || property.price || 0)
-              : Number(property.price || 0);
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {filteredProperties.map((prop) => {
+            const currentKey = KEY_STATUS_MAP[prop.key_status || 'agency'];
+            const KeyIcon = currentKey.icon;
+            const locationText =
+              typeof prop.location === 'string'
+                ? prop.location
+                : [prop.location?.neighborhood, prop.location?.address, prop.location?.city].filter(Boolean).join(' ');
 
             return (
-              <div key={property.id} className="group overflow-hidden rounded-3xl bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm hover:shadow-lg transition-all duration-300">
-                <div className="relative h-52 overflow-hidden bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900">
-                  {cover ? (
-                    <img
-                      src={cover}
-                      alt={property.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
+              <div
+                key={prop.id}
+                className="flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl dark:border-dark-border dark:bg-dark-card"
+              >
+                <div className="relative h-40 bg-slate-200">
+                  {prop.images && prop.images[0] ? (
+                    <img src={prop.images[0]} alt={prop.title} className="h-full w-full object-cover" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-400 dark:text-slate-500">
-                      <Icons.Home size={40} />
+                    <div className="flex h-full w-full items-center justify-center text-slate-400">
+                      <Icons.Image size={40} />
                     </div>
                   )}
-
-                  <div className="absolute inset-x-4 bottom-4">
-                    <div className={`inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-extrabold shadow-lg backdrop-blur-sm ${keyStatus.className}`}>
-                      {keyStatus.label}
-                    </div>
+                  {/* Badge de Localização da Chave */}
+                  <div className="absolute right-4 top-4 z-10 shadow-xl">
+                    <span className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-white ${currentKey.color}`}>
+                      <KeyIcon size={14} /> {currentKey.label}
+                    </span>
                   </div>
                 </div>
 
-                <div className="p-5 space-y-4">
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-800 dark:text-white line-clamp-1">{property.title}</h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                      <Icons.MapPin size={14} className="shrink-0" />
-                      <span className="line-clamp-1">{neighborhood}</span>
-                    </p>
-                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500 line-clamp-1">{address}</p>
-                  </div>
+                <div className="flex flex-1 flex-col p-6">
+                  <h3 className="line-clamp-1 text-lg font-bold text-slate-800 dark:text-white">{prop.title}</h3>
+                  <p className="mt-2 mb-6 flex items-center gap-1 text-sm text-slate-500">
+                    <Icons.MapPin size={14} /> {locationText || 'Sem endereço'}
+                  </p>
 
-                  <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-dark-border">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.14em] font-bold text-slate-400 dark:text-slate-500">
-                        {listingType === 'rent' ? 'Locação' : 'Venda'}
-                      </p>
-                      <p className="text-base font-bold text-slate-800 dark:text-white">
-                        {displayPrice > 0 ? formatBRL(displayPrice) : 'Sob consulta'}
-                      </p>
-                    </div>
-                    <div className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 bg-slate-50 dark:bg-slate-900/40 text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-dark-border">
-                      <Icons.Bed size={16} />
-                      <span className="text-sm font-bold">{property.bedrooms || 0} quartos</span>
+                  {/* SELETOR INTERATIVO DE CHAVES (IDEA DO USUÁRIO) */}
+                  <div className="mt-auto border-t border-slate-100 pt-6 dark:border-dark-border">
+                    <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">
+                      Mudar Localização da Chave:
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { status: 'agency', icon: Icons.Key, label: 'Imobiliária' },
+                        { status: 'broker', icon: Icons.UserCircle, label: 'Corretor' },
+                        { status: 'client', icon: Icons.Home, label: 'Inquilino' },
+                        { status: 'owner', icon: Icons.Package, label: 'Dono' },
+                      ].map((item) => (
+                        <button
+                          key={item.status}
+                          onClick={() => handleUpdateKeyStatus(prop.id, item.status)}
+                          disabled={updatingKeyId === prop.id || prop.key_status === item.status}
+                          className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+                            prop.key_status === item.status
+                              ? 'cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400 dark:border-white/5 dark:bg-white/5'
+                              : 'border border-slate-100 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-dark-border dark:bg-dark-bg dark:text-slate-300 dark:hover:bg-white/10'
+                          }`}
+                        >
+                          {updatingKeyId === prop.id && prop.key_status !== item.status ? (
+                            <Icons.Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <item.icon size={14} />
+                          )}
+                          {item.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -259,6 +191,4 @@ const AdminKeys: React.FC = () => {
       )}
     </div>
   );
-};
-
-export default AdminKeys;
+}

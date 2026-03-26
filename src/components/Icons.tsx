@@ -39,6 +39,7 @@ import {
   CheckSquare,
   Image,
   User,
+  UserCircle,
   AlertTriangle,
   Flame,
   // ADICIONADOS AGORA:
@@ -189,6 +190,7 @@ export const Icons = {
   CheckSquare,
   Image,
   User,
+  UserCircle,
   AlertTriangle,
   Flame,
 
