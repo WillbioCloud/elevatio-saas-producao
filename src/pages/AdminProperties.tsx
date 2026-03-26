@@ -91,10 +91,14 @@ const AdminProperties: React.FC = () => {
     let aborted = false;
 
     try {
-      const { data, error } = await supabase
-        .from('properties')
-        .select('*, profiles(name, phone, email)')
-        .order('created_at', { ascending: false });
+      let query = supabase.from('properties').select('*, profiles(name, phone, email)');
+
+      // Multi-tenant: Isola os dados pela empresa do usuário logado
+      if (user?.role !== 'super_admin' && user?.company_id) {
+        query = query.eq('company_id', user.company_id);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
 

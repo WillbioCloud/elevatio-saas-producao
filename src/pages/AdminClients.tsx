@@ -1,28 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function AdminClients() {
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchClients();
-  }, []);
+  const { user } = useAuth();
 
   const fetchClients = async () => {
+    if (!user?.company_id && user?.role !== 'super_admin') return;
+
     try {
-      // Busca leads que têm contratos associados (Inner Join)
-      const { data, error } = await supabase
+      setLoading(true);
+
+      let query = supabase
         .from('leads')
         .select(`
-          id, name, email, phone, cpf, asaas_customer_id,
+          id, name, email, phone, cpf, asaas_customer_id, company_id,
           contracts!inner(id, type, status, property_id, properties(title))
         `)
         .order('name');
 
-      if (error) throw error;
+      // Multi-tenant isolation
+      if (user?.role !== 'super_admin' && user?.company_id) {
+        query = query.eq('company_id', user.company_id);
+      }
 
+      const { data, error } = await query;
+
+      if (error) throw error;
       setClients(data || []);
     } catch (error) {
       console.error('Erro ao buscar clientes:', error);
@@ -30,6 +37,10 @@ export default function AdminClients() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchClients();
+  }, [user?.company_id]);
 
   return (
     <div className="animate-fade-in">

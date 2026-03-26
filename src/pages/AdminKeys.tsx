@@ -1,35 +1,46 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function AdminKeys() {
+  const { user } = useAuth();
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('todos');
   const [updatingKeyId, setUpdatingKeyId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchProperties();
-  }, []);
-
   const fetchProperties = async () => {
     try {
-      // Busca imóveis, incluindo a nova coluna key_status
-      const { data, error } = await supabase
+      setLoading(true);
+      let query = supabase
         .from('properties')
-        .select('id, title, status, location, bedrooms, price, rent_price:rent_package_price, images, key_status')
+        .select('id, title, status, location, bedrooms, price, rent_price, images, key_status')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      // Multi-tenant isolation
+      if (user?.role !== 'super_admin' && user?.company_id) {
+        query = query.eq('company_id', user.company_id);
+      }
 
+      const { data, error } = await query;
+
+      if (error) throw error;
       setProperties(data || []);
     } catch (error) {
-      console.error('Erro ao buscar imóveis:', error);
+      console.error('Erro ao buscar imóveis para chaves:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  // Garanta que o hook useEffect recarregue quando o usuário mudar
+  useEffect(() => {
+    if (user?.company_id) {
+      fetchProperties();
+    }
+  }, [user?.company_id]);
 
   const handleUpdateKeyStatus = async (propertyId: string, newStatus: string) => {
     if (!window.confirm('Tem certeza que deseja alterar a localização desta chave?')) return;
@@ -137,7 +148,6 @@ export default function AdminKeys() {
                       <Icons.Image size={40} />
                     </div>
                   )}
-                  {/* Badge de Localização da Chave */}
                   <div className="absolute right-4 top-4 z-10 shadow-xl">
                     <span className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-white ${currentKey.color}`}>
                       <KeyIcon size={14} /> {currentKey.label}
@@ -151,7 +161,6 @@ export default function AdminKeys() {
                     <Icons.MapPin size={14} /> {locationText || 'Sem endereço'}
                   </p>
 
-                  {/* SELETOR INTERATIVO DE CHAVES (IDEA DO USUÁRIO) */}
                   <div className="mt-auto border-t border-slate-100 pt-6 dark:border-dark-border">
                     <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">
                       Mudar Localização da Chave:
