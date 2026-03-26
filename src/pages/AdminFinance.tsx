@@ -77,61 +77,88 @@ export default function AdminFinance() {
     
     try {
       const totalAmount = selectedInvoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
-      const leadName = selectedInvoices[0]?.client_name || 'Cliente';
       const contractId = selectedInvoices[0]?.contract_id;
 
-      if (!contractId) throw new Error("Não foi possível identificar o contrato associado a estas faturas.");
+      if (!contractId) throw new Error("Contrato não identificado.");
 
-      // 1. Busca o asaas_customer_id do cliente associado ao contrato
+      // 1. Busca os dados completos do Lead associado ao contrato
       const { data: contractData, error: contractError } = await supabase
         .from('contracts')
-        .select('leads(asaas_customer_id)')
+        .select('lead_id, leads(name, cpf, email, phone, asaas_customer_id)')
         .eq('id', contractId)
         .single();
 
       if (contractError) throw new Error("Erro ao buscar dados do cliente: " + contractError.message);
       
-      const asaasCustomerId = contractData?.leads?.asaas_customer_id;
+      const leadData = Array.isArray(contractData?.leads) ? contractData?.leads[0] : contractData?.leads;
+      const leadId = contractData?.lead_id;
+      let asaasCustomerId = leadData?.asaas_customer_id;
+      const asaasApiKey = String(tenant?.payment_api_key || import.meta.env.VITE_ASAAS_API_KEY || '').trim();
+      const asaasUrl = import.meta.env.VITE_ASAAS_API_URL || 'https://sandbox.asaas.com/api/v3';
+
+      if (!asaasApiKey) {
+        throw new Error('A chave da API do Asaas não está configurada para esta imobiliária.');
+      }
       
+      // 2. AUTO-CRIAÇÃO DO CLIENTE NO ASAAS SE NÃO EXISTIR
       if (!asaasCustomerId) {
-        throw new Error("Este cliente ainda não possui cadastro no Asaas (asaas_customer_id ausente).");
+        addToast('Sincronizando novo cliente com o Asaas...', 'info');
+
+        const createCustomerRes = await fetch(`${asaasUrl}/customers`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'access_token': asaasApiKey
+          },
+          body: JSON.stringify({
+            name: leadData?.name || 'Cliente Sem Nome',
+            cpfCnpj: (leadData?.cpf || '').replace(/\D/g, '') || '12345678909',
+            email: leadData?.email,
+            phone: (leadData?.phone || '').replace(/\D/g, ''),
+            externalReference: leadId
+          })
+        });
+
+        const newCustomer = await createCustomerRes.json();
+
+        if (!createCustomerRes.ok || !newCustomer.id) {
+          throw new Error(`Falha ao criar cliente no Asaas: ${newCustomer.errors?.[0]?.description || 'Erro desconhecido'}`);
+        }
+
+        asaasCustomerId = newCustomer.id;
+
+        // 3. Salva o novo ID no Supabase para faturas futuras
+        await supabase.from('leads').update({ asaas_customer_id: asaasCustomerId }).eq('id', leadId);
       }
 
-      // 2. Chama a Edge Function enviando o ID do cliente real
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-asaas-charge`, {
+      // 4. GERAÇÃO DA COBRANÇA
+      const chargeRes = await fetch(`${asaasUrl}/payments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'access_token': asaasApiKey
         },
         body: JSON.stringify({
           customer: asaasCustomerId,
-          customer_id: asaasCustomerId,
+          billingType: 'UNDEFINED',
           value: totalAmount,
           dueDate: new Date().toISOString().split('T')[0],
-          description: `Cobrança Agrupada - ${selectedInvoices.length} parcelas (${leadName})`,
-          billingType: 'UNDEFINED'
+          description: `Cobrança Agrupada - ${selectedInvoices.length} parcelas`,
         })
       });
 
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "Erro na Edge Function do Asaas");
-      
-      // O Asaas costuma retornar a URL do boleto em invoiceUrl, url ou paymentLink
-      const finalUrl = data?.invoiceUrl || data?.url || data?.paymentLink;
-      
-      if (finalUrl) {
-        setBulkPaymentLink(finalUrl);
-        addToast('Fatura agrupada gerada com sucesso no Asaas!', 'success');
-      } else {
-        console.error("Resposta do Asaas:", data);
-        throw new Error("O Asaas não retornou a URL de pagamento. Verifique os logs.");
+      const chargeData = await chargeRes.json();
+
+      if (!chargeRes.ok || !chargeData.invoiceUrl) {
+        throw new Error(`Falha ao gerar cobrança: ${chargeData.errors?.[0]?.description || 'Erro desconhecido'}`);
       }
+      
+      setBulkPaymentLink(chargeData.invoiceUrl);
+      addToast('Fatura agrupada gerada com sucesso!', 'success');
+      
     } catch (err: any) {
-      console.error('Erro ao gerar cobrança Asaas:', err);
-      setBulkPaymentLink(null); // Garante que nenhum link falso seja exibido
+      console.error('Erro ao operar com Asaas:', err);
+      setBulkPaymentLink(null);
       addToast(err.message || 'Erro ao comunicar com o Asaas.', 'error');
     } finally {
       setIsGeneratingBulkLink(false);
