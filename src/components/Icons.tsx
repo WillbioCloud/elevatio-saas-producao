@@ -5,6 +5,7 @@ import {
   Mail,
   Menu,
   X,
+  XCircle,
   ArrowRight,
   ArrowLeft,
   Search,
@@ -40,6 +41,7 @@ import {
   Image,
   User,
   UserCircle,
+  UserPlus,
   AlertTriangle,
   Flame,
   // ADICIONADOS AGORA:
@@ -155,6 +157,7 @@ export const Icons = {
   Mail,
   Menu,
   X,
+  XCircle,
   ArrowRight,
   ArrowLeft,
   Search,
@@ -191,6 +194,7 @@ export const Icons = {
   Image,
   User,
   UserCircle,
+  UserPlus,
   AlertTriangle,
   Flame,
 

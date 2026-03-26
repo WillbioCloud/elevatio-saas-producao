@@ -48,6 +48,7 @@ import AdminKeys from './pages/AdminKeys';
 import AdminClients from './pages/AdminClients';
 import AdminLeaderboard from './pages/AdminLeaderboard';
 import PendingApproval from './pages/PendingApproval';
+import InviteSignup from './pages/InviteSignup';
 
 // Super Admin (SaaS) Pages
 import SaasDashboard from './pages/saas/SaasDashboard';
@@ -177,6 +178,9 @@ const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomai
 
           {/* === 4. A ROTA DE LOGIN DO CRM (COMUM A TODOS) === */}
           <Route path="/admin/login" element={<AnimatedPage><Login /></AnimatedPage>} />
+
+          {/* Rota de Convite de Equipe */}
+          <Route path="/convite" element={<InviteSignup />} />
 
           {/* === 5. ROTAS PROTEGIDAS DO CRM (COMUNS A TODOS) === */}
           <Route path="/admin/pendente" element={<ProtectedRoute allowInactive={true}><PendingApproval /></ProtectedRoute>} />

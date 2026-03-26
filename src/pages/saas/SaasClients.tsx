@@ -85,26 +85,34 @@ export default function Clients() {
     setIsCreating(false)
   }
 
-  // Função para Deletar Empresa (Hard Delete via Edge Function)
-  const handleDeleteCompany = async (id: string) => {
-    if (!window.confirm("ATENÇÃO: Esta é uma exclusão DESTRUTIVA! Todos os imóveis, leads, contratos e logins vinculados a esta imobiliária serão APAGADOS PERMANENTEMENTE. Tem certeza absoluta?")) return
-
+  const handleDeleteClient = async (id: string) => {
+    if (!window.confirm("ATENÇÃO: Tem certeza que deseja excluir esta imobiliária? TODOS os imóveis, leads, contratos e corretores associados a ela serão apagados permanentemente (Ação irreversível).")) return
     setIsDeleting(true)
     try {
-      const { data, error } = await supabase.functions.invoke('delete-tenant', {
-        body: { company_id: id }
-      })
+      // 1. Excluir os Perfis (Corretores e Admins) primeiro
+      // O Supabase Auth não apaga o login, mas apagar da tabela 'profiles' revoga o acesso ao CRM
+      const { error: profilesError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('company_id', id);
+        
+      if (profilesError) throw profilesError;
 
-      if (error) throw new Error(error.message)
-      if (data?.error) throw new Error(data.error)
-
-      alert("Empresa excluída com sucesso!")
+      // 2. Excluir a Empresa
+      // O PostgreSQL (se configurado com ON DELETE CASCADE) apagará automaticamente:
+      // properties, leads, contracts, invoices, etc.
+      const { error } = await supabase.from('companies').delete().eq('id', id)
+      
+      if (error) throw error
+      
+      setClients(clients.filter(c => c.id !== id))
       setSelectedClient(null)
-      fetchCompanies()
+      alert("Imobiliária e toda a sua equipe excluídos com sucesso.")
     } catch (error: any) {
-      alert("Erro ao excluir empresa: " + error.message)
+      alert("Erro ao excluir imobiliária: " + error.message)
     } finally {
       setIsDeleting(false)
+      setOpenDropdownId(null)
     }
   }
 
@@ -282,7 +290,7 @@ export default function Clients() {
                           <button
                             onClick={() => {
                               setOpenDropdownId(null);
-                              handleDeleteCompany(client.id);
+                              handleDeleteClient(client.id);
                             }}
                             className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400 flex items-center gap-2"
                           >
@@ -382,7 +390,7 @@ export default function Clients() {
                 </Button>
 
                 <Button
-                  onClick={() => handleDeleteCompany(selectedClient.id)}
+                  onClick={() => handleDeleteClient(selectedClient.id)}
                   disabled={isDeleting}
                   variant="outline"
                   className="text-red-600 border-red-200 hover:text-red-700 hover:bg-red-50"

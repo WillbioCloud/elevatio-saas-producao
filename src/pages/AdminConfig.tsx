@@ -546,6 +546,24 @@ const AdminConfig: React.FC = () => {
     updateDistRules({ types: newTypes });
   };
 
+  const copyInviteLink = async (role: 'admin' | 'corretor') => {
+    if (!user?.company_id) {
+      addToast('Empresa não encontrada para gerar o convite.', 'error');
+      return;
+    }
+
+    const token = btoa(JSON.stringify({ c: user.company_id, r: role }));
+    const link = `${window.location.origin}/convite?token=${token}`;
+
+    try {
+      await navigator.clipboard.writeText(link);
+      addToast(`Link de convite para ${role === 'admin' ? 'Admin' : 'Corretor'} copiado!`, 'success');
+    } catch (clipboardError) {
+      console.error('Erro ao copiar link de convite:', clipboardError);
+      addToast('Não foi possível copiar o link de convite.', 'error');
+    }
+  };
+
   const updateProfileStatus = async (id: string, active: boolean) => {
     if (!canManageTeamMember(id)) return;
 
@@ -1315,6 +1333,29 @@ const AdminConfig: React.FC = () => {
 
       {activeTab === 'team' && isAdmin && (
         <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white">Equipe da Imobiliária</h2>
+              <p className="text-sm text-slate-500">Convide corretores e aprove os cadastros pendentes.</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void copyInviteLink('corretor')}
+                className="px-4 py-2 bg-brand-50 hover:bg-brand-100 dark:bg-brand-900/20 dark:hover:bg-brand-900/40 text-brand-600 dark:text-brand-400 font-bold text-sm rounded-xl transition-colors flex items-center gap-2"
+              >
+                <Icons.Link size={16} /> Link p/ Corretor
+              </button>
+
+              <button
+                onClick={() => void copyInviteLink('admin')}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-sm rounded-xl transition-colors flex items-center gap-2"
+              >
+                <Icons.Shield size={16} /> Link p/ Admin
+              </button>
+            </div>
+          </div>
+
           <div className={`p-6 rounded-2xl border shadow-sm transition-all ${distRules.enabled ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-white border-gray-200 dark:bg-dark-card dark:border-dark-border'}`}>
             <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
               <div>
