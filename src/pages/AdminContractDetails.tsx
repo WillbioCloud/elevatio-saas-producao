@@ -35,7 +35,7 @@ const AdminContractDetails: React.FC = () => {
       if (error) throw error;
 
       // Atualiza a invoice correspondente no financeiro (se já estiver sincronizada)
-      await supabase.from('invoices').update({ status: 'paga' })
+      await supabase.from('invoices').update({ status: 'pago' })
         .eq('contract_id', contract?.id)
         .eq('due_date', dueDate);
 
@@ -192,7 +192,7 @@ const AdminContractDetails: React.FC = () => {
           description: `Aluguel - Parcela ${index + 1}/${duration}`,
           amount: inst.amount,
           due_date: inst.due_date,
-          status: inst.status === 'pago' ? 'paga' : 'pendente',
+          status: inst.status === 'pago' ? 'pago' : 'pendente',
         };
       });
 

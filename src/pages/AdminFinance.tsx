@@ -21,6 +21,52 @@ export default function AdminFinance() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('todos');
   const [selectedTenantGroup, setSelectedTenantGroup] = useState<string | null>(null);
+  const [selectedInvoices, setSelectedInvoices] = useState<any[]>([]);
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+
+  const toggleInvoiceSelection = (invoice: any) => {
+    setSelectedInvoices(prev => 
+      prev.some(item => item.id === invoice.id) 
+        ? prev.filter(item => item.id !== invoice.id) 
+        : [...prev, invoice]
+    );
+  };
+
+  const handleBulkAdvance = async () => {
+    if (selectedInvoices.length === 0) return;
+    if (!window.confirm(`Deseja dar baixa em ${selectedInvoices.length} fatura(s) selecionada(s)?`)) return;
+
+    setIsProcessingBulk(true);
+    try {
+      // 1. Atualiza as Invoices para 'paga'
+      const invoiceIds = selectedInvoices.map(inv => inv.id);
+      const { error: invoiceError } = await supabase
+        .from('invoices')
+        .update({ status: 'pago' })
+        .in('id', invoiceIds);
+      
+      if (invoiceError) throw invoiceError;
+
+      // 2. Sincroniza as Installments correspondentes
+      for (const inv of selectedInvoices) {
+        if (inv.contract_id && inv.due_date) {
+          await supabase.from('installments')
+            .update({ status: 'pago' })
+            .eq('contract_id', inv.contract_id)
+            .eq('due_date', inv.due_date);
+        }
+      }
+
+      addToast(`${selectedInvoices.length} fatura(s) adiantada(s)/baixada(s) com sucesso!`, 'success');
+      setSelectedInvoices([]);
+      // Dispara um evento para o hook useInvoices recarregar os dados (se aplicável) ou força o reload
+      window.location.reload(); 
+    } catch (error: any) {
+      addToast('Erro ao processar baixa em massa: ' + error.message, 'error');
+    } finally {
+      setIsProcessingBulk(false);
+    }
+  };
 
   // Usamos user?.company_id pois é 100% garantido no painel admin
   const { invoices, loading } = useInvoices(user?.company_id);
@@ -374,8 +420,22 @@ export default function AdminFinance() {
                     {selectedTenantInvoices.map((invoice) => (
                       <tr key={invoice.id} className="group hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
                         <td className="p-4">
-                          <p className="font-bold text-slate-800 dark:text-white">{invoice.description || 'Cobrança'}</p>
-                          <p className="text-xs text-slate-500">{invoice.property?.title}</p>
+                          <div className="flex items-center">
+                            {/* Checkbox de Seleção Multipla (Apenas para Pendentes) */}
+                            {invoice.status === 'pendente' && (
+                              <input 
+                                type="checkbox" 
+                                checked={selectedInvoices.some(item => item.id === invoice.id)}
+                                onChange={() => toggleInvoiceSelection(invoice)}
+                                className="w-5 h-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer mr-3"
+                                title="Selecionar para dar baixa"
+                              />
+                            )}
+                            <div>
+                              <p className="font-bold text-slate-800 dark:text-white">{invoice.description || 'Cobrança'}</p>
+                              <p className="text-xs text-slate-500">{invoice.property?.title}</p>
+                            </div>
+                          </div>
                         </td>
                         <td className="p-4 font-bold text-slate-800 dark:text-white">
                           {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(invoice.amount)}
@@ -472,6 +532,29 @@ export default function AdminFinance() {
           </div>
         )}
       </div>
+
+      {/* Barra Flutuante de Ação em Massa */}
+      {selectedInvoices.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-4 rounded-2xl shadow-2xl flex items-center justify-between animate-fade-in border border-slate-700 dark:border-slate-200">
+          <div className="flex items-center gap-3">
+            <div className="bg-brand-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold">
+              {selectedInvoices.length}
+            </div>
+            <div>
+              <p className="font-bold text-sm">Faturas Selecionadas</p>
+              <p className="text-xs text-slate-300 dark:text-slate-600">Prontas para adiantamento ou baixa manual</p>
+            </div>
+          </div>
+          <button 
+            onClick={handleBulkAdvance}
+            disabled={isProcessingBulk}
+            className="flex items-center gap-2 px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold transition-all disabled:opacity-50"
+          >
+            {isProcessingBulk ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.CheckCircle2 size={18} />}
+            Confirmar Baixa
+          </button>
+        </div>
+      )}
 
       <InvoiceModal
         isOpen={isModalOpen}
