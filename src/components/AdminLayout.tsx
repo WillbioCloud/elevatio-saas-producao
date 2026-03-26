@@ -305,7 +305,7 @@ const AdminLayout: React.FC = () => {
                   }
                 >
                   <Icons.Key size={20} />
-                  <span className={`${isSidebarCollapsed ? 'hidden' : 'block'}`}>Quadro de Chaves</span>
+                  <span className={`${isSidebarCollapsed ? 'hidden' : 'block'}`}>Chaves</span>
                 </NavLink>
               )}
             </React.Fragment>
@@ -428,7 +428,7 @@ const AdminLayout: React.FC = () => {
             }
           >
             <Icons.Users size={20} />
-            <span className={`${isSidebarCollapsed ? 'hidden' : 'block'}`}>Carteira de Clientes</span>
+            <span className={`${isSidebarCollapsed ? 'hidden' : 'block'}`}>Clientes</span>
           </NavLink>
 
           {user?.role === 'super_admin' && (
@@ -564,7 +564,7 @@ const AdminLayout: React.FC = () => {
                     `}
                   >
                     <Icons.Key size={20} />
-                    Quadro de Chaves
+                    Chaves
                   </NavLink>
                 )}
               </React.Fragment>

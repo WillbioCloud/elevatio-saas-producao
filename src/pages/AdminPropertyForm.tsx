@@ -177,6 +177,8 @@ const AdminPropertyForm: React.FC = () => {
   const { user } = useAuth();
   const { addToast } = useToast();
   const isEditing = Boolean(id);
+  const [draftId] = useState(() => crypto.randomUUID());
+  const activePropertyId = isEditing && id ? id : draftId;
 
   const [step, setStep] = useState<WizardStep>('basic');
   const [formData, setFormData] = useState<FormState>(defaultForm);
@@ -428,7 +430,8 @@ const AdminPropertyForm: React.FC = () => {
 
   const uploadFileToStorage = async (file: File) => {
     const extension = file.type === 'image/webp' ? 'webp' : file.name.split('.').pop();
-    const fileName = `${user?.id || 'anon'}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+    // Salva na estrutura: company_id / property_id / arquivo
+    const fileName = `${user?.company_id}/${activePropertyId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
 
     const { error: uploadError } = await supabase.storage.from('properties').upload(fileName, file, {
       upsert: false,
@@ -635,6 +638,7 @@ const AdminPropertyForm: React.FC = () => {
         }
       } else {
         const { error } = await supabase.from('properties').insert([{ 
+          id: activePropertyId, // CRÍTICO: Usa o mesmo ID da pasta de imagens
           ...basePayload, 
           status: 'Disponível',
           company_id: user.company_id,
