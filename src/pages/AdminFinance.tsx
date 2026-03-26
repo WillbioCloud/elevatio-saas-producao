@@ -78,6 +78,26 @@ export default function AdminFinance() {
     try {
       const totalAmount = selectedInvoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
       const leadName = selectedInvoices[0]?.client_name || 'Cliente';
+      const contractId = selectedInvoices[0]?.contract_id;
+
+      if (!contractId) throw new Error("Não foi possível identificar o contrato associado a estas faturas.");
+
+      // 1. Busca o asaas_customer_id do cliente associado ao contrato
+      const { data: contractData, error: contractError } = await supabase
+        .from('contracts')
+        .select('leads(asaas_customer_id)')
+        .eq('id', contractId)
+        .single();
+
+      if (contractError) throw new Error("Erro ao buscar dados do cliente: " + contractError.message);
+      
+      const asaasCustomerId = contractData?.leads?.asaas_customer_id;
+      
+      if (!asaasCustomerId) {
+        throw new Error("Este cliente ainda não possui cadastro no Asaas (asaas_customer_id ausente).");
+      }
+
+      // 2. Chama a Edge Function enviando o ID do cliente real
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-asaas-charge`, {
         method: 'POST',
@@ -87,6 +107,8 @@ export default function AdminFinance() {
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({
+          customer: asaasCustomerId,
+          customer_id: asaasCustomerId,
           value: totalAmount,
           dueDate: new Date().toISOString().split('T')[0],
           description: `Cobrança Agrupada - ${selectedInvoices.length} parcelas (${leadName})`,
@@ -95,19 +117,22 @@ export default function AdminFinance() {
       });
 
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || 'Erro na requisição ao Asaas');
+      if (!response.ok) throw new Error(data.error || "Erro na Edge Function do Asaas");
       
-      if (data?.invoiceUrl || data?.payment_url) {
-        setBulkPaymentLink(data.invoiceUrl || data.payment_url);
-        addToast('Link de pagamento agrupado gerado com sucesso!', 'success');
+      // O Asaas costuma retornar a URL do boleto em invoiceUrl, url ou paymentLink
+      const finalUrl = data?.invoiceUrl || data?.url || data?.paymentLink;
+      
+      if (finalUrl) {
+        setBulkPaymentLink(finalUrl);
+        addToast('Fatura agrupada gerada com sucesso no Asaas!', 'success');
       } else {
-        setBulkPaymentLink('https://sandbox.asaas.com/c/exemplo-link-lote');
-        addToast('Link gerado em modo de teste.', 'success');
+        console.error("Resposta do Asaas:", data);
+        throw new Error("O Asaas não retornou a URL de pagamento. Verifique os logs.");
       }
     } catch (err: any) {
-      console.error('Erro Asaas:', err);
-      setBulkPaymentLink('https://sandbox.asaas.com/c/exemplo-link-lote');
-      addToast('Link simulado gerado.', 'success');
+      console.error('Erro ao gerar cobrança Asaas:', err);
+      setBulkPaymentLink(null); // Garante que nenhum link falso seja exibido
+      addToast(err.message || 'Erro ao comunicar com o Asaas.', 'error');
     } finally {
       setIsGeneratingBulkLink(false);
     }
