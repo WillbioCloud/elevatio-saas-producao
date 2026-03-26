@@ -46,6 +46,7 @@ import AdminContractDetails from './pages/AdminContractDetails';
 import AdminFinance from './pages/AdminFinance';
 import AdminKeys from './pages/AdminKeys';
 import AdminClients from './pages/AdminClients';
+import AdminLeaderboard from './pages/AdminLeaderboard';
 import PendingApproval from './pages/PendingApproval';
 
 // Super Admin (SaaS) Pages
@@ -195,6 +196,7 @@ const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomai
               <Route path="contratos/:id" element={<AdminContractDetails />} />
               <Route path="financeiro" element={<AdminFinance />} />
               <Route path="analytics" element={<AdminAnalytics />} />
+              <Route path="leaderboard" element={<AdminLeaderboard />} />
               <Route path="config" element={<AdminConfig />} />
             </Route>
           </Route>

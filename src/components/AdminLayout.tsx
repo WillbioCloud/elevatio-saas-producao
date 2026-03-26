@@ -131,6 +131,7 @@ const AdminLayout: React.FC = () => {
     { label: 'Imóveis', path: '/admin/imoveis', icon: Icons.Building },
     { label: 'Tarefas', path: '/admin/tarefas', icon: Icons.Calendar },
     { label: 'Relatórios', path: '/admin/analytics', icon: Icons.PieChart, adminOnly: true },
+    { label: 'Leaderboard', path: '/admin/leaderboard', icon: Icons.Trophy },
     { label: 'Configurações', path: '/admin/config', icon: Icons.Settings },
   ];
 
