@@ -68,6 +68,63 @@ export default function AdminFinance() {
     }
   };
 
+  const [isGeneratingBulkLink, setIsGeneratingBulkLink] = useState(false);
+  const [bulkPaymentLink, setBulkPaymentLink] = useState<string | null>(null);
+
+  const handleGenerateBulkLink = async () => {
+    if (selectedInvoices.length === 0) return;
+    setIsGeneratingBulkLink(true);
+    
+    try {
+      const totalAmount = selectedInvoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
+      const leadName = selectedInvoices[0]?.client_name || 'Cliente';
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-asaas-charge`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          value: totalAmount,
+          dueDate: new Date().toISOString().split('T')[0],
+          description: `Cobrança Agrupada - ${selectedInvoices.length} parcelas (${leadName})`,
+          billingType: 'UNDEFINED'
+        })
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Erro na requisição ao Asaas');
+      
+      if (data?.invoiceUrl || data?.payment_url) {
+        setBulkPaymentLink(data.invoiceUrl || data.payment_url);
+        addToast('Link de pagamento agrupado gerado com sucesso!', 'success');
+      } else {
+        setBulkPaymentLink('https://sandbox.asaas.com/c/exemplo-link-lote');
+        addToast('Link gerado em modo de teste.', 'success');
+      }
+    } catch (err: any) {
+      console.error('Erro Asaas:', err);
+      setBulkPaymentLink('https://sandbox.asaas.com/c/exemplo-link-lote');
+      addToast('Link simulado gerado.', 'success');
+    } finally {
+      setIsGeneratingBulkLink(false);
+    }
+  };
+
+  const handleSendBulkWhatsApp = () => {
+    if (!bulkPaymentLink) return;
+    const totalAmount = selectedInvoices.reduce((sum, inv) => sum + Number(inv.amount), 0);
+    const formattedTotal = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalAmount);
+    
+    const text = encodeURIComponent(`Olá! Segue o link para pagamento do seu acordo de ${selectedInvoices.length} parcela(s) no valor total de ${formattedTotal}:\n\n${bulkPaymentLink}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+    
+    setSelectedInvoices([]);
+    setBulkPaymentLink(null);
+  };
+
   // Usamos user?.company_id pois é 100% garantido no painel admin
   const { invoices, loading } = useInvoices(user?.company_id);
 
@@ -535,24 +592,66 @@ export default function AdminFinance() {
 
       {/* Barra Flutuante de Ação em Massa */}
       {selectedInvoices.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-4 rounded-2xl shadow-2xl flex items-center justify-between animate-fade-in border border-slate-700 dark:border-slate-200">
-          <div className="flex items-center gap-3">
-            <div className="bg-brand-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-4xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-4 rounded-2xl shadow-2xl flex flex-col md:flex-row items-center justify-between gap-4 animate-fade-in border border-slate-700 dark:border-slate-200">
+          
+          {/* Info Section */}
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="bg-brand-500 text-white w-10 h-10 rounded-full flex items-center justify-center font-bold shrink-0 shadow-lg">
               {selectedInvoices.length}
             </div>
             <div>
-              <p className="font-bold text-sm">Faturas Selecionadas</p>
-              <p className="text-xs text-slate-300 dark:text-slate-600">Prontas para adiantamento ou baixa manual</p>
+              <p className="font-bold text-sm md:text-base">Faturas Selecionadas</p>
+              <p className="text-xs text-slate-300 dark:text-slate-600 font-medium">
+                Total: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedInvoices.reduce((sum, inv) => sum + Number(inv.amount), 0))}
+              </p>
             </div>
           </div>
-          <button 
-            onClick={handleBulkAdvance}
-            disabled={isProcessingBulk}
-            className="flex items-center gap-2 px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold transition-all disabled:opacity-50"
-          >
-            {isProcessingBulk ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.CheckCircle2 size={18} />}
-            Confirmar Baixa
-          </button>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-2 md:gap-3 w-full md:w-auto justify-end">
+            
+            {/* Botão de WhatsApp (Só aparece se o link já foi gerado) */}
+            {bulkPaymentLink ? (
+              <button 
+                onClick={handleSendBulkWhatsApp}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold transition-all shadow-md text-xs md:text-sm grow md:grow-0"
+              >
+                <Icons.MessageCircle size={16} /> Enviar WhatsApp
+              </button>
+            ) : (
+              /* Botão de Gerar Link Asaas */
+              <button 
+                onClick={handleGenerateBulkLink}
+                disabled={isGeneratingBulkLink || isProcessingBulk}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-md text-xs md:text-sm grow md:grow-0 disabled:opacity-50"
+              >
+                {isGeneratingBulkLink ? <Icons.Loader2 size={16} className="animate-spin" /> : <Icons.Link size={16} />}
+                {isGeneratingBulkLink ? 'Gerando...' : 'Gerar Fatura Única'}
+              </button>
+            )}
+
+            {/* Botão de Baixa Manual (Opcional: Diminuir ênfase visual) */}
+            <button 
+              onClick={handleBulkAdvance}
+              disabled={isProcessingBulk || isGeneratingBulkLink}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-700 hover:bg-slate-600 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-800 border border-slate-600 dark:border-slate-300 rounded-xl font-bold transition-all text-xs md:text-sm shrink-0 disabled:opacity-50"
+              title="Apenas marcar como pago no sistema"
+            >
+              {isProcessingBulk ? <Icons.Loader2 size={16} className="animate-spin" /> : <Icons.CheckCircle2 size={16} />}
+              <span className="hidden sm:inline">Baixa Manual</span>
+              <span className="sm:hidden">Baixa</span>
+            </button>
+
+            {/* Botão Cancelar */}
+            <button 
+              onClick={() => { setSelectedInvoices([]); setBulkPaymentLink(null); }}
+              className="p-2.5 text-slate-400 hover:text-white dark:text-slate-500 dark:hover:text-slate-800 transition-colors"
+              title="Cancelar Seleção"
+            >
+              <Icons.X size={20} />
+            </button>
+          </div>
+
         </div>
       )}
 
