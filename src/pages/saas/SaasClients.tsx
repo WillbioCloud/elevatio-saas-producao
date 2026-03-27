@@ -86,29 +86,22 @@ export default function Clients() {
   }
 
   const handleDeleteClient = async (id: string) => {
-    if (!window.confirm("ATENÇÃO: Tem certeza que deseja excluir esta imobiliária? TODOS os imóveis, leads, contratos e corretores associados a ela serão apagados permanentemente (Ação irreversível).")) return
+    if (!window.confirm("ATENÇÃO: Tem certeza que deseja excluir esta imobiliária? TODOS os dados e acessos de login da equipe serão apagados permanentemente (Ação irreversível).")) return
     setIsDeleting(true)
     try {
-      // 1. Excluir os Perfis (Corretores e Admins) primeiro
-      // O Supabase Auth não apaga o login, mas apagar da tabela 'profiles' revoga o acesso ao CRM
-      const { error: profilesError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('company_id', id);
-        
-      if (profilesError) throw profilesError;
+      // Chama a Edge Function que tem privilégios de Service Role para apagar os Logins (Auth)
+      const { data, error } = await supabase.functions.invoke('delete-tenant', {
+        body: { company_id: id }
+      });
 
-      // 2. Excluir a Empresa
-      // O PostgreSQL (se configurado com ON DELETE CASCADE) apagará automaticamente:
-      // properties, leads, contracts, invoices, etc.
-      const { error } = await supabase.from('companies').delete().eq('id', id)
-      
-      if (error) throw error
-      
+      if (error) throw new Error(error.message || "Erro na Edge Function");
+      if (data?.error) throw new Error(data.error);
+
       setClients(clients.filter(c => c.id !== id))
       setSelectedClient(null)
-      alert("Imobiliária e toda a sua equipe excluídos com sucesso.")
+      alert("Imobiliária e equipe excluídos com sucesso. Nenhum dado restou no sistema.")
     } catch (error: any) {
+      console.error('Erro ao deletar:', error);
       alert("Erro ao excluir imobiliária: " + error.message)
     } finally {
       setIsDeleting(false)

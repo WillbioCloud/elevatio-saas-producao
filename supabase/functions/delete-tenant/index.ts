@@ -24,17 +24,27 @@ serve(async (req) => {
       .select('id')
       .eq('company_id', company_id)
 
-    // 2. Deleta os usuários do sistema de Auth (Isso impede que eles façam login novamente)
+    // 2. Limpeza Manual em Cascata (ORDEM CRÍTICA para evitar Foreign Keys)
+    // Primeiro apagamos tudo o que depende de leads e imóveis (tarefas, contratos)
+    await supabaseAdmin.from('tasks').delete().eq('company_id', company_id)
+    await supabaseAdmin.from('contracts').delete().eq('company_id', company_id)
+    
+    // Depois apagamos os leads e imóveis (que seguram os corretores)
+    await supabaseAdmin.from('leads').delete().eq('company_id', company_id)
+    await supabaseAdmin.from('properties').delete().eq('company_id', company_id)
+    
+    // Depois o contrato do SaaS
+    await supabaseAdmin.from('saas_contracts').delete().eq('company_id', company_id)
+
+    // 3. Deleta os usuários do sistema de Auth (Isso apaga o login e, por cascata, apaga o 'profile')
     if (profiles && profiles.length > 0) {
       for (const profile of profiles) {
+        // Deletar o usuário no Auth destrói a sessão dele para sempre
         await supabaseAdmin.auth.admin.deleteUser(profile.id)
       }
     }
 
-    // 3. Limpeza Manual em Cascata (Caso o banco não tenha ON DELETE CASCADE)
-    await supabaseAdmin.from('properties').delete().eq('company_id', company_id)
-    await supabaseAdmin.from('leads').delete().eq('company_id', company_id)
-    await supabaseAdmin.from('saas_contracts').delete().eq('company_id', company_id)
+    // Caso algum profile tenha sobrado (se não houver ON DELETE CASCADE do Auth)
     await supabaseAdmin.from('profiles').delete().eq('company_id', company_id)
 
     // 4. Finalmente, deleta a empresa
