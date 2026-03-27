@@ -45,6 +45,19 @@ interface Task {
   description?: string;
 }
 
+type DashboardLayoutItem = {
+  id: string;
+  visible: boolean;
+};
+
+type RecentActivity = {
+  id: string;
+  action?: string | null;
+  amount?: number | null;
+  created_at: string;
+  profiles?: { name?: string | null } | Array<{ name?: string | null } | null> | null;
+};
+
 const InlineLoading: React.FC = () => (
   <Icons.Loader2 size={18} className="inline-block animate-spin text-slate-400" />
 );
@@ -61,6 +74,53 @@ const WIDGET_CONFIG = [
   { id: 'calendario', label: 'Calendário de Campanhas', size: 'col-span-1 lg:col-span-2', adminOnly: true },
 ];
 
+WIDGET_CONFIG.splice(4, 0,
+  { id: 'gamification-stats', label: 'Meu Desempenho (Gamificação)', size: 'col-span-1 md:col-span-1 lg:col-span-1', adminOnly: false },
+  { id: 'recent-activity', label: 'Feed da Equipe', size: 'col-span-1 md:col-span-1 lg:col-span-1', adminOnly: false },
+);
+
+const getDefaultLayout = (): DashboardLayoutItem[] => (
+  WIDGET_CONFIG.map((widget) => ({ id: widget.id, visible: true }))
+);
+
+const syncLayoutWithConfig = (savedLayout?: DashboardLayoutItem[] | null): DashboardLayoutItem[] => {
+  const defaultLayout = getDefaultLayout();
+
+  if (!savedLayout?.length) {
+    return defaultLayout;
+  }
+
+  const allowedIds = new Set(WIDGET_CONFIG.map((widget) => widget.id));
+  const normalizedSaved = savedLayout.filter((item) => allowedIds.has(item.id));
+  const missingItems = defaultLayout.filter(
+    (item) => !normalizedSaved.some((savedItem) => savedItem.id === item.id),
+  );
+
+  return [...normalizedSaved, ...missingItems];
+};
+
+const getRecentActivityName = (profiles: RecentActivity['profiles']) => {
+  if (Array.isArray(profiles)) {
+    return profiles[0]?.name?.split(' ')[0] || 'Sistema';
+  }
+
+  return profiles?.name?.split(' ')[0] || 'Sistema';
+};
+
+const getRecentActivityTime = (createdAt: string) => {
+  const diffHrs = Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60));
+
+  if (diffHrs > 24) {
+    return `Há ${Math.floor(diffHrs / 24)}d`;
+  }
+
+  if (diffHrs > 0) {
+    return `Há ${diffHrs}h`;
+  }
+
+  return 'Agora';
+};
+
 const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -69,9 +129,12 @@ const AdminDashboard: React.FC = () => {
   const canAccessGamification = planConfig.features.gamification;
   const { leads, loading: leadsLoading } = useLeads();
   const { properties, loading: propsLoading } = useProperties();
+  const userPlan = user?.company?.plan;
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
+  const [userGamification, setUserGamification] = useState({ xp: 0, level: 1, rank: 0 });
 
   const isAdmin = user?.role === 'admin';
   const currentYear = new Date().getFullYear();
@@ -86,17 +149,66 @@ const AdminDashboard: React.FC = () => {
   });
 
   // Motor de Layout Inteligente (Salva no LocalStorage)
-  const [layout, setLayout] = useState<{ id: string; visible: boolean }[]>(() => {
-    const saved = localStorage.getItem(`dashboard_layout_${user?.id}`);
-    if (saved) return JSON.parse(saved);
-    return WIDGET_CONFIG.map(w => ({ id: w.id, visible: true }));
-  });
+  const [layout, setLayout] = useState<DashboardLayoutItem[]>(() => getDefaultLayout());
 
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [draggedWidget, setDraggedWidget] = useState<string | null>(null);
   const [dragOverWidget, setDragOverWidget] = useState<string | null>(null);
   const [contractStatus, setContractStatus] = useState<string | null>(null);
-  const [trialDaysLeft, setTrialDaysLeft] = useState(0);
+  const [trialDaysLeft] = useState(0);
+  const [trialExpiresAt, setTrialExpiresAt] = useState<string | null>(null);
+  const [trialTimeLeft, setTrialTimeLeft] = useState<{ d: number; h: number; m: number; s: number } | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const storageKey = `dashboard_layout_${user.id}`;
+
+    try {
+      const savedLayout = localStorage.getItem(storageKey);
+      const parsedLayout = savedLayout ? JSON.parse(savedLayout) as DashboardLayoutItem[] : null;
+      const nextLayout = syncLayoutWithConfig(parsedLayout);
+
+      setLayout(nextLayout);
+      localStorage.setItem(storageKey, JSON.stringify(nextLayout));
+    } catch (error) {
+      console.warn('Layout do dashboard inválido. Resetando para o padrão.', error);
+      const nextLayout = getDefaultLayout();
+      setLayout(nextLayout);
+      localStorage.setItem(storageKey, JSON.stringify(nextLayout));
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user || user.role === 'super_admin' || userPlan !== 'free' || !trialExpiresAt) {
+      setTrialTimeLeft(null);
+      return;
+    }
+
+    const expireDate = new Date(trialExpiresAt);
+
+    const calculateTimeLeft = () => {
+      const now = new Date().getTime();
+      const difference = expireDate.getTime() - now;
+
+      if (difference <= 0) {
+        setTrialTimeLeft({ d: 0, h: 0, m: 0, s: 0 });
+        return;
+      }
+
+      setTrialTimeLeft({
+        d: Math.floor(difference / (1000 * 60 * 60 * 24)),
+        h: Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+        m: Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60)),
+        s: Math.floor((difference % (1000 * 60)) / 1000),
+      });
+    };
+
+    calculateTimeLeft();
+    const timer = window.setInterval(calculateTimeLeft, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [user, userPlan, trialExpiresAt]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -179,6 +291,54 @@ const AdminDashboard: React.FC = () => {
 
         setAdminStats({ recebidoMes: rec, aReceberMes: arec, inadimplencia: inad, leadsMes: leadsM, topBroker: bestBroker });
       }
+
+      if (!user.company_id && isMounted) {
+        setRecentActivities([]);
+        setUserGamification({ xp: 0, level: 1, rank: 0 });
+      }
+
+      if (user.company_id && isMounted) {
+        try {
+          const { data: xpLogs, error: xpLogsError } = await supabase
+            .from('xp_logs')
+            .select('id, action, amount, created_at, profiles(name)')
+            .eq('company_id', user.company_id)
+            .order('created_at', { ascending: false })
+            .limit(6);
+
+          if (xpLogsError) throw xpLogsError;
+
+          if (isMounted) {
+            setRecentActivities((xpLogs as RecentActivity[]) || []);
+          }
+
+          const { data: profilesRank, error: profilesRankError } = await supabase
+            .from('profiles')
+            .select('id, xp, level')
+            .eq('company_id', user.company_id)
+            .order('xp', { ascending: false });
+
+          if (profilesRankError) throw profilesRankError;
+
+          if (profilesRank && isMounted) {
+            const myIndex = profilesRank.findIndex((profile) => profile.id === user.id);
+            const myData = profilesRank[myIndex];
+
+            setUserGamification({
+              xp: Number(myData?.xp || 0),
+              level: Number(myData?.level || 1),
+              rank: myIndex >= 0 ? myIndex + 1 : 0,
+            });
+          }
+        } catch (error) {
+          console.error('Erro ao buscar dados de gamificação:', error);
+
+          if (isMounted) {
+            setRecentActivities([]);
+            setUserGamification({ xp: 0, level: 1, rank: 0 });
+          }
+        }
+      }
     };
 
     initDashboard();
@@ -203,7 +363,10 @@ const AdminDashboard: React.FC = () => {
           .single();
 
         if (profileError || !profile?.company_id) {
-          if (isMounted) { setContractStatus(null); setTrialDaysLeft(0); }
+          if (isMounted) {
+            setContractStatus(null);
+            setTrialExpiresAt(null);
+          }
           return;
         }
 
@@ -230,18 +393,16 @@ const AdminDashboard: React.FC = () => {
         if (currentStatus === 'pending') {
           const trialEnd = new Date(startDate);
           trialEnd.setDate(trialEnd.getDate() + 7);
-          const msLeft = trialEnd.getTime() - Date.now();
-          const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
-          setTrialDaysLeft(daysLeft);
+          setTrialExpiresAt(trialEnd.toISOString());
           return;
         }
 
-        setTrialDaysLeft(0);
+        setTrialExpiresAt(null);
       } catch (error) {
         console.error('Erro ao buscar status do contrato:', error);
         if (isMounted) {
           setContractStatus(null);
-          setTrialDaysLeft(0);
+          setTrialExpiresAt(null);
         }
       }
     };
@@ -387,6 +548,65 @@ const AdminDashboard: React.FC = () => {
             <div className="text-slate-500 dark:text-slate-400 text-sm mb-1 flex items-center font-medium">Portfólio de Aluguel <InfoTooltip text="Imóveis ativos para locação." /></div>
           </div>
           <h3 className="text-3xl font-bold font-serif tracking-tight text-slate-800 dark:text-white">{propsLoading ? <InlineLoading /> : `${stats.rentPortfolioCount} `}{!propsLoading && <span className="text-base font-sans font-medium text-slate-400">Imóveis</span>}</h3>
+        </div>
+      );
+      case 'gamification-stats': return (
+        <div className="h-full rounded-3xl border border-slate-200 bg-gradient-to-br from-brand-50 to-white p-6 shadow-sm dark:border-slate-800 dark:from-brand-950/20 dark:to-slate-900">
+          <h3 className="mb-6 flex items-center gap-2 font-bold text-slate-800 dark:text-white">
+            <Icons.Trophy size={20} className="text-brand-500" />
+            Meu Desempenho
+          </h3>
+          <div className="flex h-full flex-col items-center justify-center text-center">
+            <div className="relative mb-4">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-brand-500 bg-white text-3xl shadow-lg dark:border-brand-400 dark:bg-slate-800">
+                {userGamification.level > 10 ? '👑' : userGamification.level > 5 ? '⭐' : '🚀'}
+              </div>
+              <div className="absolute -bottom-2 -right-2 rounded-full border-2 border-white bg-slate-900 px-2 py-0.5 text-xs font-bold text-white dark:border-slate-800">
+                Lvl {userGamification.level}
+              </div>
+            </div>
+            <h4 className="text-xl font-black text-slate-900 dark:text-white">{userGamification.xp} XP</h4>
+            <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Pontuação Total</p>
+
+            <div className="mt-6 w-full rounded-2xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-bold text-slate-600 dark:text-slate-300">Meu Ranking Geral</span>
+                <span className="text-lg font-black text-brand-600 dark:text-brand-400">
+                  {userGamification.rank > 0 ? `${userGamification.rank}º Lugar` : '--'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+      case 'recent-activity': return (
+        <div className="h-full rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h3 className="mb-6 flex items-center gap-2 font-bold text-slate-800 dark:text-white">
+            <Icons.Activity size={20} className="text-brand-500" />
+            Feed da Equipe
+          </h3>
+          <div className="space-y-4">
+            {recentActivities.map((act) => (
+              <div key={act.id} className="flex items-start gap-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                  <Icons.Zap size={16} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm leading-snug text-slate-600 dark:text-slate-300">
+                    <span className="font-bold text-slate-900 dark:text-white">{getRecentActivityName(act.profiles)}</span>{' '}
+                    {act.action}
+                  </p>
+                  <div className="mt-1 flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium text-slate-400">{getRecentActivityTime(act.created_at)}</span>
+                    <span className="text-xs font-bold text-brand-600 dark:text-brand-400">+{act.amount ?? 0} XP</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {recentActivities.length === 0 && (
+              <p className="text-center text-sm text-slate-500">Nenhuma atividade recente.</p>
+            )}
+          </div>
         </div>
       );
       case 'funil': return (
@@ -541,21 +761,83 @@ const AdminDashboard: React.FC = () => {
         )}
       </div>
 
-      {contractStatus === 'pending' && (
-        <div className="relative overflow-hidden rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-500 to-orange-600 p-5 shadow-xl shadow-orange-950/20">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.35),transparent_45%)]" />
-          <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-amber-100">
-                <Icons.AlertTriangle size={16} className="text-amber-100" />
+      {userPlan === 'free' && trialTimeLeft && (
+        <div className="relative overflow-hidden rounded-2xl border border-amber-300/50 bg-gradient-to-r from-amber-50 to-orange-50 p-6 shadow-sm dark:border-amber-700/30 dark:from-amber-950/40 dark:to-orange-950/40">
+          <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-amber-400/10 blur-3xl"></div>
+
+          <div className="relative z-10 flex flex-col items-center justify-between gap-6 sm:flex-row">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 shadow-inner dark:bg-amber-900/50 dark:text-amber-400">
+                <Icons.Clock size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-black tracking-tight text-slate-800 dark:text-amber-50">
+                  O seu período de teste está a terminar!
+                </h3>
+                <p className="mt-1 max-w-xl text-sm font-medium leading-relaxed text-slate-600 dark:text-amber-200/80">
+                  Aproveite as funcionalidades completas do Elevatio Vendas. Escolha um plano para não perder o acesso ao CRM, Site e Gestão Financeira.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex shrink-0 flex-col items-center gap-3 sm:items-end">
+              <div className="flex items-center gap-2 font-mono">
+                <div className="flex flex-col items-center">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white font-black text-amber-600 shadow-sm dark:bg-slate-900 dark:text-amber-400">{String(trialTimeLeft.d).padStart(2, '0')}</div>
+                  <span className="mt-1 text-[10px] font-bold uppercase text-slate-500">Dias</span>
+                </div>
+                <span className="pb-4 text-xl font-black text-amber-600/50">:</span>
+                <div className="flex flex-col items-center">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white font-black text-amber-600 shadow-sm dark:bg-slate-900 dark:text-amber-400">{String(trialTimeLeft.h).padStart(2, '0')}</div>
+                  <span className="mt-1 text-[10px] font-bold uppercase text-slate-500">Hrs</span>
+                </div>
+                <span className="pb-4 text-xl font-black text-amber-600/50">:</span>
+                <div className="flex flex-col items-center">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white font-black text-amber-600 shadow-sm dark:bg-slate-900 dark:text-amber-400">{String(trialTimeLeft.m).padStart(2, '0')}</div>
+                  <span className="mt-1 text-[10px] font-bold uppercase text-slate-500">Min</span>
+                </div>
+                <span className="pb-4 text-xl font-black text-amber-600/50">:</span>
+                <div className="flex flex-col items-center">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white font-black text-red-500 shadow-sm dark:bg-slate-900 dark:text-red-400">{String(trialTimeLeft.s).padStart(2, '0')}</div>
+                  <span className="mt-1 text-[10px] font-bold uppercase text-red-500/70">Seg</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => navigate('/admin/config?tab=assinatura')}
+                className="group relative inline-flex items-center gap-2 overflow-hidden rounded-xl bg-amber-500 px-6 py-2.5 font-bold text-white shadow-lg transition-all hover:bg-amber-600 hover:shadow-amber-500/25 active:scale-95"
+              >
+                <Icons.CreditCard size={18} />
+                <span>Escolher um Plano</span>
+                <div className="absolute inset-0 -translate-x-full bg-white/20 transition-transform duration-500 group-hover:translate-x-full"></div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {false && userPlan === 'free' && trialTimeLeft && (
+        <div className="relative overflow-hidden rounded-2xl border border-amber-300/50 bg-gradient-to-r from-amber-50 to-orange-50 p-6 shadow-sm dark:border-amber-700/30 dark:from-amber-950/40 dark:to-orange-950/40">
+          <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-amber-400/10 blur-3xl"></div>
+          <div className="relative z-10 flex flex-col items-center justify-between gap-6 sm:flex-row">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 shadow-inner dark:bg-amber-900/50 dark:text-amber-400">
+                <Icons.Clock size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-black tracking-tight text-slate-800 dark:text-amber-50">
+                  O seu período de teste está a terminar!
                 Você está no período de teste
-              </p>
+              </h3>
               <h2 className="mt-1 text-lg font-bold text-white">
                 {trialDaysLeft > 0
                   ? `Faltam ${trialDaysLeft} dias para o seu teste gratuito terminar.`
                   : 'O seu período de teste acabou hoje!'}
               </h2>
               <p className="mt-1 text-sm text-amber-100/90">Ative o plano definitivo para manter o acesso completo ao CRM sem interrupções.</p>
+            </div>
+
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row">
