@@ -34,8 +34,10 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
   const [guarantorPhone, setGuarantorPhone] = useState('');
 
   const [contractDetails, setContractDetails] = useState({
+    tenant_name: '',
     tenant_document: '', tenant_rg: '', tenant_nationality: 'brasileiro(a)', tenant_profession: '', tenant_marital_status: '', tenant_address: '',
     tenant_spouse_name: '', tenant_spouse_document: '', tenant_spouse_rg: '', tenant_spouse_profession: '',
+    landlord_name: '',
     landlord_document: '', landlord_rg: '', landlord_nationality: 'brasileiro(a)', landlord_profession: '', landlord_marital_status: '', landlord_address: '',
     landlord_spouse_name: '', landlord_spouse_document: '', landlord_spouse_rg: '', landlord_spouse_profession: ''
   });
@@ -54,8 +56,44 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
     guarantee_value: '',
     deposit_amount: '',
     commission_percentage: '',
+    admin_fee_percent: 5,
+    broker_fee_percent: 15,
     due_day: '5',
   });
+
+  const selectedProperty = properties.find((property) => property.id === formData.property_id);
+
+  // --- Cálculos Financeiros (Split) ---
+  const propertyRent = Number(formData.rent_value || selectedProperty?.price || 0);
+  const propertyCondo = Number(formData.condo_value || selectedProperty?.condominium || 0);
+  const propertyIptu = Number(formData.iptu_value || selectedProperty?.iptu || 0);
+
+  // O Pacote Total
+  const totalMonthlyValue = propertyRent + propertyCondo + propertyIptu;
+
+  // Cálculo dos Valores em R$ (Baseado nas percentagens do formulário)
+  const adminFeeValue = (totalMonthlyValue * (Number(formData.admin_fee_percent) || 0)) / 100;
+  const brokerFeeValue = (totalMonthlyValue * (Number(formData.broker_fee_percent) || 0)) / 100;
+  const guaranteeMonths =
+    formData.rent_guarantee_type === 'caucao_1'
+      ? 1
+      : formData.rent_guarantee_type === 'caucao_2'
+        ? 2
+        : formData.rent_guarantee_type === 'caucao_3'
+          ? 3
+          : 0;
+  const calculatedGuaranteeValue = guaranteeMonths > 0
+    ? totalMonthlyValue * guaranteeMonths
+    : Number(formData.guarantee_value || 0);
+
+  let contractDurationMonths = 12;
+  if (formData.start_date && formData.end_date) {
+    const startDate = new Date(formData.start_date);
+    const endDate = new Date(formData.end_date);
+    const months = (endDate.getFullYear() - startDate.getFullYear()) * 12 + (endDate.getMonth() - startDate.getMonth());
+    contractDurationMonths = months > 0 ? months : 12;
+  }
+  const totalContractValue = (totalMonthlyValue * contractDurationMonths) + calculatedGuaranteeValue;
 
   useEffect(() => {
     if (formData.property_id && properties.length > 0) {
@@ -70,10 +108,13 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
           landlord_marital_status: selectedProp.owner_marital_status || prev.landlord_marital_status,
           landlord_address: selectedProp.owner_address || prev.landlord_address,
         }));
-        // Auto-preenchimento inteligente do valor do Aluguel
-        if (selectedProp.price && !formData.rent_value) {
-          setFormData(prev => ({ ...prev, rent_value: String(selectedProp.price) }));
-        }
+        // Auto-preenchimento inteligente dos valores da locação
+        setFormData(prev => ({
+          ...prev,
+          rent_value: prev.rent_value || String(selectedProp.price ?? ''),
+          condo_value: prev.condo_value || String(selectedProp.condominium ?? ''),
+          iptu_value: prev.iptu_value || String(selectedProp.iptu ?? ''),
+        }));
       }
     }
   }, [formData.property_id, properties]);
@@ -144,9 +185,11 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
     }
   };
 
+  // MODO DE VISUALIZAÇÃO E PREENCHIMENTO INICIAL
   useEffect(() => {
     if (isOpen) {
       fetchData();
+      
       const fetchProfileData = async () => {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (authUser) {
@@ -155,22 +198,55 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         }
       };
       fetchProfileData();
+      
       const fetchTemplates = async () => {
         const { data } = await supabase.from('contract_templates').select('id, name, content').eq('type', 'rent');
         if (data) setCustomTemplates(data);
       };
       fetchTemplates();
-      const today = new Date();
-      const nextYear = new Date(today);
-      nextYear.setFullYear(today.getFullYear() + 1);
 
-      setFormData(prev => ({
-        ...prev,
-        start_date: today.toISOString().split('T')[0],
-        end_date: nextYear.toISOString().split('T')[0]
-      }));
+      // Se existir _contractData, estamos no MODO VISUALIZAÇÃO!
+      if (_contractData) {
+        setFormData(prev => ({
+          ...prev,
+          lead_id: _contractData.lead_id || '',
+          property_id: _contractData.property_id || '',
+          broker_id: _contractData.broker_id || '',
+          start_date: _contractData.start_date || '',
+          end_date: _contractData.end_date || '',
+          rent_value: String(_contractData.rent_value || ''),
+          condo_value: String(_contractData.condo_value || ''),
+          iptu_value: String(_contractData.iptu_value || ''),
+          rent_guarantee_type: _contractData.rent_guarantee_type || '',
+          rent_readjustment_index: _contractData.rent_readjustment_index || 'IGPM',
+          admin_fee_percent: _contractData.admin_fee_percent !== undefined ? Number(_contractData.admin_fee_percent) : 10,
+          broker_fee_percent: _contractData.broker_fee_percent !== undefined ? Number(_contractData.broker_fee_percent) : 100,
+        }));
+
+        if (_contractData.contract_data) {
+          setContractDetails(prev => ({
+            ...prev,
+            ..._contractData.contract_data
+          }));
+          setGuarantorName(_contractData.contract_data.guarantor_name || '');
+          setGuarantorDocument(_contractData.contract_data.guarantor_document || '');
+          setGuarantorAddress(_contractData.contract_data.guarantor_address || '');
+          setGuarantorPhone(_contractData.contract_data.guarantor_phone || '');
+        }
+      } else {
+        // MODO CRIAÇÃO: Preenche datas padrões apenas se for contrato novo
+        const today = new Date();
+        const nextYear = new Date(today);
+        nextYear.setFullYear(today.getFullYear() + 1);
+
+        setFormData(prev => ({
+          ...prev,
+          start_date: today.toISOString().split('T')[0],
+          end_date: nextYear.toISOString().split('T')[0]
+        }));
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, _contractData]);
 
   useEffect(() => {
     const fetchLeadProperties = async () => {
@@ -251,6 +327,9 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
     ];
 
     try {
+      const selectedLeadForSave = leads.find(l => l.id === formData.lead_id);
+      const selectedPropForSave = properties.find(p => p.id === formData.property_id);
+
       const payload = {
         type: 'rent',
         status: 'pending',
@@ -265,6 +344,22 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         rent_guarantee_type: formData.rent_guarantee_type,
         rent_readjustment_index: formData.rent_readjustment_index,
         commission_percentage: Number(formData.commission_percentage) || 0,
+
+        // CORREÇÃO CRÍTICA: Salvando as taxas do Split!
+        admin_fee_percent: Number(formData.admin_fee_percent) || 0,
+        broker_fee_percent: Number(formData.broker_fee_percent) || 0,
+
+        // CORREÇÃO CRÍTICA: Salvando os nomes para a aba Financeiro ler depois!
+        contract_data: {
+          ...contractDetails,
+          lessor_name: contractDetails.landlord_name || selectedPropForSave?.owner_name || 'Proprietário',
+          lessee_name: selectedLeadForSave?.name || 'Inquilino',
+          guarantor_name: guarantorName,
+          guarantor_document: guarantorDocument,
+          guarantor_address: guarantorAddress,
+          guarantor_phone: guarantorPhone,
+        },
+
         vistoria_items: defaultVistoria,
         company_id: user?.company_id,
       };
@@ -276,9 +371,9 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         const installments = [];
         // Lógica de Caução: Multiplica o valor do aluguel puro pela quantidade de meses escolhida
         let guaranteeValue = 0;
-        if (formData.rent_guarantee_type === 'caucao_1') guaranteeValue = rentVal * 1;
-        else if (formData.rent_guarantee_type === 'caucao_2') guaranteeValue = rentVal * 2;
-        else if (formData.rent_guarantee_type === 'caucao_3') guaranteeValue = rentVal * 3;
+        if (formData.rent_guarantee_type === 'caucao_1') guaranteeValue = totalMonthly * 1;
+        else if (formData.rent_guarantee_type === 'caucao_2') guaranteeValue = totalMonthly * 2;
+        else if (formData.rent_guarantee_type === 'caucao_3') guaranteeValue = totalMonthly * 3;
 
         for (let i = 1; i <= months; i++) {
           const dueDate = new Date(startDate);
@@ -353,6 +448,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
           <form id="rent-form" onSubmit={handleSubmit} className="space-y-8">
+            <fieldset disabled={!!_contractData} className="contents">
 
             {/* 1. ENVOLVIDOS E PRAZOS */}
             <section>
@@ -416,6 +512,83 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
               </div>
             </section>
 
+            {/* --- SECÇÃO DE COMISSIONAMENTO E TAXAS --- */}
+            <div className="mt-8 mb-6 rounded-2xl border border-brand-100 bg-brand-50/40 p-6 dark:border-brand-900/30 dark:bg-brand-900/10">
+              <h3 className="mb-5 flex items-center gap-2 text-lg font-bold text-brand-700 dark:text-brand-400">
+                <Icons.PieChart size={20} />
+                Comissionamento e Repasses (Split)
+              </h3>
+
+              <div className="mb-6 flex items-center justify-between rounded-xl bg-white p-4 shadow-sm border border-slate-100 dark:bg-slate-800 dark:border-slate-700">
+                <span className="text-sm font-bold text-slate-600 dark:text-slate-300">Valor Total Mensal (Aluguel + Cond. + IPTU):</span>
+                <span className="text-xl font-black text-slate-800 dark:text-white">
+                  R$ {totalMonthlyValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                  <label className="mb-3 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Taxa de Administração (%)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-2/5">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={formData.admin_fee_percent}
+                        onChange={(e) => setFormData({ ...formData, admin_fee_percent: Number(e.target.value) })}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-4 pr-8 font-black text-slate-800 focus:border-brand-500 focus:ring-2 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 font-bold text-slate-400">%</span>
+                    </div>
+                    <span className="text-xl font-light text-slate-300">=</span>
+                    <div className="relative flex-1">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-emerald-500">R$</span>
+                      <input
+                        type="text"
+                        disabled
+                        value={adminFeeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        className="w-full cursor-not-allowed rounded-xl border border-emerald-100 bg-emerald-50 py-3 pl-11 pr-4 font-black text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-400"
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs font-medium text-slate-500">Valor mensal retido pela imobiliária.</p>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                  <label className="mb-3 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Comissão do Corretor (%)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <div className="relative w-2/5">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={formData.broker_fee_percent}
+                        onChange={(e) => setFormData({ ...formData, broker_fee_percent: Number(e.target.value) })}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-4 pr-8 font-black text-slate-800 focus:border-brand-500 focus:ring-2 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 font-bold text-slate-400">%</span>
+                    </div>
+                    <span className="text-xl font-light text-slate-300">=</span>
+                    <div className="relative flex-1">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-blue-500">R$</span>
+                      <input
+                        type="text"
+                        disabled
+                        value={brokerFeeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        className="w-full cursor-not-allowed rounded-xl border border-blue-100 bg-blue-50 py-3 pl-11 pr-4 font-black text-blue-700 dark:border-blue-900/50 dark:bg-blue-900/20 dark:text-blue-400"
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs font-medium text-slate-500">Comissão destinada ao corretor da transação.</p>
+                </div>
+              </div>
+            </div>
+
             {/* 3. GARANTIA E REAJUSTE */}
             <section className="bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -447,7 +620,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
             </section>
 
             {/* 4. TIPO DE DOCUMENTO (PARA GERAÇÃO DE PDF) */}
-            <section className="bg-indigo-50 p-4 rounded-xl border border-indigo-200">
+            <section className="bg-indigo-100 p-4 rounded-xl border border-indigo-200">
               <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <Icons.FileText size={14} /> Modelo de Contrato
               </h3>
@@ -646,25 +819,26 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
               )}
             </section>
 
+            </fieldset>
           </form>
         </div>
 
-        <div className="p-6 border-t border-slate-100 flex justify-end gap-3 bg-white shrink-0">
-          <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors border border-slate-200">
-            Cancelar
-          </button>
-          <button 
-            type="button" 
-            onClick={handleGeneratePDF}
-            disabled={!formData.lead_id || !formData.property_id || !documentType}
-            className="px-5 py-2.5 rounded-xl font-bold bg-slate-800 text-white hover:bg-slate-700 transition-colors disabled:opacity-50 flex items-center gap-2"
-          >
-            <Icons.FileText size={18} />
-            Gerar PDF
-          </button>
-          <button type="submit" form="rent-form" disabled={loading} className="px-6 py-2.5 rounded-xl font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-2">
-            {loading ? 'Salvando...' : 'Registrar Aluguel'} <Icons.ArrowRight size={18} />
-          </button>
+        <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+          {!_contractData ? (
+            <button type="button" onClick={handleGeneratePDF} disabled={!formData.lead_id || !formData.property_id || !documentType} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors text-sm font-bold disabled:opacity-50">
+              <Icons.FileText size={16} /> Gerar PDF
+            </button>
+          ) : <div />}
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors text-sm font-bold">
+              {_contractData ? 'Fechar Visualização' : 'Cancelar'}
+            </button>
+            {!_contractData && (
+              <button type="submit" form="rent-form" disabled={loading} className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-bold disabled:opacity-50 flex items-center gap-2">
+                {loading ? <><Icons.Loader2 size={16} className="animate-spin" /> Salvando...</> : <><Icons.Save size={16} /> Registrar Aluguel</>}
+              </button>
+            )}
+          </div>
         </div>
 
       </div>

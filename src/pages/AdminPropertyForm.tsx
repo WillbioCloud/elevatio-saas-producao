@@ -43,7 +43,8 @@ interface FormState {
   type: string;
   listing_type: ListingType;
   price: number | '';
-  rent_package_price: number | '';
+  condominium: number | '';
+  iptu: number | '';
   down_payment: number | '';
   financing_available: boolean;
   has_balloon: boolean;
@@ -93,7 +94,8 @@ const defaultForm: FormState = {
   type: PropertyType.HOUSE,
   listing_type: 'sale',
   price: '',
-  rent_package_price: '',
+  condominium: 0,
+  iptu: 0,
   down_payment: '',
   financing_available: true,
   has_balloon: false,
@@ -243,7 +245,8 @@ const AdminPropertyForm: React.FC = () => {
         type: data.type || PropertyType.HOUSE,
         listing_type: data.listing_type || 'sale',
         price: data.price || '',
-        rent_package_price: data.rent_package_price || '',
+        condominium: data.condominium ?? 0,
+        iptu: data.iptu ?? 0,
         down_payment: data.down_payment || '',
         financing_available: data.financing_available ?? true,
         has_balloon: data.has_balloon ?? false,
@@ -584,7 +587,8 @@ const AdminPropertyForm: React.FC = () => {
         type: formData.type,
         listing_type: formData.listing_type,
         price: Number(formData.price),
-        rent_package_price: formData.listing_type === 'rent' ? Number(formData.rent_package_price) : null,
+        condominium: Number(formData.condominium) || 0,
+        iptu: Number(formData.iptu) || 0,
         down_payment: formData.listing_type === 'sale' ? Number(formData.down_payment) : null,
         financing_available: formData.listing_type === 'sale' ? formData.financing_available : null,
         has_balloon: formData.has_balloon,
@@ -790,38 +794,91 @@ const AdminPropertyForm: React.FC = () => {
                   </select>
                 </div>
 
-                <div>
-                  <label htmlFor="price" className="block text-sm font-bold text-slate-600 mb-2">
-                    {formData.listing_type === 'sale' ? 'Preço de venda (R$)' : 'Aluguel mensal (R$)'}
-                  </label>
-                  <input
-                    id="price"
-                    name="price"
-                    required
-                    type="number"
-                    min={0}
-                    value={formData.price}
-                    onChange={(e) => handleInput('price', e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500"
-                    placeholder="Ex: 0"
-                  />
+                <div className="md:col-span-2">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
+                    <div className="col-span-1 md:col-span-3">
+                      <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                        <Icons.DollarSign size={18} className="text-brand-500" /> Valores do Imóvel
+                      </h3>
+                    </div>
+
+                    <div>
+                      <label htmlFor="price" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                        Valor ({formData.listing_type === 'sale' ? 'Venda' : 'Aluguel Base'}) *
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">R$</span>
+                        <input
+                          id="price"
+                          name="price"
+                          required
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={formData.price}
+                          onChange={(e) => handleInput('price', e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                          placeholder="0,00"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor="condominium" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                        Condomínio Mensal
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">R$</span>
+                        <input
+                          id="condominium"
+                          name="condominium"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={formData.condominium || ''}
+                          onChange={(e) => handleInput('condominium', e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                          placeholder="0,00"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor="iptu" className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                        IPTU Mensal
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">R$</span>
+                        <input
+                          id="iptu"
+                          name="iptu"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={formData.iptu || ''}
+                          onChange={(e) => handleInput('iptu', e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full pl-12 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-brand-500 outline-none transition-all"
+                          placeholder="0,00"
+                        />
+                      </div>
+                    </div>
+
+                    {formData.listing_type === 'rent' && (
+                      <div className="col-span-1 md:col-span-3 bg-brand-50 dark:bg-brand-900/20 p-4 rounded-xl flex items-center justify-between border border-brand-100 dark:border-brand-800/30">
+                        <span className="text-sm font-bold text-brand-700 dark:text-brand-400">Total Mensal (Pacote Completo):</span>
+                        <span className="text-xl font-black text-brand-700 dark:text-brand-400">
+                          R$ {(
+                            (Number(formData.price) || 0) +
+                            (Number(formData.condominium) || 0) +
+                            (Number(formData.iptu) || 0)
+                          ).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                {formData.listing_type === 'rent' ? (
-                  <div className="md:col-span-2">
-                    <label htmlFor="rent_package_price" className="block text-sm font-bold text-slate-600 mb-2">Pacote (condomínio + taxas) (R$)</label>
-                    <input
-                      id="rent_package_price"
-                      name="rent_package_price"
-                      type="number"
-                      min={0}
-                      value={formData.rent_package_price}
-                      onChange={(e) => handleInput('rent_package_price', e.target.value === '' ? '' : Number(e.target.value))}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500"
-                      placeholder="Ex: 0"
-                    />
-                  </div>
-                ) : (
+                {formData.listing_type === 'sale' && (
                   <>
                     <div>
                       <label htmlFor="down_payment" className="block text-sm font-bold text-slate-600 mb-2">Valor de entrada (R$)</label>

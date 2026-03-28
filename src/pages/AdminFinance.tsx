@@ -3,6 +3,7 @@ import { Icons } from '../components/Icons';
 import { useTenant } from '../contexts/TenantContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useInvoices } from '../hooks/useInvoices';
+import { useRepasses } from '../hooks/useRepasses';
 import { supabase } from '../lib/supabase';
 import InvoiceModal from '../components/InvoiceModal';
 import { useToast } from '../contexts/ToastContext';
@@ -23,6 +24,7 @@ export default function AdminFinance() {
   const [selectedTenantGroup, setSelectedTenantGroup] = useState<string | null>(null);
   const [selectedInvoices, setSelectedInvoices] = useState<any[]>([]);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+  const { repasses, loading: repassesLoading, markAsRepassado } = useRepasses();
 
   const toggleInvoiceSelection = (invoice: any) => {
     setSelectedInvoices(prev => 
@@ -499,151 +501,250 @@ export default function AdminFinance() {
         )}
 
         {/* ÁREA PRINCIPAL: CARDS OU DETALHES */}
-        {selectedTenantGroup ? (
-          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <div className="flex items-center justify-between bg-white dark:bg-dark-card p-4 rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm">
-              <div>
-                <button onClick={() => setSelectedTenantGroup(null)} className="flex items-center gap-2 text-brand-600 hover:text-brand-700 font-bold mb-1 text-sm transition-colors">
-                  <Icons.ArrowLeft size={16} /> Voltar para visão geral
-                </button>
-                <h2 className="text-xl font-bold text-slate-800 dark:text-white">{selectedTenantGroup}</h2>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-slate-500">Parcelas</p>
-                <p className="font-bold text-slate-800 dark:text-white">{selectedTenantInvoices.length}</p>
+        {activeTab === 'repasses' && (
+          <div className="p-4 space-y-6 animate-fade-in">
+            <div className="flex items-center justify-between mb-4">
+              <div className="pl-4">
+                <h2 className="text-lg font-bold text-slate-800 dark:text-white">Repasses a Proprietários</h2>
+                <p className="text-sm text-slate-500">Valores já pagos pelos inquilinos, com o cálculo da comissão descontado.</p>
               </div>
             </div>
-            <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm overflow-hidden">
+
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 font-medium border-b border-slate-100 dark:border-dark-border">
-                    <tr>
-                      <th className="p-4">Descrição</th>
-                      <th className="p-4">Valor</th>
-                      <th className="p-4">Vencimento</th>
-                      <th className="p-4">Status</th>
-                      <th className="p-4 text-right">Ações</th>
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800/50">
+                      <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Origem / Venc. Original</th>
+                      <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Inquilino Pagou</th>
+                      <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Lucro Imobiliária</th>
+                      <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Comissão Corretor</th>
+                      <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Proprietário (Repasse Líq)</th>
+                      <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                      <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Ação</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-dark-border">
-                    {selectedTenantInvoices.map((invoice) => (
-                      <tr key={invoice.id} className="group hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
-                        <td className="p-4">
-                          <div className="flex items-center">
-                            {/* Checkbox de Seleção Multipla (Apenas para Pendentes) */}
-                            {invoice.status === 'pendente' && (
-                              <input 
-                                type="checkbox" 
-                                checked={selectedInvoices.some(item => item.id === invoice.id)}
-                                onChange={() => toggleInvoiceSelection(invoice)}
-                                className="w-5 h-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer mr-3"
-                                title="Selecionar para dar baixa"
-                              />
-                            )}
-                            <div>
-                              <p className="font-bold text-slate-800 dark:text-white">{invoice.description || 'Cobrança'}</p>
-                              <p className="text-xs text-slate-500">{invoice.property?.title}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-4 font-bold text-slate-800 dark:text-white">
-                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(invoice.amount)}
-                        </td>
-                        <td className="p-4 text-slate-600 dark:text-slate-400">
-                          {new Date(invoice.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                        </td>
-                        <td className="p-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 ${
-                            invoice.status === 'pago' ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
-                            : invoice.status === 'atrasado' ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
-                            : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
-                          }`}>
-                            {invoice.status === 'pago' ? <Icons.CheckCircle2 size={12} /> : invoice.status === 'atrasado' ? <Icons.AlertCircle size={12} /> : <Icons.Clock size={12} />}
-                            {invoice.status.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {invoice.status === 'pago' && invoice.payment_url ? (
-                              <button title="Ver Recibo (Asaas)" onClick={() => window.open(invoice.payment_url, '_blank')} className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg transition-colors bg-brand-50/50 flex items-center gap-1 text-xs font-bold">
-                                <Icons.FileText size={16} /> Recibo
-                              </button>
-                            ) : invoice.status !== 'pago' && (
-                              <>
-                                {invoice.payment_url ? (
-                                  <button title="Abrir Link de Pagamento" onClick={() => window.open(invoice.payment_url, '_blank')} className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg transition-colors bg-brand-50/50">
-                                    <Icons.ExternalLink size={16} />
-                                  </button>
-                                ) : (
-                                  <button title="Gerar Boleto/Pix (Asaas)" onClick={() => handleGenerateAsaasLink(invoice.id)} disabled={generatingLinkFor === invoice.id} className="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors disabled:opacity-50">
-                                    {generatingLinkFor === invoice.id ? <Icons.Loader2 size={16} className="animate-spin text-brand-500" /> : <Icons.Link size={16} />}
-                                  </button>
-                                )}
-                                <button title="Cobrar no WhatsApp" onClick={() => handleWhatsAppCharge(invoice)} className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
-                                  <Icons.MessageCircle size={16} />
-                                </button>
-                              </>
-                            )}
-                            <button title="Excluir Cobrança" onClick={() => handleDeleteInvoice(invoice.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors">
-                              <Icons.Trash2 size={16} />
-                            </button>
-                          </div>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {repassesLoading ? (
+                      <tr>
+                        <td colSpan={7} className="p-8 text-center">
+                          <Icons.Loader2 className="animate-spin mx-auto text-brand-500" />
                         </td>
                       </tr>
-                    ))}
+                    ) : repasses.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-8 text-center text-slate-500">Nenhum repasse pendente no momento.</td>
+                      </tr>
+                    ) : (
+                      repasses.map((rep) => (
+                        <tr key={rep.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <td className="p-4">
+                            <p className="text-sm font-bold text-slate-800 dark:text-white truncate max-w-[200px]">{rep.property_title}</p>
+                            <p className="text-xs text-slate-500">Venc: {new Date(rep.due_date).toLocaleDateString('pt-BR')}</p>
+                          </td>
+                          <td className="p-4 font-semibold text-slate-600 dark:text-slate-300">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(rep.gross_value)}
+                          </td>
+                          <td className="p-4 text-emerald-600 dark:text-emerald-400 font-bold">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(rep.admin_fee_value)}
+                            <span className="text-[10px] text-slate-400 ml-1 font-normal">({rep.admin_fee_percent}%)</span>
+                          </td>
+                          <td className="p-4 text-blue-600 dark:text-blue-400 font-bold">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(rep.broker_fee_value)}
+                            <span className="text-[10px] text-slate-400 ml-1 font-normal">({rep.broker_fee_percent}%)</span>
+                          </td>
+                          <td className="p-4 bg-brand-50/50 dark:bg-brand-900/10">
+                            <p className="text-xs text-slate-500 mb-1">{rep.owner_name}</p>
+                            <p className="text-lg font-black text-brand-600 dark:text-brand-400">
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(rep.net_value)}
+                            </p>
+                          </td>
+                          <td className="p-4">
+                            {rep.status === 'pendente' ? (
+                              <span className="px-2.5 py-1 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded-lg text-xs font-bold whitespace-nowrap">A Repassar</span>
+                            ) : (
+                              <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-lg text-xs font-bold whitespace-nowrap flex items-center gap-1">
+                                <Icons.CheckCircle size={12} />
+                                Repassado
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-4 text-right">
+                            {rep.status === 'pendente' && (
+                              <button
+                                onClick={async () => {
+                                  if (window.confirm(`Confirma o repasse líquido de R$ ${rep.net_value.toFixed(2)} para ${rep.owner_name}?`)) {
+                                    const success = await markAsRepassado(rep.invoice_id);
+                                    if (success) {
+                                      addToast('Repasse confirmado e arquivado!', 'success');
+                                    } else {
+                                      addToast('Não foi possível confirmar o repasse.', 'error');
+                                    }
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-bold transition-all shadow-sm flex items-center gap-2 ml-auto"
+                              >
+                                <Icons.CheckCircle size={16} /> Confirmar
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            {loading ? (
-              <div className="col-span-full p-12 text-center text-slate-400">
-                <Icons.Loader2 size={32} className="animate-spin mx-auto mb-3" />
-                Carregando faturas...
-              </div>
-            ) : groupedInvoices.length === 0 ? (
-              <div className="col-span-full p-12 text-center text-slate-500 bg-white dark:bg-dark-card rounded-2xl border border-slate-100 dark:border-dark-border">
-                <Icons.FileText size={48} className="mx-auto mb-4 opacity-20" />
-                Nenhuma cobrança encontrada.
-              </div>
-            ) : groupedInvoices.map((group: any) => (
-              <div key={group.client_name} onClick={() => setSelectedTenantGroup(group.client_name)} className="bg-white dark:bg-dark-card p-6 rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm hover:shadow-md hover:border-brand-300 dark:hover:border-brand-500/30 transition-all cursor-pointer group flex flex-col justify-between">
+        )}
+
+        {activeTab === 'recebimentos' && (
+          selectedTenantGroup ? (
+            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="flex items-center justify-between bg-white dark:bg-dark-card p-4 rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm">
                 <div>
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 bg-brand-50 dark:bg-brand-500/10 rounded-2xl flex items-center justify-center text-brand-600 dark:text-brand-400 group-hover:scale-110 transition-transform">
-                      <Icons.User size={24} />
-                    </div>
-                    <div className="bg-slate-50 dark:bg-white/5 px-3 py-1 rounded-full text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                      <Icons.List size={14} /> {group.invoices.length} Parcelas
-                    </div>
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-800 dark:text-white line-clamp-1" title={group.client_name}>{group.client_name}</h3>
-                  <p className="text-sm text-slate-500 flex items-center gap-1 mt-1"><Icons.Home size={14} /> {group.property_title}</p>
+                  <button onClick={() => setSelectedTenantGroup(null)} className="flex items-center gap-2 text-brand-600 hover:text-brand-700 font-bold mb-1 text-sm transition-colors">
+                    <Icons.ArrowLeft size={16} /> Voltar para visão geral
+                  </button>
+                  <h2 className="text-xl font-bold text-slate-800 dark:text-white">{selectedTenantGroup}</h2>
                 </div>
-                <div className="mt-6 pt-4 border-t border-slate-100 dark:border-dark-border">
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <p className="text-xs text-slate-500 mb-1">Total em aberto</p>
-                      <p className="font-bold text-brand-600 dark:text-brand-400 text-lg">
-                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(group.total_aberto)}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500 mb-1">Status</p>
-                      <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{group.parcelas_pagas}/{group.invoices.length} Pagas</p>
-                    </div>
-                  </div>
+                <div className="text-right">
+                  <p className="text-sm text-slate-500">Parcelas</p>
+                  <p className="font-bold text-slate-800 dark:text-white">{selectedTenantInvoices.length}</p>
                 </div>
               </div>
-            ))}
-          </div>
+              <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 font-medium border-b border-slate-100 dark:border-dark-border">
+                      <tr>
+                        <th className="p-4">Descrição</th>
+                        <th className="p-4">Valor</th>
+                        <th className="p-4">Vencimento</th>
+                        <th className="p-4">Status</th>
+                        <th className="p-4 text-right">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-dark-border">
+                      {selectedTenantInvoices.map((invoice) => (
+                        <tr key={invoice.id} className="group hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                          <td className="p-4">
+                            <div className="flex items-center">
+                              {/* Checkbox de Seleção Multipla (Apenas para Pendentes) */}
+                              {invoice.status === 'pendente' && (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedInvoices.some(item => item.id === invoice.id)}
+                                  onChange={() => toggleInvoiceSelection(invoice)}
+                                  className="w-5 h-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer mr-3"
+                                  title="Selecionar para dar baixa"
+                                />
+                              )}
+                              <div>
+                                <p className="font-bold text-slate-800 dark:text-white">{invoice.description || 'Cobrança'}</p>
+                                <p className="text-xs text-slate-500">{invoice.property?.title}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-4 font-bold text-slate-800 dark:text-white">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(invoice.amount)}
+                          </td>
+                          <td className="p-4 text-slate-600 dark:text-slate-400">
+                            {new Date(invoice.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                          </td>
+                          <td className="p-4">
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1 ${
+                              invoice.status === 'pago' ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
+                              : invoice.status === 'atrasado' ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
+                              : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
+                            }`}>
+                              {invoice.status === 'pago' ? <Icons.CheckCircle2 size={12} /> : invoice.status === 'atrasado' ? <Icons.AlertCircle size={12} /> : <Icons.Clock size={12} />}
+                              {invoice.status.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="p-4 text-right">
+                            <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {invoice.status === 'pago' && invoice.payment_url ? (
+                                <button title="Ver Recibo (Asaas)" onClick={() => window.open(invoice.payment_url, '_blank')} className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg transition-colors bg-brand-50/50 flex items-center gap-1 text-xs font-bold">
+                                  <Icons.FileText size={16} /> Recibo
+                                </button>
+                              ) : invoice.status !== 'pago' && (
+                                <>
+                                  {invoice.payment_url ? (
+                                    <button title="Abrir Link de Pagamento" onClick={() => window.open(invoice.payment_url, '_blank')} className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg transition-colors bg-brand-50/50">
+                                      <Icons.ExternalLink size={16} />
+                                    </button>
+                                  ) : (
+                                    <button title="Gerar Boleto/Pix (Asaas)" onClick={() => handleGenerateAsaasLink(invoice.id)} disabled={generatingLinkFor === invoice.id} className="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors disabled:opacity-50">
+                                      {generatingLinkFor === invoice.id ? <Icons.Loader2 size={16} className="animate-spin text-brand-500" /> : <Icons.Link size={16} />}
+                                    </button>
+                                  )}
+                                  <button title="Cobrar no WhatsApp" onClick={() => handleWhatsAppCharge(invoice)} className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
+                                    <Icons.MessageCircle size={16} />
+                                  </button>
+                                </>
+                              )}
+                              <button title="Excluir Cobrança" onClick={() => handleDeleteInvoice(invoice.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors">
+                                <Icons.Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              {loading ? (
+                <div className="col-span-full p-12 text-center text-slate-400">
+                  <Icons.Loader2 size={32} className="animate-spin mx-auto mb-3" />
+                  Carregando faturas...
+                </div>
+              ) : groupedInvoices.length === 0 ? (
+                <div className="col-span-full p-12 text-center text-slate-500 bg-white dark:bg-dark-card rounded-2xl border border-slate-100 dark:border-dark-border">
+                  <Icons.FileText size={48} className="mx-auto mb-4 opacity-20" />
+                  Nenhuma cobrança encontrada.
+                </div>
+              ) : groupedInvoices.map((group: any) => (
+                <div key={group.client_name} onClick={() => setSelectedTenantGroup(group.client_name)} className="bg-white dark:bg-dark-card p-6 rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm hover:shadow-md hover:border-brand-300 dark:hover:border-brand-500/30 transition-all cursor-pointer group flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="w-12 h-12 bg-brand-50 dark:bg-brand-500/10 rounded-2xl flex items-center justify-center text-brand-600 dark:text-brand-400 group-hover:scale-110 transition-transform">
+                        <Icons.User size={24} />
+                      </div>
+                      <div className="bg-slate-50 dark:bg-white/5 px-3 py-1 rounded-full text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                        <Icons.List size={14} /> {group.invoices.length} Parcelas
+                      </div>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-white line-clamp-1" title={group.client_name}>{group.client_name}</h3>
+                    <p className="text-sm text-slate-500 flex items-center gap-1 mt-1"><Icons.Home size={14} /> {group.property_title}</p>
+                  </div>
+                  <div className="mt-6 pt-4 border-t border-slate-100 dark:border-dark-border">
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1">Total em aberto</p>
+                        <p className="font-bold text-brand-600 dark:text-brand-400 text-lg">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(group.total_aberto)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-500 mb-1">Status</p>
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{group.parcelas_pagas}/{group.invoices.length} Pagas</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         )}
       </div>
 
       {/* Barra Flutuante de Ação em Massa */}
-      {selectedInvoices.length > 0 && (
+      {activeTab === 'recebimentos' && selectedInvoices.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-4xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-4 rounded-2xl shadow-2xl flex flex-col md:flex-row items-center justify-between gap-4 animate-fade-in border border-slate-700 dark:border-slate-200">
           
           {/* Info Section */}
