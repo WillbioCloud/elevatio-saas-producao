@@ -15,7 +15,7 @@ import {
   getTenantName,
   getTenantPhone,
   getWhatsappLink,
-} from './tenantUtils';
+} from '../../utils/tenantUtils';
 
 const ModernLayout: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);

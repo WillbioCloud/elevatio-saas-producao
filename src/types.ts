@@ -4,6 +4,7 @@ export interface SiteData {
   // Identidade Visual (Já existentes e novos)
   logo_url?: string | null;
   logo_alt_url?: string | null;
+  logo_white_url?: string | null;
   favicon_url?: string | null;
   hero_image_url?: string | null;
   primary_color?: string;
@@ -50,9 +51,15 @@ export interface Company {
   id: string;
   name: string;
   subdomain: string;
+  domain?: string | null;
   slug?: string;
   plan: string;
   template?: string;
+  logo_url?: string | null;
+  logo_white_url?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
   site_data?: SiteData;
   created_at?: string;
   updated_at?: string;

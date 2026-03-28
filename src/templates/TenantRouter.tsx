@@ -1,12 +1,14 @@
 import React from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, Navigate } from 'react-router-dom';
 import { useTenant } from '../contexts/TenantContext';
 
+// Basico
 import BasicoLayout from './basico/BasicoLayout';
 import BasicoHome from './basico/pages/Home';
 import BasicoProperties from './basico/pages/BasicoProperties';
 import BasicoPropertyDetail from './basico/pages/BasicoPropertyDetail';
 
+// Classic
 import ClassicLayout from './classic/ClassicLayout';
 import ClassicHome from './classic/pages/Home';
 import ClassicProperties from './classic/pages/Properties';
@@ -15,14 +17,17 @@ import ClassicAbout from './classic/pages/About';
 import ClassicServices from './classic/pages/Services';
 import ClassicFinanciamentos from './classic/pages/Financiamentos';
 
+// Luxury
 import LuxuryLayout from './luxury/LuxuryLayout';
 import LuxuryHome from './luxury/pages/Home';
 import LuxuryProperties from './luxury/pages/Properties';
 import LuxuryPropertyDetail from './luxury/pages/PropertyDetail';
 
+// Minimalist (Usa as páginas do Modern como fallback onde não tem próprias)
 import MinimalistLayout from './minimalist/MinimalistLayout';
 import MinimalistHome from './minimalist/pages/Home';
 
+// Modern
 import ModernLayout from './modern/ModernLayout';
 import ModernHome from './modern/pages/Home';
 import ModernProperties from './modern/pages/Properties';
@@ -52,40 +57,36 @@ export default function TenantRouter() {
 
   const templateName = tenant?.site_data?.template || tenant?.template || 'classic';
 
+  // Fallbacks: Se o template não tem uma página específica (ex: Minimalist não tem About), usa a do Modern.
   const Layout =
     templateName === 'luxury' ? LuxuryLayout :
-    templateName === 'modern' ? ModernLayout :
     templateName === 'minimalist' ? MinimalistLayout :
     templateName === 'basico' ? BasicoLayout :
-    ClassicLayout;
+    templateName === 'classic' ? ClassicLayout :
+    ModernLayout;
 
   const Home =
     templateName === 'luxury' ? LuxuryHome :
-    templateName === 'modern' ? ModernHome :
     templateName === 'minimalist' ? MinimalistHome :
     templateName === 'basico' ? BasicoHome :
-    ClassicHome;
+    templateName === 'classic' ? ClassicHome :
+    ModernHome;
 
   const PropertiesPage =
     templateName === 'luxury' ? LuxuryProperties :
-    templateName === 'modern' ? ModernProperties :
     templateName === 'basico' ? BasicoProperties :
-    ClassicProperties;
+    templateName === 'classic' ? ClassicProperties :
+    ModernProperties; // Minimalist usa o ModernProperties
 
   const PropertyDetailPage =
     templateName === 'luxury' ? LuxuryPropertyDetail :
-    templateName === 'modern' ? ModernPropertyDetail :
     templateName === 'basico' ? BasicoPropertyDetail :
-    ClassicPropertyDetail;
+    templateName === 'classic' ? ClassicPropertyDetail :
+    ModernPropertyDetail; // Minimalist usa o ModernPropertyDetail
 
-  const AboutPage =
-    templateName === 'modern' ? ModernAbout : ClassicAbout;
-
-  const ServicesPage =
-    templateName === 'modern' ? ModernServices : ClassicServices;
-
-  const FinancingPage =
-    templateName === 'modern' ? ModernFinanciamentos : ClassicFinanciamentos;
+  const AboutPage = templateName === 'classic' ? ClassicAbout : ModernAbout;
+  const ServicesPage = templateName === 'classic' ? ClassicServices : ModernServices;
+  const FinancingPage = templateName === 'classic' ? ClassicFinanciamentos : ModernFinanciamentos;
 
   return (
     <Routes>
@@ -97,7 +98,8 @@ export default function TenantRouter() {
         <Route path="sobre" element={<AboutPage />} />
         <Route path="servicos" element={<ServicesPage />} />
         <Route path="financiamentos" element={<FinancingPage />} />
-        <Route path="financiamento" element={<FinancingPage />} />
+        <Route path="financiamento" element={<Navigate to="/financiamentos" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   );
