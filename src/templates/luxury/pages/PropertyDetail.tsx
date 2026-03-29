@@ -54,7 +54,8 @@ const SpecItem: React.FC<{ icon: React.ReactNode; label: string; value: string }
 
 // ─── MAIN ─────────────────────────────────────────────────────
 export default function LuxuryPropertyDetail() {
-  const { slug } = useParams<{ slug: string }>();
+  const { id, slug } = useParams<{ id: string; slug: string }>();
+  const identifier = slug || id;
   const { tenant } = useTenant();
   const navigate = useNavigate();
   const [property, setProperty] = useState<FullProperty | null>(null);
@@ -68,21 +69,21 @@ export default function LuxuryPropertyDetail() {
   const galleryRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!slug || !tenant?.id) return;
+    if (!identifier || !tenant?.id) return;
     setLoading(true);
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
     let query = supabase.from('properties').select('*').eq('company_id', tenant.id);
     if (isUuid) {
-      query = query.eq('id', slug);
+      query = query.eq('id', identifier);
     } else {
-      query = query.eq('slug', slug);
+      query = query.eq('slug', identifier);
     }
     query.single().then(({ data, error }) => {
       if (error || !data) { console.error('Erro ao buscar imóvel:', error); navigate('/imoveis'); return; }
       setProperty(data as FullProperty);
       setLoading(false);
     });
-  }, [slug, tenant?.id]);
+  }, [identifier, tenant?.id]);
 
   // Keyboard navigation no lightbox
   useEffect(() => {

@@ -147,19 +147,34 @@ const AdminContracts: React.FC = () => {
     };
   }, [directUserPlan, isSuperAdmin, user?.company?.plan, user?.company_id, user?.id]);
 
-  const handleDeleteContract = async (id: string) => {
-    if (window.confirm('CUIDADO: Deseja excluir permanentemente este contrato e todas as suas parcelas?')) {
+  const handleDeleteContract = async (id: string, propertyId?: string) => {
+    if (window.confirm('CUIDADO: Deseja excluir permanentemente este contrato e liberar o imóvel de volta para a vitrine?')) {
       try {
-        const { error: instError } = await supabase.from('installments').delete().eq('contract_id', id);
-        if (instError) throw new Error('Erro ao deletar parcelas: ' + instError.message);
+        // 1. Libera o imóvel (Usando APENAS a coluna status)
+        if (propertyId) {
+          const { error: propertyError } = await supabase
+            .from('properties')
+            .update({ status: 'Disponível' })
+            .eq('id', propertyId);
 
+          if (propertyError) {
+            console.error('Erro ao liberar imóvel no banco:', propertyError);
+          }
+        }
+
+        // 2. Limpa as faturas e parcelas
+        await supabase.from('installments').delete().eq('contract_id', id);
+        await supabase.from('invoices').delete().eq('contract_id', id);
+
+        // 3. Exclui o contrato
         const { error: contractError } = await supabase.from('contracts').delete().eq('id', id);
-        if (contractError) throw new Error('Erro ao deletar contrato: ' + contractError.message);
+        if (contractError) throw contractError;
 
+        alert('Contrato excluído com sucesso! O imóvel voltou a ficar Disponível.');
         fetchContracts();
       } catch (error: any) {
         console.error('Falha na exclusão:', error);
-        alert(error.message || 'Falha ao excluir o contrato. Verifique as permissões.');
+        alert('Falha ao excluir o contrato: ' + error.message);
       }
     }
   };
@@ -603,7 +618,7 @@ const AdminContracts: React.FC = () => {
                             {user?.role === 'admin' && (
                               <>
                                 <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
-                                <button onClick={() => handleDeleteContract(contract.id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
+                                <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
                               </>
                             )}
                           </div>
@@ -702,7 +717,7 @@ const AdminContracts: React.FC = () => {
                                 {user?.role === 'admin' && (
                                   <>
                                     <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
-                                    <button onClick={() => handleDeleteContract(contract.id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
+                                    <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
                                   </>
                                 )}
                               </div>

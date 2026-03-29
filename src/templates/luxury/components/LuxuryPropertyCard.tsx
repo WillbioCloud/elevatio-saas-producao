@@ -49,7 +49,7 @@ export default function LuxuryPropertyCard({ property, index = 0, variant = 'def
       `}</style>
 
       <Link
-        to={`/imoveis/${property.slug || property.id}`}
+        to={`/imovel/${property.slug || property.id}`}
         className={`lx-card-${property.id}`}
         style={{ animation: `lx-card-in 0.5s ease ${index * 0.08}s both` }}
       >

@@ -436,7 +436,8 @@ const AdminProperties: React.FC = () => {
     if (listingFilter === 'all' || listingFilter === 'sale' || listingFilter === 'rent') {
       if (p.status === 'Vendido' || p.status === 'Alugado') return false;
     } else if (listingFilter === 'archived') {
-      if (p.status !== 'Vendido') return false;
+      // Agora os imóveis Alugados e Inativos também aparecem nos Arquivados
+      if (p.status !== 'Vendido' && p.status !== 'Alugado' && p.status !== 'Inativo') return false;
     }
 
     return matchesSearch && matchesType && matchesListingType;

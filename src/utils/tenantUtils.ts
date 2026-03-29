@@ -12,12 +12,12 @@ export const getSecondaryColor = (tenant: Company | null | undefined): string =>
 export const getTenantName = (tenant: Company | null | undefined): string =>
   tenant?.name || 'Imobiliária';
 
-// Correção Crítica da Logo: A logo fica na RAIZ de tenant (tenant.logo_url) e não dentro de site_data!
+// A MÁGICA: Procura na raiz E no site_data para garantir que pega a logo do AdminSiteBuilder
 export const getTenantLogo = (tenant: Company | null | undefined): string =>
-  tenant?.logo_url || '/logo-placeholder.png';
+  tenant?.logo_url || getSiteData(tenant).logo_url || '/logo-placeholder.png';
 
 export const getTenantLogoWhite = (tenant: Company | null | undefined): string =>
-  tenant?.logo_white_url || tenant?.logo_url || '/logo-placeholder.png';
+  tenant?.logo_white_url || getSiteData(tenant).logo_white_url || getTenantLogo(tenant);
 
 export const getTenantEmail = (tenant: Company | null | undefined): string =>
   tenant?.email || getSiteData(tenant).contact?.email || '';
