@@ -22,6 +22,7 @@ import LuxuryLayout from './luxury/LuxuryLayout';
 import LuxuryHome from './luxury/pages/Home';
 import LuxuryProperties from './luxury/pages/Properties';
 import LuxuryPropertyDetail from './luxury/pages/PropertyDetail';
+import LuxuryServices from './luxury/pages/Services';
 import LuxuryAbout from './luxury/pages/About';
 
 // Minimalist (Usa as páginas do Modern como fallback onde não tem próprias)
@@ -89,7 +90,11 @@ export default function TenantRouter() {
     templateName === 'luxury' ? LuxuryAbout :
     templateName === 'classic' ? ClassicAbout :
     ModernAbout;
-  const ServicesPage = templateName === 'classic' ? ClassicServices : ModernServices;
+  const ServicesPage = 
+    templateName === 'luxury' ? LuxuryServices :
+    templateName === 'classic' ? ClassicServices :
+    ModernServices;
+  
   const FinancingPage = templateName === 'classic' ? ClassicFinanciamentos : ModernFinanciamentos;
 
   return (

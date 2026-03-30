@@ -8,6 +8,7 @@ import {
   XCircle,
   ArrowRight,
   ArrowLeft,
+  ArrowUpRight,
   Search,
   Home,
   Bed,
@@ -126,6 +127,7 @@ import {
   BrainCircuit,
   UserCheck,
   Key,
+  ShowerHead,
 } from 'lucide-react';
 
 const Google = (props: ComponentPropsWithoutRef<'svg'>) => (
@@ -162,6 +164,7 @@ export const Icons = {
   XCircle,
   ArrowRight,
   ArrowLeft,
+  ArrowUpRight,
   Search,
   Home,
   Bed,
@@ -285,4 +288,5 @@ export const Icons = {
   BrainCircuit,
   UserCheck,
   Key,
+  ShowerHead,
 };

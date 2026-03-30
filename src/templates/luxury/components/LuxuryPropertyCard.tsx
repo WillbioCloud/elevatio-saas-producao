@@ -6,8 +6,10 @@ export interface LuxuryProperty {
   title: string;
   slug: string;
   price: number;
+  condominium?: number | null;
+  iptu?: number | null;
   type: string;
-  listing_type: 'sale' | 'rent';
+  listing_type: string;
   bedrooms: number;
   bathrooms: number;
   area: number;
@@ -24,129 +26,120 @@ export interface LuxuryProperty {
 interface LuxuryPropertyCardProps {
   property: LuxuryProperty;
   index?: number;
-  variant?: 'default' | 'featured'; // featured = card maior para destaque
+  variant?: 'default' | 'featured';
+  viewMode?: 'grid' | 'list';
 }
 
-const formatPrice = (price: number, listingType: 'sale' | 'rent') => {
-  const formatted = price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
-  return listingType === 'rent' ? `${formatted}/mês` : formatted;
+const formatTotalRentPrice = (property: LuxuryProperty) => {
+  const normalized = String(property.listing_type || '').toLowerCase();
+  const isRent =
+    normalized === 'rent' ||
+    normalized.includes('alug') ||
+    normalized.includes('venda e aluguel');
+
+  const totalPrice = isRent
+    ? (property.price || 0) + (property.condominium || 0) + (property.iptu || 0)
+    : property.price || 0;
+
+  const formatted = totalPrice.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    maximumFractionDigits: 0,
+  });
+
+  return isRent ? `${formatted}/mês` : formatted;
 };
 
-export default function LuxuryPropertyCard({ property, index = 0, variant = 'default' }: LuxuryPropertyCardProps) {
-  const img = property.images?.[0];
-  const isFeatured = variant === 'featured';
+export default function LuxuryPropertyCard({
+  property,
+  index = 0,
+  variant = 'default',
+  viewMode = 'grid',
+}: LuxuryPropertyCardProps) {
+  const isList = viewMode === 'list';
+  const normalizedListingType = String(property.listing_type || '').toLowerCase();
+  const listingLabel =
+    normalizedListingType === 'sale' || normalizedListingType === 'venda'
+      ? 'Venda'
+      : normalizedListingType === 'rent' || normalizedListingType === 'aluguel'
+        ? 'Locação'
+        : 'Venda/Locação';
 
   return (
     <>
       <style>{`
-        .lx-card-${property.id} { display: block; text-decoration: none; color: inherit; }
-        .lx-card-${property.id}:hover .lx-card-img { transform: scale(1.04); }
-        .lx-card-${property.id}:hover .lx-card-arrow { opacity: 1; transform: translateX(0); }
+        .lx-card-${property.id} {
+          animation: lx-card-in 0.55s ease ${index * 0.08}s both;
+        }
+
         @keyframes lx-card-in {
-          from { opacity: 0; transform: translateY(20px); }
-          to   { opacity: 1; transform: translateY(0); }
+          from {
+            opacity: 0;
+            transform: translateY(22px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
       `}</style>
 
       <Link
         to={`/imovel/${property.slug || property.id}`}
-        className={`lx-card-${property.id}`}
-        style={{ animation: `lx-card-in 0.5s ease ${index * 0.08}s both` }}
+        className={`lx-card-${property.id} group cursor-pointer block h-full ${
+          isList 
+            ? 'flex flex-col md:flex-row gap-6 md:items-center bg-[#111] p-4 rounded-[2rem] border border-white/5 hover:border-white/10 transition-colors' 
+            : 'flex flex-col bg-[#111] p-4 rounded-[2rem] border border-white/5 hover:border-white/10 transition-colors'
+        }`}
       >
-        {/* Imagem */}
-        <div style={{
-          position: 'relative', overflow: 'hidden', borderRadius: 20,
-          aspectRatio: isFeatured ? '16/10' : '4/3',
-          background: '#161616', marginBottom: 20,
-        }}>
-          {img ? (
+        {/* IMAGEM: Fica 4/3 no Grid. Na Lista, fica limitada a md:w-72 */}
+        <div 
+          className={`relative overflow-hidden bg-neutral-900 border border-white/5 flex-shrink-0 ${
+            isList 
+              ? 'w-full md:w-72 aspect-[4/3] rounded-[1.5rem]' 
+              : 'w-full aspect-[4/3] rounded-[1.5rem] mb-6'
+          }`}
+        >
+          {property.images?.[0] ? (
             <img
-              src={img}
+              src={property.images[0]}
               alt={property.title}
-              className="lx-card-img"
-              style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.6s ease', display: 'block' }}
+              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
             />
           ) : (
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#161616' }}>
-              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity="0.15">
-                <path d="M6 18l18-14 18 14v26a4 4 0 01-4 4H10a4 4 0 01-4-4V18z" stroke="white" strokeWidth="2"/>
-                <rect x="17" y="30" width="14" height="18" rx="2" stroke="white" strokeWidth="2"/>
-              </svg>
+            <div className="w-full h-full flex items-center justify-center text-neutral-800">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
             </div>
           )}
 
-          {/* Badges */}
-          <div style={{ position: 'absolute', top: 14, left: 14, display: 'flex', gap: 6 }}>
-            {property.featured && (
-              <span style={{ padding: '4px 10px', borderRadius: 100, background: '#fff', color: '#0e0e0e', fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                Destaque
-              </span>
-            )}
-            <span style={{ padding: '4px 10px', borderRadius: 100, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)', color: 'rgba(255,255,255,0.8)', fontFamily: "'DM Sans', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', border: '1px solid rgba(255,255,255,0.1)' }}>
-              {property.listing_type === 'rent' ? 'Aluguel' : 'Venda'}
-            </span>
-          </div>
-
-          {/* Preço sobreposto */}
-          <div style={{ position: 'absolute', bottom: 14, left: 14 }}>
-            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: isFeatured ? 22 : 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.02em', textShadow: '0 1px 12px rgba(0,0,0,0.8)' }}>
-              {formatPrice(property.price, property.listing_type)}
-            </div>
-          </div>
-
-          {/* Arrow hover */}
-          <div
-            className="lx-card-arrow"
-            style={{ position: 'absolute', bottom: 14, right: 14, width: 38, height: 38, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transform: 'translateX(8px)', transition: 'all 0.3s ease' }}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 7h10M7 2l5 5-5 5" stroke="#0e0e0e" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+          {/* Badge Venda/Aluguel */}
+          <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-md border border-white/10 text-white text-xs px-4 py-2 rounded-full font-medium tracking-wide uppercase">
+            {listingLabel}
           </div>
         </div>
 
-        {/* Conteúdo */}
-        <div>
-          <h3 style={{ fontFamily: "'DM Sans', sans-serif", fontSize: isFeatured ? 20 : 17, fontWeight: 600, color: '#fff', marginBottom: 8, lineHeight: 1.3, letterSpacing: '-0.01em' }}>
-            {property.title}
-          </h3>
-
-          {/* Localização */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="rgba(255,255,255,0.3)">
-              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/>
-            </svg>
-            <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.35)' }}>
-              {property.neighborhood}{property.neighborhood && property.city ? ', ' : ''}{property.city}
-            </span>
+        {/* CONTEÚDO */}
+        <div className="flex flex-col flex-grow w-full">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-2 gap-2">
+            <h3 className={`font-medium line-clamp-2 pr-4 min-h-[56px] ${isList ? 'text-2xl' : 'text-xl'}`}>
+              {property.title}
+            </h3>
+            <div className={`font-light whitespace-nowrap text-white flex-shrink-0 ${isList ? 'text-2xl' : 'text-lg'}`}>
+              {formatTotalRentPrice(property)}
+            </div>
           </div>
 
           {/* Specs */}
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            {property.bedrooms > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,0.25)">
-                  <path d="M20 9.556V3h-2v2H6V3H4v6.557C2.81 10.25 2 11.526 2 13v4h1l1 4h1l1-4h12l1 4h1l1-4h1v-4c0-1.474-.811-2.75-2-3.444zM11 9H6V7h5v2zm7 0h-5V7h5v2z"/>
-                </svg>
-                <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>{property.bedrooms} quartos</span>
-              </div>
-            )}
-            {property.area > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,0.25)">
-                  <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
-                </svg>
-                <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>{property.area} m²</span>
-              </div>
-            )}
-            {property.garage > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="rgba(255,255,255,0.25)">
-                  <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
-                </svg>
-                <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>{property.garage} vagas</span>
-              </div>
-            )}
+          <div className={`space-y-2 text-sm text-neutral-400 mt-auto pt-4 ${isList ? 'mt-4' : 'border-t border-white/10'}`}>
+            <div className="flex items-center gap-2 line-clamp-1">
+              <svg className="w-4 h-4 flex-shrink-0 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" /></svg>
+              {property.neighborhood}, {property.city}
+            </div>
+            <div className="flex items-center gap-4">
+              <span className="flex items-center gap-2"><svg className="w-4 h-4 flex-shrink-0 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/></svg> {property.bedrooms}</span>
+              <span className="flex items-center gap-2"><svg className="w-4 h-4 flex-shrink-0 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6 6.5 3.5a1.5 1.5 0 0 0-1-.5C4.683 3 4 3.683 4 4.5V17a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><line x1="10" x2="8" y1="5" y2="7"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="7" x2="7" y1="19" y2="21"/><line x1="17" x2="17" y1="19" y2="21"/></svg> {property.bathrooms}</span>
+              <span className="flex items-center gap-2"><svg className="w-4 h-4 flex-shrink-0 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg> {property.area} m²</span>
+            </div>
           </div>
         </div>
       </Link>
