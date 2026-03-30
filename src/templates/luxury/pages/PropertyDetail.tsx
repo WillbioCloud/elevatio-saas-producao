@@ -266,6 +266,30 @@ export default function LuxuryPropertyDetail() {
     }
   };
 
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = async () => {
+    if (!property) return;
+
+    const shareData = {
+      title: property.title,
+      text: `Confira este imóvel: ${property.title}`,
+      url: window.location.href,
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        console.error('Erro ao compartilhar', err);
+      }
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-black pt-32 pb-20 px-6">
@@ -348,13 +372,57 @@ export default function LuxuryPropertyDetail() {
   return (
     <>
       <div className="pt-32 pb-20 px-6 max-w-[1400px] mx-auto selection:bg-white selection:text-black">
-        <Link
-          to="/imoveis"
-          className="inline-flex items-center gap-2 text-neutral-400 hover:text-white mb-8 transition-colors"
-        >
-          <Icons.ArrowLeft className="w-4 h-4" />
-          Voltar para Imoveis
-        </Link>
+        {/* Barra de Navegação no Topo (Voltar + Compartilhar) */}
+        <div className="flex justify-between items-center mb-12">
+          <Link
+            to="/imoveis"
+            className="inline-flex items-center gap-2 text-neutral-400 hover:text-white transition-colors text-sm font-medium"
+          >
+            <Icons.ArrowLeft className="w-4 h-4" />
+            Voltar para imóveis
+          </Link>
+
+          <button
+            onClick={handleShare}
+            className="inline-flex items-center gap-2 text-neutral-300 hover:text-white transition-colors text-sm font-medium px-5 py-2.5 rounded-full border border-white/10 bg-[#111] hover:bg-white/10"
+          >
+            {copied ? (
+              <>
+                <svg
+                  className="w-4 h-4 text-green-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span className="text-green-400">Link copiado!</span>
+              </>
+            ) : (
+              <>
+                <svg
+                  className="w-4 h-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                </svg>
+                Compartilhar Imóvel
+              </>
+            )}
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-16">
           <button
@@ -411,7 +479,7 @@ export default function LuxuryPropertyDetail() {
               <div className="text-left md:text-right">
                 <div className="text-3xl font-medium">{formatCurrency(displayPrice)}</div>
                 <div className="text-neutral-400 text-sm mt-1">
-                  {isRent ? 'Inclui pacote quando informado' : listingLabel}
+                  {isRent ? 'Inclui pacote quando informado(Condominio, etc.)' : listingLabel}
                 </div>
               </div>
             </div>
