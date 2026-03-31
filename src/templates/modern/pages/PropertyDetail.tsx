@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { MapContainer, Marker, TileLayer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -49,6 +49,7 @@ const PropertyDetail: React.FC = () => {
 
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const thumbnailRefs = useRef<(HTMLImageElement | null)[]>([]);
   const primaryColor = getPrimaryColor(tenant);
 
   useEffect(() => {
@@ -128,6 +129,49 @@ const PropertyDetail: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isGalleryOpen, property]);
+
+  // Atualiza o SEO (Título da Aba)
+  useEffect(() => {
+    if (property) {
+      document.title = `${property.title} | Imóveis`;
+    }
+  }, [property]);
+
+  // Efeito para rolar o carrossel de miniaturas automaticamente
+  useEffect(() => {
+    if (isGalleryOpen && thumbnailRefs.current[currentImageIndex]) {
+      thumbnailRefs.current[currentImageIndex]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      });
+    }
+  }, [currentImageIndex, isGalleryOpen]);
+
+  const rentTotal = property && property.listing_type === 'rent'
+    ? (property.price || 0) + (property.iptu || 0) + (property.condominium || 0)
+    : 0;
+
+  const handleShare = async () => {
+    if (!property) return;
+    // Usamos a URL atual do navegador para funcionar perfeitamente tanto no localhost quanto em produção
+    const shareUrl = window.location.href;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: property.title,
+          text: `Confira este imóvel: ${property.title}`,
+          url: shareUrl,
+        });
+      } catch (error) {
+        console.log('Erro ao compartilhar', error);
+      }
+    } else {
+      navigator.clipboard.writeText(shareUrl);
+      alert('Link copiado para a área de transferência!');
+    }
+  };
 
   const galleryImages = useMemo(
     () => (property?.images && property.images.length > 0 ? property.images : ['https://placehold.co/1200x800?text=Sem+Foto']),
@@ -269,19 +313,30 @@ const PropertyDetail: React.FC = () => {
           </div>
 
           {galleryImages.length > 1 && (
-            <div className="p-4 md:p-6 bg-black/50 backdrop-blur-md z-20">
-              <div className="flex gap-3 overflow-x-auto snap-x pb-2 justify-start md:justify-center [&::-webkit-scrollbar]:hidden">
-                {galleryImages.map((img, idx) => (
+            <div 
+              className="p-4 md:p-6 bg-black/50 backdrop-blur-md z-20 w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* REMOVIDO o md:justify-center e adicionado px-4 md:px-8 para evitar o negative overflow */}
+              <div className="flex gap-3 overflow-x-auto snap-x pb-4 justify-start px-4 md:px-8 [&::-webkit-scrollbar]:hidden">
+                {galleryImages.map((image, idx) => (
                   <img
                     key={idx}
-                    src={img}
+                    ref={(element) => {
+                      // O TypeScript pode reclamar se não tipar o element corretamente, mas o React aceita
+                      if (element) thumbnailRefs.current[idx] = element;
+                    }}
+                    src={image}
                     alt={`Miniatura ${idx + 1}`}
-                    className={`h-16 md:h-20 w-24 md:w-32 object-cover cursor-pointer rounded-xl snap-center transition-all duration-300 ${
+                    className={`h-16 md:h-20 w-24 md:w-32 flex-shrink-0 object-cover cursor-pointer rounded-xl snap-center transition-all duration-300 ${
                       idx === currentImageIndex
-                        ? 'border-2 border-white opacity-100 scale-105 shadow-[0_0_15px_rgba(255,255,255,0.3)]'
+                        ? 'border-2 border-brand-500 opacity-100 scale-105 shadow-[0_0_15px_rgba(14,165,233,0.3)]'
                         : 'opacity-40 hover:opacity-100 border border-transparent'
                     }`}
-                    onClick={() => setCurrentImageIndex(idx)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentImageIndex(idx);
+                    }}
                   />
                 ))}
               </div>
@@ -308,12 +363,23 @@ const PropertyDetail: React.FC = () => {
             <span className="text-slate-900 truncate max-w-[200px]">{property.location.city}</span>
           </nav>
 
-          <h1 className="text-3xl md:text-5xl font-semibold text-slate-900 leading-tight mb-2">
-            {property.title}
-          </h1>
-          <div className="flex items-center text-slate-500 gap-2 text-lg font-light">
-            <Icons.MapPin size={18} />
-            <span>{property.location.neighborhood}, {property.location.city}</span>
+          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-2">
+            <div>
+              <h1 className="text-3xl md:text-5xl font-semibold text-slate-900 leading-tight mb-2">
+                {property.title}
+              </h1>
+              <div className="flex items-center text-slate-500 gap-2 text-lg font-light">
+                <Icons.MapPin size={18} />
+                <span>{property.location.neighborhood}, {property.location.city}</span>
+              </div>
+            </div>
+            <button
+              onClick={handleShare}
+              className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-brand-600 px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm w-fit"
+            >
+              <Icons.Share2 size={18} />
+              <span className="md:hidden lg:inline">Compartilhar</span>
+            </button>
           </div>
         </div>
       </div>
@@ -479,13 +545,15 @@ const PropertyDetail: React.FC = () => {
             <div className="lg:sticky lg:top-8">
               <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-2xl border border-slate-200">
                 <div className="mb-8">
-                  <p className="text-sm text-slate-500 font-medium uppercase tracking-wide mb-1">
-                    {isRent ? 'Aluguel' : 'Preço de Venda'}
-                  </p>
                   <h2 className="text-4xl font-bold text-slate-900 flex items-baseline gap-1">
-                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(property.price)}
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(isRent && rentTotal > 0 ? rentTotal : property.price)}
                     {isRent && <span className="text-xl text-slate-500 font-medium">/mês</span>}
                   </h2>
+                  <div className="text-sm text-slate-500 font-medium tracking-wide mb-1">
+                    {isRent ? 'Inclui no pacote quando informado(Condominio, etc.)' : 'Preço de Venda'}
+                  </div>
+
+                  {/* Detalhamento removido conforme solicitação. Mostramos apenas o valor total acima. */}
 
                   {property.financing_available && (
                     <div className="mt-4 bg-emerald-50 border border-emerald-100 rounded-2xl p-4">

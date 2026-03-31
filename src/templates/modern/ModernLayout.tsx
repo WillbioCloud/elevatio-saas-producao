@@ -41,13 +41,38 @@ const ModernLayout: React.FC = () => {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
-  const isAdmin = location.pathname.startsWith('/admin');
-  if (isAdmin) return <Outlet />;
-
   const companyName = getTenantName(tenant);
   const primaryColor = getPrimaryColor(tenant);
   const logoUrl = getTenantLogo(tenant);
   const footerLogoUrl = getTenantLogoWhite(tenant);
+  
+  // Extrai o siteData para pegarmos a logo secundária
+  const siteData = typeof tenant?.site_data === 'string'
+    ? JSON.parse(tenant.site_data)
+    : tenant?.site_data || {};
+  const logoAltUrl = siteData.logo_alt_url || logoUrl; // Fallback para a logo principal se não houver secundária
+  // Troca dinâmica de Favicon e Título do Site (Multi-tenant)
+  useEffect(() => {
+    // 1. Atualiza o Título da Aba
+    if (companyName) {
+      document.title = `${companyName} | Imóveis`;
+    }
+
+    // 2. Atualiza o Favicon da Aba
+    if (siteData.favicon_url) {
+      let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+      }
+      link.href = siteData.favicon_url;
+    }
+  }, [siteData.favicon_url, companyName]);
+
+  const isAdmin = location.pathname.startsWith('/admin');
+  if (isAdmin) return <Outlet />;
+
   const contactPhone = getTenantPhone(tenant);
   const contactEmail = getTenantEmail(tenant);
   const contactAddress = getTenantAddress(tenant);
@@ -106,15 +131,12 @@ const ModernLayout: React.FC = () => {
 
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center gap-4">
-          <Link to="/" className="flex items-center gap-3 group min-w-0">
+          <Link to="/" className="flex items-center group min-w-0">
             <img
-              src={logoUrl}
+              src={isScrolled ? logoAltUrl : logoUrl}
               alt={companyName}
-              className={`w-auto object-contain transition-all duration-300 ${isScrolled ? 'h-10' : 'h-11'}`}
+              className={`w-auto object-contain transition-all duration-300 ${isScrolled ? 'h-9' : 'h-12'}`}
             />
-            <span className="hidden sm:block text-sm md:text-base font-semibold text-slate-800 truncate">
-              {companyName}
-            </span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-8 font-medium text-sm">

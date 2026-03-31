@@ -9,7 +9,7 @@ import GamificationModal from '../components/GamificationModal';
 import FidelityTermsModal from '../components/FidelityTermsModal';
 import { uploadCompanyAsset } from '../lib/storage';
 import { SiteData } from '../types';
-import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle, ImageOff, Check } from 'lucide-react';
 import { useProperties } from '../hooks/useProperties';
 import { generateZapXML } from '../utils/zapXmlGenerator';
 
@@ -45,6 +45,36 @@ interface Contract {
   domain_renewal_date?: string | null;
   companies?: { plan?: string };
 }
+
+type SitePartner = NonNullable<SiteData['partners']>[number];
+
+const normalizePartners = (partners: unknown): SitePartner[] => {
+  if (!Array.isArray(partners)) return [];
+
+  return partners.reduce<SitePartner[]>((acc, partner, index) => {
+    if (!partner) return acc;
+
+    if (typeof partner === 'string') {
+      acc.push({
+        id: `legacy-partner-${index}`,
+        name: '',
+        logo_url: partner,
+      });
+      return acc;
+    }
+
+    if (typeof partner === 'object') {
+      const candidate = partner as Partial<SitePartner>;
+      acc.push({
+        id: candidate.id || `partner-${index}`,
+        name: candidate.name || '',
+        logo_url: candidate.logo_url || '',
+      });
+    }
+
+    return acc;
+  }, []);
+};
 
 const compressAvatar = (file: File | Blob, maxSize = 512): Promise<Blob> => {
   return new Promise((resolve, reject) => {
@@ -289,11 +319,12 @@ const AdminConfig: React.FC = () => {
     }
   }, [acceptFidelity]);
   const [siteSubTab, setSiteSubTab] = useState<'templates' | 'identity' | 'hero' | 'about' | 'social'>('templates');
-  const [siteData, setSiteData] = useState<SiteData>({
+  const [siteData, setSiteData] = useState<SiteData & { hero_video_url?: string | null }>({
     logo_url: null,
     logo_alt_url: null,
     favicon_url: null,
     hero_image_url: null,
+    hero_video_url: null,
     about_image_url: null,
     primary_color: '#0ea5e9',
     secondary_color: '#1e293b',
@@ -395,6 +426,9 @@ const AdminConfig: React.FC = () => {
         setSiteData(prev => ({
           ...prev,
           ...data.site_data,
+          partners: Array.isArray(data.site_data.partners)
+            ? normalizePartners(data.site_data.partners)
+            : prev.partners,
           contact: { ...prev.contact, ...data.site_data.contact },
           social: { ...prev.social, ...data.site_data.social },
           seo: { ...prev.seo, ...data.site_data.seo },
@@ -2434,20 +2468,119 @@ const AdminConfig: React.FC = () => {
 
               <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Seções do Site</h3>
-                <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <div>
-                    <p className="font-bold text-slate-800 dark:text-slate-200">Exibir Seção de Parcerias</p>
-                    <p className="text-sm text-slate-500">Mostra o carrossel contínuo de logomarcas na página inicial.</p>
+                <div className="flex flex-col gap-6">
+                  {/* Toggle Parcerias */}
+                  <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <div>
+                      <p className="font-bold text-slate-800 dark:text-slate-200">Exibir Seção de Parcerias</p>
+                      <p className="text-sm text-slate-500">Mostra o carrossel contínuo de logomarcas (Construtoras, Bancos, etc) no final da página inicial.</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer hover:scale-105 transition-transform">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={siteData.show_partnerships !== false}
+                        onChange={(e) => setSiteData({...siteData, show_partnerships: e.target.checked})}
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-500"></div>
+                    </label>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer hover:scale-105 transition-transform">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={siteData.show_partnerships !== false}
-                      onChange={(e) => setSiteData({...siteData, show_partnerships: e.target.checked})}
-                    />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-500"></div>
-                  </label>
+
+                  {/* Gerenciador de Parceiros */}
+                  {siteData.show_partnerships !== false && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-6 bg-white dark:bg-dark-card">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h4 className="font-bold text-slate-800 dark:text-white">Gerenciar Parceiros</h4>
+                          <p className="text-xs text-slate-500">Adicione as empresas parceiras da sua imobiliária.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newPartner = { id: Date.now().toString(), name: '', logo_url: '' };
+                            setSiteData(prev => ({ ...prev, partners: [...(prev.partners || []), newPartner] }));
+                          }}
+                          className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-bold rounded-lg hover:bg-slate-800 flex items-center gap-2"
+                        >
+                          <Icons.Plus size={16} /> Adicionar
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {(!siteData.partners || siteData.partners.length === 0) ? (
+                          <div className="text-center py-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-300 dark:border-slate-600">
+                            <p className="text-sm text-slate-500">Nenhum parceiro cadastrado ainda.</p>
+                          </div>
+                        ) : (
+                          siteData.partners.map((partner) => (
+                            <div key={partner.id} className="flex items-center gap-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                              {/* Preview da Logo */}
+                              <div className="w-16 h-16 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden relative group shrink-0">
+                                {partner.logo_url ? (
+                                  <img src={partner.logo_url} alt="Logo" className="max-w-full max-h-full object-contain p-1" />
+                                ) : (
+                                  <Icons.Image size={20} className="text-slate-400" />
+                                )}
+                                <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
+                                  <Icons.Upload size={16} className="text-white" />
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={async (e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file || !user?.company_id) return;
+                                      try {
+                                        addToast('Enviando logo...', 'info');
+                                        const url = await uploadCompanyAsset(file, user.company_id, 'logo_alt');
+                                        setSiteData(prev => ({
+                                          ...prev,
+                                          partners: (prev.partners || []).map(p => p.id === partner.id ? { ...p, logo_url: url } : p)
+                                        }));
+                                        addToast('Logo carregada com sucesso!', 'success');
+                                      } catch (err) {
+                                        addToast('Erro ao carregar logo.', 'error');
+                                      }
+                                    }}
+                                  />
+                                </label>
+                              </div>
+
+                              {/* Nome do Parceiro */}
+                              <div className="flex-1">
+                                <input
+                                  type="text"
+                                  placeholder="Nome da Empresa (ex: Caixa, Cyrela...)"
+                                  value={partner.name}
+                                  onChange={(e) => {
+                                    setSiteData(prev => ({
+                                      ...prev,
+                                      partners: (prev.partners || []).map(p => p.id === partner.id ? { ...p, name: e.target.value } : p)
+                                    }));
+                                  }}
+                                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500"
+                                />
+                              </div>
+
+                              {/* Remover */}
+                              <button
+                                onClick={() => {
+                                  setSiteData(prev => ({
+                                    ...prev,
+                                    partners: (prev.partners || []).filter(p => p.id !== partner.id)
+                                  }));
+                                }}
+                                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
+                                title="Remover parceiro"
+                              >
+                                <Icons.Trash size={18} />
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2488,15 +2621,77 @@ const AdminConfig: React.FC = () => {
                   </div>
                 </div>
 
-                <div>
-                  <ImageUploader
-                    label="Imagem de Fundo (Capa da Home)"
-                    currentUrl={siteData.hero_image_url}
-                    onUpload={(url) => setSiteData({ ...siteData, hero_image_url: url })}
-                    assetType="hero"
-                    companyId={user?.company_id || ''}
-                    aspectRatio="aspect-video"
-                  />
+                <div className="space-y-6">
+                  <div>
+                    <ImageUploader
+                      label="Imagem de Fundo (Capa da Home)"
+                      currentUrl={siteData.hero_image_url}
+                      onUpload={(url) => setSiteData({ ...siteData, hero_image_url: url })}
+                      assetType="hero"
+                      companyId={user?.company_id || ''}
+                      aspectRatio="aspect-video"
+                    />
+                  </div>
+
+                  <div className="pt-6 border-t border-slate-200 dark:border-white/10">
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3 flex items-center justify-between">
+                      <span>Vídeo de Fundo <span className="text-[10px] bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full ml-2 font-bold uppercase tracking-wider">Modern / Luxury</span></span>
+                    </label>
+                    <p className="text-xs text-slate-500 mb-4">
+                      Selecione um vídeo cinematográfico para o topo do site. Ao selecionar, o vídeo sobrepõe a imagem estática. Passe o mouse para pré-visualizar.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { id: '', label: 'Sem Vídeo (Usar Imagem)' },
+                        { id: 'https://res.cloudinary.com/dxplpg36m/video/upload/v1774895674/V%C3%ADdeo_Imobili%C3%A1rio_Cinematogr%C3%A1fico_de_Im%C3%B3vel_Planejado_xjaxsv.mp4', label: 'Imóvel Planejado' },
+                        { id: 'https://res.cloudinary.com/dxplpg36m/video/upload/v1770259664/Cria%C3%A7%C3%A3o_de_V%C3%ADdeo_Imobili%C3%A1rio_de_Luxo_cfgwew.mp4', label: 'Casa de Luxo' },
+                        { id: 'https://res.cloudinary.com/dxplpg36m/video/upload/v1774913646/Novo_V%C3%ADdeo_Gerado_m3dn31.mp4', label: 'Fachada Moderna' },
+                        { id: 'https://res.cloudinary.com/dxplpg36m/video/upload/v1774913646/V%C3%ADdeo_em_Apartamento_Gerado_pxwkhl.mp4', label: 'Apartamento' }
+                      ].map((video) => {
+                        const isSelected = siteData.hero_video_url === video.id || (!video.id && !siteData.hero_video_url);
+                        return (
+                          <div
+                            key={video.label}
+                            onClick={() => setSiteData({ ...siteData, hero_video_url: video.id })}
+                            className={`cursor-pointer rounded-xl border-2 overflow-hidden transition-all relative group ${
+                              isSelected ? 'border-brand-500 ring-2 ring-brand-500/20' : 'border-slate-200 dark:border-slate-700 hover:border-brand-300'
+                            }`}
+                          >
+                            {video.id ? (
+                              <div className="aspect-video bg-black relative">
+                                <video
+                                  src={video.id}
+                                  className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity"
+                                  muted
+                                  loop
+                                  playsInline
+                                  onMouseEnter={(e) => e.currentTarget.play()}
+                                  onMouseLeave={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
+                                />
+                                {isSelected && (
+                                  <div className="absolute top-2 right-2 bg-brand-500 text-white rounded-full p-1 shadow-md">
+                                    <Check size={12} />
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="aspect-video bg-slate-100 dark:bg-slate-800 flex items-center justify-center relative">
+                                <ImageOff size={24} className="text-slate-400" />
+                                {isSelected && (
+                                  <div className="absolute top-2 right-2 bg-brand-500 text-white rounded-full p-1 shadow-md">
+                                    <Check size={12} />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            <div className="p-2 bg-white dark:bg-dark-card text-center border-t border-slate-100 dark:border-slate-800">
+                              <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate">{video.label}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

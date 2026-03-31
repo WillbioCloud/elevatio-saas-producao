@@ -163,6 +163,32 @@ export default function LuxuryPropertyDetail() {
     };
   }, [identifier, tenant?.id]);
 
+  // ─── Efeito de SEO Dinâmico ─────────────────────────────────
+  useEffect(() => {
+    if (!property) return;
+
+    // Atualiza o Título da Aba do Navegador
+    const baseTitle = tenant?.name || 'Imóveis de Luxo';
+    document.title = `${property.title} | ${baseTitle}`;
+
+    // Atualiza a Meta Description (útil para o Googlebot)
+    let metaDescription = document.querySelector('meta[name="description"]');
+    if (!metaDescription) {
+      metaDescription = document.createElement('meta');
+      metaDescription.setAttribute('name', 'description');
+      document.head.appendChild(metaDescription);
+    }
+
+    // Pega as primeiras 150 letras da descrição para o SEO
+    const cleanDesc = property.description?.replace(/<[^>]+>/g, '').substring(0, 150) + '...';
+    metaDescription.setAttribute('content', cleanDesc);
+
+    // Limpeza ao desmontar o componente (voltar ao normal se o cliente sair da página)
+    return () => {
+      document.title = baseTitle;
+    };
+  }, [property, tenant?.name]);
+
   useEffect(() => {
     if (!galleryOpen) return;
 
@@ -271,10 +297,17 @@ export default function LuxuryPropertyDetail() {
   const handleShare = async () => {
     if (!property) return;
 
+    // ATENÇÃO: Substitua pelo seu Reference ID do Supabase
+    const supabaseProjectRef = 'udqychpxnbdaxlorbhyw';
+
+    // Monta a URL da Edge Function enviando o ID do imóvel e a URL de origem
+    const originUrl = window.location.origin;
+    const botBaitUrl = `https://${supabaseProjectRef}.supabase.co/functions/v1/og-imovel?id=${property.id}&tenant_url=${originUrl}`;
+
     const shareData = {
       title: property.title,
-      text: `Confira este imóvel: ${property.title}`,
-      url: window.location.href,
+      text: `Confira este imóvel incrível: ${property.title}`,
+      url: botBaitUrl,
     };
 
     if (navigator.share) {
@@ -284,7 +317,8 @@ export default function LuxuryPropertyDetail() {
         console.error('Erro ao compartilhar', err);
       }
     } else {
-      navigator.clipboard.writeText(window.location.href);
+      // No desktop, copia o link da Edge Function
+      navigator.clipboard.writeText(botBaitUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }

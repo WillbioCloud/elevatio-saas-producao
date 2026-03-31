@@ -1,115 +1,127 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { Route, Routes, Navigate } from 'react-router-dom';
 import { useTenant } from '../contexts/TenantContext';
+import { templatesRegistry } from './templateRegistry';
+
+// 🚀 LAZY IMPORTS: A mágica do Code Splitting. O Vercel cria arquivos separados
+// e o navegador só baixa as páginas do template que está sendo usado.
 
 // Basico
-import BasicoLayout from './basico/BasicoLayout';
-import BasicoHome from './basico/pages/Home';
-import BasicoProperties from './basico/pages/BasicoProperties';
-import BasicoPropertyDetail from './basico/pages/BasicoPropertyDetail';
+const BasicoLayout = React.lazy(() => import('./basico/BasicoLayout'));
+const BasicoHome = React.lazy(() => import('./basico/pages/Home'));
+const BasicoProperties = React.lazy(() => import('./basico/pages/BasicoProperties'));
+const BasicoPropertyDetail = React.lazy(() => import('./basico/pages/BasicoPropertyDetail'));
 
 // Classic
-import ClassicLayout from './classic/ClassicLayout';
-import ClassicHome from './classic/pages/Home';
-import ClassicProperties from './classic/pages/Properties';
-import ClassicPropertyDetail from './classic/pages/PropertyDetail';
-import ClassicAbout from './classic/pages/About';
-import ClassicServices from './classic/pages/Services';
-import ClassicFinanciamentos from './classic/pages/Financiamentos';
+const ClassicLayout = React.lazy(() => import('./classic/ClassicLayout'));
+const ClassicHome = React.lazy(() => import('./classic/pages/Home'));
+const ClassicProperties = React.lazy(() => import('./classic/pages/Properties'));
+const ClassicPropertyDetail = React.lazy(() => import('./classic/pages/PropertyDetail'));
+const ClassicAbout = React.lazy(() => import('./classic/pages/About'));
+const ClassicServices = React.lazy(() => import('./classic/pages/Services'));
+const ClassicFinanciamentos = React.lazy(() => import('./classic/pages/Financiamentos'));
 
 // Luxury
-import LuxuryLayout from './luxury/LuxuryLayout';
-import LuxuryHome from './luxury/pages/Home';
-import LuxuryProperties from './luxury/pages/Properties';
-import LuxuryPropertyDetail from './luxury/pages/PropertyDetail';
-import LuxuryServices from './luxury/pages/Services';
-import LuxuryAbout from './luxury/pages/About';
+const LuxuryLayout = React.lazy(() => import('./luxury/LuxuryLayout'));
+const LuxuryHome = React.lazy(() => import('./luxury/pages/Home'));
+const LuxuryProperties = React.lazy(() => import('./luxury/pages/Properties'));
+const LuxuryPropertyDetail = React.lazy(() => import('./luxury/pages/PropertyDetail'));
+const LuxuryServices = React.lazy(() => import('./luxury/pages/Services'));
+const LuxuryAbout = React.lazy(() => import('./luxury/pages/About'));
 
-// Minimalist (Usa as páginas do Modern como fallback onde não tem próprias)
-import MinimalistLayout from './minimalist/MinimalistLayout';
-import MinimalistHome from './minimalist/pages/Home';
+// Minimalist
+const MinimalistLayout = React.lazy(() => import('./minimalist/MinimalistLayout'));
+const MinimalistHome = React.lazy(() => import('./minimalist/pages/Home'));
 
 // Modern
-import ModernLayout from './modern/ModernLayout';
-import ModernHome from './modern/pages/Home';
-import ModernProperties from './modern/pages/Properties';
-import ModernPropertyDetail from './modern/pages/PropertyDetail';
-import ModernAbout from './modern/pages/About';
-import ModernServices from './modern/pages/Services';
-import ModernFinanciamentos from './modern/pages/Financiamentos';
+const ModernLayout = React.lazy(() => import('./modern/ModernLayout'));
+const ModernHome = React.lazy(() => import('./modern/pages/Home'));
+const ModernProperties = React.lazy(() => import('./modern/pages/Properties'));
+const ModernPropertyDetail = React.lazy(() => import('./modern/pages/PropertyDetail'));
+const ModernAbout = React.lazy(() => import('./modern/pages/About'));
+const ModernServices = React.lazy(() => import('./modern/pages/Services'));
+const ModernFinanciamentos = React.lazy(() => import('./modern/pages/Financiamentos'));
+
+// Loader Elegante
+const TemplateLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-[#0e0e0e]">
+    <div className="w-8 h-8 border-4 border-neutral-800 border-t-white rounded-full animate-spin"></div>
+  </div>
+);
 
 export default function TenantRouter() {
-  const { tenant, isLoadingTenant } = useTenant();
+  const { tenant, loading } = useTenant();
 
-  if (isLoadingTenant) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500" />
-      </div>
-    );
-  }
+  if (loading) return <TemplateLoader />;
 
   if (!tenant) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
-        <h1 className="text-2xl">Site não encontrado ou inativo.</h1>
+      <div className="min-h-screen flex items-center justify-center bg-[#0e0e0e] text-white">
+        <h2>Site não encontrado ou inativo.</h2>
       </div>
     );
   }
 
-  const templateName = tenant?.site_data?.template || tenant?.template || 'classic';
+  // Verifica no registro se o template é válido. Se não for, usa 'modern'
+  const templateId = tenant.template || 'modern';
+  const config = templatesRegistry.find((t) => t.id === templateId);
+  const safeTemplateId = config ? config.id : 'modern';
 
-  // Fallbacks: Se o template não tem uma página específica (ex: Minimalist não tem About), usa a do Modern.
+  // --- MAPEAMENTO CONDICIONAL DAS ROTAS ---
   const Layout =
-    templateName === 'luxury' ? LuxuryLayout :
-    templateName === 'minimalist' ? MinimalistLayout :
-    templateName === 'basico' ? BasicoLayout :
-    templateName === 'classic' ? ClassicLayout :
+    safeTemplateId === 'luxury' ? LuxuryLayout :
+    safeTemplateId === 'basico' ? BasicoLayout :
+    safeTemplateId === 'classic' ? ClassicLayout :
+    safeTemplateId === 'minimalist' ? MinimalistLayout :
     ModernLayout;
 
   const Home =
-    templateName === 'luxury' ? LuxuryHome :
-    templateName === 'minimalist' ? MinimalistHome :
-    templateName === 'basico' ? BasicoHome :
-    templateName === 'classic' ? ClassicHome :
+    safeTemplateId === 'luxury' ? LuxuryHome :
+    safeTemplateId === 'basico' ? BasicoHome :
+    safeTemplateId === 'classic' ? ClassicHome :
+    safeTemplateId === 'minimalist' ? MinimalistHome :
     ModernHome;
 
   const PropertiesPage =
-    templateName === 'luxury' ? LuxuryProperties :
-    templateName === 'basico' ? BasicoProperties :
-    templateName === 'classic' ? ClassicProperties :
+    safeTemplateId === 'luxury' ? LuxuryProperties :
+    safeTemplateId === 'basico' ? BasicoProperties :
+    safeTemplateId === 'classic' ? ClassicProperties :
     ModernProperties; // Minimalist usa o ModernProperties
 
   const PropertyDetailPage =
-    templateName === 'luxury' ? LuxuryPropertyDetail :
-    templateName === 'basico' ? BasicoPropertyDetail :
-    templateName === 'classic' ? ClassicPropertyDetail :
+    safeTemplateId === 'luxury' ? LuxuryPropertyDetail :
+    safeTemplateId === 'basico' ? BasicoPropertyDetail :
+    safeTemplateId === 'classic' ? ClassicPropertyDetail :
     ModernPropertyDetail; // Minimalist usa o ModernPropertyDetail
 
   const AboutPage =
-    templateName === 'luxury' ? LuxuryAbout :
-    templateName === 'classic' ? ClassicAbout :
+    safeTemplateId === 'luxury' ? LuxuryAbout :
+    safeTemplateId === 'classic' ? ClassicAbout :
     ModernAbout;
-  const ServicesPage = 
-    templateName === 'luxury' ? LuxuryServices :
-    templateName === 'classic' ? ClassicServices :
+
+  const ServicesPage =
+    safeTemplateId === 'luxury' ? LuxuryServices :
+    safeTemplateId === 'classic' ? ClassicServices :
     ModernServices;
-  
-  const FinancingPage = templateName === 'classic' ? ClassicFinanciamentos : ModernFinanciamentos;
+
+  const FinancingPage = safeTemplateId === 'classic' ? ClassicFinanciamentos : ModernFinanciamentos;
 
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<Home />} />
-        <Route path="imoveis" element={<PropertiesPage />} />
-        <Route path="imovel/:id" element={<PropertyDetailPage />} />
-        <Route path="imovel/:slug" element={<PropertyDetailPage />} />
-        <Route path="sobre" element={<AboutPage />} />
-        <Route path="servicos" element={<ServicesPage />} />
-        <Route path="financiamentos" element={<FinancingPage />} />
-        <Route path="financiamento" element={<Navigate to="/financiamentos" replace />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
-    </Routes>
+    // O Suspense segura a tela com o Loader APENAS enquanto baixa os arquivos da rota clicada
+    <Suspense fallback={<TemplateLoader />}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<Home />} />
+          <Route path="imoveis" element={<PropertiesPage />} />
+          <Route path="imovel/:id" element={<PropertyDetailPage />} />
+          <Route path="imovel/:slug" element={<PropertyDetailPage />} />
+          <Route path="sobre" element={<AboutPage />} />
+          <Route path="servicos" element={<ServicesPage />} />
+          <Route path="financiamentos" element={<FinancingPage />} />
+          <Route path="financiamento" element={<Navigate to="/financiamentos" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </Suspense>
   );
 }

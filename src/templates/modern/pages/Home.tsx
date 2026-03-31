@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTenant } from '../../../contexts/TenantContext';
 import { Icons } from '../../../components/Icons';
 import Loading from '../../../components/Loading';
+import PartnersCarousel from '../../../components/PartnersCarousel';
 import { supabase } from '../../../lib/supabase';
 import { ListingType, Property } from '../../../types';
 import PropertyCard from '../components/PropertyCard';
@@ -10,14 +11,15 @@ import {
   getHeroSubtitle,
   getHeroTitle,
   getPrimaryColor,
-  getSiteData,
   getTenantLogo,
-  getTenantName,
 } from '../tenantUtils';
 
 const Home: React.FC = () => {
-  const navigate = useNavigate();
   const { tenant } = useTenant();
+  const siteData = typeof tenant?.site_data === 'string' 
+    ? JSON.parse(tenant.site_data) 
+    : tenant?.site_data || {};
+  const navigate = useNavigate();
   const [listingMode, setListingMode] = useState<ListingType>('sale');
   const [selectedCity, setSelectedCity] = useState('');
   const [selectedNeighborhood, setSelectedNeighborhood] = useState('');
@@ -25,13 +27,10 @@ const Home: React.FC = () => {
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const siteData = getSiteData(tenant);
-  const companyName = getTenantName(tenant);
   const logoUrl = getTenantLogo(tenant);
   const primaryColor = getPrimaryColor(tenant);
   const heroTitle = getHeroTitle(tenant);
   const heroSubtitle = getHeroSubtitle(tenant);
-  const partnerLogos = Array.isArray(siteData?.partners) ? siteData.partners.filter(Boolean) : [];
 
   useEffect(() => {
     let isMounted = true;
@@ -126,43 +125,42 @@ const Home: React.FC = () => {
 
   return (
     <div className="animate-fade-in bg-slate-50 dark:bg-dark-bg min-h-screen font-sans overflow-x-hidden">
-      {/* Estilos da Animação do Carrossel */}
-      <style>
-        {`
-          @keyframes scroll-marquee {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(-50%); }
-          }
-          .animate-marquee {
-            display: flex;
-            width: max-content;
-            animation: scroll-marquee 35s linear infinite;
-          }
-          .animate-marquee:hover {
-            animation-play-state: paused;
-          }
-        `}
-      </style>
-
       {/* Hero Section Premium */}
       <section className="relative min-h-[600px] md:min-h-[650px] h-[85vh] max-h-[900px] w-full p-4 md:p-6 pb-0">
         <div className="relative w-full h-full rounded-[2.5rem] overflow-hidden shadow-2xl">
-            {/* Vídeo de Fundo */}
-            <div className="absolute inset-0">
-            <video 
-                src="https://res.cloudinary.com/dxplpg36m/video/upload/v1770259664/Cria%C3%A7%C3%A3o_de_V%C3%ADdeo_Imobili%C3%A1rio_de_Luxo_cfgwew.mp4" 
-                autoPlay 
-                loop 
-                muted 
-                playsInline
-                className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-black/30"></div>
+            {/* Mídia de Fundo (Vídeo ou Imagem Dinâmica) */}
+            <div className="absolute inset-0 bg-slate-900">
+              {siteData?.hero_video_url ? (
+                <video
+                  key={siteData.hero_video_url}
+                  src={siteData.hero_video_url}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover opacity-90"
+                />
+              ) : (
+                <img
+                  src={siteData?.hero_image_url || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1920&q=80'}
+                  alt="Fundo da página inicial"
+                  className="w-full h-full object-cover opacity-90"
+                />
+              )}
+              {/* Overlay escuro para garantir a leitura dos textos brancos */}
+              <div className="absolute inset-0 bg-black/40"></div>
             </div>
 
             {/* Conteúdo Central */}
             <div className="relative z-10 h-full flex flex-col items-center justify-center text-center px-4">
-              <img src={logoUrl} alt={companyName} className="h-11 w-auto mb-6" />
+              {/* Usa a Logo Símbolo (logo_alt_url) ou fallback para a logo normal */}
+              {(siteData?.logo_alt_url || logoUrl) && (
+                <img
+                  src={siteData?.logo_alt_url || logoUrl}
+                  alt="Símbolo da Imobiliária"
+                  className="h-20 md:h-24 w-auto mb-6 drop-shadow-2xl animate-fade-in object-contain"
+                />
+              )}
             <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-semibold tracking-tight text-white mb-3 md:mb-4 lg:mb-6 drop-shadow-lg leading-tight">
                 {heroTitle}
             </h1>
@@ -365,42 +363,9 @@ const Home: React.FC = () => {
         </div>
       </section>
 
-      {partnerLogos.length > 0 && (
-        <section className="py-16 bg-white dark:bg-dark-card border-t border-slate-100 dark:border-dark-border overflow-hidden">
-          <div className="container mx-auto px-6 mb-10 text-center">
-            <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">Nossos Parceiros</h2>
-            <p className="text-slate-500 mt-2 text-lg">Trabalhamos em conjunto com marcas e empresas de excelência.</p>
-          </div>
-
-          <div className="relative w-full flex overflow-hidden">
-            {/* Sombras laterais para dar um efeito de fade sutil no scroll */}
-            <div className="absolute top-0 left-0 w-16 md:w-32 h-full bg-gradient-to-r from-white dark:from-dark-card to-transparent z-10"></div>
-            <div className="absolute top-0 right-0 w-16 md:w-32 h-full bg-gradient-to-l from-white dark:from-dark-card to-transparent z-10"></div>
-
-            {/* O container flex com a animação marquee (duplicado para loop infinito) */}
-            <div className="animate-marquee flex items-center gap-16 md:gap-32 px-8">
-              {/* Primeira lista de logos */}
-              {partnerLogos.map((logoUrl, idx) => (
-                <img 
-                  key={`partner-1-${idx}`} 
-                  src={logoUrl} 
-                  alt={`Parceiro ${idx + 1}`} 
-                  className="h-12 md:h-16 w-auto object-contain grayscale hover:grayscale-0 opacity-50 hover:opacity-100 transition-all duration-300 cursor-pointer"
-                />
-              ))}
-              
-              {/* Segunda lista de logos idêntica (Cria a ilusão de loop infinito) */}
-              {partnerLogos.map((logoUrl, idx) => (
-                <img 
-                  key={`partner-2-${idx}`} 
-                  src={logoUrl} 
-                  alt={`Parceiro ${idx + 1}`} 
-                  className="h-12 md:h-16 w-auto object-contain grayscale hover:grayscale-0 opacity-50 hover:opacity-100 transition-all duration-300 cursor-pointer"
-                />
-              ))}
-            </div>
-          </div>
-        </section>
+      {/* Carrossel de Parcerias */}
+      {siteData.show_partnerships !== false && siteData.partners && siteData.partners.length > 0 && (
+        <PartnersCarousel partners={siteData.partners} />
       )}
       </div>
     );

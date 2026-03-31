@@ -3,33 +3,24 @@ import { useNavigate } from 'react-router-dom';
 import { useTenant } from '../../../contexts/TenantContext';
 import { supabase } from '../../../lib/supabase';
 import { Property } from '../../../types';
+import PartnersCarousel from '../../../components/PartnersCarousel';
 import PropertyCard from '../components/PropertyCard';
 import { Search, MapPin, Building, Home as HomeIcon, Briefcase, Map, Waves, TreePine, Key, TrendingUp, Loader2, ChevronDown } from 'lucide-react';
 
 const Home: React.FC = () => {
-  const navigate = useNavigate();
   const { tenant } = useTenant();
+  const siteData = typeof tenant?.site_data === 'string' 
+    ? JSON.parse(tenant.site_data) 
+    : tenant?.site_data || {};
+  const navigate = useNavigate();
   const [searchLocation, setSearchLocation] = useState('');
   const [propertyType, setPropertyType] = useState('');
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
   const [featuredProperties, setFeaturedProperties] = useState<Property[]>([]);
   const [isLoadingProperties, setIsLoadingProperties] = useState(true);
-
-  // Dados do site_data (Tenant)
-  const siteData = tenant?.site_data;
-  const heroImageUrl = siteData?.hero_image_url || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&q=80&w=2000';
   const heroTitle = siteData?.hero_title || 'Encontre o imóvel dos seus sonhos';
   const heroSubtitle = siteData?.hero_subtitle || 'A sua jornada para um novo lar começa aqui.';
   const primaryColor = siteData?.primary_color || '#1e293b';
-  const secondaryColor = siteData?.secondary_color || '#3b82f6';
-
-  // Logos de Parceiros (preparado para o Admin futuro)
-  const partnerLogos = siteData?.partners || [
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a6/Logo_NIKE.svg/1200px-Logo_NIKE.svg.png',
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/Samsung_Logo.svg/1200px-Samsung_Logo.svg.png',
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Cisco_logo_blue_2016.svg/1200px-Cisco_logo_blue_2016.svg.png',
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bb/Tesla_T_symbol.svg/1200px-Tesla_T_symbol.svg.png'
-  ];
 
   useEffect(() => {
     let isMounted = true;
@@ -298,41 +289,9 @@ const Home: React.FC = () => {
         </div>
       </section>
 
-      {/* 5. NOSSAS PARCERIAS (Marquee) */}
-      {siteData?.show_partnerships !== false && (
-      <section className="py-12 bg-white border-t border-slate-100 overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
-          <h3 className="text-center text-sm font-bold tracking-widest text-slate-400 uppercase">Nossos Parceiros</h3>
-        </div>
-
-        <div className="relative flex overflow-x-hidden group">
-          <div className="absolute top-0 left-0 w-16 md:w-32 h-full bg-gradient-to-r from-white to-transparent z-10"></div>
-          <div className="absolute top-0 right-0 w-16 md:w-32 h-full bg-gradient-to-l from-white to-transparent z-10"></div>
-
-          {/* Animação CSS inline simples para garantir o funcionamento */}
-          <div className="py-4 flex whitespace-nowrap animate-[marquee_20s_linear_infinite]">
-            {[...partnerLogos, ...partnerLogos, ...partnerLogos].map((logo, idx) => (
-              <img
-                key={idx}
-                src={logo}
-                alt="Parceiro"
-                className="h-10 md:h-12 w-auto object-contain mx-8 md:mx-16 grayscale hover:grayscale-0 opacity-50 hover:opacity-100 transition-all duration-300"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Keyframe fallback injetado via estilo global caso o tailwind.config não tenha marquee */}
-        <style dangerouslySetInnerHTML={{__html: `
-          @keyframes marquee {
-            0% { transform: translateX(0%); }
-            100% { transform: translateX(-33.33%); }
-          }
-        `}} />
-      </section>
+      {/* Carrossel de Parcerias */}
+      {siteData.show_partnerships !== false && siteData.partners && siteData.partners.length > 0 && (
+        <PartnersCarousel partners={siteData.partners} />
       )}
     </div>
   );

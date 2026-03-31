@@ -21,7 +21,7 @@ export interface SiteData {
 
   // Seções Opcionais
   show_partnerships?: boolean;
-  partners?: string[];
+  partners?: { id: string; name: string; logo_url: string }[];
 
   // Redes Sociais (Footer)
   social_instagram?: string;

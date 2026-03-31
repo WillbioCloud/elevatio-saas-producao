@@ -9,11 +9,14 @@ import { Services } from '../components/Services';
 import { Testimonials } from '../components/Testimonials';
 import { FAQ } from '../components/FAQ';
 import { Contact } from '../components/Contact';
+import PartnersCarousel from '../../../components/PartnersCarousel';
 
 export default function BasicoHome() {
   const { tenant } = useTenant();
+  const siteData = typeof tenant?.site_data === 'string' 
+    ? JSON.parse(tenant.site_data) 
+    : tenant?.site_data || {};
   const navigate = useNavigate();
-  const siteData = tenant?.site_data as any;
 
   const primaryColor = siteData?.primary_color || '#b08d5e';
   const heroTitle = siteData?.hero_title || 'Encontre a Residência dos Seus Sonhos';
@@ -161,6 +164,10 @@ export default function BasicoHome() {
     <Testimonials />
     <FAQ />
     <Contact />
+    {/* Carrossel de Parcerias */}
+    {siteData.show_partnerships !== false && siteData.partners && siteData.partners.length > 0 && (
+      <PartnersCarousel partners={siteData.partners} />
+    )}
   </>
   );
 }

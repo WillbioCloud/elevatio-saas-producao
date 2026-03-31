@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTenant } from '../../../contexts/TenantContext';
+import PartnersCarousel from '../../../components/PartnersCarousel';
 import { Search, MapPin, Bed, Bath, Square, ArrowRight, Home as HomeIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../../lib/supabase';
@@ -7,7 +8,9 @@ import { Building2 } from 'lucide-react';
 
 export default function MinimalistHome() {
   const { tenant } = useTenant();
-  const siteData = (tenant?.site_data as any) || {};
+  const siteData = typeof tenant?.site_data === 'string' 
+    ? JSON.parse(tenant.site_data) 
+    : tenant?.site_data || {};
   const primaryColor = siteData.primaryColor || '#0EA5E9';
   const [featuredProperties, setFeaturedProperties] = useState<any[]>([]);
 
@@ -192,6 +195,10 @@ export default function MinimalistHome() {
           </div>
         </div>
       </section>
+      {/* Carrossel de Parcerias */}
+      {siteData.show_partnerships !== false && siteData.partners && siteData.partners.length > 0 && (
+        <PartnersCarousel partners={siteData.partners} />
+      )}
     </div>
   );
 }

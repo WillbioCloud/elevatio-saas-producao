@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Icons } from '../../../components/Icons';
 import { useTenant } from '../../../contexts/TenantContext';
+import PartnersCarousel from '../../../components/PartnersCarousel';
 import { supabase } from '../../../lib/supabase';
 
 // ─── Hook: Animação de Contagem ───────────────────────────────
@@ -106,7 +107,9 @@ function useFeaturedProperties(companyId: string | undefined) {
 
 export default function LuxuryHome() {
   const { tenant } = useTenant();
-  const siteData = (tenant?.site_data as any) || {};
+  const siteData = typeof tenant?.site_data === 'string' 
+    ? JSON.parse(tenant.site_data) 
+    : tenant?.site_data || {};
   const { properties, loading } = useFeaturedProperties(tenant?.id);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
@@ -330,6 +333,10 @@ export default function LuxuryHome() {
           </div>
         </div>
       </section>
+      {/* Carrossel de Parcerias */}
+      {siteData.show_partnerships !== false && siteData.partners && siteData.partners.length > 0 && (
+        <PartnersCarousel partners={siteData.partners} />
+      )}
     </div>
   );
 }
