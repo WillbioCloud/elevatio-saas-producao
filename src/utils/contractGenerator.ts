@@ -194,10 +194,23 @@ export const generateContract = async (type: string, data: any, tenant: any, com
   const spouseText = (name: string, doc: string, rg: string, prof: string) => 
     name ? `, juntamente com seu cônjuge/companheiro(a): <strong>${name}</strong>, portador(a) do RG nº ${val(rg)} e CPF nº ${val(doc)}, Profissão: ${val(prof)}` : '';
 
-  // Dados dinâmicos do intermediador/corretor
-  const brokerDisplayName = broker_name || tenant?.name || 'Corretor / Imobiliária';
-  const brokerDisplayDoc = broker_document ? `CPF/CNPJ: ${broker_document}` : 'CPF/CNPJ: Não informado';
-  const brokerDisplayCreci = broker_creci ? `CRECI: ${broker_creci}` : '';
+  // Extrai o siteData para acessar os dados da Empresa/Sede
+  const siteData = typeof tenant?.site_data === 'string' ? JSON.parse(tenant.site_data) : tenant?.site_data || {};
+
+  // Lógica de Fallback Inteligente (Sede > Perfil Corretor > Tenant Base)
+  const brokerDisplayName = siteData.corporate_name || broker_name || tenant?.name || 'Corretor / Imobiliária';
+  const finalDocument = siteData.cnpj || broker_document;
+  const brokerDisplayDoc = finalDocument ? `CPF/CNPJ: ${finalDocument}` : 'CPF/CNPJ: Não informado';
+  const finalCreci = siteData.creci || broker_creci;
+  const brokerDisplayCreci = finalCreci ? `CRECI: ${finalCreci}` : '';
+
+  // Montagem do Endereço e Contatos da Sede
+  let companyFullAddress = '__________________________________________________________________';
+  if (siteData.address?.street) {
+    companyFullAddress = `${siteData.address.street}, ${siteData.address.number || 's/n'}${siteData.address.neighborhood ? ' - ' + siteData.address.neighborhood : ''}, ${siteData.address.city || ''}/${siteData.address.state || ''}`;
+  }
+  const companyPhone = siteData.contact_phone || tenant?.phone || '________________';
+  const companyEmail = siteData.contact_email || (tenant?.subdomain ? `contato@${tenant.subdomain}.com.br` : '________________');
 
   // Bloco HTML reutilizável para a assinatura do intermediador
   const brokerSignature = (label: string) => `
@@ -217,10 +230,10 @@ export const generateContract = async (type: string, data: any, tenant: any, com
 
     let parsedContent = customTemplateContent
       // DADOS DA IMOBILIÁRIA / CORRETOR
-      .replace(/\{\{IMOBILIARIA_NOME\}\}/g, company_name || tenant?.name || '____________________')
-      .replace(/\{\{CORRETOR_NOME\}\}/g, broker_name || '____________________')
-      .replace(/\{\{CORRETOR_CPF\}\}/g, broker_document || '____________________')
-      .replace(/\{\{CORRETOR_CRECI\}\}/g, broker_creci || '____________________')
+      .replace(/\{\{IMOBILIARIA_NOME\}\}/g, siteData.corporate_name || tenant?.name || '____________________')
+      .replace(/\{\{CORRETOR_NOME\}\}/g, brokerDisplayName)
+      .replace(/\{\{CORRETOR_CPF\}\}/g, finalDocument || '____________________')
+      .replace(/\{\{CORRETOR_CRECI\}\}/g, finalCreci || '____________________')
       // DADOS DO IMÓVEL
       .replace(/\{\{IMOVEL_TITULO\}\}/g, data.property?.title || '____________________')
       .replace(/\{\{IMOVEL_ENDERECO\}\}/g, `${data.property?.street || '_________________'}, ${data.property?.number || 's/n'} - ${data.property?.neighborhood || '_________________'}, ${data.property?.city || '________'}/${data.property?.state || '___'}`)
@@ -553,10 +566,10 @@ export const generateContract = async (type: string, data: any, tenant: any, com
       <p><strong>1.2) E de outro lado, como contratado, o corretor de imóveis:</strong><br/>
       a) Nome: <strong>${brokerDisplayName}</strong>;<br/>
       b) ${brokerDisplayDoc};<br/>
-      c) ${brokerDisplayCreci || 'Inscrição no CRECI/GO: ________________'};<br/>
-      d) Endereço: __________________________________________________________________;<br/>
-      e) Telefones: ${val(tenant?.phone)};<br/>
-      f) E-mail: contato@${val(tenant?.subdomain)}.com.br.
+      c) ${brokerDisplayCreci || 'Inscrição no CRECI: ________________'};<br/>
+      d) Endereço: ${companyFullAddress};<br/>
+      e) Telefones: ${companyPhone};<br/>
+      f) E-mail: ${companyEmail}.
       </p>
       
       <h2>Cláusula 2ª – Objeto do contrato</h2>

@@ -245,26 +245,47 @@ const ModernLayout: React.FC = () => {
 
           <div>
             <h4 className="text-white font-bold mb-4">Contato</h4>
-            <ul className="space-y-2 text-sm">
-              <li className="flex items-start gap-2">
-                <Icons.MapPin size={16} className="mt-0.5 shrink-0" />
-                <span>{contactAddress}</span>
-              </li>
-              {contactPhone && (
-                <li className="flex items-center gap-2">
-                  <Icons.Phone size={16} />
-                  <a href={`tel:${contactPhone}`} className="hover:text-amber-400 transition-colors">
-                    {contactPhone}
-                  </a>
-                </li>
+            <ul className="space-y-4 text-sm text-slate-400">
+              {/* Renderização segura do endereço (verifica se é objeto ou string) */}
+              {(siteData.address || siteData.contact_phone || siteData.contact_email) && (
+                <>
+                  {siteData.address && (
+                    <li className="flex items-start gap-3">
+                      <Icons.MapPin size={18} className="shrink-0 text-slate-500 mt-0.5" />
+                      <span>
+                        {typeof siteData.address === 'object'
+                          ? `${siteData.address.street || ''}, ${siteData.address.number || 's/n'}${siteData.address.city ? ' - ' + siteData.address.city : ''}`
+                          : siteData.address}
+                      </span>
+                    </li>
+                  )}
+                  
+                  {siteData.contact_phone && (
+                    <li className="flex items-center gap-3">
+                      <Icons.Phone size={18} className="shrink-0 text-slate-500" />
+                      <span>{siteData.contact_phone}</span>
+                    </li>
+                  )}
+                  
+                  {siteData.contact_email && (
+                    <li className="flex items-center gap-3">
+                      <Icons.Mail size={18} className="shrink-0 text-slate-500" />
+                      <span>{siteData.contact_email}</span>
+                    </li>
+                  )}
+                </>
               )}
-              {contactEmail && (
-                <li className="flex items-center gap-2">
-                  <Icons.Mail size={16} />
-                  <a href={`mailto:${contactEmail}`} className="hover:text-amber-400 transition-colors break-all">
-                    {contactEmail}
-                  </a>
-                </li>
+              
+              {/* Fallback caso não haja dados novos, tenta usar os dados antigos ou do tenant base */}
+              {!siteData.address && !siteData.contact_phone && !siteData.contact_email && tenant && (
+                <>
+                  {tenant.phone && (
+                    <li className="flex items-center gap-3">
+                      <Icons.Phone size={18} className="shrink-0 text-slate-500" />
+                      <span>{tenant.phone}</span>
+                    </li>
+                  )}
+                </>
               )}
             </ul>
           </div>

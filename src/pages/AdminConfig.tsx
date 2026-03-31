@@ -1002,6 +1002,37 @@ const AdminConfig: React.FC = () => {
     }
   };
 
+  const handleCepBlur = async (e: React.FocusEvent<HTMLInputElement>) => {
+    const cep = e.target.value.replace(/\D/g, '');
+    if (cep.length !== 8) return;
+
+    try {
+      addToast('Buscando endere\u00e7o...', 'info');
+      const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const data = await response.json();
+
+      if (data.erro) {
+        addToast('CEP n\u00e3o encontrado.', 'error');
+        return;
+      }
+
+      setSiteData(prev => ({
+        ...prev,
+        address: {
+          ...(prev.address || {}),
+          zip: data.cep,
+          street: data.logradouro,
+          neighborhood: data.bairro,
+          city: data.localidade,
+          state: data.uf,
+        } as any
+      }));
+      addToast('Endere\u00e7o preenchido automaticamente!', 'success');
+    } catch (error) {
+      addToast('Erro ao buscar o CEP.', 'error');
+    }
+  };
+
   const handleDownloadXML = () => {
     setIsGeneratingXML(true);
     try {
@@ -2729,6 +2760,139 @@ const AdminConfig: React.FC = () => {
                       rows={6}
                       className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500/50 transition-all text-slate-800 dark:text-white resize-none"
                     />
+                  </div>
+
+                  {/* Dados Jurídicos e Qualificação */}
+                  <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Dados Jurídicos e Contato</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      {/* Razão Social */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Razão Social</label>
+                        <input
+                          type="text"
+                          value={siteData.corporate_name || ''}
+                          onChange={(e) => setSiteData({ ...siteData, corporate_name: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                          placeholder="Ex: TR Imóveis Ltda"
+                        />
+                      </div>
+                      {/* CNPJ */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">CNPJ</label>
+                        <input
+                          type="text"
+                          value={siteData.cnpj || ''}
+                          onChange={(e) => setSiteData({ ...siteData, cnpj: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                          placeholder="00.000.000/0001-00"
+                        />
+                      </div>
+                      {/* CRECI */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">CRECI</label>
+                        <input
+                          type="text"
+                          value={siteData.creci || ''}
+                          onChange={(e) => setSiteData({ ...siteData, creci: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                          placeholder="Ex: 12345-J"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      {/* E-mail Principal */}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">E-mail Principal</label>
+                        <input
+                          type="email"
+                          value={siteData.contact_email || ''}
+                          onChange={(e) => setSiteData({ ...siteData, contact_email: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                          placeholder="contato@suaimobiliaria.com.br"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Telefone/WhatsApp Central</label>
+                        <input
+                          type="text"
+                          value={siteData.contact_phone || ''}
+                          onChange={(e) => setSiteData({ ...siteData, contact_phone: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                          placeholder="(00) 00000-0000"
+                        />
+                      </div>
+                    </div>
+
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-6 mb-3">Endereço da Sede</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                      {/* CEP */}
+                      <div className="col-span-1 md:col-span-3">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">CEP</label>
+                        <input
+                          type="text"
+                          value={siteData.address?.zip || ''}
+                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, zip: e.target.value } as any })}
+                          onBlur={handleCepBlur}
+                          maxLength={9}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-brand-500 outline-none transition-colors"
+                          placeholder="00000-000"
+                        />
+                      </div>
+
+                      {/* Logradouro */}
+                      <div className="col-span-1 md:col-span-7">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Logradouro (Rua, Av)</label>
+                        <input
+                          type="text"
+                          value={siteData.address?.street || ''}
+                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, street: e.target.value } as any })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                        />
+                      </div>
+                      {/* Número */}
+                      <div className="col-span-1 md:col-span-2">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Número</label>
+                        <input
+                          type="text"
+                          value={siteData.address?.number || ''}
+                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, number: e.target.value } as any })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                        />
+                      </div>
+                      {/* Bairro */}
+                      <div className="col-span-1 md:col-span-5">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bairro</label>
+                        <input
+                          type="text"
+                          value={siteData.address?.neighborhood || ''}
+                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, neighborhood: e.target.value } as any })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                        />
+                      </div>
+                      {/* Cidade */}
+                      <div className="col-span-1 md:col-span-5">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Cidade</label>
+                        <input
+                          type="text"
+                          value={siteData.address?.city || ''}
+                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, city: e.target.value } as any })}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                        />
+                      </div>
+                      {/* Estado */}
+                      <div className="col-span-1 md:col-span-2">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">UF</label>
+                        <input
+                          type="text"
+                          value={siteData.address?.state || ''}
+                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, state: e.target.value } as any })}
+                          maxLength={2}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm uppercase"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
 

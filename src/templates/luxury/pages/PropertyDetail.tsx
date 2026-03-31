@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Icons } from '../../../components/Icons';
+import SimilarProperties from '../../../components/SimilarProperties';
 import { useTenant } from '../../../contexts/TenantContext';
 import { supabase } from '../../../lib/supabase';
+import LuxuryPropertyCard from '../components/LuxuryPropertyCard';
 
 interface FullProperty {
   id: string;
@@ -685,6 +687,17 @@ export default function LuxuryPropertyDetail() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Seção de Imóveis Similares */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 w-full">
+        <SimilarProperties
+          currentPropertyId={property.id}
+          listingType={property.listing_type || 'sale'}
+          city={property.city}
+          neighborhood={property.neighborhood}
+          renderCard={(p) => <LuxuryPropertyCard key={p.id} property={p} />}
+        />
       </div>
 
       {galleryOpen && images.length > 0 && (

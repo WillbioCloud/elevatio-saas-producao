@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTenant } from '../../../contexts/TenantContext';
 import Loading from '../../../components/Loading';
+import SimilarProperties from '../../../components/SimilarProperties';
 import { Property } from '../../../types';
 import { supabase } from '../../../lib/supabase';
 import { ArrowLeft, Home, ArrowRight, X, MapPin, CheckCircle, MessageCircle, Loader2, Maximize, Maximize2, Bed, Bath, Car } from 'lucide-react';
+import PropertyCard from '../components/PropertyCard';
 
 const PropertyDetail: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -439,6 +441,17 @@ const PropertyDetail: React.FC = () => {
           </div>
 
         </div>
+      </div>
+
+      {/* Seção de Imóveis Similares */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 w-full">
+        <SimilarProperties
+          currentPropertyId={property.id}
+          listingType={property.listing_type || 'sale'}
+          city={property.location?.city || property.city}
+          neighborhood={property.location?.neighborhood || property.neighborhood}
+          renderCard={(p) => <PropertyCard key={p.id} property={p} />}
+        />
       </div>
     </div>
   );

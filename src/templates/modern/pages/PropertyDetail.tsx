@@ -5,10 +5,12 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useTenant } from '../../../contexts/TenantContext';
 import { Icons } from '../../../components/Icons';
+import SimilarProperties from '../../../components/SimilarProperties';
 import Loading from '../../../components/Loading';
 import { supabase } from '../../../lib/supabase';
 import { Property } from '../../../types';
 import { cleanPhone, getPrimaryColor, getTenantPhone, getWhatsappLink } from '../tenantUtils';
+import PropertyCard from '../components/PropertyCard';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -676,6 +678,17 @@ const PropertyDetail: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Seção de Imóveis Similares */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 w-full">
+        <SimilarProperties
+          currentPropertyId={property.id}
+          listingType={property.listing_type || 'sale'}
+          city={property.location?.city || property.city}
+          neighborhood={property.location?.neighborhood || property.neighborhood}
+          renderCard={(p) => <PropertyCard key={p.id} property={p} />}
+        />
       </div>
     </div>
   );

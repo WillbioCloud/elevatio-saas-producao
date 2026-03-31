@@ -1,79 +1,121 @@
 import React from 'react';
-import { Building2, Gem, ShieldCheck, Sparkles, Target, Users } from 'lucide-react';
 import { useTenant } from '../../../contexts/TenantContext';
-import { getAboutText, getTenantName } from '../tenantUtils';
+import { Icons } from '../../../components/Icons';
 
-const About: React.FC = () => {
+export default function About() {
   const { tenant } = useTenant();
-  const companyName = getTenantName(tenant);
-  const aboutText = getAboutText(tenant);
-
-  const pillars = [
-    {
-      title: 'Missão',
-      text: `Oferecer uma experiência imobiliária consultiva, transparente e eficiente para cada cliente de ${companyName}.`,
-      icon: Target,
-    },
-    {
-      title: 'Visão',
-      text: 'Ser lembrada como uma imobiliária confiável, atual e preparada para atender diferentes perfis de compra e locação.',
-      icon: Gem,
-    },
-    {
-      title: 'Valores',
-      text: 'Ética, proximidade, clareza nas negociações e compromisso com bons resultados para todas as partes.',
-      icon: ShieldCheck,
-    },
-  ];
-
-  const teamHighlights = [
-    { name: 'Especialista Comercial', role: 'Atendimento consultivo', icon: Sparkles },
-    { name: 'Consultoria de Investimento', role: 'Análise de oportunidades', icon: Building2 },
-    { name: 'Relacionamento com Clientes', role: 'Acompanhamento próximo', icon: Users },
-  ];
+  const companyName = tenant?.name || 'Nossa Empresa';
+  
+  const siteData = typeof tenant?.site_data === 'string' 
+    ? JSON.parse(tenant.site_data) 
+    : tenant?.site_data || {};
 
   return (
-    <div className="bg-slate-50 min-h-screen py-12 md:py-20 animate-fade-in">
-      <div className="container mx-auto px-4 space-y-10 md:space-y-14">
-        <section className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 p-8 md:p-14">
-          <p className="text-sm uppercase tracking-[0.25em] text-slate-400 mb-3">Sobre {companyName}</p>
-          <h1 className="text-4xl md:text-6xl font-serif font-semibold text-slate-900 mb-6">Nossa História</h1>
-          <p className="text-slate-600 text-lg leading-relaxed max-w-4xl whitespace-pre-line">
-            {aboutText}
+    <div className="pt-24 min-h-screen bg-white">
+      {/* Hero Section */}
+      <div className="bg-slate-900 text-white py-20 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white/10 via-transparent to-transparent"></div>
+        <div className="max-w-7xl mx-auto px-4 relative z-10 text-center">
+          <h1 className="text-4xl md:text-5xl font-light mb-4">
+            Sobre a <span className="font-semibold">{companyName}</span>
+          </h1>
+          <p className="text-slate-300 max-w-2xl mx-auto text-lg font-light">
+            Conheça nossa história, nossos valores e as informações oficiais da nossa empresa.
           </p>
-        </section>
+        </div>
+      </div>
 
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {pillars.map((item) => (
-            <article key={item.title} className="bg-white rounded-3xl p-6 md:p-8 border border-slate-100 shadow-sm">
-              <item.icon className="text-slate-900 mb-4" size={28} />
-              <h2 className="text-2xl font-semibold text-slate-900 mb-3">{item.title}</h2>
-              <p className="text-slate-600 leading-relaxed">{item.text}</p>
-            </article>
-          ))}
-        </section>
-
-        <section>
-          <div className="flex items-center gap-3 mb-6">
-            <Users className="text-slate-900" size={24} />
-            <h2 className="text-3xl font-serif font-semibold text-slate-900">Como Atuamos</h2>
+      <div className="max-w-7xl mx-auto px-4 py-16">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+          
+          {/* Nossa História */}
+          <div className="lg:col-span-2 space-y-8">
+            <div>
+              <h2 className="text-2xl font-semibold text-slate-900 mb-6 flex items-center gap-3">
+                <Icons.BookOpen className="text-slate-400" size={24} />
+                Nossa História
+              </h2>
+              <div className="prose prose-lg text-slate-600 font-light leading-relaxed">
+                {siteData?.about_text ? (
+                  <p className="whitespace-pre-wrap">{siteData.about_text}</p>
+                ) : (
+                  <p>
+                    Somos uma imobiliária dedicada a encontrar o imóvel perfeito para você. 
+                    Nossa missão é transformar a experiência de compra, venda e locação de 
+                    imóveis em um processo transparente, seguro e focado totalmente na 
+                    satisfação dos nossos clientes.
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {teamHighlights.map((member) => (
-              <article key={member.name} className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
-                <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-                  <member.icon className="text-slate-700" size={24} />
-                </div>
-                <h3 className="text-xl font-semibold text-slate-900">{member.name}</h3>
-                <p className="text-slate-500 mt-1">{member.role}</p>
-              </article>
-            ))}
+          {/* Sidebar: Dados Jurídicos e Contato */}
+          <div className="space-y-6">
+            <div className="bg-slate-50 border border-slate-100 p-8 rounded-2xl">
+              <h3 className="text-lg font-semibold text-slate-900 mb-6 border-b border-slate-200 pb-4">
+                Informações Oficiais
+              </h3>
+              
+              <ul className="space-y-5">
+                {siteData?.corporate_name && (
+                  <li>
+                    <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Razão Social</p>
+                    <p className="text-slate-800 font-medium">{siteData.corporate_name}</p>
+                  </li>
+                )}
+                
+                {siteData?.cnpj && (
+                  <li>
+                    <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">CNPJ</p>
+                    <p className="text-slate-800 font-medium">{siteData.cnpj}</p>
+                  </li>
+                )}
+
+                {siteData?.creci && (
+                  <li>
+                    <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Registro CRECI</p>
+                    <p className="text-slate-800 font-medium">{siteData.creci}</p>
+                  </li>
+                )}
+
+                {(siteData?.contact_email || siteData?.contact_phone) && (
+                  <li className="pt-4 border-t border-slate-200">
+                    <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-3">Contato Direto</p>
+                    {siteData?.contact_phone && (
+                      <div className="flex items-center gap-3 text-slate-700 mb-2">
+                        <Icons.Phone size={18} className="text-slate-400" />
+                        <span>{siteData.contact_phone}</span>
+                      </div>
+                    )}
+                    {siteData?.contact_email && (
+                      <div className="flex items-center gap-3 text-slate-700">
+                        <Icons.Mail size={18} className="text-slate-400" />
+                        <span>{siteData.contact_email}</span>
+                      </div>
+                    )}
+                  </li>
+                )}
+
+                {siteData?.address?.street && (
+                  <li className="pt-4 border-t border-slate-200">
+                    <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-3">Sede</p>
+                    <div className="flex gap-3 text-slate-700">
+                      <Icons.MapPin size={18} className="text-slate-400 shrink-0 mt-0.5" />
+                      <span className="leading-snug">
+                        {siteData.address.street}, {siteData.address.number}<br/>
+                        {siteData.address.neighborhood}<br/>
+                        {siteData.address.city} - {siteData.address.state}
+                      </span>
+                    </div>
+                  </li>
+                )}
+              </ul>
+            </div>
           </div>
-        </section>
+
+        </div>
       </div>
     </div>
   );
-};
-
-export default About;
+}

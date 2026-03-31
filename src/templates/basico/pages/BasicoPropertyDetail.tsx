@@ -3,6 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, MapPin, BedDouble, Bath, Maximize2, MessageCircle } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { useTenant } from '../../../contexts/TenantContext';
+import SimilarProperties from '../../../components/SimilarProperties';
+import PropertyCard from '../components/PropertyCard';
 
 export default function BasicoPropertyDetail() {
   const { id, slug } = useParams();
@@ -127,6 +129,17 @@ export default function BasicoPropertyDetail() {
             </a>
           </div>
         </div>
+      </div>
+
+      {/* Seção de Imóveis Similares */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12 w-full">
+        <SimilarProperties
+          currentPropertyId={property.id}
+          listingType={property.listing_type || 'sale'}
+          city={property.location?.city || property.city}
+          neighborhood={property.location?.neighborhood || property.neighborhood}
+          renderCard={(p) => <PropertyCard key={p.id} property={p} />}
+        />
       </div>
     </div>
   );

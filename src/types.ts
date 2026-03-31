@@ -19,6 +19,21 @@ export interface SiteData {
   about_title?: string;
   about_text?: string;
 
+  // Dados Jurídicos e Contato
+  creci?: string;
+  cnpj?: string;
+  corporate_name?: string; // Razão Social
+  contact_email?: string;
+  contact_phone?: string;
+  address?: {
+    street: string;
+    number: string;
+    neighborhood: string;
+    city: string;
+    state: string;
+    zip: string;
+  };
+
   // Seções Opcionais
   show_partnerships?: boolean;
   partners?: { id: string; name: string; logo_url: string }[];
