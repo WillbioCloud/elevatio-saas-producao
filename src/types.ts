@@ -37,6 +37,7 @@ export interface SiteData {
   // Seções Opcionais
   show_partnerships?: boolean;
   partners?: { id: string; name: string; logo_url: string }[];
+  featured_regions?: { id: string; name: string; image_url: string }[];
 
   // Redes Sociais (Footer)
   social_instagram?: string;

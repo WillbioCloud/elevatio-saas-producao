@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-type AssetType = 'logo' | 'logo_alt' | 'hero' | 'favicon' | 'about';
+type AssetType = 'logo' | 'logo_alt' | 'hero' | 'favicon' | 'about' | `region_${string}`;
 
 export async function uploadCompanyAsset(
   file: File,
@@ -24,4 +24,20 @@ export async function uploadCompanyAsset(
     .getPublicUrl(path);
 
   return data.publicUrl;
+}
+
+export async function deleteCompanyAsset(url: string): Promise<void> {
+  if (!url) return;
+  try {
+    // A URL pública do Supabase termina com /company-assets/caminho-do-arquivo
+    const urlParts = url.split('/company-assets/');
+    if (urlParts.length !== 2) return;
+
+    const path = urlParts[1]; // Pegamos apenas a rota interna do bucket
+
+    const { error } = await supabase.storage.from('company-assets').remove([path]);
+    if (error) throw error;
+  } catch (err) {
+    console.error('Erro ao deletar asset do storage:', err);
+  }
 }

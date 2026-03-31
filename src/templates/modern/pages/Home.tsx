@@ -253,40 +253,43 @@ const Home: React.FC = () => {
         </div>
       </section>
 
-      {/* Categorias (Inspirado em "Sell with top agents") */}
-      <section className="container mx-auto px-6 py-20">
-        <div className="flex justify-between items-end mb-10">
-            <h2 className="text-3xl md:text-4xl font-semibold text-slate-900 dark:text-white">O que você procura?</h2>
-            <button onClick={() => navigate('/imoveis')} className="hidden md:flex items-center gap-2 text-slate-900 dark:text-white font-medium hover:underline">
-                Ver tudo <Icons.ArrowRight size={18} />
-            </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            { type: 'Casa', icon: Icons.Home, label: 'Casas', desc: 'Conforto e espaço' },
-            { type: 'Apartamento', icon: Icons.Building, label: 'Apartamentos', desc: 'Praticidade urbana' },
-            { type: 'Terreno', icon: Icons.TrendingUp, label: 'Investimento', desc: 'Lotes e terrenos' }
-          ].map((cat, idx) => (
-            <div 
-                key={idx}
-                onClick={() => navigate(`/imoveis?type=${cat.type}`)} 
-                className="bg-white dark:bg-dark-card p-8 rounded-[2rem] border border-slate-100 dark:border-dark-border hover:shadow-xl transition-all cursor-pointer group flex flex-col items-start"
-            >
-              <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl text-slate-900 dark:text-white group-hover:scale-110 transition-transform">
-                <cat.icon size={32} />
-              </div>
-              <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">{cat.label}</h3>
-              <p className="text-slate-500 dark:text-gray-400">{cat.desc}</p>
-              <div className="mt-8 w-full pt-6 border-t border-slate-100 dark:border-slate-800">
-                <span className="inline-block px-6 py-3 rounded-full border border-slate-200 text-slate-900 font-medium text-sm group-hover:bg-slate-900 group-hover:text-white transition-colors">
-                    Ver opções
-                </span>
-              </div>
+      {/* Condomínios e Regiões em Destaque (Dinâmico) */}
+      {siteData.featured_regions && siteData.featured_regions.length > 0 && (
+        <section className="py-20 bg-slate-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl font-bold text-slate-900 mb-4">Condomínios e Regiões</h2>
+              <p className="text-slate-600 max-w-2xl mx-auto">
+                Explore os melhores endereços e encontre o lugar perfeito para o seu próximo capítulo.
+              </p>
             </div>
-          ))}
-        </div>
-      </section>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {siteData.featured_regions.map((region) => (
+                <div
+                  key={region.id}
+                  onClick={() => navigate(`/imoveis?q=${encodeURIComponent(region.name)}`)}
+                  className="group relative h-80 rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300"
+                >
+                  <img
+                    src={region.image_url || 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&q=80'}
+                    alt={region.name}
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent"></div>
+                  <div className="absolute bottom-0 left-0 right-0 p-8">
+                    <h3 className="text-2xl font-bold text-white mb-2 transform translate-y-2 group-hover:translate-y-0 transition-transform">{region.name}</h3>
+                    <div className="flex items-center text-brand-400 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-4 group-hover:translate-y-0 delay-75">
+                      <span className="text-sm font-semibold uppercase tracking-wider">Ver imóveis</span>
+                      <Icons.ArrowRight size={16} className="ml-2" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Grid Visual de Estilo de Vida */}
       <section className="py-20 bg-white dark:bg-dark-bg">

@@ -7,11 +7,42 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import GamificationModal from '../components/GamificationModal';
 import FidelityTermsModal from '../components/FidelityTermsModal';
-import { uploadCompanyAsset } from '../lib/storage';
+import { uploadCompanyAsset, deleteCompanyAsset } from '../lib/storage';
 import { SiteData } from '../types';
 import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle, ImageOff, Check } from 'lucide-react';
 import { useProperties } from '../hooks/useProperties';
 import { generateZapXML } from '../utils/zapXmlGenerator';
+
+// Compressor Nativo para evitar estourar o limite do Supabase
+const compressImageToWebP = (file: File, maxWidth = 1200, quality = 0.8): Promise<File> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(new File([blob], file.name.replace(/\.[^/.]+$/, '') + '.webp', { type: 'image/webp' }));
+          } else {
+            resolve(file);
+          }
+        }, 'image/webp', quality);
+      };
+    };
+  });
+};
 
 interface Profile {
   id: string;
@@ -2515,6 +2546,116 @@ const AdminConfig: React.FC = () => {
                       />
                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-brand-500"></div>
                     </label>
+                  </div>
+
+                  {/* Gerenciador de Condomínios/Regiões */}
+                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-6 bg-white dark:bg-dark-card mt-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h4 className="font-bold text-slate-800 dark:text-white">Condomínios / Regiões em Destaque</h4>
+                        <p className="text-xs text-slate-500">Adicione imagens e nomes dos melhores condomínios ou bairros para exibir na página inicial.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newRegion = { id: Date.now().toString(), name: '', image_url: '' };
+                          setSiteData(prev => ({ ...prev, featured_regions: [...(prev.featured_regions || []), newRegion] }));
+                        }}
+                        className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-bold rounded-lg hover:bg-slate-800 flex items-center gap-2"
+                      >
+                        <Icons.Plus size={16} /> Adicionar
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      {(!siteData.featured_regions || siteData.featured_regions.length === 0) ? (
+                        <div className="text-center py-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-300 dark:border-slate-600">
+                          <p className="text-sm text-slate-500">Nenhum condomínio/região cadastrado.</p>
+                        </div>
+                      ) : (
+                        siteData.featured_regions.map((region) => (
+                          <div key={region.id} className="flex items-center gap-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                            {/* Preview da Imagem */}
+                            <div className="w-24 h-16 rounded-lg bg-slate-200 dark:bg-slate-900 overflow-hidden relative group shrink-0">
+                              {region.image_url ? (
+                                <img src={region.image_url} alt="Region" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center"><Icons.Image size={20} className="text-slate-400" /></div>
+                              )}
+                              <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
+                                <Icons.Upload size={16} className="text-white" />
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file || !user?.company_id) return;
+                                    try {
+                                      addToast('Comprimindo e enviando...', 'info');
+
+                                      // 1. Comprime a imagem no navegador
+                                      const compressedFile = await compressImageToWebP(file);
+
+                                      // 2. Se já existia uma imagem velha, apaga do banco primeiro
+                                      if (region.image_url) {
+                                        await deleteCompanyAsset(region.image_url);
+                                      }
+
+                                      // 3. Faz upload da nova em WebP (Pesando ~80KB em vez de 3MB)
+                                      const url = await uploadCompanyAsset(compressedFile, user.company_id, `region_${Date.now()}`);
+
+                                      setSiteData(prev => ({
+                                        ...prev,
+                                        featured_regions: (prev.featured_regions || []).map(r => r.id === region.id ? { ...r, image_url: url } : r)
+                                      }));
+                                      addToast('Imagem atualizada com sucesso!', 'success');
+                                    } catch (err) {
+                                      addToast('Erro ao carregar imagem.', 'error');
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+
+                            {/* Nome da Região */}
+                            <div className="flex-1">
+                              <input
+                                type="text"
+                                placeholder="Ex: Condomínio Aldeia do Vale"
+                                value={region.name}
+                                onChange={(e) => {
+                                  setSiteData(prev => ({
+                                    ...prev,
+                                    featured_regions: (prev.featured_regions || []).map(r => r.id === region.id ? { ...r, name: e.target.value } : r)
+                                  }));
+                                }}
+                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500"
+                              />
+                            </div>
+
+                            {/* Remover */}
+                            <button
+                              onClick={async () => {
+                                // Apaga o arquivo real lá no bucket do Supabase
+                                if (region.image_url) {
+                                  await deleteCompanyAsset(region.image_url);
+                                }
+                                // Remove do JSON do site
+                                setSiteData(prev => ({
+                                  ...prev,
+                                  featured_regions: (prev.featured_regions || []).filter(r => r.id !== region.id)
+                                }));
+                                addToast('Condomínio e imagem excluídos.', 'success');
+                              }}
+                              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
+                            >
+                              <Icons.Trash size={18} />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
 
                   {/* Gerenciador de Parceiros */}
