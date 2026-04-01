@@ -1,26 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Icons } from './Icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-
-interface NotificationItem {
-  id: string;
-  title: string;
-  message?: string;
-  content?: string;
-  type: string;
-  is_read?: boolean;
-  read?: boolean;
-  created_at: string;
-  link?: string;
-}
 
 export default function NotificationsMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const { addToast } = useToast();
   const navigate = useNavigate();
 
   const companyId = user?.company_id;
@@ -33,25 +23,26 @@ export default function NotificationsMenu() {
       return;
     }
 
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let unsubscribe: (() => void) | undefined;
+
+    setNotifications([]);
+    setUnreadCount(0);
 
     if (isSuperAdmin) {
       fetchSaasNotifications();
-      channel = subscribeToSaasNotifications();
+      unsubscribe = subscribeToSaasNotifications();
     } else if (companyId) {
       fetchCrmNotifications();
-      channel = subscribeToCrmNotifications();
+      unsubscribe = subscribeToCrmNotifications();
     } else {
       setNotifications([]);
       setUnreadCount(0);
     }
 
     return () => {
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      unsubscribe?.();
     };
-  }, [user, companyId]);
+  }, [addToast, companyId, isSuperAdmin, user]);
 
   const fetchSaasNotifications = async () => {
     const { data, error } = await supabase.from('saas_notifications').select('*').order('created_at', { ascending: false }).limit(20);
@@ -78,19 +69,28 @@ export default function NotificationsMenu() {
   };
 
   const subscribeToSaasNotifications = () => {
-    return supabase.channel('saas_notifications_realtime')
+    const channel = supabase.channel('saas_notifications_realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'saas_notifications' }, (payload) => {
-        setNotifications(prev => [payload.new as any, ...prev]);
+        const newNotif = payload.new as any;
+        setNotifications(prev => [newNotif, ...prev]);
         setUnreadCount(prev => prev + 1);
+        addToast(newNotif.title || 'Novo evento no sistema', 'success');
       }).subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   };
 
   const subscribeToCrmNotifications = () => {
-    if (!companyId) return null;
-    return supabase.channel('crm_notifications').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `company_id=eq.${companyId}` }, (payload) => {
-      setNotifications(prev => [payload.new as NotificationItem, ...prev]);
-      setUnreadCount(prev => prev + 1);
-    }).subscribe();
+    if (!companyId) return;
+    const channel = supabase.channel('crm_notifications_realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `company_id=eq.${companyId}` }, (payload) => {
+        const newNotif = payload.new as any;
+        setNotifications(prev => [newNotif, ...prev]);
+        setUnreadCount(prev => prev + 1);
+        addToast(newNotif.title || 'Nova notificação no CRM', 'info');
+      }).subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   };
 
   const markAsRead = async (id: string) => {

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
+import { PLANS } from '../config/plans';
 
 type InviteCompanyInfo = {
   id: string;
@@ -19,6 +20,7 @@ export default function InviteSignup() {
   const [formData, setFormData] = useState({ name: '', email: '', password: '', phone: '' });
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [limitReached, setLimitReached] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -38,9 +40,9 @@ export default function InviteSignup() {
           throw new Error('Token malformado');
         }
 
-        const { data, error: companyError } = await supabase
+        const { data: companyData, error: companyError } = await supabase
           .from('companies')
-          .select('name')
+          .select('name, plan')
           .eq('id', decoded.c)
           .single();
 
@@ -50,8 +52,30 @@ export default function InviteSignup() {
           throw companyError;
         }
 
-        if (data) {
-          setCompanyInfo({ id: decoded.c, name: data.name, role: inviteRole });
+        if (companyData) {
+          const companyId = decoded.c;
+          const planId = companyData.plan || 'starter';
+          const planConfig = PLANS.find(p => p.id === planId) || PLANS[0];
+          const userLimit = planConfig.limits.users;
+
+          const { count, error: countError } = await supabase
+            .from('profiles')
+            .select('*', { count: 'exact', head: true })
+            .eq('company_id', companyId);
+
+          if (ignore) return;
+
+          if (countError) {
+            throw countError;
+          }
+
+          if (userLimit !== -1 && count !== null && count >= userLimit) {
+            setLimitReached(true);
+            setLoading(false);
+            return;
+          }
+
+          setCompanyInfo({ id: decoded.c, name: companyData.name, role: inviteRole });
         } else {
           setError('Imobiliária não encontrada.');
         }
@@ -131,6 +155,25 @@ export default function InviteSignup() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
         <Icons.Loader2 className="animate-spin text-brand-500" size={40} />
+      </div>
+    );
+  }
+
+  if (limitReached) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-red-100 dark:border-red-900/30 p-8 text-center animate-fade-in">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Icons.AlertTriangle size={32} className="text-red-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Convite Indisponível</h2>
+          <p className="text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
+            Esta imobiliária já atingiu o <strong>limite máximo de corretores</strong> permitido pelo plano atual.
+          </p>
+          <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-xl text-sm text-slate-600 dark:text-slate-300">
+            Peça para o administrador realizar o upgrade do plano para liberar sua entrada.
+          </div>
+        </div>
       </div>
     );
   }

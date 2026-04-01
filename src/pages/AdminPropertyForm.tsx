@@ -196,18 +196,29 @@ const compressImageToWebP = (file: File, maxWidth = 1200, quality = 0.8): Promis
 const SortableImageCard: React.FC<{
   image: ImageItem;
   index: number;
+  isExceeded: boolean;
   onRemove: (id: string) => void;
   onDragStart: (id: string) => void;
   onDropOn: (id: string) => void;
-}> = ({ image, index, onRemove, onDragStart, onDropOn }) => {
+}> = ({ image, index, isExceeded, onRemove, onDragStart, onDropOn }) => {
   return (
     <div
-      className="relative group rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 aspect-square"
+      className={`relative group rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 aspect-square ${
+        isExceeded ? 'ring-4 ring-red-500 opacity-80' : ''
+      }`}
       draggable
       onDragStart={() => onDragStart(image.id)}
       onDragOver={(e) => e.preventDefault()}
       onDrop={() => onDropOn(image.id)}
     >
+      {isExceeded && (
+        <div className="absolute inset-0 bg-red-900/40 z-10 flex flex-col items-center justify-center pointer-events-none">
+          <span className="bg-red-600 text-white text-[10px] font-black uppercase px-2 py-1 rounded-full shadow-lg">
+            Excedente (Apagar)
+          </span>
+        </div>
+      )}
+
       <img src={image.url} alt={`Imagem ${index + 1}`} className="w-full h-full object-cover" />
 
       <div className="absolute inset-x-0 top-0 p-2 flex items-center justify-between bg-gradient-to-b from-black/60 to-transparent">
@@ -241,6 +252,9 @@ const AdminPropertyForm: React.FC = () => {
   const [formData, setFormData] = useState<FormState>(defaultForm);
   const [images, setImages] = useState<ImageItem[]>([]);
   const [imagesToDelete, setImagesToDelete] = useState<string[]>([]);
+  const MAX_IMAGES = 30;
+  const exceededImagesCount = images.length - MAX_IMAGES;
+  const isOverImageLimit = exceededImagesCount > 0;
   const [newFeature, setNewFeature] = useState('');
   const [newCondoFeature, setNewCondoFeature] = useState('');
   const [newImageUrl, setNewImageUrl] = useState('');
@@ -772,6 +786,14 @@ const AdminPropertyForm: React.FC = () => {
     setImages(prev => [...prev].reverse());
   };
 
+  const sortImagesByName = () => {
+    setImages(prev => [...prev].sort((a, b) => {
+      const nameA = (a as any).file?.name || (a as any).url || '';
+      const nameB = (b as any).file?.name || (b as any).url || '';
+      return nameA.localeCompare(nameB);
+    }));
+  };
+
   const goNext = () => {
     const index = STEP_ORDER.indexOf(step);
     if (index < STEP_ORDER.length - 1) setStep(STEP_ORDER[index + 1]);
@@ -784,6 +806,11 @@ const AdminPropertyForm: React.FC = () => {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+
+    if (isOverImageLimit) {
+      addToast(`Remova ${exceededImagesCount} imagem(ns) excedente(s) antes de salvar.`, 'error');
+      return;
+    }
 
     try {
       setLoading(true);
@@ -1715,22 +1742,41 @@ const AdminPropertyForm: React.FC = () => {
                     <Icons.Image size={18} className="text-brand-500" /> Galeria do Imóvel
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Arraste as imagens para organizar a ordem. A primeira imagem será a capa.
+                    Arraste para reordenar. A primeira é a capa.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="text-xs font-bold bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
-                    Total: {images.length} / 30 fotos permitidas
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className={`text-xs font-bold px-3 py-1.5 rounded-lg border ${
+                    isOverImageLimit
+                      ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-900/30 dark:border-red-800/50'
+                      : 'bg-white text-slate-600 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
+                  }`}>
+                    {images.length} / {MAX_IMAGES} fotos
                   </div>
-                  <button 
-                    type="button"
-                    onClick={reverseImages}
-                    className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg transition-colors"
-                  >
-                    <Icons.RefreshCw size={14} /> Inverter Ordem
-                  </button>
+
+                  <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-0.5">
+                    <button type="button" onClick={sortImagesByName} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition-colors" title="Ordenar por Nome">
+                      <Icons.SortAsc size={12} /> A-Z
+                    </button>
+                    <button type="button" onClick={reverseImages} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition-colors" title="Inverter Ordem Atual">
+                      <Icons.RefreshCw size={12} /> Inverter
+                    </button>
+                  </div>
                 </div>
               </div>
+
+              {isOverImageLimit && (
+                <div className="bg-red-50 dark:bg-red-500/10 border-l-4 border-red-500 p-4 rounded-r-xl flex items-start gap-3">
+                  <Icons.AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={20} />
+                  <div>
+                    <h3 className="text-sm font-bold text-red-800 dark:text-red-400">Limite de Imagens Excedido!</h3>
+                    <p className="text-xs text-red-700 dark:text-red-300 mt-1">
+                      Seu plano permite até {MAX_IMAGES} imagens por imóvel. Você enviou {images.length}.
+                      <strong> Apague {exceededImagesCount} foto(s) marcadas em vermelho</strong> para conseguir salvar este imóvel.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -1798,6 +1844,7 @@ const AdminPropertyForm: React.FC = () => {
                         key={image.id}
                         image={image}
                         index={idx}
+                        isExceeded={idx >= MAX_IMAGES}
                         onRemove={removeImage}
                         onDragStart={setDraggingImageId}
                         onDropOn={handleDropOnImage}
