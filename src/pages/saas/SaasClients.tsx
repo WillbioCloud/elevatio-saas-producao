@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { supabase } from '@/lib/supabase'
+import { PLANS } from '../../config/plans'
 
 export default function Clients() {
   const [clients, setClients] = useState<any[]>([])
@@ -491,11 +492,41 @@ export default function Clients() {
                 <input
                   type="number"
                   value={discountValue}
-                  onChange={(e) => setDiscountValue(Number(e.target.value))}
+                  onChange={(e) => setDiscountValue(Number(e.target.value) || 0)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2"
                   placeholder="Ex: 50"
                 />
               </div>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700 mb-6">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Resumo da Mensalidade</h4>
+              
+              {(() => {
+                const plan = PLANS.find(p => p.id === discountModal.company?.plan) || PLANS[0]
+                const basePrice = plan.price
+                const discount = discountType === 'fixed' 
+                  ? discountValue 
+                  : (basePrice * (discountValue / 100))
+                const finalPrice = Math.max(0, basePrice - discount)
+
+                return (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Valor Base ({plan.name}):</span>
+                      <span className="font-medium">R$ {basePrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-red-500">
+                      <span>Desconto Manual:</span>
+                      <span>- R$ {discount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-600 flex justify-between font-bold text-slate-900 dark:text-white">
+                      <span>Mensalidade Final:</span>
+                      <span className="text-brand-600">R$ {finalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
 
             <div className="mt-8 flex justify-end gap-3">

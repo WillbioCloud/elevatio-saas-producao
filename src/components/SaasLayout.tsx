@@ -21,6 +21,7 @@ import {
   LogOut,
   User,
   Plus,
+  Tag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +43,7 @@ const navigation = [
   {
     title: 'Financeiro',
     items: [
+      { name: 'Cupons', href: `${BASE}/cupons`, icon: Tag },
       { name: 'Pagamentos', href: `${BASE}/pagamentos`, icon: CreditCard },
       { name: 'Contratos', href: `${BASE}/contratos`, icon: FileText },
     ],
@@ -106,6 +108,7 @@ export default function SaasLayout() {
     if (path === `${BASE}/dashboard` || path === BASE || path === `${BASE}/`) return ['Dashboard', 'Visão Geral'];
     if (path === `${BASE}/clientes`) return ['Dashboard', 'Gestão Principal', 'Clientes'];
     if (path === `${BASE}/planos`) return ['Dashboard', 'Gestão Principal', 'Planos'];
+    if (path === `${BASE}/cupons`) return ['Dashboard', 'Financeiro', 'Cupons'];
     if (path === `${BASE}/pagamentos`) return ['Dashboard', 'Financeiro', 'Pagamentos'];
     if (path === `${BASE}/contratos`) return ['Dashboard', 'Financeiro', 'Contratos'];
     if (path === `${BASE}/definicoes`) return ['Dashboard', 'Sistema', 'Definições'];
