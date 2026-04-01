@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Building2,
   Users,
@@ -18,9 +18,10 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { supabase } from '../../lib/supabase';
-import { PLANS } from '../../config/plans';
 
 export default function SaasDashboard() {
+  const [, setClients] = useState<any[]>([]);
+  const [contractsList, setContractsList] = useState<any[]>([]);
   const [stats, setStats] = useState([
     {
       name: 'Total de Clientes Ativos',
@@ -58,93 +59,102 @@ export default function SaasDashboard() {
 
   const [planData, setPlanData] = useState<{ name: string; users: number }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [dashboardMetrics, setDashboardMetrics] = useState({
+    activeCustomers: 0,
+    newCustomersThisMonth: 0,
+    churnedContracts: 0,
+  });
+
+  const totalMRR = useMemo(() => {
+    // Agora o MRR é simplesmente a soma da coluna 'price' de todos os contratos ativos
+    return contractsList.reduce((acc, contract) => {
+      if (contract.status === 'active') {
+        return acc + (Number(contract.price) || 0);
+      }
+      return acc;
+    }, 0);
+  }, [contractsList]);
+
+  useEffect(() => {
+    const formattedMrr = new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(totalMRR);
+
+    setStats([
+      {
+        name: 'Total de Clientes Ativos',
+        value: dashboardMetrics.activeCustomers.toString(),
+        icon: Users,
+        change: '+100%',
+        changeType: 'positive',
+        description: 'Trial e Ativos'
+      },
+      {
+        name: 'Receita Recorrente (MRR)',
+        value: formattedMrr,
+        icon: CreditCard,
+        change: 'MRR Vitalício',
+        changeType: 'positive',
+        description: 'Assinaturas consolidadas'
+      },
+      {
+        name: 'Novos Clientes (Mês)',
+        value: dashboardMetrics.newCustomersThisMonth.toString(),
+        icon: Building2,
+        change: 'Neste mês',
+        changeType: 'positive',
+        description: 'Entradas recentes'
+      },
+      {
+        name: 'Cancelamentos (Churn)',
+        value: dashboardMetrics.churnedContracts.toString(),
+        icon: UserMinus,
+        change: 'Histórico',
+        changeType: dashboardMetrics.churnedContracts > 0 ? 'negative' : 'neutral',
+        description: 'Contratos inativos'
+      },
+    ]);
+  }, [dashboardMetrics, totalMRR]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         const [{ data: companies }, { data: contracts }] = await Promise.all([
-          supabase.from('companies').select('id, plan_status, created_at'),
-          supabase.from('saas_contracts').select('id, status, plan_name, canceled_at')
+          supabase.from('companies').select('id, active, plan, manual_discount_value, manual_discount_type, plan_status, created_at'),
+          supabase.from('saas_contracts').select('id, status, plan_name, canceled_at, price')
         ]);
 
         const companiesData = companies || [];
         const contractsData = contracts || [];
+        setClients(companiesData);
+        setContractsList(contractsData);
 
         const now = new Date();
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
 
-        // 1. Clientes Ativos (Active ou Trial)
-        const activeCustomers = companiesData.filter(c => 
+        const activeCustomers = companiesData.filter(c =>
           c.plan_status === 'active' || c.plan_status === 'trial'
         ).length;
 
-        // 2. Novos Clientes no Mês Atual
         const newCustomersThisMonth = companiesData.filter(c => {
           if (!c.created_at) return false;
           const d = new Date(c.created_at);
           return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
         }).length;
 
-        // 3. Cancelamentos (Churn)
         const churnedContracts = contractsData.filter(c => c.status === 'canceled').length;
-
-        // 4. Cálculo de MRR (Soma dos preços dos planos ATIVOS)
-        let mrr = 0;
         const activeContracts = contractsData.filter(c => c.status === 'active');
-        
-        activeContracts.forEach(contract => {
-          // Busca o preço no arquivo de configuração
-          const planDef = PLANS.find(p => p.id === contract.plan_name);
-          if (planDef) {
-            mrr += planDef.priceMensal; // Usa o preço mensal
-          }
+
+        setDashboardMetrics({
+          activeCustomers,
+          newCustomersThisMonth,
+          churnedContracts,
         });
 
-        const formattedMrr = new Intl.NumberFormat('pt-BR', {
-          style: 'currency',
-          currency: 'BRL'
-        }).format(mrr);
-
-        setStats([
-          {
-            name: 'Total de Clientes Ativos',
-            value: activeCustomers.toString(),
-            icon: Users,
-            change: '+100%',
-            changeType: 'positive',
-            description: 'Trial e Ativos'
-          },
-          {
-            name: 'Receita Recorrente (MRR)',
-            value: formattedMrr,
-            icon: CreditCard,
-            change: 'MRR Vitalício',
-            changeType: 'positive',
-            description: 'Assinaturas consolidadas'
-          },
-          {
-            name: 'Novos Clientes (Mês)',
-            value: newCustomersThisMonth.toString(),
-            icon: Building2,
-            change: 'Neste mês',
-            changeType: 'positive',
-            description: 'Entradas recentes'
-          },
-          {
-            name: 'Cancelamentos (Churn)',
-            value: churnedContracts.toString(),
-            icon: UserMinus,
-            change: 'Histórico',
-            changeType: churnedContracts > 0 ? 'negative' : 'neutral',
-            description: 'Contratos inativos'
-          },
-        ]);
-
-        // 5. Dados para o Gráfico de Planos (Adesão por Plano)
         const planCounts = activeContracts.reduce((acc: Record<string, number>, c) => {
           const planName = c.plan_name || 'Desconhecido';
-          // Capitaliza o nome do plano
           const formattedName = planName.charAt(0).toUpperCase() + planName.slice(1);
           acc[formattedName] = (acc[formattedName] || 0) + 1;
           return acc;

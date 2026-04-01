@@ -536,14 +536,31 @@ export default function Clients() {
                   if (!discountModal.company) return
 
                   setIsSavingDiscount(true)
+                  const plan = PLANS.find(p => p.id === discountModal.company.plan) || PLANS[0]
+                  const basePrice = plan.price
+                  const finalPrice = discountType === 'percentage'
+                    ? basePrice - (basePrice * (discountValue / 100))
+                    : Math.max(0, basePrice - discountValue)
 
-                  const { error } = await supabase.from('companies').update({
+                  const { error: companyError } = await supabase.from('companies').update({
                     manual_discount_value: discountValue,
                     manual_discount_type: discountType
                   }).eq('id', discountModal.company.id)
 
-                  if (error) {
-                    alert('Erro ao salvar desconto: ' + error.message)
+                  if (companyError) {
+                    alert('Erro ao salvar desconto: ' + companyError.message)
+                    setIsSavingDiscount(false)
+                    return
+                  }
+
+                  const { error: contractError } = await supabase.from('saas_contracts').update({
+                    price: finalPrice,
+                    discount_value: discountValue,
+                    discount_type: discountType
+                  }).eq('company_id', discountModal.company.id)
+
+                  if (contractError) {
+                    alert('Erro ao sincronizar contrato: ' + contractError.message)
                     setIsSavingDiscount(false)
                     return
                   }

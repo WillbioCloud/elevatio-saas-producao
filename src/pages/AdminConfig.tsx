@@ -12,6 +12,7 @@ import { type Company, type FinanceConfig, type SiteData } from '../types';
 import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle, ImageOff, Check, AlertTriangle } from 'lucide-react';
 import { useProperties } from '../hooks/useProperties';
 import { generateZapXML } from '../utils/zapXmlGenerator';
+import { PLANS } from '../config/plans';
 
 interface Profile {
   id: string;
@@ -314,6 +315,10 @@ const AdminConfig: React.FC = () => {
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [isUsageExpanded, setIsUsageExpanded] = useState(false);
   const [usageStats, setUsageStats] = useState({ users: 1, properties: 0, activeContracts: 0 });
+  const [domainCount, setDomainCount] = useState(0);
+  const [checkoutCoupon, setCheckoutCoupon] = useState('');
+  const [validatedCoupon, setValidatedCoupon] = useState<{ code: string, type: string, value: number } | null>(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
   const isLoading = isGeneratingCheckout || isReactivating || isUpgrading !== null;
   const setIsLoading = setIsGeneratingCheckout;
 
@@ -326,6 +331,16 @@ const AdminConfig: React.FC = () => {
       setAcceptedFidelityTerms(false);
     }
   }, [acceptFidelity]);
+
+  useEffect(() => {
+    if (isCheckoutModalOpen) return;
+
+    setDomainCount(0);
+    setCheckoutCoupon('');
+    setValidatedCoupon(null);
+    setValidatingCoupon(false);
+  }, [isCheckoutModalOpen]);
+
   const [siteSubTab, setSiteSubTab] = useState<'templates' | 'identity' | 'hero' | 'about' | 'social'>('templates');
   const [siteData, setSiteData] = useState<SiteData & { hero_video_url?: string | null }>({
     logo_url: null,
@@ -922,6 +937,39 @@ const AdminConfig: React.FC = () => {
     }
   };
 
+  const handleValidateCheckoutCoupon = async () => {
+    if (!checkoutCoupon.trim()) return;
+
+    setValidatingCoupon(true);
+    try {
+      const { data, error } = await supabase
+        .from('saas_coupons')
+        .select('*')
+        .eq('code', checkoutCoupon.toUpperCase())
+        .eq('active', true)
+        .single();
+
+      if (error || !data) throw new Error('Cupom inválido');
+
+      const maxUses = data.max_uses ?? data.usage_limit;
+      if (typeof maxUses === 'number' && maxUses > 0 && Number(data.used_count ?? 0) >= maxUses) {
+        throw new Error('Cupom esgotado');
+      }
+
+      setValidatedCoupon({
+        code: data.code,
+        type: data.discount_type ?? data.type,
+        value: Number(data.discount_value ?? data.value ?? 0),
+      });
+      addToast('Cupom aplicado com sucesso!', 'success');
+    } catch (err: any) {
+      addToast(err.message || 'Cupom inválido ou expirado', 'error');
+      setValidatedCoupon(null);
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
   const handleOpenPortal = async () => {
     setIsOpeningPortal(true);
     try {
@@ -1019,7 +1067,9 @@ const AdminConfig: React.FC = () => {
           new_plan: plan.name,
           billing_cycle: isYearly ? 'yearly' : 'monthly',
           has_fidelity: isYearly ? false : acceptFidelity,
-          addons: planParam.addons || { buyDomainBr: false, buyDomainCom: false }
+          addons: planParam.addons || { buyDomainBr: false, buyDomainCom: false },
+          coupon_code: planParam.coupon_code || null,
+          domain_count: planParam.domain_count || 0
         })
       });
 
@@ -1855,7 +1905,19 @@ const AdminConfig: React.FC = () => {
                               : contract ? 'Inativo' : 'Erro: Contrato não gerado'}
                       </span>
                     </div>
-                    <h2 className="text-4xl font-serif font-bold uppercase tracking-tight">{displayPlanName}</h2>
+                    <div>
+                      <h2 className="text-4xl font-serif font-bold uppercase tracking-tight">Plano {displayPlanName}</h2>
+                      {Number(user?.company?.manual_discount_value ?? 0) > 0 && (
+                        <div className="mt-2 flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full border border-white/30 w-fit">
+                          <Icons.BadgeCheck size={14} className="text-emerald-400" />
+                          <span className="text-[10px] font-bold text-white uppercase tracking-wider">
+                            Desconto de {user?.company?.manual_discount_type === 'percentage'
+                              ? `${Number(user.company.manual_discount_value)}%`
+                              : `R$ ${Number(user.company.manual_discount_value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} Ativo
+                          </span>
+                        </div>
+                      )}
+                    </div>
                     <div className="mt-2 text-3xl font-bold text-white">
                       {contract?.price
                         ? Number(contract.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -1899,6 +1961,9 @@ const AdminConfig: React.FC = () => {
                               buyDomainBr: contract?.domain_status === 'pending' || contract?.domain_status == null,
                               buyDomainCom: false
                             });
+                            setDomainCount(contract?.domain_status === 'pending' || contract?.domain_status == null ? 1 : 0);
+                            setCheckoutCoupon('');
+                            setValidatedCoupon(null);
                             setCheckoutMode('pay');
                             setIsCheckoutModalOpen(true);
                           } else {
@@ -3420,8 +3485,171 @@ const AdminConfig: React.FC = () => {
       )}
 
       {/* Modal de Detalhes do Plano Atual */}
-      {/* MODAL DE CHECKOUT COM ORDER BUMP (INTELIGENTE) */}
+      {/* MODAL DE CHECKOUT COM CALCULADORA DETALHADA */}
       {isCheckoutModalOpen && selectedPlanForCheckout && (
+        (() => {
+          const selectedPlanId = String(selectedPlanForCheckout.id || currentPlanDetails?.id || '').toLowerCase();
+          const fallbackPlan = PLANS.find((plan) => plan.id === selectedPlanId);
+          const basePlanPrice = Number(selectedPlanForCheckout.price ?? fallbackPlan?.price ?? 0);
+          let discountAmount = 0;
+
+          if (validatedCoupon) {
+            discountAmount = validatedCoupon.type === 'percentage'
+              ? basePlanPrice * (validatedCoupon.value / 100)
+              : validatedCoupon.value;
+          }
+
+          const planWithDiscount = Math.max(0, basePlanPrice - discountAmount);
+          const totalDomainsPrice = domainCount * 40;
+          const finalTotal = planWithDiscount + totalDomainsPrice;
+
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md p-6 shadow-xl relative">
+                <button onClick={() => setIsCheckoutModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+                  <Icons.X size={20} />
+                </button>
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-6">Resumo da Assinatura</h3>
+
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Quantidade de Domínios Extras</label>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="range"
+                      min="0"
+                      max="10"
+                      value={domainCount}
+                      onChange={(e) => setDomainCount(Number(e.target.value))}
+                      className="flex-1 accent-brand-600"
+                    />
+                    <span className="font-bold text-brand-600 w-8 text-center">{domainCount}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">+ R$ 40,00 por domínio/mês</p>
+                </div>
+
+                {/* Campo de Cupom dentro do Carrinho */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Cupom de Desconto</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={checkoutCoupon} 
+                      onChange={(e) => {
+                        setCheckoutCoupon(e.target.value);
+                        if (validatedCoupon?.code !== e.target.value.toUpperCase()) {
+                          setValidatedCoupon(null);
+                        }
+                      }} 
+                      placeholder="INSERIR CÓDIGO" 
+                      className="flex-1 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm uppercase outline-none focus:border-brand-500 bg-slate-50 dark:bg-slate-800" 
+                    />
+                    <button 
+                      onClick={handleValidateCheckoutCoupon} 
+                      disabled={validatingCoupon || !checkoutCoupon} 
+                      className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {validatingCoupon ? <Icons.Loader2 size={16} className="animate-spin" /> : 'Aplicar'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Resumo Financeiro Inteligente */}
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3 mb-6 text-sm">
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                    <span>Plano {selectedPlanForCheckout.name || displayPlanName}</span>
+                    <span className="font-medium">R$ {basePlanPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  
+                  {validatedCoupon && (
+                    <div className="flex justify-between text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded-lg -mx-2">
+                      <span>Desconto ({validatedCoupon.code})</span>
+                      <span>- R$ {discountAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+
+                  {domainCount > 0 && (
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                      <span>{domainCount} Domínio(s) Adicional(is)</span>
+                      <span className="font-medium">R$ {totalDomainsPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+
+                  <div className="pt-3 mt-1 border-t border-slate-200 dark:border-slate-600 flex justify-between font-black text-lg text-slate-900 dark:text-white">
+                    <span>Total Mensal</span>
+                    <span className="text-brand-600">R$ {finalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={async () => {
+                    const addons = {
+                      buyDomainBr: domainCount >= 1,
+                      buyDomainCom: domainCount >= 2,
+                    };
+
+                    if (domainCount > 2) {
+                      addToast('O checkout atual suporta até 2 domínios extras por vez.', 'error');
+                      return;
+                    }
+
+                    setIsCheckoutModalOpen(false);
+
+                    if (checkoutMode === 'upgrade') {
+                      handleUpgrade({
+                        ...selectedPlanForCheckout,
+                        addons,
+                        coupon_code: validatedCoupon?.code,
+                        domain_count: domainCount,
+                      });
+                      return;
+                    }
+
+                    try {
+                      setIsLoading(true);
+                      const { data: { session } } = await supabase.auth.getSession();
+                      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-asaas-subscription`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${session?.access_token}`,
+                          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+                        },
+                        body: JSON.stringify({
+                          company_id: contract?.company_id,
+                          new_plan: contract?.plan_name || selectedPlanForCheckout.name || 'Starter',
+                          billing_cycle: contract?.billing_cycle || 'monthly',
+                          has_fidelity: contract?.has_fidelity || false,
+                          addons,
+                          coupon_code: validatedCoupon?.code,
+                          domain_count: domainCount,
+                        })
+                      });
+
+                      if (response.ok) {
+                        handleCheckout();
+                      } else {
+                        const responseData = await response.json().catch(() => null);
+                        throw new Error(responseData?.error || 'Falha ao processar pagamento.');
+                      }
+                    } catch (e) {
+                      console.error(e);
+                      addToast('Erro ao processar pagamento.', 'error');
+                      setIsLoading(false);
+                    }
+                  }}
+                  className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl transition-colors disabled:opacity-50"
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Icons.Loader2 size={18} className="mx-auto animate-spin" /> : 'Prosseguir para Pagamento'}
+                </button>
+              </div>
+            </div>
+          );
+        })()
+      )}
+
+      {/* MODAL DE CHECKOUT COM ORDER BUMP (INTELIGENTE) */}
+      {false && isCheckoutModalOpen && selectedPlanForCheckout && (
         (() => {
           // Lê os dados REAIS do banco (contract) e não o estado visual da tela
           const isModalYearly = contract?.billing_cycle === 'yearly';

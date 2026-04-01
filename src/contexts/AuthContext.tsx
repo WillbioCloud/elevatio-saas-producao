@@ -16,6 +16,8 @@ type CompanyProfile = {
   default_commission?: number;
   broker_commission?: number;
   payment_api_key?: string;
+  manual_discount_value?: number | null;
+  manual_discount_type?: 'fixed' | 'percentage' | null;
 };
 
 type ProfileData = {
@@ -137,7 +139,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*, company:companies(name, plan, use_asaas, default_commission, broker_commission, payment_api_key)')
+        .select('*, company:companies(name, plan, use_asaas, default_commission, broker_commission, payment_api_key, manual_discount_value, manual_discount_type)')
         .eq('id', currentSession.user.id)
         .maybeSingle();
 
@@ -308,7 +310,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!error && authData?.user) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('*, company:companies(name, plan, use_asaas, default_commission, broker_commission, payment_api_key)')
+        .select('*, company:companies(name, plan, use_asaas, default_commission, broker_commission, payment_api_key, manual_discount_value, manual_discount_type)')
         .eq('id', authData.user.id)
         .single();
 

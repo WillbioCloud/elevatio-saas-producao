@@ -1,18 +1,15 @@
 import React, { useEffect, useState } from 'react'
 import {
   BadgeDollarSign,
-  Calendar,
   Gift,
   Loader2,
   Percent,
   Plus,
   Tag,
-  Users,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { supabase } from '@/lib/supabase'
 
@@ -22,9 +19,12 @@ interface Coupon {
   id: string
   code: string
   type: CouponType
+  discount_type?: CouponType
   value: number
+  discount_value?: number
   duration_months: number
-  usage_limit: number
+  max_uses?: number | null
+  usage_limit?: number | null
   used_count: number
   active: boolean
   created_at?: string
@@ -35,7 +35,7 @@ const initialForm = {
   type: 'percentage' as CouponType,
   value: 0,
   durationMonths: 3,
-  usageLimit: 1,
+  maxUses: 1,
 }
 
 export default function SaasCoupons() {
@@ -61,7 +61,13 @@ export default function SaasCoupons() {
       return
     }
 
-    setCoupons((data || []) as Coupon[])
+    const normalizedCoupons = ((data || []) as Array<Record<string, any>>).map((coupon) => ({
+      ...coupon,
+      type: (coupon.discount_type ?? coupon.type) as CouponType,
+      value: Number(coupon.discount_value ?? coupon.value ?? 0),
+    }))
+
+    setCoupons(normalizedCoupons as Coupon[])
     setLoading(false)
   }
 
@@ -102,15 +108,24 @@ export default function SaasCoupons() {
 
     const payload = {
       code: form.code.trim().toUpperCase(),
-      type: form.type,
-      value: form.type === 'free_month' ? 0 : Number(form.value || 0),
+      discount_type: form.type,
+      discount_value: form.type === 'free_month' ? 0 : Number(form.value || 0),
       duration_months: Number(form.durationMonths || 0),
-      usage_limit: Number(form.usageLimit || 0),
       used_count: 0,
       active: true,
     }
 
-    const { error } = await supabase.from('saas_coupons').insert([payload])
+    let { error } = await supabase
+      .from('saas_coupons')
+      .insert([{ ...payload, max_uses: Number(form.maxUses || 0) }])
+
+    if (error && /max_uses/i.test(error.message || '')) {
+      const fallbackInsert = await supabase
+        .from('saas_coupons')
+        .insert([{ ...payload, usage_limit: Number(form.maxUses || 0) }])
+
+      error = fallbackInsert.error
+    }
 
     if (error) {
       alert('Erro ao criar cupom: ' + error.message)
@@ -184,7 +199,7 @@ export default function SaasCoupons() {
                     <TableCell className="text-slate-600 dark:text-slate-300">{getValueLabel(coupon)}</TableCell>
                     <TableCell className="text-slate-600 dark:text-slate-300">{coupon.duration_months} mês(es)</TableCell>
                     <TableCell className="text-slate-600 dark:text-slate-300">
-                      {coupon.used_count || 0}/{coupon.usage_limit || 0}
+                      {coupon.used_count || 0}/{coupon.max_uses ?? coupon.usage_limit ?? 0}
                     </TableCell>
                   </TableRow>
                 ))
@@ -213,68 +228,77 @@ export default function SaasCoupons() {
               </button>
             </div>
 
-            <div className="p-6 space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Código</label>
-                <Input
-                  value={form.code}
-                  onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                  placeholder="Ex: PRIMEIROCLIENTE"
-                  className="bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800"
-                />
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
+            <div className="p-6">
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tipo</label>
-                  <select
-                    value={form.type}
-                    onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value as CouponType }))}
-                    className="flex h-10 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white"
-                  >
-                    <option value="percentage">Porcentagem</option>
-                    <option value="fixed">Valor Fixo</option>
-                    <option value="free_month">Mensalidade Grátis</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Valor</label>
-                  <Input
-                    type="number"
-                    value={form.type === 'free_month' ? 0 : form.value}
-                    onChange={(e) => setForm((prev) => ({ ...prev, value: Number(e.target.value) || 0 }))}
-                    disabled={form.type === 'free_month'}
-                    placeholder={form.type === 'percentage' ? 'Ex: 20' : 'Ex: 50'}
-                    className="bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800"
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Código do Cupom</label>
+                  <input
+                    type="text"
+                    value={form.code}
+                    onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value }))}
+                    placeholder="Ex: BEMVINDO50"
+                    className="w-full px-4 py-2 rounded-lg border border-slate-200 uppercase outline-none focus:border-brand-500"
                   />
                 </div>
-              </div>
 
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Duração</label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <Input
-                      type="number"
-                      value={form.durationMonths}
-                      onChange={(e) => setForm((prev) => ({ ...prev, durationMonths: Number(e.target.value) || 0 }))}
-                      className="pl-9 bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800"
-                    />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tipo de Desconto</label>
+                    <select
+                      value={form.type}
+                      onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value as CouponType }))}
+                      className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none"
+                    >
+                      <option value="percentage">Porcentagem (%)</option>
+                      <option value="fixed">Valor Fixo (R$)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Valor do Desconto
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={form.value}
+                        onChange={(e) => setForm((prev) => ({ ...prev, value: Number(e.target.value) }))}
+                        className="w-full pl-4 pr-10 py-2 rounded-lg border border-slate-200 outline-none"
+                        placeholder="Ex: 20"
+                      />
+                      <span className="absolute right-3 top-2.5 text-slate-400 font-bold text-sm">
+                        {form.type === 'percentage' ? '%' : 'R$'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Limite de Uso</label>
-                  <div className="relative">
-                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <Input
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Duração (Meses)</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={form.durationMonths}
+                        onChange={(e) => setForm((prev) => ({ ...prev, durationMonths: Number(e.target.value) }))}
+                        className="w-full pl-4 pr-16 py-2 rounded-lg border border-slate-200 outline-none"
+                        placeholder="Ex: 3"
+                      />
+                      <span className="absolute right-3 top-2.5 text-slate-400 text-xs">Meses</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">Tempo de validade na assinatura.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Cupons Disponíveis</label>
+                    <input
                       type="number"
-                      value={form.usageLimit}
-                      onChange={(e) => setForm((prev) => ({ ...prev, usageLimit: Number(e.target.value) || 0 }))}
-                      className="pl-9 bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800"
+                      value={form.maxUses}
+                      onChange={(e) => setForm((prev) => ({ ...prev, maxUses: Number(e.target.value) }))}
+                      className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none"
+                      placeholder="Ex: 100"
                     />
+                    <p className="text-[10px] text-slate-500 mt-1">Quantas vezes pode ser resgatado.</p>
                   </div>
                 </div>
               </div>

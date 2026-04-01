@@ -108,6 +108,8 @@ export interface Company {
   broker_commission?: number | null;
   payment_api_key?: string | null;
   payment_gateway?: 'asaas' | 'cora';
+  manual_discount_value?: number | null;
+  manual_discount_type?: 'fixed' | 'percentage' | null;
 }
 
 export type ListingType = 'sale' | 'rent';
