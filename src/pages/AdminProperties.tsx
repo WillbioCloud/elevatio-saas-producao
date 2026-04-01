@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Lead, Property } from '../types';
 import { Icons } from '../components/Icons';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../contexts/AuthContext';
-import { getPlanConfig, normalizePlanType } from '../config/plans';
+import { usePlanLimits } from '../hooks/usePlanLimits';
 import { TOOLTIPS } from '../constants/tooltips';
 import PropertyPreviewModal from '../components/PropertyPreviewModal';
 import {
@@ -43,9 +43,8 @@ const InfoTooltip = ({ text }: { text: string }) => (
 );
 
 const AdminProperties: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
-  const userPlan = normalizePlanType(user?.company?.plan) ?? 'free';
-  const planConfig = getPlanConfig(user?.company?.plan);
   const isAdmin = user?.role === 'admin';
 
   const [properties, setProperties] = useState<Property[]>([]);
@@ -78,9 +77,7 @@ const AdminProperties: React.FC = () => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importPreview, setImportPreview] = useState<any[]>([]);
-  const maxProperties = planConfig.maxProperties;
-  const currentPropertiesCount = properties.length;
-  const canAddProperty = currentPropertiesCount < maxProperties;
+  const { hasReachedLimit, limit, isUnlimited } = usePlanLimits(properties.length, 'properties');
 
   const fetchProperties = async () => {
     const shouldShowInitialLoading = properties.length === 0;
@@ -504,22 +501,33 @@ const AdminProperties: React.FC = () => {
               Importar Excel
             </button>
             
-            <Link
-              to="/admin/imoveis/novo"
-              onClick={(event) => {
-                if (!canAddProperty) {
-                  event.preventDefault();
-                  alert(`LIMITE ATINGIDO!
-
-O seu plano atual (${userPlan.toUpperCase()}) permite gerir até ${maxProperties} imóveis simultaneamente. Tem atualmente ${currentPropertiesCount} imóveis.
-
-Por favor, faça um upgrade para adicionar mais propriedades.`);
-                }
-              }}
-              className="bg-gradient-to-r from-brand-600 to-sky-500 text-white px-6 py-3 rounded-xl font-bold hover:scale-105 transition-all shadow-[0_4px_14px_rgba(14,165,233,0.35)] flex items-center gap-2"
-            >
-              <Icons.Plus size={20} /> Novo Imóvel
-            </Link>
+            {hasReachedLimit ? (
+              <div className="flex flex-col items-end">
+                <button
+                  disabled
+                  className="px-4 py-2 bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed rounded-lg font-bold flex items-center gap-2"
+                >
+                  <Icons.Plus size={20} /> Adicionar Imóvel
+                </button>
+                <p className="text-[10px] text-red-500 mt-1 font-medium">
+                  Limite do plano atingido ({limit}/{limit}). Faça upgrade!
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-end">
+                <button
+                  onClick={() => navigate('/admin/imoveis/novo')}
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-lg flex items-center gap-2 transition-colors"
+                >
+                  <Icons.Plus size={20} /> Adicionar Imóvel
+                </button>
+                {!isUnlimited && user?.role !== 'super_admin' && (
+                  <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                    {properties.length}/{limit} imóveis no plano
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

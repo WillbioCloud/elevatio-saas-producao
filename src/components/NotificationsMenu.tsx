@@ -3,7 +3,6 @@ import { Icons } from './Icons';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { useTenant } from '../contexts/TenantContext';
 
 interface NotificationItem {
   id: string;
@@ -20,23 +19,39 @@ interface NotificationItem {
 export default function NotificationsMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const { user } = useAuth();
-  const { tenant } = useTenant();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
 
+  const companyId = user?.company_id;
   const isSuperAdmin = user?.role === 'super_admin';
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
+
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
     if (isSuperAdmin) {
       fetchSaasNotifications();
-      subscribeToSaasNotifications();
-    } else if (tenant?.id) {
+      channel = subscribeToSaasNotifications();
+    } else if (companyId) {
       fetchCrmNotifications();
-      subscribeToCrmNotifications();
+      channel = subscribeToCrmNotifications();
+    } else {
+      setNotifications([]);
+      setUnreadCount(0);
     }
-  }, [user, tenant?.id]);
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [user, companyId]);
 
   const fetchSaasNotifications = async () => {
     const { data } = await supabase.from('saas_notifications').select('*').order('created_at', { ascending: false }).limit(20);
@@ -44,11 +59,13 @@ export default function NotificationsMenu() {
   };
 
   const fetchCrmNotifications = async () => {
+    if (!companyId) return;
     const { data } = await supabase
       .from('notifications')
       .select('*')
-      .eq('company_id', tenant?.id)
-      .order('created_at', { ascending: false });
+      .eq('company_id', companyId)
+      .order('created_at', { ascending: false })
+      .limit(20);
     
     if (data) {
       setNotifications(data);
@@ -57,14 +74,15 @@ export default function NotificationsMenu() {
   };
 
   const subscribeToSaasNotifications = () => {
-    supabase.channel('saas_notifications_changes').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'saas_notifications' }, (payload) => {
+    return supabase.channel('saas_notifications_changes').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'saas_notifications' }, (payload) => {
       setNotifications(prev => [payload.new as NotificationItem, ...prev]);
       setUnreadCount(prev => prev + 1);
     }).subscribe();
   };
 
   const subscribeToCrmNotifications = () => {
-    supabase.channel('crm_notifications_changes').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `company_id=eq.${tenant?.id}` }, (payload) => {
+    if (!companyId) return null;
+    return supabase.channel('crm_notifications').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `company_id=eq.${companyId}` }, (payload) => {
       setNotifications(prev => [payload.new as NotificationItem, ...prev]);
       setUnreadCount(prev => prev + 1);
     }).subscribe();
@@ -86,7 +104,8 @@ export default function NotificationsMenu() {
       await supabase.from('saas_notifications').update({ is_read: true }).eq('is_read', false);
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } else {
-      await supabase.from('notifications').update({ read: true }).eq('company_id', tenant?.id).eq('read', false);
+      if (!companyId) return;
+      await supabase.from('notifications').update({ read: true }).eq('company_id', companyId).eq('read', false);
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     }
     setUnreadCount(0);

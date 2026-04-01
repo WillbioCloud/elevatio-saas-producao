@@ -25,6 +25,10 @@ export default function Clients() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedClient, setSelectedClient] = useState<any | null>(null)
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
+  const [discountModal, setDiscountModal] = useState<{ isOpen: boolean; company: any | null }>({ isOpen: false, company: null })
+  const [discountValue, setDiscountValue] = useState<number>(0)
+  const [discountType, setDiscountType] = useState<'fixed' | 'percentage'>('fixed')
+  const [isSavingDiscount, setIsSavingDiscount] = useState(false)
 
   // Estados para o Modal de Nova Empresa
   const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false)
@@ -253,15 +257,29 @@ export default function Clients() {
                     {new Date(client.created_at).toLocaleDateString("pt-BR")}
                   </TableCell>
                   <TableCell className="relative">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenDropdownId(openDropdownId === client.id ? null : client.id);
-                      }}
-                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                    >
-                      <Icons.MoreHorizontal size={20} />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDiscountModal({ isOpen: true, company: client })
+                          setDiscountValue(client.manual_discount_value || 0)
+                          setDiscountType(client.manual_discount_type || 'fixed')
+                        }}
+                        className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                        title="Aplicar Desconto Manual"
+                      >
+                        <Icons.BadgeDollarSign size={18} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenDropdownId(openDropdownId === client.id ? null : client.id);
+                        }}
+                        className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                      >
+                        <Icons.MoreHorizontal size={20} />
+                      </button>
+                    </div>
                     {openDropdownId === client.id && (
                       <>
                         <div className="fixed inset-0 z-10" onClick={() => setOpenDropdownId(null)}></div>
@@ -442,6 +460,74 @@ export default function Clients() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Desconto Manual */}
+      {discountModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md p-6 shadow-xl">
+            <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Desconto / Agrado</h3>
+            <p className="text-sm text-slate-500 mb-6">Aplicar desconto recorrente para <strong>{discountModal.company?.name}</strong></p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tipo de Desconto</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" checked={discountType === 'fixed'} onChange={() => setDiscountType('fixed')} className="text-brand-600" />
+                    <span className="text-sm">Valor Fixo (R$)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" checked={discountType === 'percentage'} onChange={() => setDiscountType('percentage')} className="text-brand-600" />
+                    <span className="text-sm">Porcentagem (%)</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Valor do Desconto</label>
+                <input
+                  type="number"
+                  value={discountValue}
+                  onChange={(e) => setDiscountValue(Number(e.target.value))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2"
+                  placeholder="Ex: 50"
+                />
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end gap-3">
+              <button onClick={() => setDiscountModal({ isOpen: false, company: null })} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
+              <button
+                onClick={async () => {
+                  if (!discountModal.company) return
+
+                  setIsSavingDiscount(true)
+
+                  const { error } = await supabase.from('companies').update({
+                    manual_discount_value: discountValue,
+                    manual_discount_type: discountType
+                  }).eq('id', discountModal.company.id)
+
+                  if (error) {
+                    alert('Erro ao salvar desconto: ' + error.message)
+                    setIsSavingDiscount(false)
+                    return
+                  }
+
+                  setClients(prev => prev.map(c => c.id === discountModal.company.id ? { ...c, manual_discount_value: discountValue, manual_discount_type: discountType } : c))
+                  setSelectedClient(prev => prev?.id === discountModal.company.id ? { ...prev, manual_discount_value: discountValue, manual_discount_type: discountType } : prev)
+                  setIsSavingDiscount(false)
+                  setDiscountModal({ isOpen: false, company: null })
+                }}
+                disabled={isSavingDiscount}
+                className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-lg flex items-center gap-2"
+              >
+                {isSavingDiscount ? <Icons.Loader2 className="animate-spin" size={16} /> : <Icons.Check size={16} />} Salvar Agrado
+              </button>
+            </div>
           </div>
         </div>
       )}

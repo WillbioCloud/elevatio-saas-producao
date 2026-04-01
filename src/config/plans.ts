@@ -15,6 +15,20 @@ export interface PlanLimits {
   };
 }
 
+export interface PlanCatalogItem {
+  id: PlanType;
+  name: string;
+  description: string;
+  priceMensal: number;
+  priceAnual: number;
+  features: string[];
+  limits: {
+    users: number;
+    properties: number;
+    leads: number;
+  };
+}
+
 export const PLAN_CONFIG: Record<PlanType, PlanLimits> = {
   free: {
     maxUsers: 1, maxProperties: 5, maxAiDescriptionsPerDay: 5,
@@ -68,14 +82,15 @@ export const getPlanConfig = (value: unknown, fallback: PlanType = 'free'): Plan
   return PLAN_CONFIG[normalizedPlan];
 };
 
-export const PLANS = [
+export const PLANS: PlanCatalogItem[] = [
   {
     id: 'starter',
     name: 'Starter',
     description: 'Ideal para corretores independentes que estão começando.',
     priceMensal: 54.90,
     priceAnual: 43.92, // Valor mensal no plano anual (20% OFF)
-    features: ['Até 2 usuários', 'Até 50 imóveis', '50 descrições com IA/mês', 'CRM Básico']
+    features: ['Até 2 usuários', 'Até 50 imóveis', '50 descrições com IA/mês', 'CRM Básico'],
+    limits: { users: PLAN_CONFIG.starter.maxUsers, properties: PLAN_CONFIG.starter.maxProperties, leads: -1 }
   },
   {
     id: 'basic',
@@ -83,7 +98,8 @@ export const PLANS = [
     description: 'Para pequenas imobiliárias com foco em crescimento.',
     priceMensal: 74.90,
     priceAnual: 59.92,
-    features: ['Até 5 usuários', 'Até 400 imóveis', 'Pipeline de Leads', 'Gestão de Tarefas']
+    features: ['Até 5 usuários', 'Até 400 imóveis', 'Pipeline de Leads', 'Gestão de Tarefas'],
+    limits: { users: PLAN_CONFIG.basic.maxUsers, properties: PLAN_CONFIG.basic.maxProperties, leads: -1 }
   },
   {
     id: 'profissional',
@@ -91,7 +107,8 @@ export const PLANS = [
     description: 'O padrão da indústria para imobiliárias consolidadas.',
     priceMensal: 119.90,
     priceAnual: 95.92,
-    features: ['Até 8 usuários', 'Até 1000 imóveis', 'Gamificação', 'Relatórios Avançados']
+    features: ['Até 8 usuários', 'Até 1000 imóveis', 'Gamificação', 'Relatórios Avançados'],
+    limits: { users: PLAN_CONFIG.profissional.maxUsers, properties: PLAN_CONFIG.profissional.maxProperties, leads: -1 }
   },
   {
     id: 'business',
@@ -99,7 +116,8 @@ export const PLANS = [
     description: 'Para quem precisa de controle total e automação.',
     priceMensal: 179.90,
     priceAnual: 143.92,
-    features: ['Até 12 usuários', 'Até 2000 imóveis', 'Contratos e Finanças', 'Automação de Marketing']
+    features: ['Até 12 usuários', 'Até 2000 imóveis', 'Contratos e Finanças', 'Automação de Marketing'],
+    limits: { users: PLAN_CONFIG.business.maxUsers, properties: PLAN_CONFIG.business.maxProperties, leads: -1 }
   },
   {
     id: 'premium',
@@ -107,7 +125,8 @@ export const PLANS = [
     description: 'Tecnologia de ponta com IA para alta performance.',
     priceMensal: 249.90,
     priceAnual: 199.92,
-    features: ['Até 20 usuários', 'Até 3500 imóveis', 'Aura AI (Assistente)', 'Integração de Portais']
+    features: ['Até 20 usuários', 'Até 3500 imóveis', 'Aura AI (Assistente)', 'Integração de Portais'],
+    limits: { users: PLAN_CONFIG.premium.maxUsers, properties: PLAN_CONFIG.premium.maxProperties, leads: -1 }
   },
   {
     id: 'elite',
@@ -115,6 +134,16 @@ export const PLANS = [
     description: 'Sem limites. Para os maiores players do mercado.',
     priceMensal: 349.90,
     priceAnual: 279.92,
-    features: ['Usuários Ilimitados', 'Imóveis Ilimitados', 'IA Ilimitada', 'Suporte Dedicado 24/7']
+    features: ['Usuários Ilimitados', 'Imóveis Ilimitados', 'IA Ilimitada', 'Suporte Dedicado 24/7'],
+    limits: { users: -1, properties: -1, leads: -1 }
+  },
+  {
+    id: 'free',
+    name: 'Free',
+    description: 'Plano de entrada para operações enxutas e testes.',
+    priceMensal: 0,
+    priceAnual: 0,
+    features: ['1 usuário', 'Até 5 imóveis', '5 descrições com IA/mês', 'CRM Essencial'],
+    limits: { users: PLAN_CONFIG.free.maxUsers, properties: PLAN_CONFIG.free.maxProperties, leads: -1 }
   }
 ];
