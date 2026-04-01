@@ -754,6 +754,24 @@ const AdminPropertyForm: React.FC = () => {
     setDraggingImageId(null);
   };
 
+  const handleDragOverContainer = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const container = e.currentTarget;
+    const speed = 15;
+    const threshold = 60;
+
+    const rect = container.getBoundingClientRect();
+    if (e.clientY - rect.top < threshold) {
+      container.scrollTop -= speed;
+    } else if (rect.bottom - e.clientY < threshold) {
+      container.scrollTop += speed;
+    }
+  };
+
+  const reverseImages = () => {
+    setImages(prev => [...prev].reverse());
+  };
+
   const goNext = () => {
     const index = STEP_ORDER.indexOf(step);
     if (index < STEP_ORDER.length - 1) setStep(STEP_ORDER[index + 1]);
@@ -1690,7 +1708,30 @@ const AdminPropertyForm: React.FC = () => {
           )}
 
           {step === 'media' && (
-            <div className="space-y-6">
+            <div className="space-y-6 animate-fade-in">
+              <div className="flex flex-col sm:flex-row items-center justify-between bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-4 rounded-xl gap-4">
+                <div>
+                  <p className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                    <Icons.Image size={18} className="text-brand-500" /> Galeria do Imóvel
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Arraste as imagens para organizar a ordem. A primeira imagem será a capa.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="text-xs font-bold bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+                    Total: {images.length} / 30 fotos permitidas
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={reverseImages}
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <Icons.RefreshCw size={14} /> Inverter Ordem
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="new-image-url" className="block text-xs font-bold text-slate-400 mb-2 uppercase">Adicionar por URL</label>
@@ -1750,17 +1791,19 @@ const AdminPropertyForm: React.FC = () => {
                   Nenhuma imagem adicionada.
                 </p>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {images.map((image, idx) => (
-                    <SortableImageCard
-                      key={image.id}
-                      image={image}
-                      index={idx}
-                      onRemove={removeImage}
-                      onDragStart={setDraggingImageId}
-                      onDropOn={handleDropOnImage}
-                    />
-                  ))}
+                <div className="max-h-[600px] overflow-y-auto" onDragOver={handleDragOverContainer}>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {images.map((image, idx) => (
+                      <SortableImageCard
+                        key={image.id}
+                        image={image}
+                        index={idx}
+                        onRemove={removeImage}
+                        onDragStart={setDraggingImageId}
+                        onDropOn={handleDropOnImage}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

@@ -489,45 +489,38 @@ const AdminProperties: React.FC = () => {
             <InfoTooltip text={TOOLTIPS.properties.pageTitle} />
           </h1>
           <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Gerencie a carteira de imóveis da imobiliária.</p>
+
+          {isAdmin && !isUnlimited && user?.role !== 'super_admin' && (
+            <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-white/10 bg-white/80 dark:bg-[#0a0f1c]/80 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
+              <Icons.Home size={14} className={hasReachedLimit ? 'text-red-500' : 'text-brand-500'} />
+              <span>Imóveis Cadastrados: {properties.length} / {limit}</span>
+              {hasReachedLimit && <span className="text-red-500 ml-1">(Limite atingido)</span>}
+            </div>
+          )}
         </div>
-        
+
         {isAdmin && (
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
             <button 
               onClick={() => setIsImportModalOpen(true)}
-              className="px-5 py-3 rounded-xl font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-all flex items-center gap-2 shadow-sm"
+              className="px-5 py-2.5 rounded-xl font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-all flex items-center gap-2 shadow-sm"
             >
               <Icons.FileSpreadsheet size={18} className="text-emerald-600" /> 
               Importar Excel
             </button>
-            
-            {hasReachedLimit ? (
-              <div className="flex flex-col items-end">
-                <button
-                  disabled
-                  className="px-4 py-2 bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed rounded-lg font-bold flex items-center gap-2"
-                >
-                  <Icons.Plus size={20} /> Adicionar Imóvel
-                </button>
-                <p className="text-[10px] text-red-500 mt-1 font-medium">
-                  Limite do plano atingido ({limit}/{limit}). Faça upgrade!
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-end">
-                <button
-                  onClick={() => navigate('/admin/imoveis/novo')}
-                  className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-bold shadow-lg flex items-center gap-2 transition-colors"
-                >
-                  <Icons.Plus size={20} /> Adicionar Imóvel
-                </button>
-                {!isUnlimited && user?.role !== 'super_admin' && (
-                  <p className="text-[10px] text-slate-500 mt-1 font-medium">
-                    {properties.length}/{limit} imóveis no plano
-                  </p>
-                )}
-              </div>
-            )}
+
+            <button
+              onClick={() => navigate('/admin/imoveis/novo')}
+              disabled={hasReachedLimit}
+              className={`px-5 py-2.5 rounded-xl font-bold shadow-lg flex items-center gap-2 transition-all ${
+                hasReachedLimit 
+                  ? 'bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed' 
+                  : 'bg-brand-600 hover:bg-brand-700 text-white hover:scale-105 active:scale-95'
+              }`}
+              title={hasReachedLimit ? 'Limite do plano atingido' : 'Adicionar Novo'}
+            >
+              <Icons.Plus size={20} /> Adicionar Imóvel
+            </button>
           </div>
         )}
       </div>

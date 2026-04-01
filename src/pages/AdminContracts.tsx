@@ -329,7 +329,10 @@ const AdminContracts: React.FC = () => {
         <div className="flex items-center gap-3">
           <button 
             onClick={() => handleOpenContractModal('rent')}
-            className="inline-flex items-center gap-2 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl border border-slate-200/60 dark:border-white/5 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors shadow-sm">
+            disabled={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts}
+            className="inline-flex items-center gap-2 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl border border-slate-200/60 dark:border-white/5 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts ? 'Limite de contratos de locação atingido' : 'Novo Aluguel'}
+          >
             <Icons.Plus size={16} /> Novo Aluguel
           </button>
           

@@ -11,6 +11,7 @@ import { uploadCompanyAsset } from '../lib/storage';
 import { type Company, type FinanceConfig, type SiteData } from '../types';
 import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle, ImageOff, Check, AlertTriangle } from 'lucide-react';
 import { useProperties } from '../hooks/useProperties';
+import { usePlanLimits } from '../hooks/usePlanLimits';
 import { generateZapXML } from '../utils/zapXmlGenerator';
 import { PLANS } from '../config/plans';
 
@@ -264,6 +265,7 @@ const AdminConfig: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'profile' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance'>('profile');
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const { hasReachedLimit: teamLimitReached, limit: teamLimit, isUnlimited: teamUnlimited } = usePlanLimits(profiles.length, 'users');
   const [distRules, setDistRules] = useState<{ enabled: boolean; types: string[] }>({ enabled: false, types: [] });
   const [profileForm, setProfileForm] = useState({ name: '', phone: '', email: '', company_logo: '', cpf_cnpj: '', creci: '' });
   const [passwordForm, setPasswordForm] = useState({ password: '', confirmPassword: '' });
@@ -1545,22 +1547,30 @@ const AdminConfig: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
               <h2 className="text-xl font-bold text-slate-800 dark:text-white">Equipe da Imobiliária</h2>
-              <p className="text-sm text-slate-500">Convide corretores e aprove os cadastros pendentes.</p>
+              {!teamUnlimited && user?.role !== 'super_admin' && (
+                <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600 shadow-sm">
+                  <Icons.Users size={14} className={teamLimitReached ? 'text-red-500' : 'text-brand-500'} />
+                  <span>Usuários: {profiles.length} / {teamLimit}</span>
+                  {teamLimitReached && <span className="text-red-500 ml-1">(Limite atingido)</span>}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 onClick={() => void copyInviteLink('corretor')}
-                className="px-4 py-2 bg-brand-50 hover:bg-brand-100 dark:bg-brand-900/20 dark:hover:bg-brand-900/40 text-brand-600 dark:text-brand-400 font-bold text-sm rounded-xl transition-colors flex items-center gap-2"
+                disabled={teamLimitReached}
+                className="px-4 py-2 bg-brand-50 hover:bg-brand-100 text-brand-600 font-bold text-sm rounded-xl transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Icons.Link size={16} /> Link p/ Corretor
+                <Icons.Link size={16} /> Convite Corretor
               </button>
 
               <button
                 onClick={() => void copyInviteLink('admin')}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-sm rounded-xl transition-colors flex items-center gap-2"
+                disabled={teamLimitReached}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm rounded-xl transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Icons.Shield size={16} /> Link p/ Admin
+                <Icons.Shield size={16} /> Convite Admin
               </button>
             </div>
           </div>

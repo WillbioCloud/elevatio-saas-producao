@@ -54,8 +54,12 @@ export default function NotificationsMenu() {
   }, [user, companyId]);
 
   const fetchSaasNotifications = async () => {
-    const { data } = await supabase.from('saas_notifications').select('*').order('created_at', { ascending: false }).limit(20);
-    if (data) { setNotifications(data); setUnreadCount(data.filter(n => !n.is_read).length); }
+    const { data, error } = await supabase.from('saas_notifications').select('*').order('created_at', { ascending: false }).limit(20);
+    if (error) console.error('Erro ao buscar notificações SaaS:', error);
+    if (data) {
+      setNotifications(data as any[]);
+      setUnreadCount(data.filter(n => !n.is_read && !n.read).length);
+    }
   };
 
   const fetchCrmNotifications = async () => {
@@ -74,10 +78,11 @@ export default function NotificationsMenu() {
   };
 
   const subscribeToSaasNotifications = () => {
-    return supabase.channel('saas_notifications_changes').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'saas_notifications' }, (payload) => {
-      setNotifications(prev => [payload.new as NotificationItem, ...prev]);
-      setUnreadCount(prev => prev + 1);
-    }).subscribe();
+    return supabase.channel('saas_notifications_realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'saas_notifications' }, (payload) => {
+        setNotifications(prev => [payload.new as any, ...prev]);
+        setUnreadCount(prev => prev + 1);
+      }).subscribe();
   };
 
   const subscribeToCrmNotifications = () => {
