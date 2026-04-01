@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import type { FinanceConfig } from '../types';
 
 const MASTER_DOMAINS = [
   'localhost',
@@ -24,6 +25,11 @@ export type Company = {
   email?: string | null;
   address?: string | null;
   site_data?: any;
+  finance_config?: FinanceConfig | string | null;
+  use_asaas?: boolean | null;
+  default_commission?: number | null;
+  broker_commission?: number | null;
+  payment_api_key?: string | null;
   [key: string]: unknown;
 };
 
@@ -119,7 +125,11 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       try {
-        let query = supabase.from('companies').select('*');
+        let query = supabase
+          .from('companies')
+          .select(
+            'id, name, subdomain, domain, plan, active, site_data, finance_config, use_asaas, default_commission, broker_commission, payment_api_key'
+          );
 
         if (hostData.customDomain) {
           query = query.eq('domain', cleanHostname);
@@ -134,8 +144,71 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           throw error;
         }
 
+        const parsedFinanceConfig =
+          typeof data?.finance_config === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(data.finance_config) as FinanceConfig;
+                } catch {
+                  return null;
+                }
+              })()
+            : ((data?.finance_config as FinanceConfig | null) ?? null);
+
+        const parsedSiteData =
+          typeof data?.site_data === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(data.site_data) as Record<string, unknown>;
+                } catch {
+                  return null;
+                }
+              })()
+            : ((data?.site_data as Record<string, unknown> | null) ?? null);
+
         if (isMounted) {
-          setTenant((data as Company | null) ?? null);
+          setTenant(
+            data
+              ? ({
+                  ...data,
+                  site_data: parsedSiteData,
+                  phone:
+                    typeof parsedSiteData?.contact_phone === 'string'
+                      ? parsedSiteData.contact_phone
+                      : typeof (parsedSiteData?.contact as { phone?: unknown } | undefined)?.phone === 'string'
+                        ? (parsedSiteData?.contact as { phone: string }).phone
+                        : null,
+                  email:
+                    typeof parsedSiteData?.contact_email === 'string'
+                      ? parsedSiteData.contact_email
+                      : typeof (parsedSiteData?.contact as { email?: unknown } | undefined)?.email === 'string'
+                        ? (parsedSiteData?.contact as { email: string }).email
+                        : null,
+                  address:
+                    typeof parsedSiteData?.address === 'string'
+                      ? parsedSiteData.address
+                      : typeof (parsedSiteData?.contact as { address?: unknown } | undefined)?.address === 'string'
+                        ? (parsedSiteData?.contact as { address: string }).address
+                        : null,
+                  logo_url:
+                    typeof parsedSiteData?.logo_url === 'string' ? parsedSiteData.logo_url : null,
+                  logo_white_url:
+                    typeof parsedSiteData?.logo_white_url === 'string'
+                      ? parsedSiteData.logo_white_url
+                      : null,
+                  finance_config: parsedFinanceConfig,
+                  use_asaas:
+                    typeof data.use_asaas === 'boolean'
+                      ? data.use_asaas
+                      : parsedFinanceConfig?.use_asaas ?? false,
+                  default_commission:
+                    data.default_commission ?? parsedFinanceConfig?.default_commission ?? null,
+                  broker_commission:
+                    data.broker_commission ?? parsedFinanceConfig?.broker_commission ?? null,
+                  payment_api_key: data.payment_api_key ?? null,
+                } as Company)
+              : null
+          );
         }
       } catch (error) {
         console.error('Erro ao carregar tenant:', error);

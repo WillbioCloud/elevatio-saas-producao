@@ -9,6 +9,15 @@ import React, {
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
+type CompanyProfile = {
+  name: string;
+  plan: string;
+  use_asaas?: boolean;
+  default_commission?: number;
+  broker_commission?: number;
+  payment_api_key?: string;
+};
+
 type ProfileData = {
   id?: string;
   role?: string;
@@ -19,10 +28,7 @@ type ProfileData = {
   xp_points?: number;
   active?: boolean;
   company_id?: string;
-  company?: {
-    name: string;
-    plan: 'free' | 'starter' | 'basic' | 'profissional' | 'business' | 'premium' | 'elite';
-  };
+  company?: CompanyProfile;
   [key: string]: unknown;
 };
 
@@ -35,10 +41,7 @@ export type UserWithRole = User & {
   xp_points?: number;
   active?: boolean;
   company_id?: string;
-  company?: {
-    name: string;
-    plan: 'free' | 'starter' | 'basic' | 'profissional' | 'business' | 'premium' | 'elite';
-  };
+  company?: CompanyProfile;
   profile?: ProfileData | null;
 };
 
@@ -134,7 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*, company:companies(name, plan)')
+        .select('*, company:companies(name, plan, use_asaas, default_commission, broker_commission, payment_api_key)')
         .eq('id', currentSession.user.id)
         .maybeSingle();
 
@@ -305,7 +308,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!error && authData?.user) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('*, company:companies(name, plan)')
+        .select('*, company:companies(name, plan, use_asaas, default_commission, broker_commission, payment_api_key)')
         .eq('id', authData.user.id)
         .single();
 

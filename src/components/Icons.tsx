@@ -129,6 +129,10 @@ import {
   UserCheck,
   Key,
   ShowerHead,
+  Copy,
+  ShieldCheck,
+  Link2,
+  Percent,
 } from 'lucide-react';
 
 const Google = (props: ComponentPropsWithoutRef<'svg'>) => (
@@ -291,4 +295,8 @@ export const Icons = {
   UserCheck,
   Key,
   ShowerHead,
+  Copy,
+  ShieldCheck,
+  Link2,
+  Percent,
 };

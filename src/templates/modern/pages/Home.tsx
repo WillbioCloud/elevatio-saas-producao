@@ -5,7 +5,7 @@ import { Icons } from '../../../components/Icons';
 import Loading from '../../../components/Loading';
 import PartnersCarousel from '../../../components/PartnersCarousel';
 import { supabase } from '../../../lib/supabase';
-import { ListingType, Property } from '../../../types';
+import { ListingType, Property, type SiteData } from '../../../types';
 import PropertyCard from '../components/PropertyCard';
 import {
   getHeroSubtitle,
@@ -14,17 +14,33 @@ import {
   getTenantLogo,
 } from '../tenantUtils';
 
+type CondominiumRecord = NonNullable<SiteData['condominiums']>[number];
+
+const parseSiteData = (raw: unknown): SiteData => {
+  if (!raw) return {};
+
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as SiteData) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  return typeof raw === 'object' ? (raw as SiteData) : {};
+};
+
 const Home: React.FC = () => {
   const { tenant } = useTenant();
-  const siteData = typeof tenant?.site_data === 'string' 
-    ? JSON.parse(tenant.site_data) 
-    : tenant?.site_data || {};
+  const siteData = useMemo(() => parseSiteData(tenant?.site_data), [tenant?.site_data]);
   const navigate = useNavigate();
   const [listingMode, setListingMode] = useState<ListingType>('sale');
   const [selectedCity, setSelectedCity] = useState('');
   const [selectedNeighborhood, setSelectedNeighborhood] = useState('');
   const [selectedType, setSelectedType] = useState('');
   const [properties, setProperties] = useState<Property[]>([]);
+  const [activeCondos, setActiveCondos] = useState<CondominiumRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const logoUrl = getTenantLogo(tenant);
@@ -84,6 +100,54 @@ const Home: React.FC = () => {
       isMounted = false;
     };
   }, [tenant?.id]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchActiveCondos = async () => {
+      if (!tenant?.id) {
+        if (isMounted) setActiveCondos([]);
+        return;
+      }
+
+      const registeredCondos = siteData.condominiums || [];
+      if (!registeredCondos.length) {
+        if (isMounted) setActiveCondos([]);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('properties')
+          .select('condominium_id')
+          .eq('company_id', tenant.id)
+          .neq('status', 'Vendido')
+          .neq('status', 'Alugado')
+          .not('condominium_id', 'is', null);
+
+        if (error) throw error;
+
+        const activeIds = new Set(
+          (data || [])
+            .map((item: { condominium_id?: string | null }) => item.condominium_id)
+            .filter((value): value is string => Boolean(value))
+        );
+
+        if (isMounted) {
+          setActiveCondos(registeredCondos.filter((condo) => activeIds.has(condo.id)));
+        }
+      } catch (error) {
+        console.error('Erro ao buscar condominios ativos:', error);
+        if (isMounted) setActiveCondos([]);
+      }
+    };
+
+    void fetchActiveCondos();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [siteData.condominiums, tenant?.id]);
 
   const cities = useMemo(
     () => Array.from(new Set(properties.map((property) => property.location.city).filter(Boolean))).sort(),
@@ -254,31 +318,31 @@ const Home: React.FC = () => {
       </section>
 
       {/* Condomínios e Regiões em Destaque (Dinâmico) */}
-      {siteData.featured_regions && siteData.featured_regions.length > 0 && (
+      {activeCondos.length > 0 && (
         <section className="py-20 bg-slate-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h2 className="text-3xl font-bold text-slate-900 mb-4">Condomínios e Regiões</h2>
+              <h2 className="text-3xl font-bold text-slate-900 mb-4">Condomínios em Destaque</h2>
               <p className="text-slate-600 max-w-2xl mx-auto">
                 Explore os melhores endereços e encontre o lugar perfeito para o seu próximo capítulo.
               </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {siteData.featured_regions.map((region) => (
+              {activeCondos.map((condo) => (
                 <div
-                  key={region.id}
-                  onClick={() => navigate(`/imoveis?q=${encodeURIComponent(region.name)}`)}
+                  key={condo.id}
+                  onClick={() => navigate(`/imoveis?q=${encodeURIComponent(condo.name)}`)}
                   className="group relative h-80 rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl transition-all duration-300"
                 >
                   <img
-                    src={region.image_url || 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&q=80'}
-                    alt={region.name}
+                    src={condo.image_url || 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&q=80'}
+                    alt={condo.name}
                     className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent"></div>
                   <div className="absolute bottom-0 left-0 right-0 p-8">
-                    <h3 className="text-2xl font-bold text-white mb-2 transform translate-y-2 group-hover:translate-y-0 transition-transform">{region.name}</h3>
+                    <h3 className="text-2xl font-bold text-white mb-2 transform translate-y-2 group-hover:translate-y-0 transition-transform">{condo.name}</h3>
                     <div className="flex items-center text-brand-400 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-4 group-hover:translate-y-0 delay-75">
                       <span className="text-sm font-semibold uppercase tracking-wider">Ver imóveis</span>
                       <Icons.ArrowRight size={16} className="ml-2" />
@@ -303,7 +367,7 @@ const Home: React.FC = () => {
              <div onClick={() => navigate('/imoveis?type=Casa')} className="md:col-span-2 md:row-span-2 relative rounded-[2.5rem] overflow-hidden cursor-pointer group">
                <img src="https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=800&q=80" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="Casas" />
                <div className="absolute bottom-0 left-0 p-8 w-full bg-gradient-to-t from-black/60 to-transparent">
-                  <h3 className="text-white text-3xl font-semibold">Casas Modernas</h3>
+                  <h3 className="text-white text-3xl font-semibold">Casas</h3>
                   <p className="text-white/80 mt-2 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-4 group-hover:translate-y-0">Design e arquitetura contemporânea</p>
                </div>
              </div>
@@ -312,23 +376,23 @@ const Home: React.FC = () => {
                <img src="https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=600&q=80" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="Apartamentos" />
                <div className="absolute bottom-0 left-0 p-8 w-full bg-gradient-to-t from-black/60 to-transparent">
                   <h3 className="text-white text-3xl font-semibold">Apartamentos</h3>
-                  <p className="text-white/80 mt-2 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-4 group-hover:translate-y-0">Design e arquitetura contemporânea</p>
+                  <p className="text-white/80 mt-2 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-4 group-hover:translate-y-0">Comididade, conforto e para aqueles que buscam uma vida tranquila</p>
                </div>
              </div>
 
              <div onClick={() => navigate('/imoveis?type=Cobertura')} className="relative rounded-[2.5rem] overflow-hidden cursor-pointer group">
-               <img src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=600&q=80" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="Coberturas" />
+               <img src="https://www.multiimob.com.br/blog/wp-content/uploads/2024/11/Vantagens-e-Desvantagens-de-Morar-em-Coberturas.jpeg" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="Coberturas" />
                <div className="absolute bottom-0 left-0 p-8 w-full bg-gradient-to-t from-black/60 to-transparent">
                   <h3 className="text-white text-3xl font-semibold">Coberturas</h3>
-                  <p className="text-white/80 mt-2 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-4 group-hover:translate-y-0">Design e arquitetura contemporânea</p>
+                  <p className="text-white/80 mt-2 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-4 group-hover:translate-y-0">Espaços luxuosos e modernos para uma vida de qualidade</p>
                </div>
              </div>
 
              <div onClick={() => navigate('/imoveis?type=Terreno')} className="md:col-span-2 relative rounded-[2.5rem] overflow-hidden cursor-pointer group">
-               <img src="https://images.unsplash.com/photo-1449844908441-8829872d2607?auto=format&fit=crop&w=800&q=80" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="Bairros" />
+               <img src="https://plantasdecasas.com/wp-content/uploads/2017/01/comprar-terreno2.jpg" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="Bairros" />
                <div className="absolute bottom-0 left-0 p-8 w-full bg-gradient-to-t from-black/60 to-transparent">
                   <h3 className="text-white text-2xl font-semibold">Lotes</h3>
-                  <p className="text-white/80 mt-2 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-4 group-hover:translate-y-0">Design e arquitetura contemporânea</p>
+                  <p className="text-white/80 mt-2 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-4 group-hover:translate-y-0">Oportunidades de investimento em terras e lotes</p>
                </div>
              </div>
           </div>

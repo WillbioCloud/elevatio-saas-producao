@@ -172,6 +172,16 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     }
   }, [isOpen, contractData]);
 
+  // Auto-preenche a comissão da imobiliária se for um novo contrato
+  useEffect(() => {
+    if (isOpen && !contractData) {
+      setFormData(prev => ({
+        ...prev,
+        commission_percentage: String(user?.company?.default_commission ?? 6)
+      }));
+    }
+  }, [isOpen, contractData, user?.company?.default_commission]);
+
   const fetchData = async () => {
     const { data: leadsData } = await supabase.from('leads').select('*').or('funnel_step.eq.venda_ganha,status.in.(Fechado,Venda Fechada,Venda Ganha)');
     if (leadsData) setLeads(leadsData as any);

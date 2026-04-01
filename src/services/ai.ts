@@ -59,12 +59,28 @@ export const generateText = async (prompt: string): Promise<string | null> => {
   }
 };
 
-export const generatePropertyDescription = async (propertyFeatures: string): Promise<string | null> => {
+export const generatePropertyDescription = async (
+  propertyFeatures: string,
+  condoName?: string | null,
+  condoFeatures?: string[]
+): Promise<string | null> => {
+  const condoFeaturesText = condoFeatures && condoFeatures.length > 0 ? `\nComodidades do Condomínio: ${condoFeatures.join(', ')}` : '';
+  const condominiumContext = condoName
+    ? `Informação Adicional: O imóvel fica no condomínio ${condoName}.
+Se houver um nome de condomínio, destaque a segurança, infraestrutura e o estilo de vida exclusivo de residir nesta localidade.`
+    : '';
+
+  const condominiumContextWithFeatures = condoName
+    ? `Informação Adicional: O imóvel fica no condomínio ${condoName}. ${condoFeaturesText}
+Se houver um nome de condomínio, destaque a segurança, infraestrutura e o estilo de vida exclusivo de residir nesta localidade, incluindo as comodidades citadas.`
+    : condominiumContext;
+
   const prompt = `
 Atue como um redator imobiliário profissional. Sua tarefa é criar um anúncio padronizado SUBSTITUINDO os colchetes [...] do template abaixo pelos DADOS REAIS DO IMÓVEL, respeitando regras estritas de segurança jurídica.
 
 DADOS DO IMÓVEL A SEREM UTILIZADOS:
 ${propertyFeatures}
+${condominiumContextWithFeatures ? `\n${condominiumContextWithFeatures}\n` : ''}
 
 ⚠️ REGRAS DE SEGURANÇA JURÍDICA (CRÍTICO):
 1. NÃO invente informações. Use APENAS os dados fornecidos. Se algo não foi informado, omita.

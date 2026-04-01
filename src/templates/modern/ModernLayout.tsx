@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { Facebook, Instagram, Linkedin, MessageCircle, Youtube } from 'lucide-react';
+import { Facebook, Instagram, Linkedin, Mail, MapPin, MessageCircle, Phone, Youtube } from 'lucide-react';
 import { Icons } from '../../components/Icons';
 import ContactModal from '../../components/ContactModal';
 import { useTenant } from '../../contexts/TenantContext';
@@ -45,12 +45,13 @@ const ModernLayout: React.FC = () => {
   const primaryColor = getPrimaryColor(tenant);
   const logoUrl = getTenantLogo(tenant);
   const footerLogoUrl = getTenantLogoWhite(tenant);
-  
+
   // Extrai o siteData para pegarmos a logo secundária
   const siteData = typeof tenant?.site_data === 'string'
     ? JSON.parse(tenant.site_data)
     : tenant?.site_data || {};
   const logoAltUrl = siteData.logo_alt_url || logoUrl; // Fallback para a logo principal se não houver secundária
+
   // Troca dinâmica de Favicon e Título do Site (Multi-tenant)
   useEffect(() => {
     // 1. Atualiza o Título da Aba
@@ -201,129 +202,111 @@ const ModernLayout: React.FC = () => {
         <Outlet />
       </main>
 
-      <footer className="bg-slate-900 text-gray-300 py-12">
-        <div className="container mx-auto px-4 grid grid-cols-1 md:grid-cols-4 gap-8">
-          <div>
-            <Link to="/" className="flex items-center gap-3 group">
-              <img
-                src={footerLogoUrl}
-                alt={companyName}
-                className="h-11 w-auto object-contain transition-all duration-300"
-              />
-            </Link>
-            <p className="text-sm leading-relaxed mb-4 mt-5">
-              {aboutText}
-            </p>
-
-            {socialLinks.length > 0 && (
-              <div className="flex items-center gap-3 mt-4">
-                {socialLinks.map(({ key, href, icon: Icon, label }) => (
-                  <a
-                    key={key}
-                    href={href}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={label}
-                    className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:border-white/40 transition-all"
-                  >
-                    <Icon size={18} />
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <h4 className="text-white font-bold mb-4">Links Rápidos</h4>
-            <ul className="space-y-2 text-sm">
-              <li><Link to="/imoveis" className="hover:text-amber-400">Comprar Imóvel</Link></li>
-              <li><Link to="/servicos" className="hover:text-amber-400">Serviços</Link></li>
-              <li><Link to="/sobre" className="hover:text-amber-400">Sobre Nós</Link></li>
-              <li><Link to="/financiamentos" className="hover:text-amber-400">Financiamentos</Link></li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="text-white font-bold mb-4">Contato</h4>
-            <ul className="space-y-4 text-sm text-slate-400">
-              {/* Renderização segura do endereço (verifica se é objeto ou string) */}
-              {(siteData.address || siteData.contact_phone || siteData.contact_email) && (
-                <>
-                  {siteData.address && (
-                    <li className="flex items-start gap-3">
-                      <Icons.MapPin size={18} className="shrink-0 text-slate-500 mt-0.5" />
-                      <span>
-                        {typeof siteData.address === 'object'
-                          ? `${siteData.address.street || ''}, ${siteData.address.number || 's/n'}${siteData.address.city ? ' - ' + siteData.address.city : ''}`
-                          : siteData.address}
-                      </span>
-                    </li>
-                  )}
-                  
-                  {siteData.contact_phone && (
-                    <li className="flex items-center gap-3">
-                      <Icons.Phone size={18} className="shrink-0 text-slate-500" />
-                      <span>{siteData.contact_phone}</span>
-                    </li>
-                  )}
-                  
-                  {siteData.contact_email && (
-                    <li className="flex items-center gap-3">
-                      <Icons.Mail size={18} className="shrink-0 text-slate-500" />
-                      <span>{siteData.contact_email}</span>
-                    </li>
-                  )}
-                </>
-              )}
-              
-              {/* Fallback caso não haja dados novos, tenta usar os dados antigos ou do tenant base */}
-              {!siteData.address && !siteData.contact_phone && !siteData.contact_email && tenant && (
-                <>
-                  {tenant.phone && (
-                    <li className="flex items-center gap-3">
-                      <Icons.Phone size={18} className="shrink-0 text-slate-500" />
-                      <span>{tenant.phone}</span>
-                    </li>
-                  )}
-                </>
-              )}
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="text-white font-bold mb-4">Atendimento</h4>
-            <div className="flex flex-col gap-3">
-              {contactWhatsappLink ? (
-                <a
-                  href={contactWhatsappLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl py-3 px-4 font-bold text-white transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: primaryColor }}
-                >
-                  <MessageCircle size={18} />
-                  Chamar no WhatsApp
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsContactModalOpen(true)}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl py-3 px-4 font-bold text-white transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: primaryColor }}
-                >
-                  <MessageCircle size={18} />
-                  Solicitar Contato
-                </button>
-              )}
-              <p className="text-sm text-slate-400">
-                Atendimento digital com a identidade visual e os dados da sua imobiliária.
+      {/* Footer Premium */}
+      <footer className="bg-slate-950 text-slate-300 pt-20 pb-10 border-t border-slate-900">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-12 lg:gap-8 mb-16">
+            
+            {/* Coluna 1: Marca e Bio (Ocupa 4 colunas) */}
+            <div className="lg:col-span-4 space-y-6">
+              <Link to="/" className="inline-block transition-opacity hover:opacity-80">
+                {logoAltUrl ? (
+                  <img src={logoAltUrl} alt={tenant?.name} className="h-10 object-contain" />
+                ) : (
+                  <span className="text-2xl font-black text-white tracking-tight">
+                    {tenant?.name || 'Imobiliária'}
+                    <span style={{ color: primaryColor }}>.</span>
+                  </span>
+                )}
+              </Link>
+              <p className="text-slate-400 text-sm leading-relaxed max-w-sm font-light">
+                {siteData?.about_text 
+                  ? siteData.about_text.substring(0, 150) + '...'
+                  : 'Transformando a experiência imobiliária com transparência, segurança e foco absoluto no que realmente importa: você.'}
               </p>
+              {siteData?.social_instagram && (
+                <div className="flex items-center gap-4 pt-2">
+                  <a href={siteData.social_instagram} target="_blank" rel="noreferrer" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 hover:text-white transition-all">
+                    <Instagram size={18} />
+                  </a>
+                  {/* Adicione outros ícones sociais aqui se necessário */}
+                </div>
+              )}
+            </div>
+
+            {/* Coluna 2: Navegação (Ocupa 2 colunas) */}
+            <div className="lg:col-span-2">
+              <h4 className="text-white font-semibold mb-6 tracking-wide">Navegação</h4>
+              <ul className="space-y-4 text-sm font-light text-slate-400">
+                <li><Link to="/imoveis" className="hover:text-white transition-colors">Encontrar Imóveis</Link></li>
+                <li><Link to="/sobre" className="hover:text-white transition-colors">Nossa História</Link></li>
+                <li><Link to="/servicos" className="hover:text-white transition-colors">Serviços</Link></li>
+                <li><Link to="/financiamentos" className="hover:text-white transition-colors">Financiamento</Link></li>
+              </ul>
+            </div>
+
+            {/* Coluna 3: Atendimento e Contato (Ocupa 4 colunas) */}
+            <div className="lg:col-span-4">
+              <h4 className="text-white font-semibold mb-6 tracking-wide">Atendimento</h4>
+              <ul className="space-y-4 text-sm font-light text-slate-400">
+                {(siteData?.address || tenant?.address) && (
+                  <li className="flex items-start gap-3 group">
+                    <MapPin size={18} className="shrink-0 text-slate-500 mt-0.5 group-hover:text-white transition-colors" />
+                    <span className="leading-relaxed">
+                      {typeof siteData?.address === 'object'
+                        ? `${siteData.address.street || ''}, ${siteData.address.number || 's/n'}${siteData.address.city ? ' - ' + siteData.address.city : ''}`
+                        : siteData?.address || tenant?.address}
+                    </span>
+                  </li>
+                )}
+                {(siteData?.contact_phone || tenant?.phone) && (
+                  <li className="flex items-center gap-3 group">
+                    <Phone size={18} className="shrink-0 text-slate-500 group-hover:text-white transition-colors" />
+                    <span>{siteData?.contact_phone || tenant?.phone}</span>
+                  </li>
+                )}
+                {(siteData?.contact_email || tenant?.email) && (
+                  <li className="flex items-center gap-3 group">
+                    <Mail size={18} className="shrink-0 text-slate-500 group-hover:text-white transition-colors" />
+                    <span>{siteData?.contact_email || tenant?.email}</span>
+                  </li>
+                )}
+              </ul>
+            </div>
+
+            {/* Coluna 4: Documentação (Ocupa 2 colunas) */}
+            <div className="lg:col-span-2">
+              <h4 className="text-white font-semibold mb-6 tracking-wide">Legal</h4>
+              <ul className="space-y-4 text-sm font-light text-slate-400">
+                {siteData?.creci && (
+                  <li>
+                    <span className="block text-xs uppercase tracking-wider text-slate-600 mb-1 font-bold">CRECI</span>
+                    <span className="text-white font-medium">{siteData.creci}</span>
+                  </li>
+                )}
+                {siteData?.cnpj && (
+                  <li>
+                    <span className="block text-xs uppercase tracking-wider text-slate-600 mb-1 font-bold">CNPJ</span>
+                    <span className="text-white font-medium">{siteData.cnpj}</span>
+                  </li>
+                )}
+              </ul>
+            </div>
+
+          </div>
+
+          {/* Bottom Bar: Copyright & Assinatura */}
+          <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+            <p className="text-slate-500 text-sm font-light">
+              &copy; {new Date().getFullYear()} {siteData?.corporate_name || tenant?.name || 'Imobiliária'}. Todos os direitos reservados.
+            </p>
+            <div className="flex items-center gap-2 text-sm text-slate-500 font-light">
+              <span>Tecnologia de ponta por</span>
+              <a href="https://elevatiovendas.vercel.app" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-300 hover:text-white transition-colors tracking-wide">
+                Elevatio Vendas
+              </a>
             </div>
           </div>
-        </div>
-
-        <div className="container mx-auto px-4 mt-12 pt-8 border-t border-slate-800 text-center text-xs text-gray-500">
-          © {new Date().getFullYear()} {companyName}. Todos os direitos reservados.
         </div>
       </footer>
 

@@ -1,10 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { useAuth } from './AuthContext';
+import { useTenant } from './TenantContext';
 import { useToast } from './ToastContext';
 import { supabase } from '../lib/supabase';
 
-export type NotificationType = 'lead' | 'property' | 'task';
+export type NotificationType = 'lead' | 'property' | 'task' | 'system';
 
 export interface NotificationItem {
   id: string;
@@ -32,9 +33,11 @@ interface NotificationContextType {
 
 type NotificationRow = {
   id: string;
-  user_id: string;
+  user_id?: string | null;
+  company_id?: string | null;
   title: string;
-  message: string;
+  message?: string | null;
+  content?: string | null;
   type: NotificationType;
   read: boolean;
   created_at: string;
@@ -47,7 +50,9 @@ const playNotificationSound = () => {
   if (!soundEnabled) return;
 
   try {
-    const AudioContext = window.AudioContext || (window as Window & { webkitAudioContext?: typeof window.AudioContext }).webkitAudioContext;
+    const AudioContext =
+      window.AudioContext ||
+      (window as Window & { webkitAudioContext?: typeof window.AudioContext }).webkitAudioContext;
     if (!AudioContext) return;
 
     const audioCtx = new AudioContext();
@@ -77,7 +82,7 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 const mapRowToNotification = (row: NotificationRow): NotificationItem => ({
   id: row.id,
   title: row.title,
-  message: row.message,
+  message: row.message ?? row.content ?? '',
   type: row.type,
   read: row.read,
   date: new Date(row.created_at),
@@ -97,59 +102,71 @@ const upsertNotification = (
   return next.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, MAX_NOTIFICATIONS);
 };
 
+const isVisibleToUser = (row: NotificationRow, userId: string) => !row.user_id || row.user_id === userId;
+
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+  const { tenant } = useTenant();
   const { addToast } = useToast();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const fetchNotifications = useCallback(async () => {
-    if (!user?.id) {
-      setNotifications([]);
-      return;
-    }
+    if (!user || !tenant?.id) return;
+    
+    try {
+      // Busca notificações que sejam do usuário logado OU que sejam globais da imobiliária
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('company_id', tenant.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
 
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('id,user_id,title,message,type,read,created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(MAX_NOTIFICATIONS);
-
-    if (error) {
+      if (error) throw error;
+      
+      // Se houver uma coluna user_id, filtramos as que são para outro usuário
+      const filteredData = ((data ?? []) as NotificationRow[]).filter(n => !n.user_id || n.user_id === user.id);
+      
+      setNotifications(filteredData.map(mapRowToNotification));
+      setUnreadCount(filteredData?.filter(n => !n.read).length || 0);
+    } catch (error) {
       console.error('Erro ao buscar notificações:', error);
+    }
+  }, [tenant?.id, user]);
+
+  useEffect(() => {
+    if (!user || !tenant?.id) {
+      setNotifications([]);
+      setUnreadCount(0);
       return;
     }
 
-    const rows = (data ?? []) as NotificationRow[];
-    setNotifications(rows.map(mapRowToNotification));
-  }, [user?.id]);
-
-  useEffect(() => {
     void fetchNotifications();
-  }, [fetchNotifications]);
+  }, [fetchNotifications, tenant?.id, user]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !tenant?.id) return;
 
     const channel = supabase
-      .channel(`notifications-channel-${user.id}`)
+      .channel(`notifications-channel-${tenant.id}-${user.id}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
+          filter: `company_id=eq.${tenant.id}`,
         },
         (payload: RealtimePostgresChangesPayload<NotificationRow>) => {
-          const row = payload.new;
-          if (!row) return;
+          const row = payload.new as NotificationRow;
+          if (!row || !isVisibleToUser(row, user.id)) return;
 
           const mapped = mapRowToNotification(row);
           setNotifications((prev) => upsertNotification(prev, mapped));
           playNotificationSound();
-
           addToast(mapped.title, 'success');
+          void fetchNotifications();
         }
       )
       .on(
@@ -158,14 +175,15 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           event: 'UPDATE',
           schema: 'public',
           table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
+          filter: `company_id=eq.${tenant.id}`,
         },
         (payload: RealtimePostgresChangesPayload<NotificationRow>) => {
-          const row = payload.new;
-          if (!row) return;
+          const row = payload.new as NotificationRow;
+          if (!row || !isVisibleToUser(row, user.id)) return;
 
           const mapped = mapRowToNotification(row);
           setNotifications((prev) => upsertNotification(prev, mapped));
+          void fetchNotifications();
         }
       )
       .subscribe();
@@ -173,7 +191,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [addToast, user?.id]);
+  }, [addToast, fetchNotifications, tenant?.id, user?.id]);
 
   const addNotification = useCallback((notification: NotificationInput) => {
     if (!user?.id) return;
@@ -189,7 +207,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           read: false,
           company_id: user.company_id,
         })
-        .select('id,user_id,title,message,type,read,created_at')
+        .select('*')
         .single();
 
       if (error) {
@@ -200,11 +218,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (!data) return;
       const mapped = mapRowToNotification(data as NotificationRow);
       setNotifications((prev) => upsertNotification(prev, mapped));
+      setUnreadCount((prev) => prev + 1);
     })();
-  }, [user?.id, user?.company_id]);
+  }, [user?.company_id, user?.id]);
 
   const markAsRead = useCallback((id: string) => {
     if (!user?.id) return;
+
+    const wasUnread = notifications.some((notification) => notification.id === id && !notification.read);
 
     setNotifications((previous) =>
       previous.map((notification) =>
@@ -212,28 +233,33 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       )
     );
 
+    if (wasUnread) {
+      setUnreadCount((previous) => Math.max(0, previous - 1));
+    }
+
     void supabase
       .from('notifications')
       .update({ read: true })
       .eq('id', id)
-      .eq('user_id', user.id)
       .then(({ error }) => {
         if (error) {
           console.error('Erro ao marcar notificação como lida:', error);
           void fetchNotifications();
         }
       });
-  }, [fetchNotifications, user?.id]);
+  }, [fetchNotifications, notifications, user?.id]);
 
   const markAllAsRead = useCallback(() => {
-    if (!user?.id) return;
+    if (!user?.id || !tenant?.id) return;
 
     setNotifications((previous) => previous.map((notification) => ({ ...notification, read: true })));
+    setUnreadCount(0);
 
     void supabase
       .from('notifications')
       .update({ read: true })
-      .eq('user_id', user.id)
+      .eq('company_id', tenant.id)
+      .or(`user_id.is.null,user_id.eq.${user.id}`)
       .eq('read', false)
       .then(({ error }) => {
         if (error) {
@@ -241,12 +267,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           void fetchNotifications();
         }
       });
-  }, [fetchNotifications, user?.id]);
-
-  const unreadCount = useMemo(
-    () => notifications.filter((notification) => !notification.read).length,
-    [notifications]
-  );
+  }, [fetchNotifications, tenant?.id, user?.id]);
 
   const value = useMemo(
     () => ({ notifications, unreadCount, addNotification, markAsRead, markAllAsRead, fetchNotifications }),

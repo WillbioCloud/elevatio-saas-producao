@@ -7,42 +7,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import GamificationModal from '../components/GamificationModal';
 import FidelityTermsModal from '../components/FidelityTermsModal';
-import { uploadCompanyAsset, deleteCompanyAsset } from '../lib/storage';
-import { SiteData } from '../types';
-import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle, ImageOff, Check } from 'lucide-react';
+import { uploadCompanyAsset } from '../lib/storage';
+import { type Company, type FinanceConfig, type SiteData } from '../types';
+import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle, ImageOff, Check, AlertTriangle } from 'lucide-react';
 import { useProperties } from '../hooks/useProperties';
 import { generateZapXML } from '../utils/zapXmlGenerator';
-
-// Compressor Nativo para evitar estourar o limite do Supabase
-const compressImageToWebP = (file: File, maxWidth = 1200, quality = 0.8): Promise<File> => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let { width, height } = img;
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(new File([blob], file.name.replace(/\.[^/.]+$/, '') + '.webp', { type: 'image/webp' }));
-          } else {
-            resolve(file);
-          }
-        }, 'image/webp', quality);
-      };
-    };
-  });
-};
 
 interface Profile {
   id: string;
@@ -78,6 +47,12 @@ interface Contract {
 }
 
 type SitePartner = NonNullable<SiteData['partners']>[number];
+type TenantFinanceRecord = Pick<
+  Company,
+  'id' | 'name' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key'
+> & {
+  finance_config?: FinanceConfig | null;
+};
 
 const normalizePartners = (partners: unknown): SitePartner[] => {
   if (!Array.isArray(partners)) return [];
@@ -331,8 +306,10 @@ const AdminConfig: React.FC = () => {
   const { properties } = useProperties();
   const [isGeneratingXML, setIsGeneratingXML] = useState(false);
   const [isOpeningPortal, setIsOpeningPortal] = useState(false);
-  const [paymentApiKey, setPaymentApiKey] = useState('');
-  const [paymentGateway, setPaymentGateway] = useState<'asaas' | 'cora'>('cora');
+  const [tenant, setTenant] = useState<TenantFinanceRecord | null>(null);
+  const [savingFinance, setSavingFinance] = useState(false);
+  const [showAsaasModal, setShowAsaasModal] = useState(false);
+  const [tempApiKey, setTempApiKey] = useState('');
   const [plans, setPlans] = useState<any[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [isUsageExpanded, setIsUsageExpanded] = useState(false);
@@ -372,6 +349,10 @@ const AdminConfig: React.FC = () => {
     social: { instagram: null, facebook: null, whatsapp: null, youtube: null },
     seo: { title: null, description: null },
   });
+
+  useEffect(() => {
+    setTenant(prev => (prev ? { ...prev, site_data: siteData } : prev));
+  }, [siteData]);
 
   const formatPlanPrice = (value: number) => value.toFixed(2).replace('.', ',');
 
@@ -442,16 +423,35 @@ const AdminConfig: React.FC = () => {
     
     const { data } = await supabase
       .from('companies')
-      .select('template, domain, site_data, subdomain, payment_api_key, payment_gateway')
+      .select('*')
       .eq('id', user.company_id)
       .maybeSingle();
     
     if (data) {
+      const parsedFinanceConfig =
+        typeof data.finance_config === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(data.finance_config) as FinanceConfig;
+              } catch {
+                return null;
+              }
+            })()
+          : ((data.finance_config as FinanceConfig | null) ?? null);
+
       setSiteTemplate(data.template || 'classic');
       setSiteDomain(data.domain || '');
       setCompanySubdomain(data.subdomain || '');
-      setPaymentApiKey(data.payment_api_key || '');
-      setPaymentGateway(data.payment_gateway || 'asaas');
+      setTenant({
+        id: data.id,
+        name: data.name || '',
+        site_data: data.site_data || undefined,
+        payment_api_key: data.payment_api_key || '',
+        finance_config: parsedFinanceConfig || undefined,
+        use_asaas: data.use_asaas ?? parsedFinanceConfig?.use_asaas ?? false,
+        default_commission: data.default_commission ?? parsedFinanceConfig?.default_commission ?? undefined,
+        broker_commission: data.broker_commission ?? parsedFinanceConfig?.broker_commission ?? undefined,
+      });
       
       if (data.site_data) {
         setSiteData(prev => ({
@@ -465,6 +465,69 @@ const AdminConfig: React.FC = () => {
           seo: { ...prev.seo, ...data.site_data.seo },
         }));
       }
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user?.company_id || !tenant) return;
+
+    setSavingFinance(true);
+    try {
+      const normalizedDefaultCommission =
+        tenant.default_commission === undefined ||
+        tenant.default_commission === null ||
+        Number.isNaN(Number(tenant.default_commission))
+          ? null
+          : Number(tenant.default_commission);
+
+      const normalizedBrokerCommission =
+        tenant.broker_commission === undefined ||
+        tenant.broker_commission === null ||
+        Number.isNaN(Number(tenant.broker_commission))
+          ? null
+          : Number(tenant.broker_commission);
+
+      const normalizedFinanceConfig = {
+        ...(tenant.finance_config || {}),
+        use_asaas: tenant.use_asaas ?? false,
+        default_commission: normalizedDefaultCommission ?? undefined,
+        broker_commission: normalizedBrokerCommission ?? undefined,
+      };
+
+      const { error: companyError } = await supabase
+        .from('companies')
+        .update({
+          name: tenant.name,
+          site_data: tenant.site_data,
+          finance_config: normalizedFinanceConfig,
+          use_asaas: tenant.use_asaas,
+          default_commission: normalizedDefaultCommission,
+          broker_commission: normalizedBrokerCommission,
+          payment_api_key: tenant.payment_api_key?.trim() || null
+        })
+        .eq('id', tenant.id);
+
+      if (companyError) throw companyError;
+
+      setTenant((prev) =>
+        prev
+          ? {
+              ...prev,
+              site_data: siteData,
+              payment_api_key: tenant.payment_api_key?.trim() || '',
+              finance_config: normalizedFinanceConfig || undefined,
+              use_asaas: tenant.use_asaas ?? false,
+              default_commission: normalizedDefaultCommission ?? undefined,
+              broker_commission: normalizedBrokerCommission ?? undefined,
+            }
+          : prev
+      );
+      addToast('Configurações financeiras salvas com sucesso!', 'success');
+    } catch (error) {
+      console.error('Erro ao salvar configurações financeiras:', error);
+      addToast('Erro ao salvar configurações financeiras.', 'error');
+    } finally {
+      setSavingFinance(false);
     }
   };
 
@@ -2548,116 +2611,6 @@ const AdminConfig: React.FC = () => {
                     </label>
                   </div>
 
-                  {/* Gerenciador de Condomínios/Regiões */}
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-6 bg-white dark:bg-dark-card mt-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h4 className="font-bold text-slate-800 dark:text-white">Condomínios / Regiões em Destaque</h4>
-                        <p className="text-xs text-slate-500">Adicione imagens e nomes dos melhores condomínios ou bairros para exibir na página inicial.</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newRegion = { id: Date.now().toString(), name: '', image_url: '' };
-                          setSiteData(prev => ({ ...prev, featured_regions: [...(prev.featured_regions || []), newRegion] }));
-                        }}
-                        className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-bold rounded-lg hover:bg-slate-800 flex items-center gap-2"
-                      >
-                        <Icons.Plus size={16} /> Adicionar
-                      </button>
-                    </div>
-
-                    <div className="space-y-3">
-                      {(!siteData.featured_regions || siteData.featured_regions.length === 0) ? (
-                        <div className="text-center py-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-300 dark:border-slate-600">
-                          <p className="text-sm text-slate-500">Nenhum condomínio/região cadastrado.</p>
-                        </div>
-                      ) : (
-                        siteData.featured_regions.map((region) => (
-                          <div key={region.id} className="flex items-center gap-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                            {/* Preview da Imagem */}
-                            <div className="w-24 h-16 rounded-lg bg-slate-200 dark:bg-slate-900 overflow-hidden relative group shrink-0">
-                              {region.image_url ? (
-                                <img src={region.image_url} alt="Region" className="w-full h-full object-cover" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center"><Icons.Image size={20} className="text-slate-400" /></div>
-                              )}
-                              <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
-                                <Icons.Upload size={16} className="text-white" />
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={async (e) => {
-                                    const file = e.target.files?.[0];
-                                    if (!file || !user?.company_id) return;
-                                    try {
-                                      addToast('Comprimindo e enviando...', 'info');
-
-                                      // 1. Comprime a imagem no navegador
-                                      const compressedFile = await compressImageToWebP(file);
-
-                                      // 2. Se já existia uma imagem velha, apaga do banco primeiro
-                                      if (region.image_url) {
-                                        await deleteCompanyAsset(region.image_url);
-                                      }
-
-                                      // 3. Faz upload da nova em WebP (Pesando ~80KB em vez de 3MB)
-                                      const url = await uploadCompanyAsset(compressedFile, user.company_id, `region_${Date.now()}`);
-
-                                      setSiteData(prev => ({
-                                        ...prev,
-                                        featured_regions: (prev.featured_regions || []).map(r => r.id === region.id ? { ...r, image_url: url } : r)
-                                      }));
-                                      addToast('Imagem atualizada com sucesso!', 'success');
-                                    } catch (err) {
-                                      addToast('Erro ao carregar imagem.', 'error');
-                                    }
-                                  }}
-                                />
-                              </label>
-                            </div>
-
-                            {/* Nome da Região */}
-                            <div className="flex-1">
-                              <input
-                                type="text"
-                                placeholder="Ex: Condomínio Aldeia do Vale"
-                                value={region.name}
-                                onChange={(e) => {
-                                  setSiteData(prev => ({
-                                    ...prev,
-                                    featured_regions: (prev.featured_regions || []).map(r => r.id === region.id ? { ...r, name: e.target.value } : r)
-                                  }));
-                                }}
-                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500"
-                              />
-                            </div>
-
-                            {/* Remover */}
-                            <button
-                              onClick={async () => {
-                                // Apaga o arquivo real lá no bucket do Supabase
-                                if (region.image_url) {
-                                  await deleteCompanyAsset(region.image_url);
-                                }
-                                // Remove do JSON do site
-                                setSiteData(prev => ({
-                                  ...prev,
-                                  featured_regions: (prev.featured_regions || []).filter(r => r.id !== region.id)
-                                }));
-                                addToast('Condomínio e imagem excluídos.', 'success');
-                              }}
-                              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
-                            >
-                              <Icons.Trash size={18} />
-                            </button>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
                   {/* Gerenciador de Parceiros */}
                   {siteData.show_partnerships !== false && (
                     <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-6 bg-white dark:bg-dark-card">
@@ -3268,68 +3221,200 @@ const AdminConfig: React.FC = () => {
 
       {/* ABA FINANCEIRO */}
       {activeTab === 'finance' && isAdmin && (
-        <div className="space-y-6 animate-fade-in">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
+        <div className="space-y-6">
+          
+          {/* Chave Mestra: Pix Nativo vs Asaas */}
+          <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-slate-700 rounded-xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-serif font-bold text-slate-800 dark:text-white">Gateway de Pagamentos</h2>
-              <p className="text-sm text-slate-500 mt-1">Configure o seu próprio banco para cobrar inquilinos sem taxas da nossa plataforma.</p>
+              <h3 className="font-bold text-slate-800 dark:text-white text-lg">Modo de Recebimento</h3>
+              <p className="text-sm text-slate-500">Escolha entre receber via Pix sem taxas ou usar o gateway avançado Asaas.</p>
             </div>
-          </div>
-          <div className="bg-white dark:bg-dark-card rounded-3xl p-6 md:p-8 shadow-sm border border-slate-200 dark:border-dark-border">
-            <div className="max-w-xl space-y-6">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Provedor de Pagamento</label>
-                <div className="flex gap-4">
-                  <button
-                    onClick={() => setPaymentGateway('cora')}
-                    className={`flex-1 py-3 px-4 rounded-xl border-2 flex items-center justify-center gap-2 font-bold transition-all ${
-                      paymentGateway === 'cora'
-                        ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400 shadow-sm'
-                        : 'border-slate-200 dark:border-dark-border text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'
-                    }`}
-                  >
-                    <Icons.CreditCard size={20} /> Banco Cora (Taxa Zero)
-                  </button>
-                  <button
-                    onClick={() => setPaymentGateway('asaas')}
-                    className={`flex-1 py-3 px-4 rounded-xl border-2 flex items-center justify-center gap-2 font-bold transition-all ${
-                      paymentGateway === 'asaas'
-                        ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400 shadow-sm'
-                        : 'border-slate-200 dark:border-dark-border text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'
-                    }`}
-                  >
-                    <Icons.Wallet size={20} /> Asaas
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Credencial de Produção (Client ID / API Key)</label>
-                <input
-                  type="password"
-                  value={paymentApiKey}
-                  onChange={(e) => setPaymentApiKey(e.target.value)}
-                  placeholder="Cole sua credencial gerada no painel do banco..."
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-white/5 focus:ring-2 focus:ring-brand-500 outline-none transition-shadow text-slate-800 dark:text-white"
-                />
-                <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
-                  <Icons.Info size={12} className="shrink-0" /> O dinheiro das locações cairá diretamente na sua conta Cora. Zero taxas de intermediação do nosso sistema.
-                </p>
-              </div>
+            <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
               <button
-                onClick={async () => {
-                  if (!user?.company_id) return;
-                  const { error } = await supabase
-                    .from('companies')
-                    .update({ payment_api_key: paymentApiKey, payment_gateway: paymentGateway })
-                    .eq('id', user.company_id);
-                  if (error) alert('Erro ao salvar: ' + error.message);
-                  else alert('Configuração financeira salva com sucesso!');
-                }}
-                className="bg-brand-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-brand-700 transition-colors flex items-center gap-2"
+                onClick={() => setTenant(prev => prev ? { ...prev, use_asaas: false, finance_config: { ...prev.finance_config, use_asaas: false } } : prev)}
+                className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${
+                  !tenant?.use_asaas 
+                    ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
               >
-                <Icons.Save size={20} /> Salvar Configuração Financeira
+                Pix Nativo
+              </button>
+              <button
+                onClick={() => {
+                  if (!tenant?.use_asaas) {
+                    setTempApiKey(tenant?.payment_api_key || '');
+                    setShowAsaasModal(true);
+                  }
+                }}
+                className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${
+                  tenant?.use_asaas 
+                    ? 'bg-brand-600 text-white shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                Gateway Asaas
               </button>
             </div>
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-6">
+            
+            {/* Coluna Esquerda: Exibe as opções baseadas na escolha acima */}
+            <div className="flex-1 space-y-6">
+              
+              {/* 1. MODO PIX NATIVO */}
+              {!tenant?.use_asaas ? (
+                <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-slate-700 rounded-xl p-6 animate-fade-in">
+                  <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+                    <div className="w-10 h-10 rounded-full bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center">
+                      <Icons.Wallet className="text-brand-600 dark:text-brand-400" size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-800 dark:text-white">Conta Digital (Pix Nativo)</h3>
+                      <p className="text-sm text-slate-500">Receba aluguéis e sinais diretamente na sua conta, sem taxas.</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tipo de Chave PIX *</label>
+                        <select
+                          value={tenant?.finance_config?.pix_type || ''}
+                          onChange={(e) => setTenant(prev => prev ? { ...prev, finance_config: { ...prev.finance_config, pix_type: e.target.value as any } } : prev)}
+                          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-brand-500 outline-none"
+                        >
+                          <option value="">Selecione...</option>
+                          <option value="cnpj">CNPJ</option>
+                          <option value="cpf">CPF</option>
+                          <option value="email">E-mail</option>
+                          <option value="phone">Telefone / Celular</option>
+                          <option value="random">Chave Aleatória</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Chave PIX *</label>
+                        <input
+                          type="text"
+                          placeholder="Ex: 00.000.000/0001-00"
+                          value={tenant?.finance_config?.pix_key || ''}
+                          onChange={(e) => setTenant(prev => prev ? { ...prev, finance_config: { ...prev.finance_config, pix_key: e.target.value } } : prev)}
+                          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-brand-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nome do Titular / Razão Social *</label>
+                        <input
+                          type="text"
+                          placeholder="Ex: Elevatio Vendas LTDA"
+                          value={tenant?.finance_config?.pix_name || ''}
+                          onChange={(e) => setTenant(prev => prev ? { ...prev, finance_config: { ...prev.finance_config, pix_name: e.target.value } } : prev)}
+                          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-brand-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Cidade da Conta *</label>
+                        <input
+                          type="text"
+                          placeholder="Ex: São Paulo"
+                          value={tenant?.finance_config?.pix_city || ''}
+                          onChange={(e) => setTenant(prev => prev ? { ...prev, finance_config: { ...prev.finance_config, pix_city: e.target.value } } : prev)}
+                          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-brand-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                
+                /* 2. MODO ASAAS ATIVO */
+                <div className="bg-brand-50 dark:bg-brand-900/10 border border-brand-200 dark:border-brand-800 rounded-xl p-6 animate-fade-in">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-brand-600 flex items-center justify-center">
+                      <Icons.CheckCircle className="text-white" size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-brand-800 dark:text-brand-300">Integração Asaas Ativa</h3>
+                      <p className="text-sm text-brand-600 dark:text-brand-500/80">O sistema emitirá faturas e boletos registrados automaticamente.</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-1">API Key Configurada</p>
+                      <p className="text-sm text-slate-800 dark:text-slate-300 font-mono">
+                        {tenant?.payment_api_key ? '••••••••••••••••' + tenant.payment_api_key.slice(-4) : 'Nenhuma chave configurada'}
+                      </p>
+                    </div>
+                    <button 
+                      onClick={() => { setTempApiKey(tenant?.payment_api_key || ''); setShowAsaasModal(true); }}
+                      className="text-brand-600 hover:text-brand-700 text-sm font-bold underline"
+                    >
+                      Alterar Chave
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Regras de Comissionamento Inteligente */}
+              <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                <div className="flex items-center gap-2 mb-6">
+                  <Icons.Percent size={20} className="text-brand-600" />
+                  <h3 className="font-bold text-slate-800 dark:text-white">Regras de Comissionamento</h3>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Comissão da Imobiliária (%)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        placeholder="Ex: 10"
+                        value={tenant?.default_commission ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value === '' ? undefined : Number(e.target.value);
+                          setTenant(prev => prev ? { ...prev, default_commission: value, finance_config: { ...prev.finance_config, default_commission: value } } : prev);
+                        }}
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-4 pr-10 py-2 text-sm focus:border-brand-500 outline-none"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs">%</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-2 italic">Percentual total cobrado sobre o valor do aluguel/venda.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                      Repasse ao Corretor (%)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        placeholder="Ex: 30"
+                        value={tenant?.broker_commission ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value === '' ? undefined : Number(e.target.value);
+                          setTenant(prev => prev ? { ...prev, broker_commission: value, finance_config: { ...prev.finance_config, broker_commission: value } } : prev);
+                        }}
+                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-4 pr-10 py-2 text-sm focus:border-brand-500 outline-none"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs">%</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-2 italic">Quanto da parte da imobiliária vai para o corretor que fechou o negócio.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-4 border-t border-slate-200 dark:border-slate-700">
+            <button 
+              onClick={handleSave} 
+              className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-lg shadow-lg flex items-center gap-2 transition-colors"
+            >
+              <Icons.Save size={18} /> Salvar Financeiro
+            </button>
           </div>
         </div>
       )}
@@ -3518,6 +3603,110 @@ const AdminConfig: React.FC = () => {
             </div>
           );
         })()
+      )}
+
+      {/* Modal Instrucional de Ativação do Asaas */}
+      {showAsaasModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-4 animate-fade-in backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            
+            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+              <h3 className="text-xl font-black text-slate-900 dark:text-white">Ativar Gateway Avançado (Asaas)</h3>
+              <button onClick={() => setShowAsaasModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-6">
+              
+              {/* O Vídeo do Cadastro */}
+              <div>
+                <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-2">1. Como criar a conta</h4>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Assista ao vídeo rápido abaixo para entender como criar sua conta gratuita no Asaas.</p>
+                <div className="aspect-video bg-slate-100 dark:bg-slate-800 rounded-xl overflow-hidden shadow-inner border border-slate-200 dark:border-slate-700">
+                  <iframe 
+                    width="100%" 
+                    height="100%" 
+                    src="https://www.youtube.com/embed/zw0R_sgBDnA"
+                    title="Tutorial Asaas" 
+                    frameBorder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowFullScreen>
+                  </iframe>
+                </div>
+              </div>
+
+              {/* O Vídeo da API */}
+              <div>
+                <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-2">2. Como gerar a API</h4>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Assista ao vídeo rápido abaixo para entender como criar e copiar sua chave de integração (API Key).</p>
+                <div className="aspect-video bg-slate-100 dark:bg-slate-800 rounded-xl overflow-hidden shadow-inner border border-slate-200 dark:border-slate-700">
+                  <iframe 
+                    width="100%" 
+                    height="100%" 
+                    src="https://www.youtube.com/embed/XeX7FQ29PXk" 
+                    title="Tutorial Asaas" 
+                    frameBorder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowFullScreen>
+                  </iframe>
+                </div>
+              </div>
+
+              {/* O Alerta de KYC */}
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-xl flex gap-4">
+                <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={24} />
+                <div>
+                  <h5 className="font-bold text-amber-800 dark:text-amber-400 mb-1">Aviso Importante: Compliance de Segurança</h5>
+                  <p className="text-sm text-amber-700 dark:text-amber-300/80 leading-relaxed">
+                    Por determinação do Banco Central, para evitar fraudes, o Asaas exige <strong>reconhecimento facial e envio de documento oficial (RG ou CNH)</strong> para aprovar sua conta. Esse processo é feito diretamente no app deles e pode demorar algumas horas para liberação.
+                  </p>
+                </div>
+              </div>
+
+              {/* O Input da Chave */}
+              <div className="pt-2">
+                <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-2">3. Cole sua API Key no campo abaixo.</h4>
+                <input
+                  type="password"
+                  placeholder="Ex: $aact_YTU5YTE0M2M..."
+                  value={tempApiKey}
+                  onChange={(e) => setTempApiKey(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3 text-sm focus:border-brand-500 outline-none font-mono"
+                />
+              </div>
+
+            </div>
+
+            <div className="p-6 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowAsaasModal(false)}
+                className="px-4 py-2 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={() => {
+                  if (!tempApiKey.trim()) {
+                    alert("Por favor, insira a API Key para continuar.");
+                    return;
+                  }
+                  setTenant(prev => prev ? { 
+                    ...prev, 
+                    payment_api_key: tempApiKey.trim(),
+                    use_asaas: true,
+                    finance_config: { ...prev.finance_config, use_asaas: true } 
+                  } : prev);
+                  setShowAsaasModal(false);
+                }}
+                className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-lg shadow-md transition-colors"
+              >
+                Confirmar e Ativar Asaas
+              </button>
+            </div>
+
+          </div>
+        </div>
       )}
 
       {isDetailsModalOpen && currentPlanDetails && (

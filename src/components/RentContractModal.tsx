@@ -234,7 +234,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
           setGuarantorPhone(_contractData.contract_data.guarantor_phone || '');
         }
       } else {
-        // MODO CRIAÇÃO: Preenche datas padrões apenas se for contrato novo
+        // MODO CRIAÇÃO: Preenche datas padrões e puxa as comissões das configurações
         const today = new Date();
         const nextYear = new Date(today);
         nextYear.setFullYear(today.getFullYear() + 1);
@@ -242,11 +242,13 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         setFormData(prev => ({
           ...prev,
           start_date: today.toISOString().split('T')[0],
-          end_date: nextYear.toISOString().split('T')[0]
+          end_date: nextYear.toISOString().split('T')[0],
+          admin_fee_percent: user?.company?.default_commission ?? 10,
+          broker_fee_percent: user?.company?.broker_commission ?? 30,
         }));
       }
     }
-  }, [isOpen, _contractData]);
+  }, [isOpen, _contractData, user?.company?.broker_commission, user?.company?.default_commission]);
 
   useEffect(() => {
     const fetchLeadProperties = async () => {

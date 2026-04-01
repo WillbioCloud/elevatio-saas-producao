@@ -3,22 +3,46 @@ import { useSearchParams } from 'react-router-dom';
 import { useTenant } from '../../../contexts/TenantContext';
 import { Icons } from '../../../components/Icons';
 import { supabase } from '../../../lib/supabase';
-import { ListingType, Property, PropertyType } from '../../../types';
+import { ListingType, Property, PropertyType, type SiteData } from '../../../types';
+import CondominiumCard from '../components/CondominiumCard';
 import PropertyCard from '../components/PropertyCard';
 import { getPrimaryColor } from '../tenantUtils';
+
+const parseSiteData = (raw: unknown): SiteData => {
+  if (!raw) return {};
+
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as SiteData) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  return typeof raw === 'object' ? (raw as SiteData) : {};
+};
 
 const Properties: React.FC = () => {
   const { tenant } = useTenant();
   const [searchParams, setSearchParams] = useSearchParams();
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
-  const primaryColor = getPrimaryColor(tenant);
 
   const currentCity = searchParams.get('city') || '';
   const currentNeighborhood = searchParams.get('neighborhood') || '';
   const currentType = searchParams.get('type') || '';
   const currentFeatured = searchParams.get('featured') === 'true';
   const listingType = (searchParams.get('listingType') as ListingType) || 'sale';
+  const siteData = useMemo(() => parseSiteData(tenant?.site_data), [tenant?.site_data]);
+  const searchQuery = searchParams.get('q') || '';
+  const primaryColor = getPrimaryColor(tenant) || '#0ea5e9';
+  const condominiumsList = siteData?.condominiums || [];
+  
+  // Verifica se o texto da busca (q) é exatamente o nome de algum condomínio no banco geral
+  const matchedCondominium = searchQuery 
+    ? condominiumsList.find((c: any) => c.name.toLowerCase() === searchQuery.toLowerCase())
+    : null;
 
   useEffect(() => {
     if (searchParams.get('listingType')) return;
@@ -51,6 +75,9 @@ const Properties: React.FC = () => {
         if (currentNeighborhood) query = query.ilike('neighborhood', `%${currentNeighborhood}%`);
         if (currentType) query = query.eq('type', currentType);
         if (currentFeatured) query = query.eq('featured', true);
+        if (searchQuery) {
+          query = query.or(`neighborhood.ilike.%${searchQuery}%,title.ilike.%${searchQuery}%,city.ilike.%${searchQuery}%`);
+        }
         query = query.eq('listing_type', listingType);
 
         if (listingType === 'sale') {
@@ -95,7 +122,7 @@ const Properties: React.FC = () => {
       isMounted = false; 
       controller.abort();
     };
-  }, [currentCity, currentNeighborhood, currentType, currentFeatured, listingType, tenant?.id]);
+  }, [currentCity, currentNeighborhood, currentType, currentFeatured, listingType, searchQuery, tenant?.id]);
 
   const cities = useMemo(
     () => Array.from(new Set(properties.map((property) => property.location.city).filter(Boolean))).sort(),
@@ -134,6 +161,13 @@ const Properties: React.FC = () => {
   return (
     <div className="bg-gray-50 min-h-screen py-12 md:py-20 animate-fade-in">
       <div className="container mx-auto px-4">
+        {/* Card Dinâmico do Condomínio (Se a busca for por um condomínio) */}
+        {matchedCondominium && (
+          <CondominiumCard 
+            condominium={matchedCondominium} 
+            primaryColor={primaryColor} 
+          />
+        )}
         
         <div className="flex flex-col gap-6 mb-10 md:mb-12">
 
@@ -141,7 +175,21 @@ const Properties: React.FC = () => {
           <div className="flex flex-col lg:flex-row justify-between lg:items-end gap-6">
             <div>
               <h1 className="text-3xl md:text-4xl font-serif font-bold text-slate-800 mb-2">Imóveis Exclusivos</h1>
-              <p className="text-slate-500 text-sm md:text-base">Encontre o lar dos seus sonhos em nossa seleção premium.</p>
+              {searchQuery ? (
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-sm md:text-base text-brand-600 dark:text-brand-400 font-medium bg-brand-50 dark:bg-brand-900/20 px-3 py-1 rounded-full border border-brand-100 dark:border-brand-800">
+                    Buscando por: <strong className="font-bold">{searchQuery}</strong>
+                  </span>
+                  <button
+                    onClick={() => handleFilterChange('q', '')}
+                    className="text-sm text-slate-500 hover:text-red-500 font-medium transition-colors underline"
+                  >
+                    Limpar
+                  </button>
+                </div>
+              ) : (
+                <p className="text-slate-500 text-sm md:text-base mt-2">Encontre o lar dos seus sonhos em nossa seleção premium.</p>
+              )}
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">

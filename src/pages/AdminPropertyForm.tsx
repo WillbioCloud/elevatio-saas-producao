@@ -5,10 +5,11 @@ import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
 import PropertyPreviewModal from '../components/PropertyPreviewModal';
 import { useAuth } from '../contexts/AuthContext';
-import { PropertyType, type ListingType } from '../types';
+import { PropertyType, type Company, type ListingType, type SiteData } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { addXp } from '../services/gamification';
 import { generatePropertyDescription } from '../services/ai';
+import { uploadCompanyAsset } from '../lib/storage';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -62,6 +63,7 @@ interface FormState {
   neighborhood: string;
   city: string;
   state: string;
+  condominium_id: string | null;
   latitude: number;
   longitude: number;
   seo_title: string;
@@ -74,6 +76,8 @@ interface FormState {
   owner_profession: string;
   owner_marital_status: string;
   owner_address: string;
+  owner_pix_key: string;
+  owner_pix_type: string;
   owner_spouse_name: string;
   owner_spouse_document: string;
 }
@@ -113,6 +117,7 @@ const defaultForm: FormState = {
   neighborhood: '',
   city: 'Caldas Novas',
   state: 'GO',
+  condominium_id: null,
   latitude: 0,
   longitude: 0,
   seo_title: '',
@@ -125,6 +130,8 @@ const defaultForm: FormState = {
   owner_profession: '',
   owner_marital_status: '',
   owner_address: '',
+  owner_pix_key: '',
+  owner_pix_type: '',
   owner_spouse_name: '',
   owner_spouse_document: '',
 };
@@ -137,6 +144,54 @@ const createSlug = (value: string) =>
     .trim()
     .replace(/\s+/g, '-')
     .concat(`-${Math.floor(Math.random() * 10000)}`);
+
+type CondominiumRecord = NonNullable<SiteData['condominiums']>[number];
+type TenantRecord = Pick<Company, 'id' | 'site_data'>;
+
+const parseSiteData = (raw: unknown): SiteData => {
+  if (!raw) return {};
+
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as SiteData) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  return typeof raw === 'object' ? (raw as SiteData) : {};
+};
+
+const compressImageToWebP = (file: File, maxWidth = 1200, quality = 0.8): Promise<File> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(new File([blob], file.name.replace(/\.[^/.]+$/, '') + '.webp', { type: 'image/webp' }));
+          } else {
+            resolve(file);
+          }
+        }, 'image/webp', quality);
+      };
+    };
+  });
+};
 
 const SortableImageCard: React.FC<{
   image: ImageItem;
@@ -187,10 +242,17 @@ const AdminPropertyForm: React.FC = () => {
   const [images, setImages] = useState<ImageItem[]>([]);
   const [imagesToDelete, setImagesToDelete] = useState<string[]>([]);
   const [newFeature, setNewFeature] = useState('');
+  const [newCondoFeature, setNewCondoFeature] = useState('');
   const [newImageUrl, setNewImageUrl] = useState('');
   const [showPreview, setShowPreview] = useState(false);
   const [originalAgentId, setOriginalAgentId] = useState<string | null>(null);
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
+  const [tenant, setTenant] = useState<TenantRecord | null>(null);
+  const [isCondominium, setIsCondominium] = useState(false);
+  const [isEditingCondo, setIsEditingCondo] = useState(false);
+  const [showNewCondoForm, setShowNewCondoForm] = useState(false);
+  const [newCondo, setNewCondo] = useState<Partial<CondominiumRecord>>({});
+  const [uploadingCondoImage, setUploadingCondoImage] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -199,6 +261,12 @@ const AdminPropertyForm: React.FC = () => {
   const [draggingImageId, setDraggingImageId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState('');
+  const siteData = useMemo(() => parseSiteData(tenant?.site_data), [tenant?.site_data]);
+  const condominiumsList = siteData.condominiums || [];
+  const selectedCondominium = useMemo(
+    () => condominiumsList.find((condo) => condo.id === formData.condominium_id) || null,
+    [condominiumsList, formData.condominium_id]
+  );
 
 
   const canGoNext = useMemo(() => {
@@ -213,6 +281,41 @@ const AdminPropertyForm: React.FC = () => {
     }
     return true;
   }, [formData, images.length, step]);
+
+  useEffect(() => {
+    if (!user?.company_id) return;
+
+    let isMounted = true;
+
+    const fetchTenant = async () => {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('id, site_data')
+        .eq('id', user.company_id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Erro ao carregar registro de condomínios:', error);
+        return;
+      }
+
+      if (isMounted && data) {
+        setTenant(data as TenantRecord);
+      }
+    };
+
+    fetchTenant();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.company_id]);
+
+  useEffect(() => {
+    if (formData.condominium_id) {
+      setIsCondominium(true);
+    }
+  }, [formData.condominium_id]);
 
   useEffect(() => {
     if (isEditing) return;
@@ -264,6 +367,7 @@ const AdminPropertyForm: React.FC = () => {
         neighborhood: data.neighborhood || '',
         city: data.city || '',
         state: data.state || 'GO',
+        condominium_id: data.condominium_id ?? null,
         latitude: Number(data.latitude || 0),
         longitude: Number(data.longitude || 0),
         seo_title: data.seo_title || '',
@@ -276,6 +380,8 @@ const AdminPropertyForm: React.FC = () => {
         owner_profession: data.owner_profession || '',
         owner_marital_status: data.owner_marital_status || '',
         owner_address: data.owner_address || '',
+        owner_pix_key: data.owner_pix_key || '',
+        owner_pix_type: data.owner_pix_type || '',
         owner_spouse_name: data.owner_spouse_name || '',
         owner_spouse_document: data.owner_spouse_document || '',
       });
@@ -307,6 +413,103 @@ const AdminPropertyForm: React.FC = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleCondoImageUpload = async (file: File) => {
+    if (!user?.company_id) {
+      addToast('Empresa não encontrada para enviar a foto do condomínio.', 'error');
+      return;
+    }
+
+    try {
+      setUploadingCondoImage(true);
+      addToast('Processando foto do condomínio...', 'info');
+      const compressedFile = await compressImageToWebP(file);
+      const url = await uploadCompanyAsset(compressedFile, user.company_id, `region_${Date.now()}`);
+      setNewCondo((prev) => ({ ...prev, image_url: url }));
+      addToast('Foto do condomínio enviada com sucesso!', 'success');
+    } catch (error) {
+      console.error('Erro ao enviar foto do condomínio:', error);
+      addToast('Erro ao enviar foto do condomínio.', 'error');
+    } finally {
+      setUploadingCondoImage(false);
+    }
+  };
+
+  const handleCreateCondominium = async () => {
+    if (!newCondo.name?.trim() || !tenant?.id) {
+      addToast('Preencha pelo menos o nome do condomínio.', 'error');
+      return;
+    }
+
+    const condo: CondominiumRecord = {
+      id: newCondo.id || Date.now().toString(),
+      name: newCondo.name.trim(),
+      image_url: newCondo.image_url || '',
+      zip: newCondo.zip?.trim() || '',
+      street: newCondo.street?.trim() || '',
+      neighborhood: newCondo.neighborhood?.trim() || '',
+      city: newCondo.city?.trim() || '',
+      state: newCondo.state?.trim() || '',
+      features: newCondo.features || [],
+    };
+
+    const isUpdating = !!newCondo.id;
+    const updatedCondos = isUpdating
+      ? condominiumsList.map((c) => (c.id === condo.id ? condo : c))
+      : [...condominiumsList, condo];
+    const updatedSiteData: SiteData = { ...siteData, condominiums: updatedCondos };
+
+    try {
+      addToast(isUpdating ? 'Atualizando condomínio...' : 'Salvando condomínio...', 'info');
+
+      const { error } = await supabase
+        .from('companies')
+        .update({ site_data: updatedSiteData })
+        .eq('id', tenant.id);
+
+      if (error) throw error;
+
+      setTenant((prev) => (prev ? { ...prev, site_data: updatedSiteData } : { id: tenant.id, site_data: updatedSiteData }));
+
+      setFormData((prev) => ({
+        ...prev,
+        condominium_id: condo.id,
+        zip_code: condo.zip || prev.zip_code,
+        address: condo.street || prev.address,
+        neighborhood: condo.name,
+        city: condo.city || prev.city,
+        state: condo.state || prev.state,
+      }));
+
+      setNewCondo({});
+      setNewCondoFeature('');
+      setShowNewCondoForm(false);
+      setIsEditingCondo(false);
+      addToast(isUpdating ? 'Condomínio atualizado!' : 'Condomínio registrado com sucesso!', 'success');
+    } catch (err) {
+      console.error('Erro ao criar condomínio:', err);
+      addToast('Erro ao salvar condomínio.', 'error');
+    }
+  };
+
+  const handleDeleteCondominium = async (idToDelete: string) => {
+    if (!confirm('Deseja excluir este condomínio do banco geral?')) return;
+
+    const updatedCondos = condominiumsList.filter((c) => c.id !== idToDelete);
+    const updatedSiteData: SiteData = { ...siteData, condominiums: updatedCondos };
+
+    try {
+      const { error } = await supabase.from('companies').update({ site_data: updatedSiteData }).eq('id', tenant?.id);
+      if (error) throw error;
+      setTenant((prev) => (prev ? { ...prev, site_data: updatedSiteData } : null));
+      if (formData.condominium_id === idToDelete) {
+        setFormData((prev) => ({ ...prev, condominium_id: null }));
+      }
+      addToast('Condomínio excluído.', 'success');
+    } catch (err) {
+      addToast('Erro ao excluir.', 'error');
+    }
+  };
+
   const fetchAddressByCep = async () => {
     const cep = formData.zip_code.replace(/\D/g, '');
     if (cep.length !== 8) return;
@@ -336,6 +539,7 @@ const AdminPropertyForm: React.FC = () => {
       setGeneratingDescription(true);
 
       const isSale = formData.listing_type === 'sale';
+      const condoName = selectedCondominium?.name || '';
       const formattedPrice = Number(formData.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
       const featuresList = formData.features.length > 0 ? formData.features.join(', ') : 'Nenhuma comodidade específica listada';
 
@@ -355,7 +559,12 @@ const AdminPropertyForm: React.FC = () => {
       `;
 
       // Chama a nossa função centralizada do ai.ts
-      const generatedText = await generatePropertyDescription(propertyFeatures);
+      const generatedText = await generatePropertyDescription(
+        `${propertyFeatures}
+        - Nome do Condominio: ${condoName || 'Nao informado'}`,
+        condoName,
+        selectedCondominium?.features || []
+      );
 
       if (!generatedText) {
         throw new Error('A IA não conseguiu gerar a descrição no momento.');
@@ -606,6 +815,7 @@ const AdminPropertyForm: React.FC = () => {
         neighborhood: formData.neighborhood,
         city: formData.city,
         state: formData.state,
+        condominium_id: isCondominium ? formData.condominium_id || null : null,
         latitude: Number(formData.latitude) || null,
         longitude: Number(formData.longitude) || null,
         seo_title: formData.seo_title || formData.title,
@@ -617,6 +827,8 @@ const AdminPropertyForm: React.FC = () => {
         owner_profession: formData.owner_profession,
         owner_marital_status: formData.owner_marital_status,
         owner_address: formData.owner_address,
+        owner_pix_key: formData.owner_pix_key || null,
+        owner_pix_type: formData.owner_pix_type || null,
         owner_spouse_name: formData.owner_spouse_name,
         owner_spouse_document: formData.owner_spouse_document,
         images: images.map((item) => item.url),
@@ -981,7 +1193,268 @@ const AdminPropertyForm: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 mb-4">Endereço</h3>
+
+                {/* --- MOTOR DE CONDOMÍNIOS --- */}
+                <div className="mb-6 p-5 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-3 mb-4">
+                    <input
+                      type="checkbox"
+                      checked={isCondominium}
+                      onChange={(e) => {
+                        setIsCondominium(e.target.checked);
+                        if (!e.target.checked) {
+                          setShowNewCondoForm(false);
+                          setFormData((prev) => ({ ...prev, condominium_id: null }));
+                        }
+                      }}
+                      className="w-5 h-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                    />
+                    <label
+                      className="font-bold text-slate-800 dark:text-slate-200 cursor-pointer"
+                      onClick={() => {
+                        const nextValue = !isCondominium;
+                        setIsCondominium(nextValue);
+
+                        if (!nextValue) {
+                          setShowNewCondoForm(false);
+                          setFormData((prev) => ({ ...prev, condominium_id: null }));
+                        }
+                      }}
+                    >
+                      Este imóvel fica em um Condomínio?
+                    </label>
+                  </div>
+
+                  {isCondominium && !showNewCondoForm && (
+                    <div className="flex flex-col sm:flex-row gap-4 items-end">
+                      <div className="flex-1 w-full">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Selecione o Condomínio</label>
+                        <select
+                          value={formData.condominium_id || ''}
+                          onChange={(e) => {
+                            const condoId = e.target.value;
+                            const condo = condominiumsList.find((c) => c.id === condoId);
+
+                            if (condo) {
+                              setFormData((prev) => ({
+                                ...prev,
+                                condominium_id: condo.id,
+                                zip_code: condo.zip || prev.zip_code,
+                                address: condo.street || prev.address,
+                                neighborhood: condo.name,
+                                city: condo.city || prev.city,
+                                state: condo.state || prev.state,
+                              }));
+                              addToast('Endereço preenchido via Condomínio!', 'info');
+                            } else {
+                              setFormData((prev) => ({ ...prev, condominium_id: null }));
+                            }
+                          }}
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-brand-500 outline-none"
+                        >
+                          <option value="">Selecione na lista...</option>
+                          {condominiumsList.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewCondo({});
+                            setNewCondoFeature('');
+                            setIsEditingCondo(false);
+                            setShowNewCondoForm(true);
+                          }}
+                          className="flex-1 sm:flex-none px-4 py-2 bg-slate-900 dark:bg-brand-600 text-white text-sm font-bold rounded-lg hover:bg-slate-800 flex items-center justify-center gap-2"
+                        >
+                          <Icons.Plus size={16} /> Novo
+                        </button>
+
+                        {formData.condominium_id && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewCondo(selectedCondominium || {});
+                                setNewCondoFeature('');
+                                setIsEditingCondo(true);
+                                setShowNewCondoForm(true);
+                              }}
+                              className="px-3 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-brand-600 rounded-lg flex items-center justify-center transition-colors"
+                            >
+                              <Icons.Edit2 size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCondominium(formData.condominium_id!)}
+                              className="px-3 py-2 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg flex items-center justify-center transition-colors"
+                            >
+                              <Icons.Trash size={16} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {isCondominium && showNewCondoForm && (
+                    <div className="mt-4 p-5 border border-brand-200 dark:border-brand-800 bg-brand-50/50 dark:bg-brand-900/10 rounded-xl">
+                      <div className="flex justify-between items-center mb-4 pb-3 border-b border-brand-200/50 dark:border-brand-800/50">
+                        <h4 className="font-bold text-brand-700 dark:text-brand-400">{isEditingCondo ? 'Editar Condomínio' : 'Registrar Novo Condomínio'}</h4>
+                        <button
+                          type="button"
+                          onClick={() => setShowNewCondoForm(false)}
+                          className="text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                        >
+                          <Icons.X size={20} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium mb-2 dark:text-slate-300">Foto do Condomínio</label>
+                          <label className="flex flex-col items-center justify-center w-full min-h-[180px] border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 cursor-pointer overflow-hidden hover:border-brand-500 transition-colors">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                await handleCondoImageUpload(file);
+                              }}
+                            />
+                            {newCondo.image_url ? (
+                              <div className="relative w-full h-full">
+                                <img
+                                  src={newCondo.image_url}
+                                  alt="Preview do condomínio"
+                                  className="w-full h-48 object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black/35 flex items-center justify-center text-white text-sm font-semibold">
+                                  {uploadingCondoImage ? 'Atualizando foto...' : 'Clique para trocar a foto'}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center justify-center px-4 py-8 text-center text-slate-500">
+                                <Icons.Upload size={26} className="mb-2" />
+                                <span className="font-medium">{uploadingCondoImage ? 'Enviando foto...' : 'Clique para enviar a foto do condomínio'}</span>
+                                <span className="text-xs mt-1">A imagem será comprimida em WEBP antes do upload.</span>
+                              </div>
+                            )}
+                          </label>
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium mb-1 dark:text-slate-300">Nome Oficial do Condomínio *</label>
+                          <input
+                            type="text"
+                            value={newCondo.name || ''}
+                            onChange={(e) => setNewCondo((prev) => ({ ...prev, name: e.target.value }))}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500"
+                            placeholder="Ex: Residencial Aldeia do Vale"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1 dark:text-slate-300">CEP Geral</label>
+                          <input
+                            type="text"
+                            value={newCondo.zip || ''}
+                            onChange={(e) => setNewCondo((prev) => ({ ...prev, zip: e.target.value }))}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500"
+                            placeholder="00000-000"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1 dark:text-slate-300">Logradouro (Acesso Principal)</label>
+                          <input
+                            type="text"
+                            value={newCondo.street || ''}
+                            onChange={(e) => setNewCondo((prev) => ({ ...prev, street: e.target.value }))}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1 dark:text-slate-300">Cidade</label>
+                          <input
+                            type="text"
+                            value={newCondo.city || ''}
+                            onChange={(e) => setNewCondo((prev) => ({ ...prev, city: e.target.value }))}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1 dark:text-slate-300">UF</label>
+                          <input
+                            type="text"
+                            maxLength={2}
+                            value={newCondo.state || ''}
+                            onChange={(e) => setNewCondo((prev) => ({ ...prev, state: e.target.value.toUpperCase() }))}
+                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500 uppercase"
+                          />
+                        </div>
+                      </div>
+                      <div className="mb-5 border-t border-brand-200/50 dark:border-brand-800/50 pt-4">
+                        <label className="block text-sm font-medium mb-2 dark:text-slate-300">Comodidades do Condomínio</label>
+                        <div className="flex gap-2 mb-3">
+                          <input
+                            type="text"
+                            value={newCondoFeature}
+                            onChange={(e) => setNewCondoFeature(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (!newCondoFeature.trim()) return;
+                                setNewCondo((prev) => ({ ...prev, features: [...(prev.features || []), newCondoFeature.trim()] }));
+                                setNewCondoFeature('');
+                              }
+                            }}
+                            placeholder="Ex: Piscina, Quadra, Segurança 24h..."
+                            className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!newCondoFeature.trim()) return;
+                              setNewCondo((prev) => ({ ...prev, features: [...(prev.features || []), newCondoFeature.trim()] }));
+                              setNewCondoFeature('');
+                            }}
+                            className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-white rounded-lg font-bold hover:bg-slate-300"
+                          >
+                            Adicionar
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {(newCondo.features || []).map((feature, idx) => (
+                            <span key={idx} className="flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1 rounded-full text-xs font-medium">
+                              {feature}
+                              <button
+                                type="button"
+                                onClick={() => setNewCondo((prev) => ({ ...prev, features: prev.features?.filter((f) => f !== feature) }))}
+                                className="text-slate-400 hover:text-red-500 ml-1"
+                              >
+                                <Icons.X size={12} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCreateCondominium}
+                        disabled={uploadingCondoImage}
+                        className="w-full py-2.5 bg-brand-600 text-white font-bold rounded-lg hover:bg-brand-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {uploadingCondoImage ? 'Aguarde o upload da foto...' : isEditingCondo ? 'Salvar Alterações' : 'Salvar no Banco Geral'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {/* --- FIM DO MOTOR --- */}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label htmlFor="zip_code" className="block text-sm font-bold text-slate-600 mb-2">CEP</label>
                   <div className="flex gap-2">
@@ -1034,6 +1507,7 @@ const AdminPropertyForm: React.FC = () => {
                       />
                     </MapContainer>
                   </div>
+                </div>
                 </div>
               </div>
 
@@ -1159,6 +1633,42 @@ const AdminPropertyForm: React.FC = () => {
                   <label htmlFor="owner_address" className="block text-sm font-bold text-slate-600 mb-2">Endereço Residencial Atual</label>
                   <input id="owner_address" value={formData.owner_address} onChange={(e) => handleInput('owner_address', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500" placeholder="Rua, número, bairro, cidade - UF" />
                 </div>
+              </div>
+
+              <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700">
+                <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                  <Icons.Wallet size={18} className="text-brand-500" /> Dados para Repasse (Opcional)
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tipo de Chave PIX</label>
+                    <select
+                      value={formData.owner_pix_type || ''}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, owner_pix_type: e.target.value }))}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-brand-500 outline-none"
+                    >
+                      <option value="">Selecione...</option>
+                      <option value="cpf">CPF</option>
+                      <option value="cnpj">CNPJ</option>
+                      <option value="email">E-mail</option>
+                      <option value="phone">Celular</option>
+                      <option value="random">Chave Aleatória</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Chave PIX do Proprietário</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 000.000.000-00"
+                      value={formData.owner_pix_key || ''}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, owner_pix_key: e.target.value }))}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-brand-500 outline-none"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  Ao preencher esta chave, o sistema facilitará o cálculo de repasse automático no módulo financeiro quando um aluguel for recebido.
+                </p>
               </div>
 
               {(formData.owner_marital_status === 'Casado(a)' || formData.owner_marital_status === 'União Estável') && (

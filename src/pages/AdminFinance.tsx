@@ -1,6 +1,5 @@
 ﻿import React, { useState, useMemo } from 'react';
 import { Icons } from '../components/Icons';
-import { useTenant } from '../contexts/TenantContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useInvoices } from '../hooks/useInvoices';
 import { useRepasses } from '../hooks/useRepasses';
@@ -9,7 +8,6 @@ import InvoiceModal from '../components/InvoiceModal';
 import { useToast } from '../contexts/ToastContext';
 
 export default function AdminFinance() {
-  const { tenant } = useTenant();
   const { user } = useAuth();
   const [maxContracts, setMaxContracts] = useState<number | null>(null);
   const [activeRentCount, setActiveRentCount] = useState(0);
@@ -95,10 +93,10 @@ export default function AdminFinance() {
       const leadData = Array.isArray(contractData?.leads) ? contractData?.leads[0] : contractData?.leads;
       const leadId = contractData?.lead_id;
       let asaasCustomerId = leadData?.asaas_customer_id;
-      const asaasApiKey = String(tenant?.payment_api_key || import.meta.env.VITE_ASAAS_API_KEY || '').trim();
+      const paymentApiKey = String(user?.company?.payment_api_key || import.meta.env.VITE_ASAAS_API_KEY || '').trim();
       const asaasUrl = import.meta.env.VITE_ASAAS_API_URL || 'https://sandbox.asaas.com/api/v3';
 
-      if (!asaasApiKey) {
+      if (!paymentApiKey) {
         throw new Error('A chave da API do Asaas não está configurada para esta imobiliária.');
       }
       
@@ -110,7 +108,7 @@ export default function AdminFinance() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'access_token': asaasApiKey
+            'access_token': paymentApiKey
           },
           body: JSON.stringify({
             name: leadData?.name || 'Cliente Sem Nome',
@@ -138,7 +136,7 @@ export default function AdminFinance() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'access_token': asaasApiKey
+          'access_token': paymentApiKey
         },
         body: JSON.stringify({
           customer: asaasCustomerId,
@@ -350,14 +348,18 @@ export default function AdminFinance() {
     };
 
   const handleWhatsAppCharge = (invoice: any) => {
-    if (!invoice.payment_url) {
+    const paymentLink = user?.company?.use_asaas
+      ? invoice.payment_url
+      : `${window.location.origin}/pay/${invoice.id}`;
+
+    if (!paymentLink) {
       addToast('Gere o link de pagamento primeiro antes de cobrar pelo WhatsApp!', 'error');
       return;
     }
     const formatCurrency = (value: number) =>
       new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
     const dueDate = new Date(invoice.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-    const message = `Olá, *${invoice.client_name}*!\n\nA sua cobrança referente a *${invoice.description || 'Aluguel/Taxas'}* no valor de *${formatCurrency(invoice.amount)}* já está disponível.\n\n📅 *Vencimento:* ${dueDate}\n🔗 *Link para pagamento:* ${invoice.payment_url}\n\nQualquer dúvida, estamos à disposição!`;
+    const message = `Olá, *${invoice.client_name}*!\n\nA sua cobrança referente a *${invoice.description || 'Aluguel/Taxas'}* no valor de *${formatCurrency(invoice.amount)}* já está disponível.\n\n📅 *Vencimento:* ${dueDate}\n🔗 *Link para pagamento:* ${paymentLink}\n\nQualquer dúvida, estamos à disposição!`;
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank');
   };
@@ -391,7 +393,7 @@ export default function AdminFinance() {
             <span>Locações Ativas: {activeRentCount} / {contractsUsageLabel}</span>
           </div>
         </div>
-        {tenant && !tenant.payment_api_key && (
+        {user?.company?.use_asaas && !user?.company?.payment_api_key && (
           <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 text-amber-700 dark:text-amber-400 px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow-sm">
             <Icons.AlertTriangle size={18} />
             <span>Configure a chave do Asaas nas <b>Configurações</b> para gerar boletos.</span>
@@ -664,25 +666,51 @@ export default function AdminFinance() {
                           </td>
                           <td className="p-4 text-right">
                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              {invoice.status === 'pago' && invoice.payment_url ? (
-                                <button title="Ver Recibo (Asaas)" onClick={() => window.open(invoice.payment_url, '_blank')} className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg transition-colors bg-brand-50/50 flex items-center gap-1 text-xs font-bold">
-                                  <Icons.FileText size={16} /> Recibo
-                                </button>
-                              ) : invoice.status !== 'pago' && (
-                                <>
-                                  {invoice.payment_url ? (
-                                    <button title="Abrir Link de Pagamento" onClick={() => window.open(invoice.payment_url, '_blank')} className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg transition-colors bg-brand-50/50">
-                                      <Icons.ExternalLink size={16} />
-                                    </button>
+                              {/* Ações de Pagamento */}
+                              {invoice.status !== 'pago' && (
+                                <div className="flex items-center justify-end gap-2">
+
+                                  {/* Badge Visual */}
+                                  {invoice.payment_notified && (
+                                    <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded animate-pulse mr-2 whitespace-nowrap hidden sm:inline-block">
+                                      PAGAMENTO INFORMADO
+                                    </span>
+                                  )}
+
+                                  {/* Gateway escolhido (Lendo do user.company) */}
+                                  {user?.company?.use_asaas ? (
+                                    invoice.payment_url ? (
+                                      <button onClick={() => window.open(invoice.payment_url, '_blank')} className="p-2 text-blue-600 hover:bg-blue-100 bg-blue-50 rounded-lg transition-colors" title="Abrir Asaas">
+                                        <Icons.ExternalLink size={18} />
+                                      </button>
+                                    ) : (
+                                      <button onClick={() => handleGenerateAsaasLink(invoice.id)} disabled={generatingLinkFor === invoice.id} className="p-2 text-brand-600 hover:bg-brand-100 bg-brand-50 rounded-lg transition-colors disabled:opacity-50" title="Gerar Asaas">
+                                        {generatingLinkFor === invoice.id ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.Link size={18} />}
+                                      </button>
+                                    )
                                   ) : (
-                                    <button title="Gerar Boleto/Pix (Asaas)" onClick={() => handleGenerateAsaasLink(invoice.id)} disabled={generatingLinkFor === invoice.id} className="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors disabled:opacity-50">
-                                      {generatingLinkFor === invoice.id ? <Icons.Loader2 size={16} className="animate-spin text-brand-500" /> : <Icons.Link size={16} />}
+                                    <button
+                                      onClick={() => {
+                                        const link = `${window.location.origin}/pay/${invoice.id}`;
+                                        navigator.clipboard.writeText(link);
+                                        addToast('Link Pix Copiado!', 'success');
+                                      }}
+                                      className="p-2 text-brand-600 hover:bg-brand-100 bg-brand-50 rounded-lg transition-colors"
+                                      title="Copiar Pix Nativo"
+                                    >
+                                      <Icons.Link2 size={18} />
                                     </button>
                                   )}
-                                  <button title="Cobrar no WhatsApp" onClick={() => handleWhatsAppCharge(invoice)} className="p-2 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
-                                    <Icons.MessageCircle size={16} />
+
+                                  {/* Botão do WhatsApp (Restaurado e Garantido!) */}
+                                  <button 
+                                    onClick={() => handleWhatsAppCharge(invoice)} 
+                                    className="p-2 text-slate-500 hover:text-green-600 hover:bg-green-50 bg-slate-50 rounded-lg transition-colors"
+                                    title="Cobrar pelo WhatsApp"
+                                  >
+                                    <Icons.MessageCircle size={18} />
                                   </button>
-                                </>
+                                </div>
                               )}
                               <button title="Excluir Cobrança" onClick={() => handleDeleteInvoice(invoice.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors">
                                 <Icons.Trash2 size={16} />

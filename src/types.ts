@@ -37,7 +37,18 @@ export interface SiteData {
   // Seções Opcionais
   show_partnerships?: boolean;
   partners?: { id: string; name: string; logo_url: string }[];
-  featured_regions?: { id: string; name: string; image_url: string }[];
+  condominiums?: {
+    id: string;
+    name: string;
+    image_url?: string;
+    features?: string[];
+    zip: string;
+    street: string;
+    neighborhood: string;
+    city: string;
+    state: string;
+  }[];
+  featured_regions?: { id: string; condominium_id?: string; name: string; image_url: string }[];
 
   // Redes Sociais (Footer)
   social_instagram?: string;
@@ -63,6 +74,18 @@ export interface SiteData {
   };
 }
 
+export type PixKeyType = 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
+
+export interface FinanceConfig {
+  use_asaas?: boolean;
+  pix_type?: PixKeyType;
+  pix_key?: string;
+  pix_name?: string;
+  pix_city?: string;
+  default_commission?: number;
+  broker_commission?: number;
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -79,7 +102,11 @@ export interface Company {
   site_data?: SiteData;
   created_at?: string;
   updated_at?: string;
-  payment_api_key?: string;
+  finance_config?: FinanceConfig | string | null;
+  use_asaas?: boolean | null;
+  default_commission?: number | null;
+  broker_commission?: number | null;
+  payment_api_key?: string | null;
   payment_gateway?: 'asaas' | 'cora';
 }
 
@@ -143,6 +170,7 @@ export interface Property {
   zip_code?: string;
   latitude?: number;
   longitude?: number;
+  condominium_id?: string | null;
 
   features: string[];
   images: string[];
@@ -160,6 +188,8 @@ export interface Property {
   owner_profession?: string;
   owner_marital_status?: string;
   owner_address?: string;
+  owner_pix_key?: string | null;
+  owner_pix_type?: string | null;
   owner_spouse_name?: string;
   owner_spouse_document?: string;
   created_at?: string;
@@ -311,6 +341,8 @@ export interface Invoice {
   status: 'pendente' | 'pago' | 'atrasado' | 'cancelado';
   gateway_id?: string;
   payment_url?: string;
+  asaas_payment_link?: string;
+  payment_notified?: boolean;
   created_at: string;
   property?: Property;
 }
