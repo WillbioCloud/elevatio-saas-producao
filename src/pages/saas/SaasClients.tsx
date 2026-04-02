@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from "react"
+import { createPortal } from "react-dom"
 import {
   Search,
   Filter,
-  MoreHorizontal,
   Plus,
-  Building2,
-  Calendar,
   X,
   ChevronDown,
   Download
@@ -20,13 +18,33 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { supabase } from '@/lib/supabase'
 import { PLANS } from '../../config/plans'
 
+type DomainStatus = 'pending' | 'active' | 'error' | 'idle' | 'expired' | null
+
+type ClientCompany = {
+  id: string
+  name: string
+  email: string | null
+  document: string | null
+  phone: string | null
+  created_at: string
+  plan: string
+  active: boolean
+  subdomain: string | null
+  domain: string | null
+  domain_secondary: string | null
+  domain_status: DomainStatus
+  domain_secondary_status: DomainStatus
+  manual_discount_value?: number | null
+  manual_discount_type?: 'fixed' | 'percentage' | null
+}
+
 export default function Clients() {
-  const [clients, setClients] = useState<any[]>([])
+  const [clients, setClients] = useState<ClientCompany[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedClient, setSelectedClient] = useState<any | null>(null)
+  const [selectedClient, setSelectedClient] = useState<ClientCompany | null>(null)
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null)
-  const [discountModal, setDiscountModal] = useState<{ isOpen: boolean; company: any | null }>({ isOpen: false, company: null })
+  const [discountModal, setDiscountModal] = useState<{ isOpen: boolean; company: ClientCompany | null }>({ isOpen: false, company: null })
   const [discountValue, setDiscountValue] = useState<number>(0)
   const [discountType, setDiscountType] = useState<'fixed' | 'percentage'>('fixed')
   const [isSavingDiscount, setIsSavingDiscount] = useState(false)
@@ -35,21 +53,26 @@ export default function Clients() {
   const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false)
   const [newCompany, setNewCompany] = useState({ name: "", plan: "business" })
   const [isCreating, setIsCreating] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+  const [, setIsDeleting] = useState(false)
+  const [, setIsUpdatingStatus] = useState(false)
 
   // Busca as empresas no banco de dados
   const fetchCompanies = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from("companies")
-      .select("*")
-      .order("created_at", { ascending: false })
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('id, name, document, phone, created_at, plan, active, subdomain, domain, domain_secondary, domain_status, domain_secondary_status')
+        .order('created_at', { ascending: false })
 
-    if (!error && data) {
-      setClients(data)
+      if (error) throw error
+
+      setClients((data || []) as ClientCompany[])
+    } catch (err) {
+      console.error('Erro ao buscar empresas:', err)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   useEffect(() => {
@@ -74,7 +97,7 @@ export default function Clients() {
     const { error } = await supabase.from("companies").insert([
       {
         name: newCompany.name,
-        slug: generatedSlug,
+        subdomain: generatedSlug,
         plan: newCompany.plan,
         active: true
       }
@@ -115,7 +138,7 @@ export default function Clients() {
   }
 
   // Função para Suspender/Ativar
-  const handleToggleStatus = async (client: any) => {
+  const handleToggleStatus = async (client: ClientCompany) => {
     setIsUpdatingStatus(true)
     const { error } = await supabase
       .from("companies")
@@ -135,9 +158,56 @@ export default function Clients() {
     const term = searchTerm.toLowerCase()
     return (
       client.name?.toLowerCase().includes(term) ||
-      client.slug?.toLowerCase().includes(term)
+      client.subdomain?.toLowerCase().includes(term) ||
+      client.email?.toLowerCase().includes(term)
     )
   })
+
+  const selectedPlan = selectedClient ? PLANS.find((plan) => plan.id === selectedClient.plan) : null
+  const hasPendingDomain = (client: ClientCompany | null | undefined) =>
+    Boolean(
+      client?.active && (
+        (client?.domain && client?.domain_status === 'pending') ||
+        (client?.domain_secondary && client?.domain_secondary_status === 'pending')
+      )
+    )
+
+  const pendingDomainsCount = clients?.filter(hasPendingDomain).length || 0
+  const firstPendingDomainClient = clients?.find(hasPendingDomain) || null
+
+  const accessHost = selectedClient?.domain_status === 'active' && selectedClient.domain
+    ? selectedClient.domain
+    : selectedClient?.domain_secondary_status === 'active' && selectedClient.domain_secondary
+      ? selectedClient.domain_secondary
+      : selectedClient?.subdomain
+        ? `${selectedClient.subdomain}.elevatiovendas.com.br`
+        : null
+
+  const accessUrl = accessHost ? `https://${accessHost}` : null
+
+  const getDomainStatusClasses = (status: DomainStatus) => {
+    if (status === 'active') {
+      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+    }
+
+    if (status === 'error' || status === 'expired') {
+      return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+    }
+
+    if (status === 'idle') {
+      return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+    }
+
+    return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 animate-pulse'
+  }
+
+  const getDomainStatusLabel = (status: DomainStatus) => {
+    if (status === 'active') return 'Configurado'
+    if (status === 'error') return 'Erro DNS'
+    if (status === 'expired') return 'Expirado'
+    if (status === 'idle') return 'Ocioso'
+    return 'Pendente'
+  }
 
   return (
     <div className="space-y-6 relative">
@@ -157,6 +227,29 @@ export default function Clients() {
           </Button>
         </div>
       </div>
+
+      {pendingDomainsCount > 0 && (
+        <div className="mb-8 flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/30 dark:bg-amber-900/10">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">
+              <Icons.Globe size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-amber-800 dark:text-amber-500">Ação Necessária: Domínios Pendentes</h3>
+              <p className="text-sm font-medium text-amber-700 dark:text-amber-400/80">
+                Você tem {pendingDomainsCount} domínio(s) de cliente(s) pagante(s) aguardando o registro ou apontamento DNS.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => firstPendingDomainClient && setSelectedClient(firstPendingDomainClient)}
+            className="whitespace-nowrap rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-amber-600"
+          >
+            Resolver Agora
+          </button>
+        </div>
+      )}
 
       <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 dark:border-slate-800/50 flex flex-col sm:flex-row gap-4 items-center justify-between bg-white dark:bg-slate-900">
@@ -227,7 +320,9 @@ export default function Clients() {
                       </Avatar>
                       <div>
                         <p className="font-medium text-slate-900 dark:text-slate-50">{client.name}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{client.slug}.elevatiovendas.com</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {client.subdomain ? `${client.subdomain}.elevatiovendas.com.br` : "Subdomínio pendente"}
+                        </p>
                       </div>
                     </div>
                   </TableCell>
@@ -238,15 +333,11 @@ export default function Clients() {
                   </TableCell>
                   <TableCell>
                     <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                      client.plan_status === 'active' 
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
-                        : client.plan_status === 'trial' 
-                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' 
-                        : client.plan_status === 'past_due' 
-                        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' 
-                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
+                      client.active
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
                     }`}>
-                      {client.plan_status === 'active' ? 'Ativo' : client.plan_status === 'trial' ? 'Trial' : client.plan_status === 'past_due' ? 'Inadimplente' : 'Inativo'}
+                      {client.active ? 'Pago' : 'Pendente'}
                     </span>
                   </TableCell>
                   <TableCell>
@@ -334,85 +425,164 @@ export default function Clients() {
         </div>
       </Card>
 
-      {/* Detalhes do Cliente (Sidebar Lateral) */}
-      {selectedClient && (
-        <>
-          {/* Overlay (Fundo Escuro) - Clicar nele também fecha a sidebar */}
-          <div 
-            className="fixed inset-0 bg-slate-950/70 z-40 transition-opacity"
+      {/* SIDEBAR DE DETALHES DO CLIENTE (PORTAL) */}
+      {selectedClient && createPortal(
+        <div className="fixed inset-0 z-[99999] flex justify-end font-['DM_Sans']">
+          {/* Backdrop Escuro (Fundo Blur) */}
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300"
             onClick={() => setSelectedClient(null)}
           />
-          
-          {/* Painel da Sidebar Fixado na Direita */}
-          <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-96 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-y-auto animate-in slide-in-from-right-8 duration-300">
-            <div className="p-6 border-b border-slate-100 dark:border-slate-800/50 flex justify-between items-start sticky top-0 bg-white dark:bg-slate-900 backdrop-blur-md z-10">
+
+          {/* Sidebar / Painel Lateral */}
+          <div className="relative w-full max-w-md h-screen bg-white dark:bg-slate-900 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            {/* Header do Sidebar */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
               <div>
-                <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{selectedClient.name}</h2>
-                <div className="flex items-center gap-2 mt-2">
-                  <Badge variant="secondary" className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 uppercase text-[10px] tracking-wider">{selectedClient.plan}</Badge>
-                  <Badge className={selectedClient.active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}>
-                    {selectedClient.active ? "Ativo" : "Suspenso"}
-                  </Badge>
-                </div>
+                <h2 className="text-lg font-black text-slate-800 dark:text-white">Ficha da Imobiliária</h2>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">
+                  Cliente desde {new Date(selectedClient.created_at).toLocaleDateString("pt-BR")}
+                </p>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => setSelectedClient(null)} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-300 rounded-full">
-                <X className="h-5 w-5" />
-              </Button>
+              <button
+                onClick={() => setSelectedClient(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 dark:hover:bg-slate-700 rounded-full transition-colors"
+              >
+                <Icons.X size={20} />
+              </button>
             </div>
 
-            <div className="p-6 flex-1 flex flex-col gap-6">
-              {/* Informações Essenciais */}
-              <div className="bg-slate-50 dark:bg-slate-950 p-5 rounded-2xl border border-slate-100 dark:border-slate-800/50">
-                <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  Dados da Imobiliária
-                </h3>
-
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Subdomínio (Acesso)</p>
-                    <a href={`https://${selectedClient.slug}.elevatiovendas.com`} target="_blank" rel="noreferrer" className="text-sm font-semibold text-brand-600 hover:underline flex items-center gap-1">
-                      {selectedClient.slug}.elevatiovendas.com
-                    </a>
+            {/* Corpo do Sidebar */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
+              {/* Informações Principais */}
+              <div>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-16 h-16 rounded-2xl bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center border border-brand-200 dark:border-brand-800">
+                    <Icons.Building2 size={32} className="text-brand-600 dark:text-brand-400" />
                   </div>
-
                   <div>
-                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Cliente Desde</p>
-                    <p className="text-sm font-medium text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-slate-400 dark:text-slate-500" />
-                      {new Date(selectedClient.created_at).toLocaleDateString("pt-BR")}
+                    <h3 className="text-xl font-black text-slate-800 dark:text-white">{selectedClient.name}</h3>
+                    <p className="text-sm text-slate-500 flex items-center gap-2 mt-1">
+                      <Icons.Mail size={14} /> {selectedClient.email || "Sem e-mail"}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-xl">
-                <p className="text-xs text-indigo-800 font-medium">Métricas detalhadas (MRR, Total de Imóveis e Usuários) serão exibidas aqui nas próximas atualizações do painel.</p>
+              {/* Métricas Financeiras, Status e Domínios */}
+              <div>
+                <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Assinatura & Domínio</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                    <div>
+                      <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Status Financeiro</p>
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-3 w-3">
+                          {selectedClient.active && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>}
+                          <span className={`relative inline-flex h-3 w-3 rounded-full ${selectedClient.active ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                        </span>
+                        <p className="text-sm font-black text-slate-700 dark:text-slate-200">
+                          {selectedClient.active ? 'Plano Ativo (Pago)' : 'Aguardando Pagamento'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Plano Atual</p>
+                      <p className="text-lg font-black text-[#1a56db] dark:text-brand-400">{selectedPlan?.name || selectedClient.plan || 'N/A'}</p>
+                    </div>
+                  </div>
+
+                  <div className="col-span-2 rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                    <div className="mb-4 flex items-center justify-between">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ambiente Web</p>
+                      <Icons.Globe size={14} className="text-slate-400" />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div>
+                          <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                            {selectedClient.subdomain ? `${selectedClient.subdomain}.elevatiovendas.com.br` : 'Pendente'}
+                          </p>
+                          <p className="text-[10px] font-bold text-slate-400">Subdomínio Gratuito</p>
+                        </div>
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                          Operacional
+                        </span>
+                      </div>
+
+                      {selectedClient.domain && (
+                        <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                          <div>
+                            <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                              {selectedClient.domain}
+                            </p>
+                            <p className="text-[10px] font-bold text-slate-400">Domínio Principal</p>
+                          </div>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${getDomainStatusClasses(selectedClient.domain_status)}`}>
+                            {getDomainStatusLabel(selectedClient.domain_status)}
+                          </span>
+                        </div>
+                      )}
+
+                      {selectedClient.domain_secondary && (
+                        <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                          <div>
+                            <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                              {selectedClient.domain_secondary}
+                            </p>
+                            <p className="text-[10px] font-bold text-slate-400">Domínio Secundário</p>
+                          </div>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${getDomainStatusClasses(selectedClient.domain_secondary_status)}`}>
+                            {getDomainStatusLabel(selectedClient.domain_secondary_status)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              {/* Ações */}
-              <div className="pt-4 mt-auto flex flex-col gap-3">
-                <Button
-                  onClick={() => handleToggleStatus(selectedClient)}
-                  disabled={isUpdatingStatus}
-                  variant="outline"
-                  className={selectedClient.active ? "text-amber-600 border-amber-200 hover:bg-amber-50" : "text-emerald-600 border-emerald-200 hover:bg-emerald-50"}
-                >
-                  {isUpdatingStatus ? "Atualizando..." : (selectedClient.active ? "Bloquear / Suspender Acesso" : "Reativar Acesso do Cliente")}
-                </Button>
+              {/* Informações Cadastrais */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Dados Cadastrais</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center">
+                      <Icons.FileText size={16} className="text-slate-500" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Documento (CPF/CNPJ)</p>
+                      <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{selectedClient.document || "Não informado"}</p>
+                    </div>
+                  </div>
 
-                <Button
-                  onClick={() => handleDeleteClient(selectedClient.id)}
-                  disabled={isDeleting}
-                  variant="outline"
-                  className="text-red-600 border-red-200 hover:text-red-700 hover:bg-red-50"
-                >
-                  {isDeleting ? "Excluindo..." : "Excluir Empresa Definitivamente"}
-                </Button>
+                  <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center">
+                      <Icons.Phone size={16} className="text-slate-500" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Telefone / WhatsApp</p>
+                      <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{selectedClient.phone || "Não informado"}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            {/* Footer de Ações do Sidebar */}
+            <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+              <button
+                onClick={() => accessUrl && window.open(accessUrl, "_blank", "noopener,noreferrer")}
+                disabled={!accessUrl}
+                className="w-full py-3 bg-slate-900 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-colors shadow-md flex items-center justify-center gap-2"
+              >
+                <Icons.ExternalLink size={18} /> Acessar Painel do Cliente
+              </button>
+            </div>
           </div>
-        </>
+        </div>,
+        document.body
       )}
 
       {/* Modal Nova Empresa */}
@@ -435,7 +605,7 @@ export default function Clients() {
                 />
                 {newCompany.name && (
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    Subdomínio gerado: <strong className="text-brand-600">{newCompany.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}</strong>.elevatiovendas.com
+                    Subdomínio gerado: <strong className="text-brand-600">{newCompany.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}</strong>.elevatiovendas.com.br
                   </p>
                 )}
               </div>

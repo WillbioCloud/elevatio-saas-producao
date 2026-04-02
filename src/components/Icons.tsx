@@ -107,6 +107,7 @@ import {
   ArrowRightLeft,
   Network,
   Layout,
+  LayoutTemplate,
   Link,
   Gift,
   Rocket,
@@ -275,6 +276,7 @@ export const Icons = {
   ArrowRightLeft,
   Network,
   Layout,
+  LayoutTemplate,
   Link,
   Gift,
   // NOVOS ÍCONES DO SAAS PLANS:
