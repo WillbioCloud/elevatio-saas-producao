@@ -158,6 +158,8 @@ const AdminDashboard: React.FC = () => {
   const [trialDaysLeft] = useState(0);
   const [trialExpiresAt, setTrialExpiresAt] = useState<string | null>(null);
   const [trialTimeLeft, setTrialTimeLeft] = useState<{ d: number; h: number; m: number; s: number } | null>(null);
+  const contract = useMemo(() => ({ status: contractStatus, trial_end: trialExpiresAt }), [contractStatus, trialExpiresAt]);
+  const isTrial = contract?.status === 'trialing' || (contract?.trial_end && new Date(contract.trial_end) > new Date());
 
   useEffect(() => {
     if (!user?.id) return;
@@ -180,7 +182,7 @@ const AdminDashboard: React.FC = () => {
   }, [user?.id]);
 
   useEffect(() => {
-    if (!user || user.role === 'super_admin' || userPlan !== 'free' || !trialExpiresAt) {
+    if (!user || user.role === 'super_admin' || !isTrial || !trialExpiresAt) {
       setTrialTimeLeft(null);
       return;
     }
@@ -208,7 +210,7 @@ const AdminDashboard: React.FC = () => {
     const timer = window.setInterval(calculateTimeLeft, 1000);
 
     return () => window.clearInterval(timer);
-  }, [user, userPlan, trialExpiresAt]);
+  }, [user, isTrial, trialExpiresAt]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -370,9 +372,9 @@ const AdminDashboard: React.FC = () => {
           return;
         }
 
-        const { data: contract, error: contractError } = await supabase
+        const { data: contractData, error: contractError } = await supabase
           .from('saas_contracts')
-          .select('status, created_at')
+          .select('status, created_at, end_date')
           .eq('company_id', profile.company_id)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -385,14 +387,16 @@ const AdminDashboard: React.FC = () => {
         }
 
         // Fallback: Se não houver contrato, assume que é um usuário novo no período de teste (pending)
-        const currentStatus = contract?.status || 'pending';
-        const startDate = contract?.created_at || (profile as any).companies?.created_at || new Date().toISOString();
+        const currentStatus = contractData?.status || 'pending';
+        const startDate = contractData?.created_at || (profile as any).companies?.created_at || new Date().toISOString();
 
         setContractStatus(currentStatus);
 
-        if (currentStatus === 'pending') {
-          const trialEnd = new Date(startDate);
-          trialEnd.setDate(trialEnd.getDate() + 7);
+        if (currentStatus === 'pending' || currentStatus === 'trialing') {
+          const trialEnd = contractData?.end_date ? new Date(contractData.end_date) : new Date(startDate);
+          if (!contractData?.end_date) {
+            trialEnd.setDate(trialEnd.getDate() + 7);
+          }
           setTrialExpiresAt(trialEnd.toISOString());
           return;
         }
@@ -761,7 +765,7 @@ const AdminDashboard: React.FC = () => {
         )}
       </div>
 
-      {userPlan === 'free' && trialTimeLeft && (
+      {isTrial && trialTimeLeft && (
         <div className="relative overflow-hidden rounded-2xl border border-amber-300/50 bg-gradient-to-r from-amber-50 to-orange-50 p-6 shadow-sm dark:border-amber-700/30 dark:from-amber-950/40 dark:to-orange-950/40">
           <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-amber-400/10 blur-3xl"></div>
 
@@ -772,10 +776,10 @@ const AdminDashboard: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-lg font-black tracking-tight text-slate-800 dark:text-amber-50">
-                  O seu período de teste está a terminar!
+                  Voce está no período de teste!
                 </h3>
                 <p className="mt-1 max-w-xl text-sm font-medium leading-relaxed text-slate-600 dark:text-amber-200/80">
-                  Aproveite as funcionalidades completas do Elevatio Vendas. Escolha um plano para não perder o acesso ao CRM, Site e Gestão Financeira.
+                  Aproveite as funcionalidades completas do Elevatio Vendas. Assim que se acostumar com o sistema, escolha um plano para não perder o acesso ao CRM, Site e Gestão Financeira.
                 </p>
               </div>
             </div>

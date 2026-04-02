@@ -47,7 +47,6 @@ interface Contract {
   companies?: { plan?: string };
 }
 
-type CheckoutDomainStatus = 'idle' | 'loading' | 'available' | 'taken' | 'error';
 type CheckoutCoupon = {
   code: string;
   type: 'percentage' | 'fixed' | 'free_month';
@@ -104,10 +103,6 @@ const sanitizeExistingDomain = (value: string) =>
     .replace(/\/+$/, '')
     .trim();
 
-const getDomainLookupUrl = (domain: string) =>
-  domain.endsWith('.com.br')
-    ? `https://rdap.registro.br/domain/${domain}`
-    : `https://rdap.verisign.com/com/v1/domain/${domain}`;
 
 const getDomainAnnualPrice = (domain: string) => (domain.endsWith('.com') ? 73.0 : 53.0);
 
@@ -353,9 +348,11 @@ const AdminConfig: React.FC = () => {
   const [checkoutCoupon, setCheckoutCoupon] = useState('');
   const [validatedCoupon, setValidatedCoupon] = useState<CheckoutCoupon | null>(null);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
-  const [checkoutSecondaryDomain, setCheckoutSecondaryDomain] = useState('');
-  const [checkoutSecondaryDomainStatus, setCheckoutSecondaryDomainStatus] = useState<CheckoutDomainStatus>('idle');
-  const [checkoutSecondaryDomainVerified, setCheckoutSecondaryDomainVerified] = useState('');
+  // --- ESTADOS DO DOMÍNIO SECUNDÁRIO INTELIGENTE ---
+  const [autoSecondaryDomain, setAutoSecondaryDomain] = useState('');
+  const [isCheckingSecondary, setIsCheckingSecondary] = useState(false);
+  const [isSecondaryAvailable, setIsSecondaryAvailable] = useState<boolean | null>(null);
+  const [isSecondaryConfirmed, setIsSecondaryConfirmed] = useState(false);
   const isLoading = isGeneratingCheckout || isReactivating || isUpgrading !== null;
   const setIsLoading = setIsGeneratingCheckout;
 
@@ -394,18 +391,75 @@ const AdminConfig: React.FC = () => {
     setCheckoutCoupon('');
     setValidatedCoupon(null);
     setValidatingCoupon(false);
-    setCheckoutSecondaryDomain('');
-    setCheckoutSecondaryDomainStatus('idle');
-    setCheckoutSecondaryDomainVerified('');
+    setAutoSecondaryDomain('');
+    setIsCheckingSecondary(false);
+    setIsSecondaryAvailable(null);
+    setIsSecondaryConfirmed(false);
+    setCheckoutAddons((prev) => (prev.buyDomainCom ? { ...prev, buyDomainCom: false } : prev));
   }, [isCheckoutModalOpen]);
 
   useEffect(() => {
     if (!isCheckoutModalOpen) return;
 
-    setCheckoutSecondaryDomain(tenant?.domain_secondary || checkoutDomainInfo.suggestedSecondaryDomain);
-    setCheckoutSecondaryDomainStatus('idle');
-    setCheckoutSecondaryDomainVerified('');
-  }, [isCheckoutModalOpen, tenant?.domain_secondary, checkoutDomainInfo.suggestedSecondaryDomain]);
+    const primary = sanitizeExistingDomain(tenant?.domain || siteDomain || '');
+
+    if (!primary) {
+      setAutoSecondaryDomain('');
+      setIsCheckingSecondary(false);
+      setIsSecondaryAvailable(null);
+      setIsSecondaryConfirmed(false);
+      setCheckoutAddons((prev) => (prev.buyDomainCom ? { ...prev, buyDomainCom: false } : prev));
+      return;
+    }
+
+    let suggested = '';
+
+    if (primary.endsWith('.com.br')) {
+      suggested = primary.replace('.com.br', '.com');
+    } else if (primary.endsWith('.com')) {
+      suggested = primary.replace(/\.com$/i, '.com.br');
+    } else {
+      suggested = `${primary.split('.')[0]}.com.br`;
+    }
+
+    const normalizedSuggested = sanitizeExistingDomain(suggested);
+    let isMounted = true;
+
+    setAutoSecondaryDomain(normalizedSuggested);
+    setIsSecondaryAvailable(null);
+    setIsSecondaryConfirmed(false);
+    setCheckoutAddons((prev) => (prev.buyDomainCom ? { ...prev, buyDomainCom: false } : prev));
+
+    const checkDomain = async () => {
+      setIsCheckingSecondary(true);
+
+      try {
+        const { data, error } = await supabase.functions.invoke('check-domain', {
+          body: { domain: suggested }
+        });
+
+        if (error) throw error;
+        if (!isMounted) return;
+        setIsSecondaryAvailable(data.available);
+      } catch (error) {
+        console.error('Erro ao verificar domínio secundário:', error);
+        if (!isMounted) return;
+        setIsSecondaryAvailable(false);
+      } finally {
+        if (isMounted) {
+          setIsCheckingSecondary(false);
+        }
+      }
+    };
+
+    if (normalizedSuggested) {
+      checkDomain();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isCheckoutModalOpen, tenant?.domain, siteDomain]);
 
   const [siteSubTab, setSiteSubTab] = useState<'templates' | 'identity' | 'hero' | 'about' | 'social'>('templates');
   const [siteData, setSiteData] = useState<SiteData & { hero_video_url?: string | null }>({
@@ -1052,89 +1106,6 @@ const AdminConfig: React.FC = () => {
       setValidatingCoupon(false);
     }
   };
-
-  const handleCheckSecondaryDomainAvailability = async () => {
-    const normalizedDomain = sanitizeExistingDomain(checkoutSecondaryDomain);
-
-    if (!normalizedDomain) {
-      addToast('Informe um domÃ­nio secundÃ¡rio vÃ¡lido.', 'error');
-      return;
-    }
-
-    if (!(normalizedDomain.endsWith('.com') || normalizedDomain.endsWith('.com.br'))) {
-      setCheckoutSecondaryDomainStatus('error');
-      addToast('Use um domÃ­nio secundÃ¡rio com final .com ou .com.br.', 'error');
-      return;
-    }
-
-    if (normalizedDomain === checkoutDomainInfo.primaryDomain) {
-      setCheckoutSecondaryDomainStatus('error');
-      addToast('O domÃ­nio secundÃ¡rio precisa ser diferente do domÃ­nio principal.', 'error');
-      return;
-    }
-
-    setCheckoutSecondaryDomainStatus('loading');
-    setCheckoutSecondaryDomainVerified('');
-
-    try {
-      const response = await fetch(getDomainLookupUrl(normalizedDomain));
-
-      if (response.status === 404) {
-        setCheckoutSecondaryDomainStatus('available');
-        setCheckoutSecondaryDomainVerified(normalizedDomain);
-        addToast('DomÃ­nio secundÃ¡rio disponÃ­vel para registro.', 'success');
-        return;
-      }
-
-      if (response.status === 200) {
-        setCheckoutSecondaryDomainStatus('taken');
-        addToast('Esse domÃ­nio secundÃ¡rio jÃ¡ estÃ¡ em uso.', 'error');
-        return;
-      }
-
-      setCheckoutSecondaryDomainStatus('error');
-      addToast('NÃ£o foi possÃ­vel verificar o domÃ­nio agora. Tente novamente.', 'error');
-    } catch (error) {
-      console.error('Erro ao verificar domÃ­nio secundÃ¡rio:', error);
-      setCheckoutSecondaryDomainStatus('error');
-      addToast('NÃ£o foi possÃ­vel verificar o domÃ­nio agora. Tente novamente.', 'error');
-    }
-  };
-
-  const persistCheckoutDomainSelections = async () => {
-    if (!user?.company_id || !checkoutAddons.buyDomainCom) return;
-
-    const normalizedSecondaryDomain = sanitizeExistingDomain(checkoutSecondaryDomain);
-
-    if (!normalizedSecondaryDomain) {
-      throw new Error('Informe o domÃ­nio secundÃ¡rio antes de finalizar.');
-    }
-
-    if (!(normalizedSecondaryDomain.endsWith('.com') || normalizedSecondaryDomain.endsWith('.com.br'))) {
-      throw new Error('Use um domÃ­nio secundÃ¡rio com final .com ou .com.br.');
-    }
-
-    if (normalizedSecondaryDomain === checkoutDomainInfo.primaryDomain) {
-      throw new Error('O domÃ­nio secundÃ¡rio precisa ser diferente do domÃ­nio principal.');
-    }
-
-    if (
-      checkoutSecondaryDomainStatus !== 'available' ||
-      checkoutSecondaryDomainVerified !== normalizedSecondaryDomain
-    ) {
-      throw new Error('Verifique a disponibilidade do domÃ­nio secundÃ¡rio antes de finalizar.');
-    }
-
-    const { error } = await supabase
-      .from('companies')
-      .update({ domain_secondary: normalizedSecondaryDomain })
-      .eq('id', user.company_id);
-
-    if (error) throw error;
-
-    setTenant((prev) => (prev ? { ...prev, domain_secondary: normalizedSecondaryDomain } : prev));
-  };
-
   const handleOpenPortal = async () => {
     setIsOpeningPortal(true);
     try {
@@ -3845,8 +3816,7 @@ const AdminConfig: React.FC = () => {
           // Inteligência de extração do domínio
           const billingLabel = isModalYearly ? 'Anual' : (isModalFidelity ? 'Mensal (Fidelidade 12m)' : 'Mensal');
           const primaryDomainStr = checkoutDomainInfo.primaryDomain;
-          const normalizedSecondaryDomain = sanitizeExistingDomain(checkoutSecondaryDomain) || checkoutDomainInfo.suggestedSecondaryDomain;
-          const secondaryDomainStr = normalizedSecondaryDomain || checkoutDomainInfo.suggestedSecondaryDomain;
+          const secondaryDomainStr = autoSecondaryDomain || checkoutDomainInfo.suggestedSecondaryDomain;
           const primaryPrice = getDomainAnnualPrice(primaryDomainStr);
           const secondaryPrice = getDomainAnnualPrice(secondaryDomainStr);
           const isPrimaryFree = isModalYearly && selectedPlanForCheckout.has_free_domain;
@@ -3883,12 +3853,6 @@ const AdminConfig: React.FC = () => {
             : isPrimaryFree
               ? 'R$ 0,00'
               : `+ ${formatCurrency(primaryPrice)} /ano`;
-          const canFinalizeCheckout = !checkoutAddons.buyDomainCom || (
-            !!normalizedSecondaryDomain &&
-            checkoutSecondaryDomainStatus === 'available' &&
-            checkoutSecondaryDomainVerified === normalizedSecondaryDomain
-          );
-
           return (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
               <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in">
@@ -3964,77 +3928,91 @@ const AdminConfig: React.FC = () => {
                       </label>
 
                       {/* Domínio Adicional (Proteção de marca) */}
-                      <div className={`rounded-lg border transition-colors ${checkoutAddons.buyDomainCom ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700'}`}>
-                        <label className={`flex items-center justify-between p-3 cursor-pointer ${checkoutAddons.buyDomainCom ? '' : 'hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg'}`}>
-                          <div className="flex items-center gap-3">
-                            <input 
-                              type="checkbox" 
-                              checked={checkoutAddons.buyDomainCom} 
-                              onChange={(e) => setCheckoutAddons((p) => ({ ...p, buyDomainCom: e.target.checked }))} 
-                              className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600" 
-                            />
-                            <div>
-                              <span className="font-medium text-slate-700 dark:text-slate-200 block">
-                                {secondaryDomainStr}
-                              </span>
-                              <span className="text-xs text-slate-500">Opcional (Proteja sua marca)</span>
-                            </div>
-                          </div>
-                          <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
-                            + {formatCurrency(secondaryPrice)} /ano
-                          </span>
-                        </label>
+                      {autoSecondaryDomain && (
+                        <div className="mt-6 rounded-xl border border-brand-200 bg-brand-50/50 p-5 dark:border-brand-800 dark:bg-brand-900/10">
+                          <h4 className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-white">
+                            <Icons.Globe size={16} className="text-brand-600" />
+                            Proteja sua marca (Domínio Secundário)
+                          </h4>
+                          <p className="mb-4 text-xs text-slate-500">
+                            Seu domínio principal é <strong>{tenant?.domain || siteDomain}</strong>. Verificamos automaticamente a disponibilidade da extensão alternativa para proteger sua marca.
+                          </p>
 
-                        {checkoutAddons.buyDomainCom && (
-                          <div className="border-t border-brand-200/70 dark:border-brand-800/60 px-3 pb-3 pt-3 space-y-3">
-                            <div className="flex flex-col gap-2 sm:flex-row">
+                          <div className="flex flex-col gap-3">
+                            <div className="relative">
                               <input
                                 type="text"
-                                value={checkoutSecondaryDomain}
-                                onChange={(e) => {
-                                  setCheckoutSecondaryDomain(e.target.value);
-                                  const nextNormalizedDomain = sanitizeExistingDomain(e.target.value);
-                                  if (checkoutSecondaryDomainVerified !== nextNormalizedDomain) {
-                                    setCheckoutSecondaryDomainStatus('idle');
-                                  }
-                                }}
-                                placeholder={checkoutDomainInfo.suggestedSecondaryDomain}
-                                className="flex-1 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-sm outline-none focus:border-brand-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                                readOnly
+                                value={autoSecondaryDomain}
+                                className="w-full rounded-lg border-0 bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-800 dark:text-slate-300"
                               />
-                              <button
-                                type="button"
-                                onClick={handleCheckSecondaryDomainAvailability}
-                                disabled={checkoutSecondaryDomainStatus === 'loading' || !checkoutSecondaryDomain.trim()}
-                                className="bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-5 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                              >
-                                {checkoutSecondaryDomainStatus === 'loading' ? <Icons.Loader2 size={16} className="animate-spin" /> : 'Verificar'}
-                              </button>
+                              <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center">
+                                {isCheckingSecondary && <Icons.Loader2 size={18} className="animate-spin text-brand-500" />}
+                                {!isCheckingSecondary && isSecondaryAvailable === true && <Icons.CheckCircle2 size={18} className="text-green-500" />}
+                                {!isCheckingSecondary && isSecondaryAvailable === false && <Icons.XCircle size={18} className="text-red-500" />}
+                              </div>
                             </div>
 
-                            <p className="text-[11px] text-slate-500">
-                              Informe o domínio completo com final <span className="font-semibold text-slate-700 dark:text-slate-300">.com</span> ou <span className="font-semibold text-slate-700 dark:text-slate-300">.com.br</span>.
-                            </p>
-
-                            {checkoutSecondaryDomainStatus === 'available' && (
-                              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/20 dark:text-emerald-300">
-                                Domínio secundário disponível para registro.
+                            {!isCheckingSecondary && isSecondaryAvailable === true && !isSecondaryConfirmed && (
+                              <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800/30 dark:bg-green-900/20">
+                                <span className="text-xs font-medium text-green-700 dark:text-green-400">
+                                  Domínio disponível! (+{formatCurrency(secondaryPrice)} /ano)
+                                </span>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setAutoSecondaryDomain('');
+                                      setIsSecondaryAvailable(null);
+                                      setIsSecondaryConfirmed(false);
+                                      setCheckoutAddons((prev) => ({ ...prev, buyDomainCom: false }));
+                                    }}
+                                    className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700"
+                                  >
+                                    Cancelar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setIsSecondaryConfirmed(true);
+                                      setCheckoutAddons((prev) => ({ ...prev, buyDomainCom: true }));
+                                    }}
+                                    className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-green-700"
+                                  >
+                                    Confirmar
+                                  </button>
+                                </div>
                               </div>
                             )}
 
-                            {checkoutSecondaryDomainStatus === 'taken' && (
-                              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300">
-                                Esse domínio já está em uso. Tente outra variação.
+                            {isSecondaryConfirmed && (
+                              <div className="flex items-center justify-between rounded-lg border border-brand-200 bg-brand-100 p-3 dark:border-brand-800/50 dark:bg-brand-900/40">
+                                <span className="flex items-center gap-2 text-xs font-medium text-brand-700 dark:text-brand-300">
+                                  <Icons.Check size={14} /> Adicionado ao valor da assinatura
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsSecondaryConfirmed(false);
+                                    setCheckoutAddons((prev) => ({ ...prev, buyDomainCom: false }));
+                                  }}
+                                  className="text-xs font-medium text-brand-600 underline hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
+                                >
+                                  Remover
+                                </button>
                               </div>
                             )}
 
-                            {checkoutSecondaryDomainStatus === 'error' && (
-                              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:border-red-900/60 dark:bg-red-900/20 dark:text-red-300">
-                                Não foi possível validar esse domínio agora.
+                            {!isCheckingSecondary && isSecondaryAvailable === false && (
+                              <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/30 dark:bg-red-900/20">
+                                <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                                  Este domínio já está registrado por outra pessoa.
+                                </span>
                               </div>
                             )}
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -4122,7 +4100,11 @@ const AdminConfig: React.FC = () => {
                     onClick={async () => {
                       setIsCheckoutModalOpen(false);
                       if (checkoutMode === 'upgrade') {
-                        handleUpgrade({ ...selectedPlanForCheckout, addons: checkoutAddons });
+                        handleUpgrade({
+                          ...selectedPlanForCheckout,
+                          addons: checkoutAddons,
+                          domain_secondary: isSecondaryConfirmed ? autoSecondaryDomain : null,
+                        });
                       } else {
                         try {
                           setIsLoading(true);
@@ -4150,7 +4132,7 @@ const AdminConfig: React.FC = () => {
                               has_fidelity: contract?.has_fidelity || false,
                               addons: checkoutAddons,
                               coupon_code: validatedCoupon?.code,
-                              domain_secondary: checkoutAddons.buyDomainCom ? secondaryDomainStr : null
+                              domain_secondary: isSecondaryConfirmed ? autoSecondaryDomain : null
                             })
                           });
 

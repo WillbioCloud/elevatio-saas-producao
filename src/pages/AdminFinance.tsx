@@ -6,12 +6,14 @@ import { useRepasses } from '../hooks/useRepasses';
 import { supabase } from '../lib/supabase';
 import InvoiceModal from '../components/InvoiceModal';
 import { useToast } from '../contexts/ToastContext';
+import UpgradePromo from '../components/UpgradePromo';
 
 export default function AdminFinance() {
   const { user } = useAuth();
   const [maxContracts, setMaxContracts] = useState<number | null>(null);
   const [activeRentCount, setActiveRentCount] = useState(0);
   const [loadingPlanLimit, setLoadingPlanLimit] = useState(true);
+  const [contract, setContract] = useState<{ plan_name?: string | null } | null>(null);
   const isSuperAdmin = user?.role === 'super_admin';
   const [activeTab, setActiveTab] = useState<'recebimentos' | 'repasses'>('recebimentos');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -222,6 +224,10 @@ export default function AdminFinance() {
           .limit(1)
           .maybeSingle();
 
+        if (isMounted) {
+          setContract(currentSaasContract ? { plan_name: currentSaasContract.plan_name } : null);
+        }
+
         const planCandidates = [
           currentSaasContract?.plan_id,
           currentSaasContract?.plan_name,
@@ -255,6 +261,8 @@ export default function AdminFinance() {
       isMounted = false;
     };
   }, [isSuperAdmin, user]);
+
+  const planName = (contract?.plan_name || user?.company?.plan || '').toUpperCase();
 
   const contractsUsageLabel = isSuperAdmin
     ? 'Sem limite'
@@ -378,6 +386,10 @@ export default function AdminFinance() {
       addToast('Erro ao excluir a cobrança. Tente novamente.', 'error');
     }
   };
+
+  if (!isSuperAdmin && !loadingPlanLimit && ['STARTER', 'BASIC'].includes(planName)) {
+    return <UpgradePromo feature="Módulo Financeiro e Controle de Comissões" />;
+  }
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8 animate-fade-in">

@@ -285,16 +285,15 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
     try {
       const fullDomain = `${cleanDomain}${domainExtension}`;
-      const url =
-        domainExtension === '.com.br'
-          ? `https://rdap.registro.br/domain/${fullDomain}`
-          : `https://rdap.verisign.com/com/v1/domain/${fullDomain}`;
+      const { data, error } = await supabase.functions.invoke('check-domain', {
+        body: { domain: fullDomain }
+      });
 
-      const response = await fetch(url);
-      if (response.status === 404) setDomainStatus('available');
-      else if (response.status === 200) setDomainStatus('taken');
-      else setDomainStatus('error');
+      if (error) throw error;
+
+      setDomainStatus(data.available ? 'available' : 'taken');
     } catch (error) {
+      console.error('Erro ao verificar domínio:', error);
       setDomainStatus('error');
     }
   };

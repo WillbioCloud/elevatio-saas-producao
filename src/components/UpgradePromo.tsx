@@ -4,11 +4,16 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
-export default function UpgradePromo() {
+type UpgradePromoProps = {
+  feature?: string;
+};
+
+export default function UpgradePromo({ feature }: UpgradePromoProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(true);
   const [companyData, setCompanyData] = useState<any>(null);
+  const featureLabel = feature ?? 'este recurso';
 
   useEffect(() => {
     if (!user?.company_id) return;
@@ -41,7 +46,7 @@ export default function UpgradePromo() {
     if (daysLeft < 0) return null; // Já expirou
 
     return (
-      <div className="bg-brand-50 dark:bg-brand-900/20 border-l-4 border-brand-500 p-4 mb-8 rounded-r-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in shadow-sm">
+      <div data-feature={featureLabel} className="bg-brand-50 dark:bg-brand-900/20 border-l-4 border-brand-500 p-4 mb-8 rounded-r-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in shadow-sm">
         <div className="flex items-start gap-3">
           <div className="bg-brand-100 dark:bg-brand-900/50 p-2 rounded-lg shrink-0 mt-1 md:mt-0">
             <Icons.Gift className="text-brand-600 dark:text-brand-400" size={24} />

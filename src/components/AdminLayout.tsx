@@ -22,6 +22,7 @@ const AdminLayout: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => localStorage.getItem('trimoveis-sidebar') === 'true');
   const [refreshKey, setRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [contractPlanName, setContractPlanName] = useState(() => user?.company?.plan ?? '');
 
   const role = user?.role ?? (user?.user_metadata as { role?: string } | undefined)?.role;
   const isAdmin = role === 'admin';
@@ -73,6 +74,36 @@ const AdminLayout: React.FC = () => {
       root.classList.remove('dark');
     };
   }, [theme]);
+
+  useEffect(() => {
+    if (!user?.company_id) return;
+
+    let isMounted = true;
+
+    const fetchContractPlan = async () => {
+      try {
+        const { data } = await supabase
+          .from('saas_contracts')
+          .select('plan_name')
+          .eq('company_id', user.company_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (isMounted && typeof data?.plan_name === 'string' && data.plan_name.trim()) {
+          setContractPlanName(data.plan_name);
+        }
+      } catch (error) {
+        console.warn('Nao foi possivel sincronizar o plano atual para a trava de gamificacao.', error);
+      }
+    };
+
+    void fetchContractPlan();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.company_id]);
 
   const handleLogout = async () => {
     try {
@@ -134,6 +165,7 @@ const AdminLayout: React.FC = () => {
     { label: 'Leaderboard', path: '/admin/leaderboard', icon: Icons.Trophy },
     { label: 'Configurações', path: '/admin/config', icon: Icons.Settings },
   ];
+  const normalizedPlanName = (contractPlanName || user?.company?.plan || '').trim().toUpperCase();
 
   return (
     <div className="flex h-screen bg-[#070d1f] overflow-hidden font-sans selection:bg-brand-500/30 text-slate-800 dark:text-slate-200">
@@ -180,7 +212,10 @@ const AdminLayout: React.FC = () => {
         </div>
 
         <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
-          {menuItems.filter((item) => !item.adminOnly || isAdmin).map((item) => (
+          {menuItems
+            .filter((item) => !item.adminOnly || isAdmin)
+            .filter((item) => item.path !== '/admin/leaderboard' || !['STARTER', 'BASIC'].includes(normalizedPlanName))
+            .map((item) => (
             <React.Fragment key={item.path}>
               <NavLink
                 to={item.path}
