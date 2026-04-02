@@ -166,6 +166,29 @@ const AdminLayout: React.FC = () => {
     { label: 'Configurações', path: '/admin/config', icon: Icons.Settings },
   ];
   const normalizedPlanName = (contractPlanName || user?.company?.plan || '').trim().toUpperCase();
+  const visibleMenuItems = menuItems
+    .filter((item) => !item.adminOnly || isAdmin)
+    .filter((item) => item.path !== '/admin/leaderboard' || !['STARTER', 'BASIC'].includes(normalizedPlanName));
+
+  const getSidebarItemOrder = (path: string) => {
+    if (path === '/admin/dashboard') return 'order-1';
+    if (path === '/admin/imoveis') return 'order-2';
+    if (path === '/admin/tarefas') return 'order-6';
+    if (path === '/admin/config') return 'order-11';
+    if (path === '/admin/analytics') return 'order-10';
+    if (path === '/admin/leaderboard') return 'order-9';
+    return '';
+  };
+
+  const getMobileItemOrder = (path: string) => {
+    if (path === '/admin/dashboard') return 'order-1';
+    if (path === '/admin/imoveis') return 'order-2';
+    if (path === '/admin/tarefas') return 'order-6';
+    if (path === '/admin/config') return 'order-11';
+    if (path === '/admin/analytics') return 'order-10';
+    if (path === '/admin/leaderboard') return 'order-9';
+    return '';
+  };
 
   return (
     <div className="flex h-screen bg-[#070d1f] overflow-hidden font-sans selection:bg-brand-500/30 text-slate-800 dark:text-slate-200">
@@ -211,18 +234,15 @@ const AdminLayout: React.FC = () => {
           )}
         </div>
 
-        <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto custom-scrollbar overflow-x-hidden">
-          {menuItems
-            .filter((item) => !item.adminOnly || isAdmin)
-            .filter((item) => item.path !== '/admin/leaderboard' || !['STARTER', 'BASIC'].includes(normalizedPlanName))
-            .map((item) => (
+        <nav className="flex-1 flex flex-col gap-1 py-6 px-3 overflow-y-auto custom-scrollbar overflow-x-hidden">
+          {visibleMenuItems.map((item) => (
             <React.Fragment key={item.path}>
               <NavLink
                 to={item.path}
                 id={item.path === '/admin/imoveis' ? 'tour-imoveis' : item.path === '/admin/config' ? 'tour-config' : undefined}
                 data-tour-anchor={item.path === '/admin/imoveis' || item.path === '/admin/config' ? 'true' : undefined}
                 className={({ isActive }) => `
-                  flex items-center gap-3 py-3 rounded-xl transition-all duration-200 group ${item.path === '/admin/imoveis' ? 'tour-imoveis' : ''} ${item.path === '/admin/config' ? 'tour-config' : ''} ${
+                  ${getSidebarItemOrder(item.path)} flex items-center gap-3 py-3 rounded-xl transition-all duration-200 group ${item.path === '/admin/imoveis' ? 'tour-imoveis' : ''} ${item.path === '/admin/config' ? 'tour-config' : ''} ${
                     isSidebarCollapsed ? 'justify-center px-0' : 'px-4'
                   }
                   ${isActive ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}
@@ -233,7 +253,7 @@ const AdminLayout: React.FC = () => {
               </NavLink>
 
               {item.path === '/admin/imoveis' && (
-                <div className="space-y-1">
+                <div className="space-y-1 order-3">
                   <div
                     className={`flex items-center justify-between rounded-xl transition-all ${
                       location.pathname.includes('/admin/contratos')
@@ -251,7 +271,7 @@ const AdminLayout: React.FC = () => {
                         size={20}
                         className={location.pathname.includes('/admin/contratos') ? 'text-brand-600' : 'text-slate-400'}
                       />
-                      {!isSidebarCollapsed && <span className="whitespace-nowrap">Contratos e Finanças</span>}
+                      {!isSidebarCollapsed && <span className="whitespace-nowrap">Contratos</span>}
                     </NavLink>
                     {!isSidebarCollapsed && (
                       <button
@@ -318,7 +338,7 @@ const AdminLayout: React.FC = () => {
                 <NavLink
                   to="/admin/financeiro"
                   className={({ isActive }) => `
-                    flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200 font-medium text-sm
+                    order-4 flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200 font-medium text-sm
                     ${isSidebarCollapsed ? 'justify-center px-0' : 'px-4'}
                     ${isActive ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}
                   `}
@@ -333,7 +353,7 @@ const AdminLayout: React.FC = () => {
                   to="/admin/chaves"
                   onClick={() => isMobileMenuOpen && setIsMobileMenuOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${
+                    `order-8 flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${
                       isActive
                         ? 'bg-brand-500 text-white shadow-md'
                         : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white'
@@ -348,7 +368,7 @@ const AdminLayout: React.FC = () => {
           ))}
 
           {/* Menu Dropdown - Funil de Vendas */}
-          <div className="space-y-1" id="tour-kanban">
+          <div className="space-y-1 order-5" id="tour-kanban">
             <div
               className={`flex items-center justify-between rounded-xl transition-all ${
                 location.pathname.includes('/admin/leads')
@@ -364,7 +384,7 @@ const AdminLayout: React.FC = () => {
                 }`}
               >
                 <Icons.Filter size={20} className={location.pathname.includes('/admin/leads') ? 'text-brand-600' : 'text-slate-400'} />
-                {!isSidebarCollapsed && <span className="whitespace-nowrap">Visão Geral (Funil)</span>}
+                {!isSidebarCollapsed && <span className="whitespace-nowrap">Funil de Vendas</span>}
               </NavLink>
               {!isSidebarCollapsed && (
                 <button
@@ -456,7 +476,7 @@ const AdminLayout: React.FC = () => {
             to="/admin/clientes"
             onClick={() => isMobileMenuOpen && setIsMobileMenuOpen(false)}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${
+              `order-7 flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${
                 isActive
                   ? 'bg-brand-500 text-white shadow-md'
                   : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white'
@@ -577,13 +597,13 @@ const AdminLayout: React.FC = () => {
         {isMobileMenuOpen && (
           <div className="md:hidden absolute top-[70px] left-0 right-0 bg-white border-b border-slate-100 shadow-xl z-50 p-4 max-h-[calc(100vh-70px)] overflow-y-auto custom-scrollbar flex flex-col gap-2 animate-in fade-in slide-in-from-top-4 duration-200">
             {/* 1. Itens Padrões */}
-            {menuItems.filter((item) => !item.adminOnly || isAdmin).map((item) => (
+            {visibleMenuItems.map((item) => (
               <React.Fragment key={item.path}>
                 <NavLink
                   to={item.path}
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={({ isActive }) => `
-                    flex items-center gap-3 px-4 py-3 rounded-lg
+                    ${getMobileItemOrder(item.path)} flex items-center gap-3 px-4 py-3 rounded-lg
                     ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
                   `}
                 >
@@ -595,7 +615,7 @@ const AdminLayout: React.FC = () => {
                     to="/admin/chaves"
                     onClick={() => setIsMobileMenuOpen(false)}
                     className={({ isActive }) => `
-                      flex items-center gap-3 px-4 py-3 rounded-lg
+                      order-8 flex items-center gap-3 px-4 py-3 rounded-lg
                       ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
                     `}
                   >
@@ -607,7 +627,7 @@ const AdminLayout: React.FC = () => {
             ))}
 
             {/* 2. Menu Contratos (Mobile) */}
-            <div className="space-y-1">
+            <div className="space-y-1 order-3">
               <div className={`flex items-center justify-between rounded-lg ${location.pathname.includes('/admin/contratos') ? 'bg-brand-50' : 'hover:bg-slate-50'}`}>
                 <NavLink
                   to="/admin/contratos?tab=geral"
@@ -615,7 +635,7 @@ const AdminLayout: React.FC = () => {
                   className={`flex-1 flex items-center gap-3 px-4 py-3 font-medium ${location.pathname.includes('/admin/contratos') ? 'text-brand-700 font-bold' : 'text-slate-600'}`}
                 >
                   <Icons.FileText size={20} />
-                  Contratos e Finanças
+                  Contratos
                 </NavLink>
                 <button onClick={() => setIsContractsMenuOpen(!isContractsMenuOpen)} className="p-3 text-slate-500">
                   <Icons.ChevronDown size={16} className={`transition-transform duration-200 ${isContractsMenuOpen ? 'rotate-180' : ''}`} />
@@ -630,8 +650,20 @@ const AdminLayout: React.FC = () => {
               )}
             </div>
 
+            <NavLink
+              to="/admin/financeiro"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={({ isActive }) => `
+                order-4 flex items-center gap-3 px-4 py-3 rounded-lg
+                ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
+              `}
+            >
+              <Icons.Wallet size={20} />
+              Financeiro
+            </NavLink>
+
             {/* 3. Menu Funil de Vendas (Mobile) */}
-            <div className="space-y-1">
+            <div className="space-y-1 order-5">
               <div className={`flex items-center justify-between rounded-lg ${location.pathname.includes('/admin/leads') ? 'bg-brand-50' : 'hover:bg-slate-50'}`}>
                 <NavLink
                   to="/admin/leads?funnel=geral"
@@ -660,12 +692,12 @@ const AdminLayout: React.FC = () => {
               to="/admin/clientes"
               onClick={() => setIsMobileMenuOpen(false)}
               className={({ isActive }) => `
-                flex items-center gap-3 px-4 py-3 rounded-lg
+                order-7 flex items-center gap-3 px-4 py-3 rounded-lg
                 ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
               `}
             >
               <Icons.Users size={20} />
-              Carteira de Clientes
+              Clientes
             </NavLink>
 
             {user?.role === 'super_admin' && (
