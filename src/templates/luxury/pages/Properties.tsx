@@ -143,6 +143,11 @@ export default function Properties() {
     setPage(0);
   };
 
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const fetchProperties = useCallback(async () => {
     if (!tenant?.id) {
       setLoading(false);
@@ -743,7 +748,7 @@ export default function Properties() {
               >
                 <button
                   disabled={page === 0}
-                  onClick={() => setPage((prev) => Math.max(prev - 1, 0))}
+                  onClick={() => handlePageChange(Math.max(page - 1, 0))}
                   style={{
                     padding: '11px 16px',
                     borderRadius: 999,
@@ -765,7 +770,7 @@ export default function Properties() {
                   return (
                     <button
                       key={i}
-                      onClick={() => setPage(i)}
+                      onClick={() => handlePageChange(i)}
                       style={{
                         width: 40,
                         height: 40,
@@ -786,9 +791,7 @@ export default function Properties() {
 
                 <button
                   disabled={page >= totalPages - 1}
-                  onClick={() =>
-                    setPage((prev) => Math.min(prev + 1, totalPages - 1))
-                  }
+                  onClick={() => handlePageChange(Math.min(page + 1, totalPages - 1))}
                   style={{
                     padding: '11px 16px',
                     borderRadius: 999,

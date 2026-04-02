@@ -147,14 +147,8 @@ const ModernLayout: React.FC = () => {
             <Link to="/sobre" className="hover:text-amber-600 transition-colors">Sobre Nós</Link>
             <button
               type="button"
-              onClick={() => {
-                if (contactWhatsappLink) {
-                  window.open(contactWhatsappLink, '_blank');
-                  return;
-                }
-                setIsContactModalOpen(true);
-              }}
-              className="rounded-full px-5 py-2.5 text-white shadow-md transition-all hover:shadow-lg"
+              onClick={() => setIsContactModalOpen(true)}
+              className="rounded-full px-5 py-2.5 text-white shadow-md transition-all hover:shadow-lg cursor-pointer"
               style={{ backgroundColor: primaryColor }}
             >
               Fale Conosco
@@ -183,13 +177,9 @@ const ModernLayout: React.FC = () => {
               type="button"
               onClick={() => {
                 setIsMobileMenuOpen(false);
-                if (contactWhatsappLink) {
-                  window.open(contactWhatsappLink, '_blank');
-                  return;
-                }
                 setIsContactModalOpen(true);
               }}
-              className="rounded-lg py-3 text-center font-bold text-white"
+              className="rounded-lg py-3 text-center font-bold text-white cursor-pointer"
               style={{ backgroundColor: primaryColor }}
             >
               Fale Conosco

@@ -7,12 +7,12 @@ export default function LuxuryAbout() {
 
   const companyName = tenant?.name || 'ModHous';
   const aboutTitle =
-    siteData.about_title || 'Redefinindo o padrão do mercado imobiliário do padrão acima do comum.';
+    siteData.about_title || 'Redefinindo o padrão do mercado imobiliário, com um padrão acima do comum.';
   const aboutText =
     siteData.about_text ||
     `${companyName} é uma agência imobiliária boutique especializada em propriedades arquitetonicamente significativas. Acreditamos que um lar é mais do que um espaço físico — é a expressão da sua identidade e a base do seu estilo de vida.`;
   const aboutImage =
-    siteData.about_image_url || 'https://picsum.photos/seed/about/1920/1080';
+    siteData.about_image_url || 'https://images.unsplash.com/photo-1448630360428-65456885c650?q=80&w=1167&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D';
 
   const pillars = [
     {

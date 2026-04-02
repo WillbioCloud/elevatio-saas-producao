@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, Link } from 'react-router-dom';
 import { useTenant } from '../../contexts/TenantContext';
 import { Icons } from '../../components/Icons';
+import ContactModal from '../../components/ContactModal';
 
 type ContactAction =
   | { type: 'link'; href: string; label: string }
@@ -10,6 +11,7 @@ type ContactAction =
 export default function LuxuryLayout() {
   const { tenant } = useTenant();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false);
 
   const siteData = (tenant?.site_data as any) || {};
   const logoUrl = siteData.logo_white_url || siteData.logo_url || tenant?.logo_url;
@@ -57,28 +59,17 @@ export default function LuxuryLayout() {
   };
 
   const renderContactCta = (className: string, onClick?: () => void) => {
-    if (contactAction.type === 'anchor') {
-      return (
-        <a
-          href={contactAction.href}
-          target={contactAction.href.startsWith('http') ? '_blank' : undefined}
-          rel={contactAction.href.startsWith('http') ? 'noreferrer' : undefined}
-          onClick={onClick}
-          className={className}
-        >
-          {contactAction.label}
-        </a>
-      );
-    }
-
     return (
-      <Link
-        to={contactAction.href}
-        onClick={onClick}
-        className={className}
+      <button
+        type="button"
+        onClick={() => {
+          onClick?.();
+          setIsContactModalOpen(true);
+        }}
+        className={`${className} cursor-pointer`}
       >
         {contactAction.label}
-      </Link>
+      </button>
     );
   };
 
@@ -261,6 +252,7 @@ export default function LuxuryLayout() {
           </div>
         </footer>
       </div>
+      <ContactModal isOpen={isContactModalOpen} onClose={() => setIsContactModalOpen(false)} />
     </>
   );
 }

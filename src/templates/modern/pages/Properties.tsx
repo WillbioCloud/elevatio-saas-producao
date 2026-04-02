@@ -8,6 +8,8 @@ import CondominiumCard from '../components/CondominiumCard';
 import PropertyCard from '../components/PropertyCard';
 import { getPrimaryColor } from '../tenantUtils';
 
+const ITEMS_PER_PAGE = 15;
+
 const parseSiteData = (raw: unknown): SiteData => {
   if (!raw) return {};
 
@@ -28,6 +30,7 @@ const Properties: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const currentCity = searchParams.get('city') || '';
   const currentNeighborhood = searchParams.get('neighborhood') || '';
@@ -158,6 +161,49 @@ const Properties: React.FC = () => {
     setSearchParams(nextParams);
   };
 
+  const filteredProperties = properties;
+  const paginatedProperties = filteredProperties.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+  const totalPages = Math.ceil(filteredProperties.length / ITEMS_PER_PAGE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [currentCity, currentNeighborhood, currentType, currentFeatured, listingType, searchQuery]);
+
+  useEffect(() => {
+    if (totalPages === 0 && currentPage !== 1) {
+      setCurrentPage(1);
+      return;
+    }
+
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const paginationItems = useMemo<(number | string)[]>(() => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, index) => index + 1);
+    }
+
+    if (currentPage <= 4) {
+      return [1, 2, 3, 4, 5, 'end-ellipsis', totalPages];
+    }
+
+    if (currentPage >= totalPages - 3) {
+      return [1, 'start-ellipsis', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+
+    return [1, 'start-ellipsis', currentPage - 1, currentPage, currentPage + 1, 'end-ellipsis', totalPages];
+  }, [currentPage, totalPages]);
+
   return (
     <div className="bg-gray-50 min-h-screen py-12 md:py-20 animate-fade-in">
       <div className="container mx-auto px-4">
@@ -284,12 +330,61 @@ const Properties: React.FC = () => {
               <div key={i} className="h-96 bg-gray-200 rounded-xl animate-pulse" />
             ))}
           </div>
-        ) : properties.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {properties.map(property => (
-              <PropertyCard key={property.id} property={property} />
-            ))}
-          </div>
+        ) : filteredProperties.length > 0 ? (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {paginatedProperties.map(property => (
+                <PropertyCard key={property.id} property={property} />
+              ))}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="mt-10 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Anterior
+                </button>
+
+                {paginationItems.map((item, index) =>
+                  typeof item === 'string' ? (
+                    <span
+                      key={`${item}-${index}`}
+                      className="flex h-10 min-w-10 items-center justify-center px-1 text-sm font-semibold text-slate-400"
+                    >
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => handlePageChange(item)}
+                      className={`flex h-10 min-w-10 items-center justify-center rounded-full border text-sm font-semibold transition ${
+                        currentPage === item
+                          ? 'border-transparent text-white shadow'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900'
+                      }`}
+                      style={currentPage === item ? { backgroundColor: primaryColor } : undefined}
+                    >
+                      {item}
+                    </button>
+                  )
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Próximo
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-center py-20 bg-white rounded-xl shadow-sm border border-dashed border-gray-300">
             <Icons.Search className="mx-auto text-gray-300 mb-4" size={48} />

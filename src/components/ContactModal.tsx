@@ -7,90 +7,89 @@ interface ContactModalProps {
   onClose: () => void;
 }
 
-const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose }) => {
+export default function ContactModal({ isOpen, onClose }: ContactModalProps) {
   const { tenant } = useTenant();
-  const [propertyType, setPropertyType] = useState('');
-  const [neighborhood, setNeighborhood] = useState('');
-
-  const ADMIN_PHONE = tenant?.phone?.replace(/\D/g, '') || '5511999999999';
+  const [subject, setSubject] = useState('Quero anunciar meu imóvel');
+  const [customMessage, setCustomMessage] = useState('');
 
   if (!isOpen) return null;
 
-  const handleClose = () => {
-    setPropertyType('');
-    setNeighborhood('');
+  const handleWhatsAppClick = () => {
+    const phone = tenant?.whatsapp || tenant?.phone || '';
+    const cleanPhone = phone.replace(/\D/g, '');
+
+    let text = '';
+    if (subject === 'Outra opção') {
+      text = customMessage;
+    } else {
+      text = `Olá! ${subject}.`;
+    }
+
+    const url = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
     onClose();
   };
 
-  const handleSendWhatsApp = () => {
-    const text = encodeURIComponent(
-      `Olá! Tenho interesse em colocar meu imóvel à venda com a imobiliária. É um(a) *${propertyType}* localizado(a) no bairro *${neighborhood.trim()}*. Podemos conversar?`,
-    );
-    window.open(`https://wa.me/${ADMIN_PHONE}?text=${text}`, '_blank');
-    handleClose();
-  };
-
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
-        <button
-          onClick={handleClose}
-          className="absolute top-4 right-4 z-10 rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-        >
-          <Icons.X size={20} />
-        </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95">
+        <div className="flex justify-between items-center p-5 border-b border-slate-100 dark:border-slate-800">
+          <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+            <Icons.MessageCircle className="text-green-500" /> Fale Conosco
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <Icons.X size={20} />
+          </button>
+        </div>
 
-        <div className="p-8">
-          <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
-            <Icons.Home size={24} />
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+              Como podemos ajudar?
+            </label>
+            <select
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-green-500 outline-none"
+            >
+              <option value="Quero anunciar meu imóvel">Quero anunciar meu imóvel</option>
+              <option value="Outra opção">Outra opção</option>
+            </select>
           </div>
-          <h3 className="mb-2 text-2xl font-serif font-bold text-slate-800">Venda seu imóvel conosco</h3>
-          <p className="mb-6 text-sm text-slate-500">
-            Preencha os dados básicos abaixo para agilizarmos o seu atendimento com um captador.
-          </p>
 
-          <div className="space-y-4">
-            <div>
-              <label className="mb-1 block text-xs font-bold text-slate-500 uppercase">Tipo de Imóvel *</label>
-              <select
-                value={propertyType}
-                onChange={(e) => setPropertyType(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-700 outline-none focus:ring-2 focus:ring-brand-500"
-              >
-                <option value="">Selecione o tipo...</option>
-                <option value="Apartamento">Apartamento</option>
-                <option value="Casa">Casa</option>
-                <option value="Casa em Condomínio">Casa em Condomínio</option>
-                <option value="Cobertura">Cobertura</option>
-                <option value="Terreno/Lote">Terreno/Lote</option>
-                <option value="Comercial">Comercial</option>
-                <option value="Fazenda/Chácara">Fazenda/Chácara</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-bold text-slate-500 uppercase">Bairro do Imóvel *</label>
-              <input
-                type="text"
-                value={neighborhood}
-                onChange={(e) => setNeighborhood(e.target.value)}
-                placeholder="Ex: Centro, Setor Bueno..."
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-slate-700 outline-none focus:ring-2 focus:ring-brand-500"
+          {subject === 'Outra opção' && (
+            <div className="animate-in fade-in slide-in-from-top-2">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Sua mensagem
+              </label>
+              <textarea
+                value={customMessage}
+                onChange={(e) => setCustomMessage(e.target.value)}
+                placeholder="Digite como podemos te ajudar..."
+                rows={4}
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none"
               />
             </div>
+          )}
+        </div>
 
-            <button
-              onClick={handleSendWhatsApp}
-              disabled={!propertyType || !neighborhood.trim()}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-4 font-bold text-white transition-colors hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400"
-            >
-              <Icons.MessageCircle size={20} /> Avançar para o WhatsApp
-            </button>
-          </div>
+        <div className="p-5 bg-slate-50 dark:bg-slate-800/50 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleWhatsAppClick}
+            disabled={subject === 'Outra opção' && customMessage.trim() === ''}
+            className="flex-1 py-3 text-sm font-bold text-white bg-green-500 hover:bg-green-600 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-green-500/25"
+          >
+            <Icons.Send size={18} />
+            Enviar no WhatsApp
+          </button>
         </div>
       </div>
     </div>
   );
-};
-
-export default ContactModal;
+}

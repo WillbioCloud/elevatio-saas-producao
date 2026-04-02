@@ -119,7 +119,7 @@ export default function LuxuryHome() {
     siteData.hero_subtitle ||
     'Residências cuidadosamente projetadas que combinam conforto, estilo e vida urbana.';
   const heroImage =
-    siteData.hero_image_url || 'https://picsum.photos/seed/luxuryhome/1920/1080';
+    siteData.hero_image_url || 'https://unsplash.com/pt-br/fotografias/um-carro-esta-estacionado-em-frente-a-uma-casa-hmlP-v0vJ5o?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText';
   const aboutImage =
     siteData.about_image_url || 'https://picsum.photos/seed/architecture/1000/1200';
 
@@ -254,7 +254,7 @@ export default function LuxuryHome() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="relative h-[600px] rounded-[2rem] overflow-hidden p-8 flex items-start bg-neutral-900">
             <img
-              src={aboutImage}
+              src= 'https://images.unsplash.com/photo-1448630360428-65456885c650?q=80&w=1167&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
               alt="Architecture"
               className="absolute inset-0 w-full h-full object-cover z-0"
             />
