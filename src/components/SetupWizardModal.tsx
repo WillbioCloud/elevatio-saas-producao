@@ -159,6 +159,11 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
             plan_status: 'trial',
             plan: formData.plan,
             trial_ends_at: trialEnds.toISOString(),
+            // SALVANDO O DOMINIO DIRETAMENTE NA CRIACAO (Fim das falhas parciais!)
+            domain: selectedProductionDomain,
+            domain_type: formData.hasDomain === 'novo' ? 'new' : 'existing',
+            domain_status: 'pending',
+            updated_at: new Date().toISOString(),
           },
         ])
         .select()
@@ -167,22 +172,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       if (companyError) throw new Error('Erro ao criar imobiliaria: ' + companyError.message);
 
       if (newCompany) {
-        const { error: updateError } = await supabase
-          .from('companies')
-          .update({
-            name: formData.companyName,
-            domain: selectedProductionDomain,
-            domain_type: formData.hasDomain === 'novo' ? 'new' : 'existing',
-            domain_status: 'pending',
-            template: formData.template,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', newCompany.id);
-
-        if (updateError) {
-          throw new Error('Erro ao salvar o dominio da imobiliaria: ' + updateError.message);
-        }
-
+        // Vincula o perfil do usuario logado (Admin) a nova imobiliaria
         const { error: profileError } = await supabase
           .from('profiles')
           .update({
@@ -193,7 +183,11 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
           })
           .eq('id', user.id);
 
-        if (profileError) throw new Error('Erro ao vincular perfil: ' + profileError.message);
+        if (profileError) {
+          // Se der erro ao vincular o perfil, a gente deleta a empresa recem-criada para fazer um "Rollback" manual
+          await supabase.from('companies').delete().eq('id', newCompany.id);
+          throw new Error('Erro ao vincular perfil de administrador: ' + profileError.message);
+        }
 
         // Busca o UUID real do plano selecionado na nova tabela saas_plans
         const { data: planRecord } = await supabase
