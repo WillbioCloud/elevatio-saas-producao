@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import GamificationModal from '../components/GamificationModal';
 import FidelityTermsModal from '../components/FidelityTermsModal';
+import BillingPortalModal from '../components/BillingPortalModal';
 import { uploadCompanyAsset } from '../lib/storage';
 import { type Company, type FinanceConfig, type SiteData } from '../types';
 import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle, ImageOff, Check, AlertTriangle } from 'lucide-react';
@@ -333,6 +334,7 @@ const AdminConfig: React.FC = () => {
   const [isCheckingDomainPropagation, setIsCheckingDomainPropagation] = useState(false);
   const [lastDomainCheckAt, setLastDomainCheckAt] = useState<string | null>(null);
   const [isSavingSite, setIsSavingSite] = useState(false);
+  const [isBillingPortalOpen, setIsBillingPortalOpen] = useState(false);
   const { properties } = useProperties();
   const [isGeneratingXML, setIsGeneratingXML] = useState(false);
   const [isOpeningPortal, setIsOpeningPortal] = useState(false);
@@ -2176,15 +2178,10 @@ const AdminConfig: React.FC = () => {
                     {contract?.status === 'active' && (
                       <>
                         <button
-                          onClick={handleOpenPortal}
-                          disabled={isOpeningPortal}
+                          onClick={() => setIsBillingPortalOpen(true)}
                           className="w-full bg-white/10 hover:bg-white/20 text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 border border-white/10"
                         >
-                          {isOpeningPortal ? (
-                            <Icons.RefreshCw size={20} className="animate-spin" />
-                          ) : (
-                            <Icons.CreditCard size={20} />
-                          )}
+                          <Icons.CreditCard size={20} />
                           {isOpeningPortal ? 'Acessando...' : 'Faturas e Cartão'}
                         </button>
 
@@ -4312,6 +4309,13 @@ const AdminConfig: React.FC = () => {
           </div>
         </div>
       )}
+
+      <BillingPortalModal
+        isOpen={isBillingPortalOpen}
+        onClose={() => setIsBillingPortalOpen(false)}
+        company={tenant}
+        contract={contract}
+      />
     </div>
   );
 };

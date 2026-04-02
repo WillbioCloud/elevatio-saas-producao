@@ -119,7 +119,7 @@ export default function LuxuryHome() {
     siteData.hero_subtitle ||
     'Residências cuidadosamente projetadas que combinam conforto, estilo e vida urbana.';
   const heroImage =
-    siteData.hero_image_url || 'https://unsplash.com/pt-br/fotografias/um-carro-esta-estacionado-em-frente-a-uma-casa-hmlP-v0vJ5o?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText';
+    siteData.hero_image_url || 'https://res.cloudinary.com/dxplpg36m/image/upload/v1775143365/elite-prop-hmlP-v0vJ5o-unsplash_jkryxj.jpg';
   const aboutImage =
     siteData.about_image_url || 'https://picsum.photos/seed/architecture/1000/1200';
 

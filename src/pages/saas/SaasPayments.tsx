@@ -16,6 +16,7 @@ interface Payment {
 export default function SaasPayments() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     fetchPayments();
@@ -23,14 +24,37 @@ export default function SaasPayments() {
 
   const fetchPayments = async () => {
     setLoading(true);
+    setErrorMessage('');
+
     try {
-      const { data, error } = await supabase.functions.invoke('list-asaas-payments');
-      if (error) throw error;
-      if (data?.payments) {
-        setPayments(data.payments);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/list-asaas-payments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionData.session?.access_token ?? ''}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({}),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Nao foi possivel carregar os pagamentos agora.');
       }
+
+      const nextPayments = Array.isArray(payload?.payments)
+        ? payload.payments
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : [];
+
+      setPayments(nextPayments);
     } catch (error) {
       console.error("Erro ao carregar pagamentos:", error);
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Nao foi possivel carregar os pagamentos agora.'
+      );
     } finally {
       setLoading(false);
     }
@@ -117,6 +141,12 @@ export default function SaasPayments() {
                   <td colSpan={6} className="p-8 text-center text-slate-500">
                     <Icons.RefreshCw size={24} className="animate-spin mx-auto mb-2 opacity-50" />
                     A sincronizar com o Asaas...
+                  </td>
+                </tr>
+              ) : errorMessage ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-red-500">
+                    {errorMessage}
                   </td>
                 </tr>
               ) : payments.length === 0 ? (
