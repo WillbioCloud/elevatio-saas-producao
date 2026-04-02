@@ -32,6 +32,20 @@ const normalizePlanFromNav = (value: unknown): PlanType | undefined => {
   return undefined;
 };
 
+const sanitizeNewDomainLabel = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+const sanitizeExistingDomain = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/^(https?:\/\/)?(www\.)?/, '')
+    .replace(/\/+$/, '')
+    .trim();
+
 export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) {
   const { user } = useAuth();
   const location = useLocation();
@@ -78,6 +92,15 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
   const [domainExtension, setDomainExtension] = useState('.com.br');
   const [domainStatus, setDomainStatus] = useState<DomainStatus>('idle');
 
+  const sanitizedProductionDomain = sanitizeNewDomainLabel(formData.domain) || 'minhacorretora';
+  const normalizedExistingDomain = sanitizeExistingDomain(formData.domain);
+  const selectedProductionDomain =
+    formData.hasDomain === 'novo'
+      ? `${sanitizedProductionDomain}${domainExtension}`
+      : normalizedExistingDomain;
+  const shouldBlockNewDomainSubmit =
+    formData.hasDomain === 'novo' && domainStatus !== 'available';
+
   useEffect(() => {
     setDomainStatus('idle');
   }, [formData.domain, formData.hasDomain, domainExtension]);
@@ -100,6 +123,18 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       }
       if (!formData.domain.trim()) {
         throw new Error('Por favor, preencha o endereco do site.');
+      }
+      if (formData.hasDomain === 'novo' && !sanitizeNewDomainLabel(formData.domain)) {
+        throw new Error('Digite um dominio valido para continuar.');
+      }
+      if (formData.hasDomain === 'sim' && !normalizedExistingDomain) {
+        throw new Error('Informe o dominio completo para continuar.');
+      }
+      if (formData.hasDomain === 'novo' && domainStatus === 'taken') {
+        throw new Error('Esse dominio ja esta em uso. Escolha outra opcao antes de concluir.');
+      }
+      if (formData.hasDomain === 'novo' && domainStatus !== 'available') {
+        throw new Error('Verifique a disponibilidade do dominio antes de concluir.');
       }
 
       if (!user?.id) throw new Error('Sessao invalida. Faca login novamente.');
@@ -132,6 +167,22 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       if (companyError) throw new Error('Erro ao criar imobiliaria: ' + companyError.message);
 
       if (newCompany) {
+        const { error: updateError } = await supabase
+          .from('companies')
+          .update({
+            name: formData.companyName,
+            domain: selectedProductionDomain,
+            domain_type: formData.hasDomain === 'novo' ? 'new' : 'existing',
+            domain_status: 'pending',
+            template: formData.template,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', newCompany.id);
+
+        if (updateError) {
+          throw new Error('Erro ao salvar o dominio da imobiliaria: ' + updateError.message);
+        }
+
         const { error: profileError } = await supabase
           .from('profiles')
           .update({
@@ -228,9 +279,9 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       .replace(/^-+|-+$/g, '') || 'sua-imobiliaria';
 
   const checkDomainAvailability = async () => {
-    if (!formData.domain) return;
+    const cleanDomain = sanitizeNewDomainLabel(formData.domain);
+    if (!cleanDomain) return;
     setDomainStatus('loading');
-    const cleanDomain = formData.domain.toLowerCase().replace(/[^a-z0-9-]/g, '');
 
     try {
       const fullDomain = `${cleanDomain}${domainExtension}`;
@@ -247,9 +298,6 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       setDomainStatus('error');
     }
   };
-
-  const sanitizedProductionDomain =
-    formData.domain.toLowerCase().replace(/[^a-z0-9-]/g, '') || 'minhacorretora';
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-sm">
@@ -586,10 +634,17 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
             </div>
           </div>
 
-          <div className="flex justify-end border-t border-slate-200 bg-slate-50 p-6">
+          <div className="flex items-center justify-between gap-4 border-t border-slate-200 bg-slate-50 p-6">
+            {shouldBlockNewDomainSubmit ? (
+              <p className="text-xs font-medium text-amber-700">
+                Verifique a disponibilidade de <span className="font-bold">{selectedProductionDomain}</span> para concluir.
+              </p>
+            ) : (
+              <div />
+            )}
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || shouldBlockNewDomainSubmit}
               className="flex items-center gap-2 rounded-lg bg-brand-600 px-8 py-3 font-bold text-white shadow-sm hover:bg-brand-500 disabled:opacity-50"
             >
               {isLoading ? (

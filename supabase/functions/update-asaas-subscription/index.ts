@@ -1,17 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, accept, accept-encoding',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
-}
-
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  // TRUQUE PARA O SAFARI/IOS: Lemos os headers que o navegador pediu e devolvemos a mesma string
+  const requestedHeaders = req.headers.get('Access-Control-Request-Headers') || 'authorization, x-client-info, apikey, content-type, accept, accept-encoding, x-supabase-api-version, x-region, prefer';
+  
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': requestedHeaders,
+    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
+  }
+
+  // Se for a verificação de segurança (Preflight), libera imediatamente
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
 
   try {
-    const { company_id, new_plan, billing_cycle, has_fidelity, addons } = await req.json()
+    const { company_id, new_plan, billing_cycle, has_fidelity, addons, coupon_code, domain_secondary, total_price } = await req.json()
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')!
@@ -28,6 +34,27 @@ serve(async (req) => {
     const { data: planRecord } = await supabase.from('saas_plans').select('id, has_free_domain').ilike('name', new_plan).maybeSingle();
     const plan_id = planRecord?.id || null;
     const has_free_domain = planRecord?.has_free_domain || false;
+    const normalizedSecondaryDomain = typeof domain_secondary === 'string' ? domain_secondary.toLowerCase().trim() : '';
+    const normalizedTotalPrice = Number.isFinite(Number(total_price)) ? Math.max(0, Number(total_price)) : null;
+
+    let couponRecord: Record<string, any> | null = null;
+    if (coupon_code) {
+      const { data } = await supabase
+        .from('saas_coupons')
+        .select('*')
+        .eq('code', String(coupon_code).toUpperCase())
+        .eq('active', true)
+        .maybeSingle();
+
+      if (!data) throw new Error('Cupom inválido ou expirado.');
+
+      const maxUses = data.max_uses ?? data.usage_limit;
+      if (typeof maxUses === 'number' && maxUses > 0 && Number(data.used_count ?? 0) >= maxUses) {
+        throw new Error('Cupom esgotado.');
+      }
+
+      couponRecord = data as Record<string, any>;
+    }
 
     // --- 1. CLIENTE ASAAS ---
     if (!customerId) {
@@ -77,6 +104,29 @@ serve(async (req) => {
       }
     }
 
+    const manualDiscountValue = Number(company?.manual_discount_value ?? 0);
+    const manualDiscountType = company?.manual_discount_type;
+    const manualDiscountAmount = manualDiscountValue > 0
+      ? Math.min(
+          basePrice,
+          manualDiscountType === 'percentage'
+            ? basePrice * (manualDiscountValue / 100)
+            : manualDiscountValue
+        )
+      : 0;
+    const recurringPrice = Math.max(0, basePrice - manualDiscountAmount);
+
+    const couponDiscountAmount = couponRecord
+      ? Math.min(
+          recurringPrice,
+          (couponRecord.discount_type ?? couponRecord.type) === 'percentage'
+            ? recurringPrice * (Number(couponRecord.discount_value ?? couponRecord.value ?? 0) / 100)
+            : (couponRecord.discount_type ?? couponRecord.type) === 'free_month'
+              ? recurringPrice
+              : Number(couponRecord.discount_value ?? couponRecord.value ?? 0)
+        )
+      : 0;
+
     // --- 3. VALOR DOS DOMÍNIOS (APENAS 1ª COBRANÇA) ---
     let domainPriceToCharge = 0;
     let extraDescription = "";
@@ -84,7 +134,9 @@ serve(async (req) => {
  
     const isCom = (company?.domain || '').endsWith('.com');
     const primaryPrice = isCom ? 73.00 : 53.00;
-    const secondaryPrice = isCom ? 53.00 : 73.00;
+    const secondaryPrice = normalizedSecondaryDomain
+      ? (normalizedSecondaryDomain.endsWith('.com') ? 73.00 : 53.00)
+      : (isCom ? 53.00 : 73.00);
 
     if (addons?.buyDomainBr && !(billing_cycle === 'yearly' && has_free_domain)) {
         domainPriceToCharge += primaryPrice;
@@ -96,7 +148,7 @@ serve(async (req) => {
 
     if (addons?.buyDomainCom) {
         domainPriceToCharge += secondaryPrice;
-        extraDescription += ` + Domínio Alternativo (.com)`;
+        extraDescription += ` + Domínio Alternativo (${normalizedSecondaryDomain || '.com'})`;
         domainStatusToSave = 'pending';
     }
 
@@ -115,15 +167,23 @@ serve(async (req) => {
           const createRes = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions`, {
             method: 'POST',
             headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customer: customerId, billingType: subData.billingType || 'UNDEFINED', nextDueDate: subData.nextDueDate, value: basePrice, cycle: targetCycle, description: baseDescription })
+            body: JSON.stringify({ customer: customerId, billingType: subData.billingType || 'UNDEFINED', nextDueDate: subData.nextDueDate, value: recurringPrice, cycle: targetCycle, description: baseDescription })
           });
           const createData = await createRes.json();
           if (!createData.errors) newSubscriptionId = createData.id;
         } else {
+          const updatePayload: any = {
+            value: recurringPrice,
+            cycle: targetCycle,
+            description: baseDescription,
+            updatePendingCharge: true,
+            updatePendingPayments: true,
+          };
+
           await fetch(`https://sandbox.asaas.com/api/v3/subscriptions/${subscriptionId}`, {
             method: 'PUT',
             headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ value: basePrice, description: baseDescription, updatePendingPayments: true })
+            body: JSON.stringify(updatePayload)
           });
         }
       }
@@ -135,27 +195,57 @@ serve(async (req) => {
       const createRes = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions`, {
         method: 'POST',
         headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer: customerId, billingType: 'UNDEFINED', nextDueDate: nextDueDate.toISOString().split('T')[0], value: basePrice, cycle: targetCycle, description: baseDescription })
+        body: JSON.stringify({ customer: customerId, billingType: 'UNDEFINED', nextDueDate: nextDueDate.toISOString().split('T')[0], value: recurringPrice, cycle: targetCycle, description: baseDescription })
       });
       const createData = await createRes.json();
       if (!createData.errors) newSubscriptionId = createData.id;
     }
 
-    // --- 5. INJETAR DOMÍNIO NO BOLETO ATUAL ---
-    if (domainPriceToCharge > 0 && newSubscriptionId) {
+    // --- 5. ATUALIZAR BOLETO ATUAL (E INJETAR DOMÍNIOS) ---
+    let keptPaymentId = null;
+    if (newSubscriptionId) {
       const paymentsRes = await fetch(`https://sandbox.asaas.com/api/v3/payments?subscription=${newSubscriptionId}&status=PENDING`, { headers: { 'access_token': ASAAS_API_KEY } });
       const paymentsData = await paymentsRes.json();
  
       if (paymentsData.data && paymentsData.data.length > 0) {
+        // Pega a fatura mais próxima do vencimento
         const currentPayment = paymentsData.data.sort((a:any, b:any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
-        const finalPaymentValue = basePrice + domainPriceToCharge;
+        keptPaymentId = currentPayment.id;
+        
+        const finalPaymentValue = normalizedTotalPrice ?? Math.max(0, recurringPrice + domainPriceToCharge - couponDiscountAmount);
         const finalPaymentDesc = baseDescription + extraDescription;
 
+        // Força a reescrita do valor e da descrição na fatura PRINCIPAL
         await fetch(`https://sandbox.asaas.com/api/v3/payments/${currentPayment.id}`, {
           method: 'POST',
           headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
           body: JSON.stringify({ value: finalPaymentValue, description: finalPaymentDesc })
         });
+      }
+    }
+
+    // --- 5.5 FAXINA ANTI-DUPLICAÇÃO (TIRA O AVISO CHATO DO ASAAS) ---
+    if (customerId) {
+      // 1. Varre e apaga TODAS as faturas pendentes que não sejam a fatura principal
+      const allPaymentsRes = await fetch(`https://sandbox.asaas.com/api/v3/payments?customer=${customerId}&status=PENDING`, { headers: { 'access_token': ASAAS_API_KEY } });
+      const allPaymentsData = await allPaymentsRes.json();
+      if (allPaymentsData?.data) {
+        for (const p of allPaymentsData.data) {
+          if (p.id !== keptPaymentId) {
+            await fetch(`https://sandbox.asaas.com/api/v3/payments/${p.id}`, { method: 'DELETE', headers: { 'access_token': ASAAS_API_KEY } });
+          }
+        }
+      }
+
+      // 2. Varre e apaga assinaturas antigas/órfãs do mesmo cliente
+      const allSubsRes = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions?customer=${customerId}&status=ACTIVE`, { headers: { 'access_token': ASAAS_API_KEY } });
+      const allSubsData = await allSubsRes.json();
+      if (allSubsData?.data) {
+        for (const sub of allSubsData.data) {
+          if (sub.id !== newSubscriptionId) {
+            await fetch(`https://sandbox.asaas.com/api/v3/subscriptions/${sub.id}`, { method: 'DELETE', headers: { 'access_token': ASAAS_API_KEY } });
+          }
+        }
       }
     }
 
@@ -167,11 +257,30 @@ serve(async (req) => {
         has_fidelity: finalHasFidelity,
         fidelity_end_date: fidelityEndDate,
         subscription_id: newSubscriptionId,
-        price: planData.price,
+        price: recurringPrice,
         domain_status: domainStatusToSave
     }).eq('company_id', company_id);
 
-    await supabase.from('companies').update({ plan: new_plan, asaas_subscription_id: newSubscriptionId }).eq('id', company_id);
+    const companyUpdate: Record<string, unknown> = {
+      plan: new_plan,
+      asaas_subscription_id: newSubscriptionId,
+    };
+
+    if (normalizedSecondaryDomain) {
+      companyUpdate.domain_secondary = normalizedSecondaryDomain;
+    }
+
+    await supabase.from('companies').update(companyUpdate).eq('id', company_id);
+
+    // --- 7. DAR BAIXA NO CUPOM ---
+    if (coupon_code) {
+      const { data: cupom } = await supabase.from('saas_coupons').select('id, current_usages').eq('code', coupon_code).single();
+      if (cupom) {
+        await supabase.from('saas_coupons').update({ 
+          current_usages: (cupom.current_usages || 0) + 1 
+        }).eq('id', cupom.id);
+      }
+    }
 
     return new Response(JSON.stringify({ success: true, subscription_id: newSubscriptionId }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
   } catch (error: any) {

@@ -91,6 +91,9 @@ export interface Company {
   name: string;
   subdomain: string;
   domain?: string | null;
+  domain_secondary?: string | null;
+  domain_type?: 'new' | 'existing' | null;
+  domain_status?: 'pending' | 'active' | 'expired' | null;
   slug?: string;
   plan: string;
   template?: string;

@@ -5,7 +5,7 @@ import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
-import NotificationsMenu from './NotificationsMenu';
+import { CrmNotificationsMenu } from './CrmNotificationsMenu';
 import { useInstallmentReminders } from '../hooks/useInstallmentReminders';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 import ProductTour from './ProductTour';
@@ -519,7 +519,7 @@ const AdminLayout: React.FC = () => {
               {isRefreshing ? 'Atualizando...' : 'Atualizar Sistema'}
             </button>
 
-            <NotificationsMenu />
+            <CrmNotificationsMenu />
 
             <button
               onClick={toggleTheme}

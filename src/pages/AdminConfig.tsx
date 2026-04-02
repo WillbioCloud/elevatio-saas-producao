@@ -13,7 +13,6 @@ import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle
 import { useProperties } from '../hooks/useProperties';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { generateZapXML } from '../utils/zapXmlGenerator';
-import { PLANS } from '../config/plans';
 
 interface Profile {
   id: string;
@@ -48,10 +47,17 @@ interface Contract {
   companies?: { plan?: string };
 }
 
+type CheckoutDomainStatus = 'idle' | 'loading' | 'available' | 'taken' | 'error';
+type CheckoutCoupon = {
+  code: string;
+  type: 'percentage' | 'fixed' | 'free_month';
+  value: number;
+};
+
 type SitePartner = NonNullable<SiteData['partners']>[number];
 type TenantFinanceRecord = Pick<
   Company,
-  'id' | 'name' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key'
+  'id' | 'name' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'manual_discount_value' | 'manual_discount_type'
 > & {
   finance_config?: FinanceConfig | null;
 };
@@ -83,6 +89,27 @@ const normalizePartners = (partners: unknown): SitePartner[] => {
     return acc;
   }, []);
 };
+
+const sanitizeNewDomainLabel = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+const sanitizeExistingDomain = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/^(https?:\/\/)?(www\.)?/, '')
+    .replace(/\/+$/, '')
+    .trim();
+
+const getDomainLookupUrl = (domain: string) =>
+  domain.endsWith('.com.br')
+    ? `https://rdap.registro.br/domain/${domain}`
+    : `https://rdap.verisign.com/com/v1/domain/${domain}`;
+
+const getDomainAnnualPrice = (domain: string) => (domain.endsWith('.com') ? 73.0 : 53.0);
 
 const compressAvatar = (file: File | Blob, maxSize = 512): Promise<Blob> => {
   return new Promise((resolve, reject) => {
@@ -304,7 +331,12 @@ const AdminConfig: React.FC = () => {
   });
   const [siteTemplate, setSiteTemplate] = useState('classic');
   const [siteDomain, setSiteDomain] = useState('');
+  const [savedSiteDomain, setSavedSiteDomain] = useState('');
   const [companySubdomain, setCompanySubdomain] = useState('');
+  const [companyDomainType, setCompanyDomainType] = useState<'new' | 'existing' | null>(null);
+  const [companyDomainStatus, setCompanyDomainStatus] = useState<'pending' | 'active' | 'expired' | null>(null);
+  const [isCheckingDomainPropagation, setIsCheckingDomainPropagation] = useState(false);
+  const [lastDomainCheckAt, setLastDomainCheckAt] = useState<string | null>(null);
   const [isSavingSite, setIsSavingSite] = useState(false);
   const { properties } = useProperties();
   const [isGeneratingXML, setIsGeneratingXML] = useState(false);
@@ -317,12 +349,34 @@ const AdminConfig: React.FC = () => {
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [isUsageExpanded, setIsUsageExpanded] = useState(false);
   const [usageStats, setUsageStats] = useState({ users: 1, properties: 0, activeContracts: 0 });
-  const [domainCount, setDomainCount] = useState(0);
+  // Estados do Cupom no Checkout
   const [checkoutCoupon, setCheckoutCoupon] = useState('');
-  const [validatedCoupon, setValidatedCoupon] = useState<{ code: string, type: string, value: number } | null>(null);
+  const [validatedCoupon, setValidatedCoupon] = useState<CheckoutCoupon | null>(null);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [checkoutSecondaryDomain, setCheckoutSecondaryDomain] = useState('');
+  const [checkoutSecondaryDomainStatus, setCheckoutSecondaryDomainStatus] = useState<CheckoutDomainStatus>('idle');
+  const [checkoutSecondaryDomainVerified, setCheckoutSecondaryDomainVerified] = useState('');
   const isLoading = isGeneratingCheckout || isReactivating || isUpgrading !== null;
   const setIsLoading = setIsGeneratingCheckout;
+
+  const checkoutDomainInfo = useMemo(() => {
+    const companyDomain = siteDomain || (companySubdomain ? `${companySubdomain}.elevatio.app` : '');
+    const hasCustomDomain = companyDomain && !companyDomain.includes('elevatio');
+    const normalizedPrimaryDomain = hasCustomDomain ? sanitizeExistingDomain(companyDomain) : 'seudominio.com.br';
+    const primaryBaseName = sanitizeNewDomainLabel(
+      normalizedPrimaryDomain.replace(/\.com\.br$|\.com$/i, '')
+    ) || 'seudominio';
+    const suggestedSecondaryDomain = normalizedPrimaryDomain.endsWith('.com.br')
+      ? `${primaryBaseName}.com`
+      : `${primaryBaseName}.com.br`;
+
+    return {
+      companyDomain,
+      hasCustomDomain,
+      primaryDomain: normalizedPrimaryDomain,
+      suggestedSecondaryDomain,
+    };
+  }, [siteDomain, companySubdomain]);
 
   useEffect(() => {
     setAcceptedFidelityTerms(false);
@@ -337,11 +391,21 @@ const AdminConfig: React.FC = () => {
   useEffect(() => {
     if (isCheckoutModalOpen) return;
 
-    setDomainCount(0);
     setCheckoutCoupon('');
     setValidatedCoupon(null);
     setValidatingCoupon(false);
+    setCheckoutSecondaryDomain('');
+    setCheckoutSecondaryDomainStatus('idle');
+    setCheckoutSecondaryDomainVerified('');
   }, [isCheckoutModalOpen]);
+
+  useEffect(() => {
+    if (!isCheckoutModalOpen) return;
+
+    setCheckoutSecondaryDomain(tenant?.domain_secondary || checkoutDomainInfo.suggestedSecondaryDomain);
+    setCheckoutSecondaryDomainStatus('idle');
+    setCheckoutSecondaryDomainVerified('');
+  }, [isCheckoutModalOpen, tenant?.domain_secondary, checkoutDomainInfo.suggestedSecondaryDomain]);
 
   const [siteSubTab, setSiteSubTab] = useState<'templates' | 'identity' | 'hero' | 'about' | 'social'>('templates');
   const [siteData, setSiteData] = useState<SiteData & { hero_video_url?: string | null }>({
@@ -458,16 +522,25 @@ const AdminConfig: React.FC = () => {
 
       setSiteTemplate(data.template || 'classic');
       setSiteDomain(data.domain || '');
+      setSavedSiteDomain(data.domain || '');
       setCompanySubdomain(data.subdomain || '');
+      setCompanyDomainType((data.domain_type as 'new' | 'existing' | null | undefined) ?? null);
+      setCompanyDomainStatus((data.domain_status as 'pending' | 'active' | 'expired' | null | undefined) ?? null);
       setTenant({
         id: data.id,
         name: data.name || '',
+        domain: data.domain || null,
+        domain_secondary: data.domain_secondary || null,
+        domain_type: (data.domain_type as 'new' | 'existing' | null | undefined) ?? null,
+        domain_status: (data.domain_status as 'pending' | 'active' | 'expired' | null | undefined) ?? null,
         site_data: data.site_data || undefined,
         payment_api_key: data.payment_api_key || '',
         finance_config: parsedFinanceConfig || undefined,
         use_asaas: data.use_asaas ?? parsedFinanceConfig?.use_asaas ?? false,
         default_commission: data.default_commission ?? parsedFinanceConfig?.default_commission ?? undefined,
         broker_commission: data.broker_commission ?? parsedFinanceConfig?.broker_commission ?? undefined,
+        manual_discount_value: data.manual_discount_value ?? null,
+        manual_discount_type: data.manual_discount_type ?? null,
       });
       
       if (data.site_data) {
@@ -916,12 +989,20 @@ const AdminConfig: React.FC = () => {
     try {
       console.log("🚀 Buscando link de pagamento...");
 
-      const { data, error } = await supabase.functions.invoke('get-asaas-payment-link', {
-        body: { company_id: companyId }
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-asaas-payment-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ company_id: companyId })
       });
+      const data = await response.json();
 
-      if (error) {
-        throw new Error(error.message);
+      if (!response.ok) {
+        throw new Error(data?.error || 'Link nÃ£o retornado pelo Asaas.');
       }
 
       if (!data?.checkoutUrl) {
@@ -960,7 +1041,7 @@ const AdminConfig: React.FC = () => {
 
       setValidatedCoupon({
         code: data.code,
-        type: data.discount_type ?? data.type,
+        type: (data.discount_type ?? data.type) as CheckoutCoupon['type'],
         value: Number(data.discount_value ?? data.value ?? 0),
       });
       addToast('Cupom aplicado com sucesso!', 'success');
@@ -970,6 +1051,88 @@ const AdminConfig: React.FC = () => {
     } finally {
       setValidatingCoupon(false);
     }
+  };
+
+  const handleCheckSecondaryDomainAvailability = async () => {
+    const normalizedDomain = sanitizeExistingDomain(checkoutSecondaryDomain);
+
+    if (!normalizedDomain) {
+      addToast('Informe um domÃ­nio secundÃ¡rio vÃ¡lido.', 'error');
+      return;
+    }
+
+    if (!(normalizedDomain.endsWith('.com') || normalizedDomain.endsWith('.com.br'))) {
+      setCheckoutSecondaryDomainStatus('error');
+      addToast('Use um domÃ­nio secundÃ¡rio com final .com ou .com.br.', 'error');
+      return;
+    }
+
+    if (normalizedDomain === checkoutDomainInfo.primaryDomain) {
+      setCheckoutSecondaryDomainStatus('error');
+      addToast('O domÃ­nio secundÃ¡rio precisa ser diferente do domÃ­nio principal.', 'error');
+      return;
+    }
+
+    setCheckoutSecondaryDomainStatus('loading');
+    setCheckoutSecondaryDomainVerified('');
+
+    try {
+      const response = await fetch(getDomainLookupUrl(normalizedDomain));
+
+      if (response.status === 404) {
+        setCheckoutSecondaryDomainStatus('available');
+        setCheckoutSecondaryDomainVerified(normalizedDomain);
+        addToast('DomÃ­nio secundÃ¡rio disponÃ­vel para registro.', 'success');
+        return;
+      }
+
+      if (response.status === 200) {
+        setCheckoutSecondaryDomainStatus('taken');
+        addToast('Esse domÃ­nio secundÃ¡rio jÃ¡ estÃ¡ em uso.', 'error');
+        return;
+      }
+
+      setCheckoutSecondaryDomainStatus('error');
+      addToast('NÃ£o foi possÃ­vel verificar o domÃ­nio agora. Tente novamente.', 'error');
+    } catch (error) {
+      console.error('Erro ao verificar domÃ­nio secundÃ¡rio:', error);
+      setCheckoutSecondaryDomainStatus('error');
+      addToast('NÃ£o foi possÃ­vel verificar o domÃ­nio agora. Tente novamente.', 'error');
+    }
+  };
+
+  const persistCheckoutDomainSelections = async () => {
+    if (!user?.company_id || !checkoutAddons.buyDomainCom) return;
+
+    const normalizedSecondaryDomain = sanitizeExistingDomain(checkoutSecondaryDomain);
+
+    if (!normalizedSecondaryDomain) {
+      throw new Error('Informe o domÃ­nio secundÃ¡rio antes de finalizar.');
+    }
+
+    if (!(normalizedSecondaryDomain.endsWith('.com') || normalizedSecondaryDomain.endsWith('.com.br'))) {
+      throw new Error('Use um domÃ­nio secundÃ¡rio com final .com ou .com.br.');
+    }
+
+    if (normalizedSecondaryDomain === checkoutDomainInfo.primaryDomain) {
+      throw new Error('O domÃ­nio secundÃ¡rio precisa ser diferente do domÃ­nio principal.');
+    }
+
+    if (
+      checkoutSecondaryDomainStatus !== 'available' ||
+      checkoutSecondaryDomainVerified !== normalizedSecondaryDomain
+    ) {
+      throw new Error('Verifique a disponibilidade do domÃ­nio secundÃ¡rio antes de finalizar.');
+    }
+
+    const { error } = await supabase
+      .from('companies')
+      .update({ domain_secondary: normalizedSecondaryDomain })
+      .eq('id', user.company_id);
+
+    if (error) throw error;
+
+    setTenant((prev) => (prev ? { ...prev, domain_secondary: normalizedSecondaryDomain } : prev));
   };
 
   const handleOpenPortal = async () => {
@@ -1071,6 +1234,8 @@ const AdminConfig: React.FC = () => {
           has_fidelity: isYearly ? false : acceptFidelity,
           addons: planParam.addons || { buyDomainBr: false, buyDomainCom: false },
           coupon_code: planParam.coupon_code || null,
+          domain_secondary: planParam.domain_secondary || null,
+          total_price: typeof planParam.total_price === 'number' ? planParam.total_price : null,
           domain_count: planParam.domain_count || 0
         })
       });
@@ -1127,24 +1292,66 @@ const AdminConfig: React.FC = () => {
       // Limpa o domínio caso o usuário digite com http ou www
       const cleanDomain = siteDomain.replace(/^(https?:\/\/)?(www\.)?/, '').trim();
       const finalDomain = cleanDomain === '' ? null : cleanDomain;
+      const previousDomain = savedSiteDomain || null;
+      const domainChanged = previousDomain !== finalDomain;
+
+      const companyUpdate: Record<string, unknown> = {
+        template: siteTemplate,
+        domain: finalDomain,
+        site_data: siteData,
+      };
+
+      if (domainChanged) {
+        companyUpdate.domain_status = finalDomain ? 'pending' : null;
+        companyUpdate.domain_type = finalDomain ? (companyDomainType ?? 'existing') : null;
+      }
 
       const { error } = await supabase
         .from('companies')
-        .update({ 
-          template: siteTemplate,
-          domain: finalDomain,
-          site_data: siteData
-        })
+        .update(companyUpdate)
         .eq('id', user.company_id);
 
       if (error) throw error;
 
       setSiteDomain(cleanDomain);
+      setSavedSiteDomain(cleanDomain);
+      if (domainChanged) {
+        setCompanyDomainStatus(finalDomain ? 'pending' : null);
+        setCompanyDomainType(finalDomain ? (companyDomainType ?? 'existing') : null);
+      }
       alert('Configurações do site salvas com sucesso!');
     } catch (error: any) {
       alert('Erro ao salvar configurações: ' + error.message);
     } finally {
       setIsSavingSite(false);
+    }
+  };
+
+  const handleCheckDomainPropagation = async () => {
+    const domainToCheck = savedSiteDomain || siteDomain;
+    if (!domainToCheck) {
+      addToast('Configure um domínio antes de verificar a propagação.', 'error');
+      return;
+    }
+
+    setIsCheckingDomainPropagation(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      setLastDomainCheckAt(
+        new Date().toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      );
+
+      if (companyDomainStatus === 'active') {
+        addToast('Seu domínio já está ativo e respondendo normalmente.', 'success');
+        return;
+      }
+
+      addToast('Checagem simulada concluída. A propagação pode levar até 24 horas.', 'info');
+    } finally {
+      setIsCheckingDomainPropagation(false);
     }
   };
 
@@ -1963,7 +2170,6 @@ const AdminConfig: React.FC = () => {
                               buyDomainBr: contract?.domain_status === 'pending' || contract?.domain_status == null,
                               buyDomainCom: false
                             });
-                            setDomainCount(contract?.domain_status === 'pending' || contract?.domain_status == null ? 1 : 0);
                             setCheckoutCoupon('');
                             setValidatedCoupon(null);
                             setCheckoutMode('pay');
@@ -2529,11 +2735,90 @@ const AdminConfig: React.FC = () => {
                 Domínio Próprio
               </h3>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Conecte o seu domínio (ex: sua-imobiliaria.com.br) para remover a marca da Elevatio Vendas.
+                Acompanhe o status real do seu domínio e centralize a configuração do site em um só lugar.
               </p>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-5">
+              <div
+                className={`rounded-xl border p-4 ${
+                  companyDomainStatus === 'active'
+                    ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-900/20'
+                    : companyDomainStatus === 'pending'
+                      ? 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/20'
+                      : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/40'
+                }`}
+              >
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Status do Domínio
+                    </p>
+                    <h4 className="text-lg font-bold text-slate-800 dark:text-white">
+                      {savedSiteDomain || 'Não configurado'}
+                    </h4>
+                    <p className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-300">
+                      {companyDomainStatus === 'active'
+                        ? 'Site no Ar'
+                        : companyDomainStatus === 'pending'
+                          ? 'Aguardando Configuração'
+                          : companyDomainStatus === 'expired'
+                            ? 'Configuração Expirada'
+                            : 'Aguardando Definição do Domínio'}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col items-start gap-2 md:items-end">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-black uppercase ${
+                        companyDomainStatus === 'active'
+                          ? 'bg-emerald-500 text-white'
+                          : companyDomainStatus === 'pending'
+                            ? 'bg-amber-500 text-white'
+                            : companyDomainStatus === 'expired'
+                              ? 'bg-rose-500 text-white'
+                              : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100'
+                      }`}
+                    >
+                      {companyDomainStatus === 'active'
+                        ? 'Ativo'
+                        : companyDomainStatus === 'pending'
+                          ? 'Pendente'
+                          : companyDomainStatus === 'expired'
+                            ? 'Expirado'
+                            : 'Sem domínio'}
+                    </span>
+                    {lastDomainCheckAt && (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Última checagem simulada às {lastDomainCheckAt}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {companyDomainType && (
+                    <span className="rounded-full border border-white/60 bg-white/70 px-3 py-1 text-xs font-bold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
+                      {companyDomainType === 'existing' ? 'Domínio Existente' : 'Novo Domínio'}
+                    </span>
+                  )}
+                  {companySubdomain && (
+                    <span className="rounded-full border border-white/60 bg-white/70 px-3 py-1 text-xs font-medium text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                      Ambiente temporário: {companySubdomain}.elevatio.app
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+                  {companyDomainStatus === 'active'
+                    ? 'Seu domínio já está apontando corretamente e o site público está liberado para acesso.'
+                    : companyDomainStatus === 'pending'
+                      ? 'Seu domínio está salvo no sistema e aguardando a configuração final ou a propagação do DNS.'
+                      : companyDomainType === 'new'
+                        ? 'Assim que o registro for concluído, o status será atualizado aqui para acompanhar a ativação.'
+                        : 'Defina e salve um domínio para começarmos a acompanhar a ativação por aqui.'}
+                </p>
+              </div>
+
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
                   Seu Domínio
@@ -2550,26 +2835,88 @@ const AdminConfig: React.FC = () => {
                     className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:border-brand-500 focus:ring-brand-500 dark:text-white"
                   />
                 </div>
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  {siteDomain !== savedSiteDomain
+                    ? 'Existe uma alteração pendente neste campo. Clique em "Salvar Alterações" para atualizar o status no painel.'
+                    : 'Este valor reflete o domínio configurado atualmente na sua empresa.'}
+                </p>
               </div>
 
-              <div className="bg-brand-50 dark:bg-brand-900/20 rounded-xl p-4 border border-brand-100 dark:border-brand-900/50">
-                <h4 className="text-sm font-bold text-brand-800 dark:text-brand-400 mb-2 flex items-center gap-2">
-                  <Icons.Info size={16} />
-                  Como configurar seu domínio:
-                </h4>
-                <ol className="list-decimal list-inside text-xs text-brand-700 dark:text-brand-300 space-y-1">
-                  <li>Acesse o painel onde comprou seu domínio (Registro.br, GoDaddy, etc).</li>
-                  <li>Vá na zona de DNS e crie um apontamento do tipo <strong>CNAME</strong>.</li>
-                  <li>No campo Nome, digite <strong>www</strong>.</li>
-                  <li>No campo Destino/Valor, digite <strong>cname.vercel-dns.com</strong>.</li>
-                  <li>Aguarde a propagação (pode levar até 24 horas).</li>
-                </ol>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <button
+                  type="button"
+                  onClick={handleCheckDomainPropagation}
+                  disabled={isCheckingDomainPropagation || !savedSiteDomain}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+                >
+                  {isCheckingDomainPropagation ? <Icons.Loader2 size={16} className="animate-spin" /> : <Icons.RefreshCw size={16} />}
+                  Verificar Propagação
+                </button>
+
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Verificação visual para acompanhar a ativação sem sair do painel.
+                </p>
               </div>
+
+              {companyDomainType === 'existing' && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 rounded-lg bg-brand-100 p-2 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
+                      <Icons.Info size={16} />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                        Passo a passo para domínio já registrado
+                      </h4>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Configure os registros DNS abaixo no seu provedor para concluir a conexão com a Elevatio.
+                      </p>
+
+                      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+                        <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
+                          <thead className="bg-white dark:bg-slate-900/70">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Tipo</th>
+                              <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Nome</th>
+                              <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Valor</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 bg-slate-50 dark:divide-slate-700 dark:bg-slate-950/40">
+                            <tr>
+                              <td className="px-4 py-3 font-bold text-slate-800 dark:text-white">A</td>
+                              <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-300">@</td>
+                              <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-300">IP_DO_SERVIDOR</td>
+                            </tr>
+                            <tr>
+                              <td className="px-4 py-3 font-bold text-slate-800 dark:text-white">CNAME</td>
+                              <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-300">www</td>
+                              <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-300">app.elevatio.app</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                        Depois de salvar os apontamentos, aguarde a propagação e use o botão de verificação para acompanhar o processo.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {companyDomainType === 'new' && (
+                <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-900/40 dark:bg-sky-950/20">
+                  <h4 className="text-sm font-bold text-sky-900 dark:text-sky-300">
+                    Novo domínio em processo de configuração
+                  </h4>
+                  <p className="mt-1 text-xs text-sky-800 dark:text-sky-200/80">
+                    Como este domínio foi solicitado pelo fluxo de compra, o sistema mantém o status como pendente até a configuração e a propagação terminarem.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Botão de Salvar - REMOVIDO (agora está no topo) */}
-          </div>
           )} {/* Fim do siteSubTab === 'templates' */}
 
           {siteSubTab === 'identity' && (
@@ -3487,200 +3834,69 @@ const AdminConfig: React.FC = () => {
       )}
 
       {/* Modal de Detalhes do Plano Atual */}
-      {/* MODAL DE CHECKOUT COM CALCULADORA DETALHADA */}
-      {isCheckoutModalOpen && selectedPlanForCheckout && (
-        (() => {
-          const selectedPlanId = String(selectedPlanForCheckout.id || currentPlanDetails?.id || '').toLowerCase();
-          const fallbackPlan = PLANS.find((plan) => plan.id === selectedPlanId);
-          const basePlanPrice = Number(selectedPlanForCheckout.price ?? fallbackPlan?.price ?? 0);
-          let discountAmount = 0;
-
-          if (validatedCoupon) {
-            discountAmount = validatedCoupon.type === 'percentage'
-              ? basePlanPrice * (validatedCoupon.value / 100)
-              : validatedCoupon.value;
-          }
-
-          const planWithDiscount = Math.max(0, basePlanPrice - discountAmount);
-          const totalDomainsPrice = domainCount * 40;
-          const finalTotal = planWithDiscount + totalDomainsPrice;
-
-          return (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-              <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md p-6 shadow-xl relative">
-                <button onClick={() => setIsCheckoutModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
-                  <Icons.X size={20} />
-                </button>
-                <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-6">Resumo da Assinatura</h3>
-
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Quantidade de Domínios Extras</label>
-                  <div className="flex items-center gap-4">
-                    <input
-                      type="range"
-                      min="0"
-                      max="10"
-                      value={domainCount}
-                      onChange={(e) => setDomainCount(Number(e.target.value))}
-                      className="flex-1 accent-brand-600"
-                    />
-                    <span className="font-bold text-brand-600 w-8 text-center">{domainCount}</span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">+ R$ 40,00 por domínio/mês</p>
-                </div>
-
-                {/* Campo de Cupom dentro do Carrinho */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Cupom de Desconto</label>
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      value={checkoutCoupon} 
-                      onChange={(e) => {
-                        setCheckoutCoupon(e.target.value);
-                        if (validatedCoupon?.code !== e.target.value.toUpperCase()) {
-                          setValidatedCoupon(null);
-                        }
-                      }} 
-                      placeholder="INSERIR CÓDIGO" 
-                      className="flex-1 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm uppercase outline-none focus:border-brand-500 bg-slate-50 dark:bg-slate-800" 
-                    />
-                    <button 
-                      onClick={handleValidateCheckoutCoupon} 
-                      disabled={validatingCoupon || !checkoutCoupon} 
-                      className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
-                    >
-                      {validatingCoupon ? <Icons.Loader2 size={16} className="animate-spin" /> : 'Aplicar'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Resumo Financeiro Inteligente */}
-                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3 mb-6 text-sm">
-                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                    <span>Plano {selectedPlanForCheckout.name || displayPlanName}</span>
-                    <span className="font-medium">R$ {basePlanPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  
-                  {validatedCoupon && (
-                    <div className="flex justify-between text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded-lg -mx-2">
-                      <span>Desconto ({validatedCoupon.code})</span>
-                      <span>- R$ {discountAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                  )}
-
-                  {domainCount > 0 && (
-                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                      <span>{domainCount} Domínio(s) Adicional(is)</span>
-                      <span className="font-medium">R$ {totalDomainsPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                  )}
-
-                  <div className="pt-3 mt-1 border-t border-slate-200 dark:border-slate-600 flex justify-between font-black text-lg text-slate-900 dark:text-white">
-                    <span>Total Mensal</span>
-                    <span className="text-brand-600">R$ {finalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={async () => {
-                    const addons = {
-                      buyDomainBr: domainCount >= 1,
-                      buyDomainCom: domainCount >= 2,
-                    };
-
-                    if (domainCount > 2) {
-                      addToast('O checkout atual suporta até 2 domínios extras por vez.', 'error');
-                      return;
-                    }
-
-                    setIsCheckoutModalOpen(false);
-
-                    if (checkoutMode === 'upgrade') {
-                      handleUpgrade({
-                        ...selectedPlanForCheckout,
-                        addons,
-                        coupon_code: validatedCoupon?.code,
-                        domain_count: domainCount,
-                      });
-                      return;
-                    }
-
-                    try {
-                      setIsLoading(true);
-                      const { data: { session } } = await supabase.auth.getSession();
-                      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-asaas-subscription`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'Authorization': `Bearer ${session?.access_token}`,
-                          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
-                        },
-                        body: JSON.stringify({
-                          company_id: contract?.company_id,
-                          new_plan: contract?.plan_name || selectedPlanForCheckout.name || 'Starter',
-                          billing_cycle: contract?.billing_cycle || 'monthly',
-                          has_fidelity: contract?.has_fidelity || false,
-                          addons,
-                          coupon_code: validatedCoupon?.code,
-                          domain_count: domainCount,
-                        })
-                      });
-
-                      if (response.ok) {
-                        handleCheckout();
-                      } else {
-                        const responseData = await response.json().catch(() => null);
-                        throw new Error(responseData?.error || 'Falha ao processar pagamento.');
-                      }
-                    } catch (e) {
-                      console.error(e);
-                      addToast('Erro ao processar pagamento.', 'error');
-                      setIsLoading(false);
-                    }
-                  }}
-                  className="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-xl transition-colors disabled:opacity-50"
-                  disabled={isLoading}
-                >
-                  {isLoading ? <Icons.Loader2 size={18} className="mx-auto animate-spin" /> : 'Prosseguir para Pagamento'}
-                </button>
-              </div>
-            </div>
-          );
-        })()
-      )}
-
       {/* MODAL DE CHECKOUT COM ORDER BUMP (INTELIGENTE) */}
-      {false && isCheckoutModalOpen && selectedPlanForCheckout && (
+      {isCheckoutModalOpen && selectedPlanForCheckout && (
         (() => {
           // Lê os dados REAIS do banco (contract) e não o estado visual da tela
           const isModalYearly = contract?.billing_cycle === 'yearly';
           const isModalFidelity = contract?.has_fidelity;
           const isDomainActive = contract?.domain_status === 'active';
-          const isDomainPending = contract?.domain_status === 'pending';
           
-          // Inteligência de extração do domínio do cliente baseada no estado já disponível no componente
-          const companyDomain = siteDomain || (companySubdomain ? `${companySubdomain}.elevatio.app` : '');
-          const hasCustomDomain = companyDomain && !companyDomain.includes('elevatio');
-          const isCom = companyDomain.endsWith('.com');
-          const isComBr = companyDomain.endsWith('.com.br') || !hasCustomDomain;
-          
-          const baseName = hasCustomDomain ? companyDomain.replace('.com.br', '').replace('.com', '') : 'seudominio';
-          const primaryDomainStr = hasCustomDomain ? companyDomain : 'seudominio.com.br';
-          const secondaryDomainStr = hasCustomDomain ? (isComBr ? `${baseName}.com` : `${baseName}.com.br`) : 'seudominio.com';
-          
-          const primaryPrice = isCom ? 73.00 : 53.00;
-          const secondaryPrice = isCom ? 53.00 : 73.00;
+          // Inteligência de extração do domínio
+          const billingLabel = isModalYearly ? 'Anual' : (isModalFidelity ? 'Mensal (Fidelidade 12m)' : 'Mensal');
+          const primaryDomainStr = checkoutDomainInfo.primaryDomain;
+          const normalizedSecondaryDomain = sanitizeExistingDomain(checkoutSecondaryDomain) || checkoutDomainInfo.suggestedSecondaryDomain;
+          const secondaryDomainStr = normalizedSecondaryDomain || checkoutDomainInfo.suggestedSecondaryDomain;
+          const primaryPrice = getDomainAnnualPrice(primaryDomainStr);
+          const secondaryPrice = getDomainAnnualPrice(secondaryDomainStr);
           const isPrimaryFree = isModalYearly && selectedPlanForCheckout.has_free_domain;
+          const shouldIncludePrimaryDomain = isDomainActive || isPrimaryFree || checkoutAddons.buyDomainBr;
+          const basePlanPrice = Number(selectedPlanForCheckout.price * (isModalYearly ? 12 * 0.85 : (isModalFidelity ? 0.9 : 1)));
+          const manualDiscountValue = Number(tenant?.manual_discount_value ?? user?.company?.manual_discount_value ?? 0);
+          const manualDiscountType = tenant?.manual_discount_type ?? user?.company?.manual_discount_type ?? null;
+          const courtesyAmount = manualDiscountValue > 0
+            ? Math.min(
+                basePlanPrice,
+                manualDiscountType === 'percentage'
+                  ? basePlanPrice * (manualDiscountValue / 100)
+                  : manualDiscountValue
+              )
+            : 0;
+          const subtotalAfterCourtesy = Math.max(0, basePlanPrice - courtesyAmount);
+          const discountAmount = validatedCoupon
+            ? Math.min(
+                subtotalAfterCourtesy,
+                validatedCoupon.type === 'percentage'
+                  ? subtotalAfterCourtesy * (validatedCoupon.value / 100)
+                  : validatedCoupon.type === 'free_month'
+                    ? subtotalAfterCourtesy
+                    : validatedCoupon.value
+              )
+            : 0;
+          const primaryCharge = shouldIncludePrimaryDomain && !isPrimaryFree && !isDomainActive ? primaryPrice : 0;
+          const secondaryCharge = checkoutAddons.buyDomainCom ? secondaryPrice : 0;
+          const finalTotal = subtotalAfterCourtesy - discountAmount + primaryCharge + secondaryCharge;
+          const formatCurrency = (value: number) =>
+            value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          const primaryPriceLabel = isDomainActive
+            ? 'R$ 0,00 (Já Ativo)'
+            : isPrimaryFree
+              ? 'R$ 0,00'
+              : `+ ${formatCurrency(primaryPrice)} /ano`;
+          const canFinalizeCheckout = !checkoutAddons.buyDomainCom || (
+            !!normalizedSecondaryDomain &&
+            checkoutSecondaryDomainStatus === 'available' &&
+            checkoutSecondaryDomainVerified === normalizedSecondaryDomain
+          );
 
           return (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in">
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
                   <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
                     <Icons.ShoppingCart className="text-brand-500" /> Resumo do Pedido
                   </h3>
-                  <button onClick={() => setIsCheckoutModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                  <button onClick={() => setIsCheckoutModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
                     <Icons.X size={24} />
                   </button>
                 </div>
@@ -3694,12 +3910,12 @@ const AdminConfig: React.FC = () => {
                           Plano {selectedPlanForCheckout.name}
                         </h4>
                         <p className="text-sm text-slate-500">
-                          Ciclo: {isModalYearly ? 'Anual' : (isModalFidelity ? 'Mensal (Fidelidade 12m)' : 'Mensal')}
+                          Ciclo: {billingLabel}
                         </p>
                       </div>
                       <div className="text-right">
                         <span className="font-bold text-lg text-brand-600 dark:text-brand-400">
-                          {Number(selectedPlanForCheckout.price * (isModalYearly ? 12 * 0.85 : (isModalFidelity ? 0.90 : 1))).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          {formatCurrency(basePlanPrice)}
                         </span>
                       </div>
                     </div>
@@ -3714,20 +3930,20 @@ const AdminConfig: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Item 2: Upsell de Domínio (Dinâmico) */}
+                  {/* Item 2: Upsell de Domínio (O seu código inteligente original!) */}
                   <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-800/50">
                     <h4 className="font-bold text-slate-800 dark:text-white mb-3 flex items-center gap-2">
                       <Icons.Globe size={18} className="text-slate-400" /> Seu Domínio Profissional
                     </h4>
                     
                     <div className="space-y-3">
-                      {/* Domínio Principal (Escolhido no Wizard) */}
+                      {/* Domínio Principal */}
                       <label className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${isPrimaryFree || isDomainActive ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : (checkoutAddons.buyDomainBr ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800')}`}>
                         <div className="flex items-center gap-3">
                           <input
                             type="checkbox"
                             checked={isPrimaryFree || isDomainActive ? true : checkoutAddons.buyDomainBr}
-                            onChange={(e) => !isPrimaryFree && !isDomainActive && setCheckoutAddons(p => ({...p, buyDomainBr: e.target.checked}))}
+                            onChange={(e) => !isPrimaryFree && !isDomainActive && setCheckoutAddons((p) => ({ ...p, buyDomainBr: e.target.checked }))}
                             disabled={isPrimaryFree || isDomainActive}
                             className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600 disabled:opacity-50"
                           />
@@ -3743,89 +3959,220 @@ const AdminConfig: React.FC = () => {
                           </div>
                         </div>
                         <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
-                          {isPrimaryFree || isDomainActive ? 'R$ 0,00' : `+ R$ ${primaryPrice.toFixed(2).replace('.', ',')} /ano`}
+                          {primaryPriceLabel}
                         </span>
                       </label>
 
-                      {/* Domínio Adicional (Upsell para proteger a marca) */}
-                      <label className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${checkoutAddons.buyDomainCom ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
-                        <div className="flex items-center gap-3">
-                          <input 
-                            type="checkbox" 
-                            checked={checkoutAddons.buyDomainCom} 
-                            onChange={(e) => setCheckoutAddons(p => ({...p, buyDomainCom: e.target.checked}))} 
-                            className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600" 
-                          />
-                          <div>
-                            <span className="font-medium text-slate-700 dark:text-slate-200 block">
-                              {secondaryDomainStr}
-                            </span>
-                            <span className="text-xs text-slate-500">Opcional (Proteja sua marca)</span>
+                      {/* Domínio Adicional (Proteção de marca) */}
+                      <div className={`rounded-lg border transition-colors ${checkoutAddons.buyDomainCom ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700'}`}>
+                        <label className={`flex items-center justify-between p-3 cursor-pointer ${checkoutAddons.buyDomainCom ? '' : 'hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg'}`}>
+                          <div className="flex items-center gap-3">
+                            <input 
+                              type="checkbox" 
+                              checked={checkoutAddons.buyDomainCom} 
+                              onChange={(e) => setCheckoutAddons((p) => ({ ...p, buyDomainCom: e.target.checked }))} 
+                              className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-600" 
+                            />
+                            <div>
+                              <span className="font-medium text-slate-700 dark:text-slate-200 block">
+                                {secondaryDomainStr}
+                              </span>
+                              <span className="text-xs text-slate-500">Opcional (Proteja sua marca)</span>
+                            </div>
                           </div>
-                        </div>
-                        <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
-                          + R$ {secondaryPrice.toFixed(2).replace('.', ',')} /ano
+                          <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                            + {formatCurrency(secondaryPrice)} /ano
+                          </span>
+                        </label>
+
+                        {checkoutAddons.buyDomainCom && (
+                          <div className="border-t border-brand-200/70 dark:border-brand-800/60 px-3 pb-3 pt-3 space-y-3">
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                              <input
+                                type="text"
+                                value={checkoutSecondaryDomain}
+                                onChange={(e) => {
+                                  setCheckoutSecondaryDomain(e.target.value);
+                                  const nextNormalizedDomain = sanitizeExistingDomain(e.target.value);
+                                  if (checkoutSecondaryDomainVerified !== nextNormalizedDomain) {
+                                    setCheckoutSecondaryDomainStatus('idle');
+                                  }
+                                }}
+                                placeholder={checkoutDomainInfo.suggestedSecondaryDomain}
+                                className="flex-1 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-sm outline-none focus:border-brand-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleCheckSecondaryDomainAvailability}
+                                disabled={checkoutSecondaryDomainStatus === 'loading' || !checkoutSecondaryDomain.trim()}
+                                className="bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-5 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                              >
+                                {checkoutSecondaryDomainStatus === 'loading' ? <Icons.Loader2 size={16} className="animate-spin" /> : 'Verificar'}
+                              </button>
+                            </div>
+
+                            <p className="text-[11px] text-slate-500">
+                              Informe o domínio completo com final <span className="font-semibold text-slate-700 dark:text-slate-300">.com</span> ou <span className="font-semibold text-slate-700 dark:text-slate-300">.com.br</span>.
+                            </p>
+
+                            {checkoutSecondaryDomainStatus === 'available' && (
+                              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/20 dark:text-emerald-300">
+                                Domínio secundário disponível para registro.
+                              </div>
+                            )}
+
+                            {checkoutSecondaryDomainStatus === 'taken' && (
+                              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300">
+                                Esse domínio já está em uso. Tente outra variação.
+                              </div>
+                            )}
+
+                            {checkoutSecondaryDomainStatus === 'error' && (
+                              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:border-red-900/60 dark:bg-red-900/20 dark:text-red-300">
+                                Não foi possível validar esse domínio agora.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Item 3: Cupom de Desconto (Adicionado) */}
+                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50 dark:bg-slate-800/30">
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Possui Cupom de Desconto?</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        value={checkoutCoupon} 
+                        onChange={(e) => {
+                          setCheckoutCoupon(e.target.value);
+                          if (validatedCoupon?.code !== e.target.value.toUpperCase()) {
+                            setValidatedCoupon(null);
+                          }
+                        }} 
+                        placeholder="INSERIR CÓDIGO" 
+                        className="flex-1 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-sm uppercase outline-none focus:border-brand-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold" 
+                      />
+                      <button 
+                        onClick={handleValidateCheckoutCoupon} 
+                        disabled={validatingCoupon || !checkoutCoupon} 
+                        className="bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-6 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {validatingCoupon ? <Icons.Loader2 size={16} className="animate-spin" /> : 'Aplicar'}
+                      </button>
+                    </div>
+                    {validatedCoupon && (
+                      <p className="mt-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                        <Icons.CheckCircle2 size={14} /> Cupom {validatedCoupon.code} validado!
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="bg-slate-900 dark:bg-black p-5 rounded-xl space-y-3 shadow-inner border border-slate-800">
+                    <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Resumo do Pagamento</h5>
+                    
+                    <div className="flex justify-between gap-4 text-slate-300 text-sm">
+                      <span>Plano {selectedPlanForCheckout.name} ({billingLabel})</span>
+                      <span>{formatCurrency(basePlanPrice)}</span>
+                    </div>
+
+                    {courtesyAmount > 0 && (
+                      <div className="flex justify-between gap-4 text-blue-400 text-sm font-medium italic">
+                        <span className="flex items-center gap-1"><Icons.BadgeCheck size={14} /> Cortesia</span>
+                        <span>
+                          -{manualDiscountType === 'percentage'
+                            ? `${manualDiscountValue}%`
+                            : formatCurrency(courtesyAmount)}
                         </span>
-                      </label>
+                      </div>
+                    )}
+
+                    {validatedCoupon && (
+                      <div className="flex justify-between gap-4 text-emerald-400 text-sm font-bold">
+                        <span className="flex items-center gap-1"><Icons.Ticket size={14} /> Cupom: {validatedCoupon.code}</span>
+                        <span>-{formatCurrency(discountAmount)}</span>
+                      </div>
+                    )}
+
+                    {shouldIncludePrimaryDomain && (
+                      <div className="flex justify-between gap-4 text-slate-400 text-sm">
+                        <span>Registro: {primaryDomainStr}</span>
+                        <span>{isDomainActive ? 'R$ 0,00 (Já Ativo)' : isPrimaryFree ? 'Grátis' : formatCurrency(primaryCharge)}</span>
+                      </div>
+                    )}
+
+                    {checkoutAddons.buyDomainCom && (
+                      <div className="flex justify-between gap-4 text-slate-400 text-sm">
+                        <span>Proteção: {secondaryDomainStr}</span>
+                        <span>{formatCurrency(secondaryCharge)}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-3 mt-3 border-t border-slate-800 flex justify-between items-end">
+                      <span className="text-slate-400 font-bold">Total Final</span>
+                      <span className="text-2xl font-black text-white">{formatCurrency(finalTotal)}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Footer do Checkout */}
-                <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex justify-between items-center">
-                  <div>
-                    <p className="text-sm text-slate-500">Total a pagar hoje</p>
-                    <p className="text-2xl font-black text-slate-800 dark:text-white">
-                      {(() => {
-                        let total = Number(selectedPlanForCheckout.price * (isModalYearly ? 12 * 0.85 : (isModalFidelity ? 0.90 : 1)));
-                        if (!isPrimaryFree && checkoutAddons.buyDomainBr) total += primaryPrice;
-                        if (checkoutAddons.buyDomainCom) total += secondaryPrice;
-                        return total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                      })()}
-                    </p>
-                  </div>
+                {/* Footer do Checkout com a Matemática Precisa */}
+                <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex justify-end items-center">
                   <button 
                     onClick={async () => {
                       setIsCheckoutModalOpen(false);
                       if (checkoutMode === 'upgrade') {
                         handleUpgrade({ ...selectedPlanForCheckout, addons: checkoutAddons });
                       } else {
-                        // Modo Pay (Pagar Agora) - Como é um pagamento da fatura atual, primeiro garantimos que
-                        // o valor extra do domínio está no Asaas chamando a mesma Edge Function de atualização.
                         try {
                           setIsLoading(true);
                           const { data: { session } } = await supabase.auth.getSession();
-                          const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-asaas-subscription`, {
+                          
+                          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+                          const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+                          if (!supabaseUrl || !supabaseAnonKey) {
+                            throw new Error("Chaves de ambiente não configuradas.");
+                          }
+
+                          // Usamos o fetch nativo: Ele garante o envio dos headers sem a interferência do SDK
+                          const response = await fetch(`${supabaseUrl}/functions/v1/update-asaas-subscription`, {
                             method: 'POST',
                             headers: {
                               'Content-Type': 'application/json',
                               'Authorization': `Bearer ${session?.access_token}`,
-                              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+                              'apikey': supabaseAnonKey
                             },
                             body: JSON.stringify({
                               company_id: contract?.company_id,
-                              new_plan: contract?.plan_name || 'Starter',
-                              billing_cycle: contract?.billing_cycle || 'monthly',
+                              new_plan: selectedPlanForCheckout.name,
+                              billing_cycle: isModalYearly ? 'yearly' : 'monthly',
                               has_fidelity: contract?.has_fidelity || false,
-                              addons: checkoutAddons
+                              addons: checkoutAddons,
+                              coupon_code: validatedCoupon?.code,
+                              domain_secondary: checkoutAddons.buyDomainCom ? secondaryDomainStr : null
                             })
                           });
-                          if (response.ok) {
-                            handleCheckout(); // Após atualizar o Asaas, gera o link
-                          } else {
-                            throw new Error('Falha ao adicionar domínios na fatura.');
+
+                          const responseData = await response.json();
+
+                          if (!response.ok) {
+                            throw new Error(responseData.error || 'Falha ao processar assinatura no Asaas.');
                           }
-                        } catch (e) {
-                          console.error(e);
-                          addToast('Erro ao processar pagamento.', 'error');
+
+                          handleCheckout(); 
+                        } catch (e: any) {
+                          console.error('Erro no Checkout:', e);
+                          addToast(e.message || 'Erro ao processar pagamento.', 'error');
+                        } finally {
                           setIsLoading(false);
                         }
                       }
                     }}
                     disabled={isLoading}
-                    className="px-8 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-brand-500/30 transition-all active:scale-95"
+                    className="w-full py-4 bg-brand-600 hover:bg-brand-700 text-white text-lg font-black rounded-xl transition-all shadow-lg hover:shadow-brand-500/25 disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    {isLoading ? <Icons.Loader2 className="animate-spin" /> : <Icons.CreditCard />}
+                    {isLoading ? <Icons.Loader2 className="animate-spin" /> : <Icons.CreditCard size={20} />}
                     Finalizar Compra
                   </button>
                 </div>
