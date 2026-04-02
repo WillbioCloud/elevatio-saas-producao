@@ -17,6 +17,8 @@ export type Company = {
   name: string;
   subdomain: string | null;
   domain: string | null;
+  template?: string | null;
+  template_id?: string | null;
   logo_url?: string | null;
   logo_white_url?: string | null;
   plan?: string | null;
@@ -128,7 +130,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         let query = supabase
           .from('companies')
           .select(
-            'id, name, subdomain, domain, plan, active, site_data, finance_config, use_asaas, default_commission, broker_commission, payment_api_key'
+            'id, name, subdomain, domain, template, plan, active, site_data, finance_config, use_asaas, default_commission, broker_commission, payment_api_key'
           );
 
         if (hostData.customDomain) {
@@ -166,6 +168,13 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               })()
             : ((data?.site_data as Record<string, unknown> | null) ?? null);
 
+        const siteDataTemplateId =
+          typeof parsedSiteData?.template_id === 'string' ? parsedSiteData.template_id : null;
+        const siteDataLegacyTemplate =
+          typeof parsedSiteData?.template === 'string' ? parsedSiteData.template : null;
+        const normalizedTemplate =
+          typeof data?.template === 'string' ? data.template : siteDataLegacyTemplate;
+
         if (isMounted) {
           setTenant(
             data
@@ -196,6 +205,8 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                     typeof parsedSiteData?.logo_white_url === 'string'
                       ? parsedSiteData.logo_white_url
                       : null,
+                  template: normalizedTemplate,
+                  template_id: siteDataTemplateId ?? normalizedTemplate,
                   finance_config: parsedFinanceConfig,
                   use_asaas:
                     typeof data.use_asaas === 'boolean'

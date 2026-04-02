@@ -1,10 +1,9 @@
 import React, { Suspense } from 'react';
-import { Route, Routes, Navigate } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { useTenant } from '../contexts/TenantContext';
 import { templatesRegistry } from './templateRegistry';
 
-// 🚀 LAZY IMPORTS: A mágica do Code Splitting. O Vercel cria arquivos separados
-// e o navegador só baixa as páginas do template que está sendo usado.
+// Lazy imports keep each template split into its own chunk.
 
 // Basico
 const BasicoLayout = React.lazy(() => import('./basico/BasicoLayout'));
@@ -42,17 +41,39 @@ const ModernAbout = React.lazy(() => import('./modern/pages/About'));
 const ModernServices = React.lazy(() => import('./modern/pages/Services'));
 const ModernFinanciamentos = React.lazy(() => import('./modern/pages/Financiamentos'));
 
-// Loader Elegante
 const TemplateLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-[#0e0e0e]">
     <div className="w-8 h-8 border-4 border-neutral-800 border-t-white rounded-full animate-spin"></div>
   </div>
 );
 
-export default function TenantRouter() {
-  const { tenant, loading } = useTenant();
+type TenantRouterProps = {
+  customDomain?: string;
+};
 
-  if (loading) return <TemplateLoader />;
+const parseTenantSiteData = (siteData: unknown): Record<string, unknown> => {
+  if (!siteData) {
+    return {};
+  }
+
+  if (typeof siteData === 'string') {
+    try {
+      const parsed = JSON.parse(siteData);
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  return typeof siteData === 'object' ? (siteData as Record<string, unknown>) : {};
+};
+
+export default function TenantRouter(_props: TenantRouterProps) {
+  const { tenant, isLoadingTenant } = useTenant();
+
+  if (isLoadingTenant) {
+    return <TemplateLoader />;
+  }
 
   if (!tenant) {
     return (
@@ -62,12 +83,20 @@ export default function TenantRouter() {
     );
   }
 
-  // Verifica no registro se o template é válido. Se não for, usa 'modern'
-  const templateId = tenant.template || 'modern';
-  const config = templatesRegistry.find((t) => t.id === templateId);
-  const safeTemplateId = config ? config.id : 'modern';
+  const siteData = parseTenantSiteData(tenant.site_data);
 
-  // --- MAPEAMENTO CONDICIONAL DAS ROTAS ---
+  // Blindagem: aceita template salvo em coluna dedicada, legado ou dentro do site_data.
+  const rawTemplate =
+    tenant.template_id ??
+    tenant.template ??
+    siteData.template_id ??
+    siteData.template ??
+    'modern';
+  const currentTemplateId = String(rawTemplate).toLowerCase().trim();
+  const safeTemplateId = Object.prototype.hasOwnProperty.call(templatesRegistry, currentTemplateId)
+    ? currentTemplateId
+    : 'modern';
+
   const Layout =
     safeTemplateId === 'luxury' ? LuxuryLayout :
     safeTemplateId === 'basico' ? BasicoLayout :
@@ -86,13 +115,13 @@ export default function TenantRouter() {
     safeTemplateId === 'luxury' ? LuxuryProperties :
     safeTemplateId === 'basico' ? BasicoProperties :
     safeTemplateId === 'classic' ? ClassicProperties :
-    ModernProperties; // Minimalist usa o ModernProperties
+    ModernProperties;
 
   const PropertyDetailPage =
     safeTemplateId === 'luxury' ? LuxuryPropertyDetail :
     safeTemplateId === 'basico' ? BasicoPropertyDetail :
     safeTemplateId === 'classic' ? ClassicPropertyDetail :
-    ModernPropertyDetail; // Minimalist usa o ModernPropertyDetail
+    ModernPropertyDetail;
 
   const AboutPage =
     safeTemplateId === 'luxury' ? LuxuryAbout :
@@ -107,7 +136,6 @@ export default function TenantRouter() {
   const FinancingPage = safeTemplateId === 'classic' ? ClassicFinanciamentos : ModernFinanciamentos;
 
   return (
-    // O Suspense segura a tela com o Loader APENAS enquanto baixa os arquivos da rota clicada
     <Suspense fallback={<TemplateLoader />}>
       <Routes>
         <Route element={<Layout />}>

@@ -21,6 +21,7 @@ import {
   User,
   Plus,
   Tag,
+  Palette,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +39,7 @@ const navigation = [
       { name: 'Dashboard', href: `${BASE}/dashboard`, icon: Home },
       { name: 'Clientes', href: `${BASE}/clientes`, icon: Users },
       { name: 'Planos', href: `${BASE}/planos`, icon: Briefcase },
+      { name: 'Templates', href: `${BASE}/templates`, icon: Palette },
     ],
   },
   {
@@ -106,6 +108,7 @@ export default function SaasLayout() {
     if (path === `${BASE}/dashboard` || path === BASE || path === `${BASE}/`) return ['Dashboard', 'Visão Geral'];
     if (path === `${BASE}/clientes`) return ['Dashboard', 'Gestão Principal', 'Clientes'];
     if (path === `${BASE}/planos`) return ['Dashboard', 'Gestão Principal', 'Planos'];
+    if (path === `${BASE}/templates`) return ['Dashboard', 'Gestão Principal', 'Templates'];
     if (path === `${BASE}/cupons`) return ['Dashboard', 'Financeiro', 'Cupons'];
     if (path === `${BASE}/pagamentos`) return ['Dashboard', 'Financeiro', 'Pagamentos'];
     if (path === `${BASE}/contratos`) return ['Dashboard', 'Financeiro', 'Contratos'];
