@@ -9,7 +9,7 @@ import GamificationModal from '../components/GamificationModal';
 import FidelityTermsModal from '../components/FidelityTermsModal';
 import BillingPortalModal from '../components/BillingPortalModal';
 import { uploadCompanyAsset } from '../lib/storage';
-import { type Company, type FinanceConfig, type SiteData } from '../types';
+import { type Company as BaseCompany, type FinanceConfig, type SiteData } from '../types';
 import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle, ImageOff, Check, AlertTriangle } from 'lucide-react';
 import { useProperties } from '../hooks/useProperties';
 import { usePlanLimits } from '../hooks/usePlanLimits';
@@ -54,10 +54,20 @@ type CheckoutCoupon = {
   value: number;
 };
 
+type CompanyDomainStatus = 'pending' | 'active' | 'error' | 'idle' | 'expired' | null;
+
+interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_secondary' | 'domain_status'> {
+  subdomain: string | null;
+  domain: string | null;
+  domain_secondary: string | null;
+  domain_status: CompanyDomainStatus;
+  domain_secondary_status: CompanyDomainStatus;
+}
+
 type SitePartner = NonNullable<SiteData['partners']>[number];
 type TenantFinanceRecord = Pick<
   Company,
-  'id' | 'name' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'manual_discount_value' | 'manual_discount_type'
+  'id' | 'name' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type'
 > & {
   finance_config?: FinanceConfig | null;
 };
@@ -106,6 +116,46 @@ const sanitizeExistingDomain = (value: string) =>
 
 
 const getDomainAnnualPrice = (domain: string) => (domain.endsWith('.com') ? 73.0 : 53.0);
+
+const getDomainStatusMeta = (status: CompanyDomainStatus) => {
+  if (status === 'active') {
+    return {
+      badgeLabel: 'Funcional',
+      badgeClassName: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+      helperText: null,
+      helperClassName: '',
+      helperIcon: 'clock' as const,
+    };
+  }
+
+  if (status === 'error' || status === 'expired') {
+    return {
+      badgeLabel: 'Atenção',
+      badgeClassName: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+      helperText: 'Verifique a configuração DNS',
+      helperClassName: 'mt-2 flex items-center gap-1 text-[10px] font-medium text-rose-600 dark:text-rose-400',
+      helperIcon: 'alert' as const,
+    };
+  }
+
+  if (status === 'idle' || status === null) {
+    return {
+      badgeLabel: 'Aguardando',
+      badgeClassName: 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+      helperText: 'Aguardando configuração do domínio',
+      helperClassName: 'mt-2 flex items-center gap-1 text-[10px] font-medium text-slate-500 dark:text-slate-400',
+      helperIcon: 'clock' as const,
+    };
+  }
+
+  return {
+    badgeLabel: 'Configurando',
+    badgeClassName: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 animate-pulse',
+    helperText: 'Aguardando propagação DNS',
+    helperClassName: 'mt-2 flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400',
+    helperIcon: 'clock' as const,
+  };
+};
 
 const compressAvatar = (file: File | Blob, maxSize = 512): Promise<Blob> => {
   return new Promise((resolve, reject) => {
@@ -330,9 +380,7 @@ const AdminConfig: React.FC = () => {
   const [savedSiteDomain, setSavedSiteDomain] = useState('');
   const [companySubdomain, setCompanySubdomain] = useState('');
   const [companyDomainType, setCompanyDomainType] = useState<'new' | 'existing' | null>(null);
-  const [companyDomainStatus, setCompanyDomainStatus] = useState<'pending' | 'active' | 'expired' | null>(null);
-  const [isCheckingDomainPropagation, setIsCheckingDomainPropagation] = useState(false);
-  const [lastDomainCheckAt, setLastDomainCheckAt] = useState<string | null>(null);
+  const [companyDomainStatus, setCompanyDomainStatus] = useState<CompanyDomainStatus>(null);
   const [isSavingSite, setIsSavingSite] = useState(false);
   const [isBillingPortalOpen, setIsBillingPortalOpen] = useState(false);
   const { properties } = useProperties();
@@ -376,6 +424,29 @@ const AdminConfig: React.FC = () => {
       suggestedSecondaryDomain,
     };
   }, [siteDomain, companySubdomain]);
+
+  const company = useMemo(
+    () => ({
+      subdomain: companySubdomain || tenant?.subdomain || null,
+      domain: savedSiteDomain || tenant?.domain || null,
+      domain_secondary: tenant?.domain_secondary || null,
+      domain_status: companyDomainStatus ?? tenant?.domain_status ?? null,
+      domain_secondary_status: tenant?.domain_secondary_status ?? null,
+    }),
+    [
+      companySubdomain,
+      savedSiteDomain,
+      companyDomainStatus,
+      tenant?.subdomain,
+      tenant?.domain,
+      tenant?.domain_secondary,
+      tenant?.domain_status,
+      tenant?.domain_secondary_status,
+    ]
+  );
+
+  const primaryDomainStatusMeta = getDomainStatusMeta(company.domain_status);
+  const secondaryDomainStatusMeta = getDomainStatusMeta(company.domain_secondary_status);
 
   useEffect(() => {
     setAcceptedFidelityTerms(false);
@@ -560,7 +631,25 @@ const AdminConfig: React.FC = () => {
     
     const { data } = await supabase
       .from('companies')
-      .select('*')
+      .select(`
+        id,
+        name,
+        subdomain,
+        domain,
+        domain_secondary,
+        domain_type,
+        domain_status,
+        domain_secondary_status,
+        template,
+        site_data,
+        payment_api_key,
+        finance_config,
+        use_asaas,
+        default_commission,
+        broker_commission,
+        manual_discount_value,
+        manual_discount_type
+      `)
       .eq('id', user.company_id)
       .maybeSingle();
     
@@ -581,14 +670,16 @@ const AdminConfig: React.FC = () => {
       setSavedSiteDomain(data.domain || '');
       setCompanySubdomain(data.subdomain || '');
       setCompanyDomainType((data.domain_type as 'new' | 'existing' | null | undefined) ?? null);
-      setCompanyDomainStatus((data.domain_status as 'pending' | 'active' | 'expired' | null | undefined) ?? null);
+      setCompanyDomainStatus((data.domain_status as CompanyDomainStatus | undefined) ?? null);
       setTenant({
         id: data.id,
         name: data.name || '',
+        subdomain: data.subdomain || null,
         domain: data.domain || null,
         domain_secondary: data.domain_secondary || null,
         domain_type: (data.domain_type as 'new' | 'existing' | null | undefined) ?? null,
-        domain_status: (data.domain_status as 'pending' | 'active' | 'expired' | null | undefined) ?? null,
+        domain_status: (data.domain_status as CompanyDomainStatus | undefined) ?? null,
+        domain_secondary_status: (data.domain_secondary_status as CompanyDomainStatus | undefined) ?? null,
         site_data: data.site_data || undefined,
         payment_api_key: data.payment_api_key || '',
         finance_config: parsedFinanceConfig || undefined,
@@ -1291,40 +1382,22 @@ const AdminConfig: React.FC = () => {
       if (domainChanged) {
         setCompanyDomainStatus(finalDomain ? 'pending' : null);
         setCompanyDomainType(finalDomain ? (companyDomainType ?? 'existing') : null);
+        setTenant((prev) =>
+          prev
+            ? {
+                ...prev,
+                domain: finalDomain,
+                domain_status: finalDomain ? 'pending' : null,
+                domain_type: finalDomain ? (companyDomainType ?? 'existing') : null,
+              }
+            : prev
+        );
       }
       alert('Configurações do site salvas com sucesso!');
     } catch (error: any) {
       alert('Erro ao salvar configurações: ' + error.message);
     } finally {
       setIsSavingSite(false);
-    }
-  };
-
-  const handleCheckDomainPropagation = async () => {
-    const domainToCheck = savedSiteDomain || siteDomain;
-    if (!domainToCheck) {
-      addToast('Configure um domínio antes de verificar a propagação.', 'error');
-      return;
-    }
-
-    setIsCheckingDomainPropagation(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      setLastDomainCheckAt(
-        new Date().toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      );
-
-      if (companyDomainStatus === 'active') {
-        addToast('Seu domínio já está ativo e respondendo normalmente.', 'success');
-        return;
-      }
-
-      addToast('Checagem simulada concluída. A propagação pode levar até 24 horas.', 'info');
-    } finally {
-      setIsCheckingDomainPropagation(false);
     }
   };
 
@@ -2696,193 +2769,82 @@ const AdminConfig: React.FC = () => {
           </div>
 
           {/* SEÇÃO 2: Domínio Customizado */}
-          <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-6 shadow-sm">
+          <div className="mt-10 border-t border-slate-200 dark:border-white/10 pt-10">
             <div className="mb-6">
-              <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                <Icons.Globe size={24} className="text-brand-500" />
-                Domínio Próprio
+              <h3 className="flex items-center gap-2 text-lg font-black text-slate-800 dark:text-white">
+                <Icons.Globe size={20} className="text-brand-600" />
+                Domínios & Endereços Web
               </h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Acompanhe o status real do seu domínio e centralize a configuração do site em um só lugar.
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Gerencie os endereços oficiais onde seus clientes acessam seu site.
               </p>
             </div>
 
-            <div className="space-y-5">
-              <div
-                className={`rounded-xl border p-4 ${
-                  companyDomainStatus === 'active'
-                    ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-900/20'
-                    : companyDomainStatus === 'pending'
-                      ? 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/20'
-                      : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/40'
-                }`}
-              >
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Status do Domínio
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5">
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Subdomínio Grátis</p>
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                    Ativo
+                  </span>
+                </div>
+                <p className="break-all text-sm font-bold text-slate-700 dark:text-slate-200">
+                  {(company.subdomain || 'seu-subdominio')}.elevatiovendas.com.br
+                </p>
+              </div>
+
+              {company.domain && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Domínio Principal</p>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${primaryDomainStatusMeta.badgeClassName}`}>
+                      {primaryDomainStatusMeta.badgeLabel}
+                    </span>
+                  </div>
+                  <p className="break-all text-sm font-black text-brand-600 dark:text-brand-400">
+                    {company.domain}
+                  </p>
+                  {primaryDomainStatusMeta.helperText && (
+                    <p className={primaryDomainStatusMeta.helperClassName}>
+                      {primaryDomainStatusMeta.helperIcon === 'alert' ? <Icons.AlertTriangle size={10} /> : <Icons.Clock size={10} />}
+                      {primaryDomainStatusMeta.helperText}
                     </p>
-                    <h4 className="text-lg font-bold text-slate-800 dark:text-white">
-                      {savedSiteDomain || 'Não configurado'}
-                    </h4>
-                    <p className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-300">
-                      {companyDomainStatus === 'active'
-                        ? 'Site no Ar'
-                        : companyDomainStatus === 'pending'
-                          ? 'Aguardando Configuração'
-                          : companyDomainStatus === 'expired'
-                            ? 'Configuração Expirada'
-                            : 'Aguardando Definição do Domínio'}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col items-start gap-2 md:items-end">
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-black uppercase ${
-                        companyDomainStatus === 'active'
-                          ? 'bg-emerald-500 text-white'
-                          : companyDomainStatus === 'pending'
-                            ? 'bg-amber-500 text-white'
-                            : companyDomainStatus === 'expired'
-                              ? 'bg-rose-500 text-white'
-                              : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100'
-                      }`}
-                    >
-                      {companyDomainStatus === 'active'
-                        ? 'Ativo'
-                        : companyDomainStatus === 'pending'
-                          ? 'Pendente'
-                          : companyDomainStatus === 'expired'
-                            ? 'Expirado'
-                            : 'Sem domínio'}
-                    </span>
-                    {lastDomainCheckAt && (
-                      <span className="text-xs text-slate-500 dark:text-slate-400">
-                        Última checagem simulada às {lastDomainCheckAt}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {companyDomainType && (
-                    <span className="rounded-full border border-white/60 bg-white/70 px-3 py-1 text-xs font-bold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
-                      {companyDomainType === 'existing' ? 'Domínio Existente' : 'Novo Domínio'}
-                    </span>
                   )}
-                  {companySubdomain && (
-                    <span className="rounded-full border border-white/60 bg-white/70 px-3 py-1 text-xs font-medium text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
-                      Ambiente temporário: {companySubdomain}.elevatio.app
-                    </span>
-                  )}
-                </div>
-
-                <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
-                  {companyDomainStatus === 'active'
-                    ? 'Seu domínio já está apontando corretamente e o site público está liberado para acesso.'
-                    : companyDomainStatus === 'pending'
-                      ? 'Seu domínio está salvo no sistema e aguardando a configuração final ou a propagação do DNS.'
-                      : companyDomainType === 'new'
-                        ? 'Assim que o registro for concluído, o status será atualizado aqui para acompanhar a ativação.'
-                        : 'Defina e salve um domínio para começarmos a acompanhar a ativação por aqui.'}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-                  Seu Domínio
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Icons.Link size={18} className="text-slate-400" />
-                  </div>
-                  <input
-                    type="text"
-                    value={siteDomain}
-                    onChange={(e) => setSiteDomain(e.target.value)}
-                    placeholder="minhaimobiliaria.com.br"
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-[#111] border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:border-brand-500 focus:ring-brand-500 dark:text-white"
-                  />
-                </div>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  {siteDomain !== savedSiteDomain
-                    ? 'Existe uma alteração pendente neste campo. Clique em "Salvar Alterações" para atualizar o status no painel.'
-                    : 'Este valor reflete o domínio configurado atualmente na sua empresa.'}
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <button
-                  type="button"
-                  onClick={handleCheckDomainPropagation}
-                  disabled={isCheckingDomainPropagation || !savedSiteDomain}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
-                >
-                  {isCheckingDomainPropagation ? <Icons.Loader2 size={16} className="animate-spin" /> : <Icons.RefreshCw size={16} />}
-                  Verificar Propagação
-                </button>
-
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Verificação visual para acompanhar a ativação sem sair do painel.
-                </p>
-              </div>
-
-              {companyDomainType === 'existing' && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/40">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-lg bg-brand-100 p-2 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
-                      <Icons.Info size={16} />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-sm font-bold text-slate-800 dark:text-white">
-                        Passo a passo para domínio já registrado
-                      </h4>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Configure os registros DNS abaixo no seu provedor para concluir a conexão com a Elevatio.
-                      </p>
-
-                      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
-                        <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
-                          <thead className="bg-white dark:bg-slate-900/70">
-                            <tr>
-                              <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Tipo</th>
-                              <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Nome</th>
-                              <th className="px-4 py-3 text-left text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Valor</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200 bg-slate-50 dark:divide-slate-700 dark:bg-slate-950/40">
-                            <tr>
-                              <td className="px-4 py-3 font-bold text-slate-800 dark:text-white">A</td>
-                              <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-300">@</td>
-                              <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-300">IP_DO_SERVIDOR</td>
-                            </tr>
-                            <tr>
-                              <td className="px-4 py-3 font-bold text-slate-800 dark:text-white">CNAME</td>
-                              <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-300">www</td>
-                              <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-300">app.elevatio.app</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                        Depois de salvar os apontamentos, aguarde a propagação e use o botão de verificação para acompanhar o processo.
-                      </p>
-                    </div>
-                  </div>
                 </div>
               )}
 
-              {companyDomainType === 'new' && (
-                <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-900/40 dark:bg-sky-950/20">
-                  <h4 className="text-sm font-bold text-sky-900 dark:text-sky-300">
-                    Novo domínio em processo de configuração
-                  </h4>
-                  <p className="mt-1 text-xs text-sky-800 dark:text-sky-200/80">
-                    Como este domínio foi solicitado pelo fluxo de compra, o sistema mantém o status como pendente até a configuração e a propagação terminarem.
+              {company.domain_secondary && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Domínio Secundário</p>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${secondaryDomainStatusMeta.badgeClassName}`}>
+                      {secondaryDomainStatusMeta.badgeLabel}
+                    </span>
+                  </div>
+                  <p className="break-all text-sm font-black text-brand-600 dark:text-brand-400">
+                    {company.domain_secondary}
                   </p>
+                  {secondaryDomainStatusMeta.helperText && (
+                    <p className={secondaryDomainStatusMeta.helperClassName}>
+                      {secondaryDomainStatusMeta.helperIcon === 'alert' ? <Icons.AlertTriangle size={10} /> : <Icons.Clock size={10} />}
+                      {secondaryDomainStatusMeta.helperText}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
+
+            {!company.domain && (
+              <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-brand-100 bg-brand-50 p-4 dark:border-brand-900/20 dark:bg-brand-900/10">
+                <p className="text-xs font-medium text-brand-700 dark:text-brand-400">
+                  Você ainda não utiliza um domínio próprio (ex: www.suaimobiliaria.com.br).
+                </p>
+                <button className="text-xs font-bold text-brand-600 underline">
+                  Contratar agora
+                </button>
+              </div>
+            )}
+          </div>
           </div>
 
           )} {/* Fim do siteSubTab === 'templates' */}
