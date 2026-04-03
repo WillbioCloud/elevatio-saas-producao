@@ -32,6 +32,7 @@ type ClientCompany = {
   subdomain: string | null
   domain: string | null
   domain_secondary: string | null
+  plan_status: string | null
   domain_status: DomainStatus
   domain_secondary_status: DomainStatus
   manual_discount_value?: number | null
@@ -62,7 +63,7 @@ export default function Clients() {
     try {
       const { data, error } = await supabase
         .from('companies')
-        .select('id, name, document, phone, created_at, plan, active, subdomain, domain, domain_secondary, domain_status, domain_secondary_status')
+        .select('id, name, document, phone, created_at, plan, plan_status, active, subdomain, domain, domain_secondary, domain_status, domain_secondary_status')
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -163,7 +164,6 @@ export default function Clients() {
     )
   })
 
-  const selectedPlan = selectedClient ? PLANS.find((plan) => plan.id === selectedClient.plan) : null
   const hasPendingDomain = (client: ClientCompany | null | undefined) =>
     Boolean(
       client?.active && (
@@ -207,6 +207,23 @@ export default function Clients() {
     if (status === 'expired') return 'Expirado'
     if (status === 'idle') return 'Ocioso'
     return 'Pendente'
+  }
+
+  const getFinancialStatus = (status: string | null, isActive: boolean) => {
+    if (!isActive) return { label: 'Bloqueado', dot: 'bg-red-500', badge: 'bg-red-100 text-red-700 border-red-200' }
+    
+    switch (status) {
+      case 'active':
+        return { label: 'Pago (Ativo)', dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
+      case 'trial':
+        return { label: 'Em Teste (Trial)', dot: 'bg-blue-500', badge: 'bg-blue-100 text-blue-700 border-blue-200' }
+      case 'past_due':
+        return { label: 'Atrasado', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700 border-amber-200' }
+      case 'canceled':
+        return { label: 'Cancelado', dot: 'bg-slate-500', badge: 'bg-slate-100 text-slate-700 border-slate-200' }
+      default:
+        return { label: 'Aguardando Pagamento', dot: 'bg-slate-400', badge: 'bg-slate-100 text-slate-600 border-slate-200' }
+    }
   }
 
   return (
@@ -332,13 +349,14 @@ export default function Clients() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                      client.active
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                    }`}>
-                      {client.active ? 'Pago' : 'Pendente'}
-                    </span>
+                    {(() => {
+                      const status = getFinancialStatus(client.plan_status, client.active)
+                      return (
+                        <Badge variant="outline" className={`${status.badge} font-bold`}>
+                          {status.label}
+                        </Badge>
+                      )
+                    })()}
                   </TableCell>
                   <TableCell>
                     <Badge className={client.active ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200" : "bg-red-50 text-red-700 hover:bg-red-100 border-red-200"}>
@@ -473,22 +491,30 @@ export default function Clients() {
               <div>
                 <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Assinatura & Domínio</h4>
                 <div className="grid grid-cols-2 gap-3">
+                  {/* Status do Plano */}
                   <div className="col-span-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
                     <div>
                       <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Status Financeiro</p>
                       <div className="flex items-center gap-2">
-                        <span className="relative flex h-3 w-3">
-                          {selectedClient.active && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>}
-                          <span className={`relative inline-flex h-3 w-3 rounded-full ${selectedClient.active ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
-                        </span>
-                        <p className="text-sm font-black text-slate-700 dark:text-slate-200">
-                          {selectedClient.active ? 'Plano Ativo (Pago)' : 'Aguardando Pagamento'}
-                        </p>
+                        {(() => {
+                          const status = getFinancialStatus(selectedClient.plan_status, selectedClient.active)
+                          return (
+                            <>
+                              <span className="relative flex h-3 w-3">
+                                {status.label === 'Pago (Ativo)' && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>}
+                                <span className={`relative inline-flex h-3 w-3 rounded-full ${status.dot}`}></span>
+                              </span>
+                              <p className="text-sm font-black text-slate-700 dark:text-slate-200">
+                                {status.label}
+                              </p>
+                            </>
+                          )
+                        })()}
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Plano Atual</p>
-                      <p className="text-lg font-black text-[#1a56db] dark:text-brand-400">{selectedPlan?.name || selectedClient.plan || 'N/A'}</p>
+                      <p className="text-lg font-black text-[#1a56db] dark:text-brand-400">{selectedClient.plan || 'N/A'}</p>
                     </div>
                   </div>
 
