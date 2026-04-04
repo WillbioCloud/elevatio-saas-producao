@@ -12,6 +12,14 @@ type SetupWizardModalProps = {
 
 type DomainMode = 'novo' | 'sim';
 type DomainStatus = 'idle' | 'loading' | 'available' | 'taken' | 'error';
+type SaasTemplate = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  status: 'active' | 'construction' | 'exclusive';
+  exclusive_company_id: string | null;
+};
 
 const normalizePlanFromNav = (value: unknown): PlanType | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -52,6 +60,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [dbTemplates, setDbTemplates] = useState<SaasTemplate[]>([]);
 
   // Normaliza o nome do plano para evitar falhas na busca do banco de dados
   const initialPlanRaw =
@@ -91,6 +100,36 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
   });
   const [domainExtension, setDomainExtension] = useState('.com.br');
   const [domainStatus, setDomainStatus] = useState<DomainStatus>('idle');
+
+  useEffect(() => {
+    const fetchWizardTemplates = async () => {
+      const { data } = await supabase
+        .from('saas_templates')
+        .select('*')
+        .eq('status', 'active')
+        .order('created_at', { ascending: true });
+
+      if (data && data.length > 0) {
+        setDbTemplates(data as SaasTemplate[]);
+        setFormData((prev) => ({ ...prev, template: data[0].slug }));
+      }
+    };
+
+    fetchWizardTemplates();
+  }, []);
+
+  const getTemplateStyle = (slug: string) => {
+    switch (slug) {
+      case 'basico':
+        return { icon: Icons.LayoutTemplate, color: 'text-slate-600', bg: 'bg-slate-100' };
+      case 'modern':
+        return { icon: Icons.Sparkles, color: 'text-brand-600', bg: 'bg-brand-100' };
+      case 'luxury':
+        return { icon: Icons.Gem, color: 'text-purple-600', bg: 'bg-purple-100' };
+      default:
+        return { icon: Icons.LayoutTemplate, color: 'text-brand-600', bg: 'bg-brand-100' };
+    }
+  };
 
   const sanitizedProductionDomain = sanitizeNewDomainLabel(formData.domain) || 'minhacorretora';
   const normalizedExistingDomain = sanitizeExistingDomain(formData.domain);
@@ -544,73 +583,35 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                   Visual do Site
                 </h3>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <label
-                    className={`relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-all ${
-                      formData.template === 'minimalist'
-                        ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-100'
-                        : 'border-slate-200 bg-white hover:border-slate-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="template"
-                      className="hidden"
-                      value="minimalist"
-                      checked={formData.template === 'minimalist'}
-                      onChange={(e) => setFormData({ ...formData, template: e.target.value })}
-                    />
-                    <div className="mb-1 font-bold text-slate-900">Minimalista</div>
-                    <p className="text-xs text-slate-500">
-                      Design limpo, claro e focado nos imoveis.
-                    </p>
-                  </label>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  {dbTemplates.map((t) => {
+                    const style = getTemplateStyle(t.slug);
+                    const Icon = style.icon;
 
-                  <label
-                    className={`relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-all ${
-                      formData.template === 'luxury'
-                        ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-100'
-                        : 'border-slate-200 bg-white hover:border-slate-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="template"
-                      className="hidden"
-                      value="luxury"
-                      checked={formData.template === 'luxury'}
-                      onChange={(e) => setFormData({ ...formData, template: e.target.value })}
-                    />
-                    <div className="mb-1 flex items-center gap-1 font-bold text-amber-400">
-                      Luxo <Icons.Crown size={14} />
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      Tons escuros e elegantes para alto padrao.
-                    </p>
-                  </label>
-
-                  <label
-                    className={`relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-all ${
-                      formData.template === 'modern'
-                        ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100'
-                        : 'border-slate-200 bg-white hover:border-slate-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="template"
-                      className="hidden"
-                      value="modern"
-                      checked={formData.template === 'modern'}
-                      onChange={(e) => setFormData({ ...formData, template: e.target.value })}
-                    />
-                    <div className="mb-1 flex items-center gap-1 font-bold text-blue-400">
-                      Moderno <Icons.Zap size={14} />
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      Layout arrojado, cantos arredondados e cores vivas.
-                    </p>
-                  </label>
+                    return (
+                      <button
+                        key={t.slug}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, template: t.slug })}
+                        className={`relative flex flex-col items-center rounded-xl border-2 p-4 text-center transition-all ${
+                          formData.template === t.slug
+                            ? 'border-brand-600 bg-brand-50 shadow-md'
+                            : 'border-slate-200 bg-white hover:border-brand-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        {formData.template === t.slug && (
+                          <div className="absolute -right-2 -top-2 rounded-full bg-brand-600 p-1 text-white shadow-sm">
+                            <CheckCircle className="h-4 w-4" />
+                          </div>
+                        )}
+                        <div className={`mb-3 rounded-full ${style.bg} p-3 ${style.color}`}>
+                          <Icon className="h-6 w-6" />
+                        </div>
+                        <h4 className="mb-1 text-sm font-bold text-slate-800">{t.name}</h4>
+                        <p className="text-xs text-slate-500">{t.description}</p>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">

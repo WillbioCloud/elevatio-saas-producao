@@ -54,6 +54,15 @@ type CheckoutCoupon = {
   value: number;
 };
 
+type SaasTemplate = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  status: 'active' | 'construction' | 'exclusive';
+  exclusive_company_id: string | null;
+};
+
 type CompanyDomainStatus = 'pending' | 'active' | 'error' | 'idle' | 'expired' | null;
 
 interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_secondary' | 'domain_status'> {
@@ -67,7 +76,7 @@ interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_sec
 type SitePartner = NonNullable<SiteData['partners']>[number];
 type TenantFinanceRecord = Pick<
   Company,
-  'id' | 'name' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type'
+  'id' | 'name' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template'
 > & {
   finance_config?: FinanceConfig | null;
 };
@@ -376,12 +385,14 @@ const AdminConfig: React.FC = () => {
     buyDomainCom: false
   });
   const [siteTemplate, setSiteTemplate] = useState('classic');
+  const [dbTemplates, setDbTemplates] = useState<SaasTemplate[]>([]);
   const [siteDomain, setSiteDomain] = useState('');
   const [savedSiteDomain, setSavedSiteDomain] = useState('');
   const [companySubdomain, setCompanySubdomain] = useState('');
   const [companyDomainType, setCompanyDomainType] = useState<'new' | 'existing' | null>(null);
   const [companyDomainStatus, setCompanyDomainStatus] = useState<CompanyDomainStatus>(null);
   const [isSavingSite, setIsSavingSite] = useState(false);
+  const [isUpdatingTemplate, setIsUpdatingTemplate] = useState(false);
   const [isBillingPortalOpen, setIsBillingPortalOpen] = useState(false);
   const { properties } = useProperties();
   const [isGeneratingXML, setIsGeneratingXML] = useState(false);
@@ -427,13 +438,17 @@ const AdminConfig: React.FC = () => {
 
   const company = useMemo(
     () => ({
+      id: tenant?.id || user?.company_id || null,
       subdomain: companySubdomain || tenant?.subdomain || null,
       domain: savedSiteDomain || tenant?.domain || null,
       domain_secondary: tenant?.domain_secondary || null,
       domain_status: companyDomainStatus ?? tenant?.domain_status ?? null,
       domain_secondary_status: tenant?.domain_secondary_status ?? null,
+      template: tenant?.template || null,
     }),
     [
+      tenant?.id,
+      user?.company_id,
       companySubdomain,
       savedSiteDomain,
       companyDomainStatus,
@@ -442,8 +457,68 @@ const AdminConfig: React.FC = () => {
       tenant?.domain_secondary,
       tenant?.domain_status,
       tenant?.domain_secondary_status,
+      tenant?.template,
     ]
   );
+
+  useEffect(() => {
+    if (!company?.id) return;
+
+    const fetchCrmTemplates = async () => {
+      const { data } = await supabase
+        .from('saas_templates')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (data) {
+        const allowed = (data as SaasTemplate[]).filter((t) =>
+          t.status === 'active' ||
+          t.slug === company.template ||
+          (t.status === 'exclusive' && t.exclusive_company_id === company.id)
+        );
+        setDbTemplates(allowed);
+      }
+    };
+
+    fetchCrmTemplates();
+  }, [company?.id, company?.template]);
+
+  const getTemplateStyle = (slug: string) => {
+    switch (slug) {
+      case 'basico':
+        return {
+          icon: Icons.LayoutTemplate,
+          color: 'text-slate-600',
+          bg: 'bg-slate-100',
+          bgDark: 'dark:bg-slate-900',
+          colorDark: 'dark:text-slate-400',
+        };
+      case 'modern':
+        return {
+          icon: Icons.Sparkles,
+          color: 'text-brand-600',
+          bg: 'bg-brand-100',
+          bgDark: 'dark:bg-brand-900/30',
+          colorDark: 'dark:text-brand-400',
+        };
+      case 'luxury':
+        return {
+          icon: Icons.Gem,
+          color: 'text-purple-600',
+          bg: 'bg-purple-100',
+          bgDark: 'dark:bg-purple-900/30',
+          colorDark: 'dark:text-purple-400',
+        };
+      default:
+        return {
+          icon: Icons.LayoutTemplate,
+          color: 'text-blue-600',
+          bg: 'bg-blue-100',
+          bgDark: 'dark:bg-blue-900/30',
+          colorDark: 'dark:text-blue-400',
+        };
+    }
+  };
 
   const primaryDomainStatusMeta = getDomainStatusMeta(company.domain_status);
   const secondaryDomainStatusMeta = getDomainStatusMeta(company.domain_secondary_status);
@@ -680,6 +755,7 @@ const AdminConfig: React.FC = () => {
         domain_type: (data.domain_type as 'new' | 'existing' | null | undefined) ?? null,
         domain_status: (data.domain_status as CompanyDomainStatus | undefined) ?? null,
         domain_secondary_status: (data.domain_secondary_status as CompanyDomainStatus | undefined) ?? null,
+        template: data.template || null,
         site_data: data.site_data || undefined,
         payment_api_key: data.payment_api_key || '',
         finance_config: parsedFinanceConfig || undefined,
@@ -1345,6 +1421,28 @@ const AdminConfig: React.FC = () => {
       alert('Erro ao cancelar: ' + error.message);
     } finally {
       setIsCanceling(false);
+    }
+  };
+
+  const handleTemplateChange = async (nextTemplate: string) => {
+    if (!company?.id || nextTemplate === company.template) return;
+
+    setIsUpdatingTemplate(true);
+    try {
+      const { error } = await supabase
+        .from('companies')
+        .update({ template: nextTemplate })
+        .eq('id', company.id);
+
+      if (error) throw error;
+
+      setSiteTemplate(nextTemplate);
+      setTenant((prev) => (prev ? { ...prev, template: nextTemplate } : prev));
+      addToast('Template atualizado com sucesso!', 'success');
+    } catch (error: any) {
+      addToast(`Erro ao atualizar template: ${error.message}`, 'error');
+    } finally {
+      setIsUpdatingTemplate(false);
     }
   };
 
@@ -2632,7 +2730,61 @@ const AdminConfig: React.FC = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {dbTemplates.map((t) => {
+                const style = getTemplateStyle(t.slug);
+                const Icon = style.icon;
+                const isActive = company?.template === t.slug;
+                const isExclusive = t.status === 'exclusive';
+
+                return (
+                  <div
+                    key={t.slug}
+                    className={`relative rounded-2xl border-2 p-5 transition-all ${
+                      isActive
+                        ? 'border-brand-600 bg-brand-50/50 dark:border-brand-500 dark:bg-brand-900/10'
+                        : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 hover:border-brand-200 dark:hover:border-brand-800'
+                    }`}
+                  >
+                    {isActive && (
+                      <div className="absolute top-4 right-4 text-brand-600 dark:text-brand-400">
+                        <CheckCircle2 size={24} className="fill-brand-100 dark:fill-brand-900/50" />
+                      </div>
+                    )}
+
+                    {isExclusive && (
+                      <div className={`absolute top-4 rounded bg-purple-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-purple-600 ${isActive ? 'left-4' : 'right-4'} flex items-center gap-1`}>
+                        <Icons.Lock size={10} /> VIP
+                      </div>
+                    )}
+
+                    <div className={`mb-4 w-fit rounded-xl ${style.bg} ${style.bgDark} p-3 ${style.color} ${style.colorDark}`}>
+                      <Icon size={24} />
+                    </div>
+
+                    <h4 className="mb-1 text-lg font-bold text-slate-800 dark:text-white">{t.name}</h4>
+                    <p className="mb-6 min-h-[40px] text-sm text-slate-500 dark:text-slate-400">
+                      {t.description}
+                    </p>
+
+                    <button
+                      onClick={() => handleTemplateChange(t.slug)}
+                      disabled={isActive || isUpdatingTemplate}
+                      className={`w-full rounded-xl py-2.5 text-sm font-bold transition-all ${
+                        isActive
+                          ? 'cursor-default bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400'
+                          : 'bg-slate-100 text-slate-700 hover:bg-brand-600 hover:text-white dark:bg-white/5 dark:text-slate-300 dark:hover:bg-brand-600 dark:hover:text-white'
+                      }`}
+                    >
+                      {isActive ? 'Template Atual' : 'Usar este Template'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {false && (
+              <>
+                <div>
               {/* Opção Minimalist (O antigo Classic limpo) */}
               <div
                 onClick={() => setSiteTemplate('minimalist')}
@@ -2766,6 +2918,8 @@ const AdminConfig: React.FC = () => {
                 </div>
               </div>
             </div>
+              </>
+            )}
           </div>
 
           {/* SEÇÃO 2: Domínio Customizado */}

@@ -114,6 +114,7 @@ import {
   Gift,
   Rocket,
   Crown,
+  Gem,
   Building2,
   Zap,
   Package,
@@ -286,6 +287,7 @@ export const Icons = {
   // NOVOS ÍCONES DO SAAS PLANS:
   Rocket,
   Crown,
+  Gem,
   Building2,
   Zap,
   Package,
