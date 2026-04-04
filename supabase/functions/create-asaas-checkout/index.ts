@@ -40,19 +40,49 @@ const buildSubscriptionDiscount = (coupon: Record<string, any> | null, baseValue
   return null
 }
 
-const incrementCouponUsage = async (supabaseAdmin: ReturnType<typeof createClient>, coupon: Record<string, any>) => {
-  const nextUsageCount = Number(coupon.used_count ?? coupon.current_usages ?? 0) + 1
+const incrementCouponUsage = async (supabaseAdmin: ReturnType<typeof createClient>, couponId: string) => {
+  const { data: couponData, error: couponError } = await supabaseAdmin
+    .from('saas_coupons')
+    .select('current_uses, current_usages, used_count, max_uses, usage_limit')
+    .eq('id', couponId)
+    .single()
+
+  if (couponError) throw couponError
+  if (!couponData) return
+
+  const currentUses = Number(couponData.current_uses ?? couponData.current_usages ?? couponData.used_count ?? 0)
+  const maxUses = Number(couponData.max_uses ?? couponData.usage_limit ?? 0)
+  const newUses = currentUses + 1
+  const isActive = maxUses > 0 ? newUses < maxUses : true
 
   let { error } = await supabaseAdmin
     .from('saas_coupons')
-    .update({ used_count: nextUsageCount })
-    .eq('id', coupon.id)
+    .update({
+      current_uses: newUses,
+      active: isActive
+    })
+    .eq('id', couponId)
 
-  if (error && /used_count/i.test(error.message || '')) {
+  if (error && /current_uses/i.test(error.message || '')) {
     const fallback = await supabaseAdmin
       .from('saas_coupons')
-      .update({ current_usages: nextUsageCount })
-      .eq('id', coupon.id)
+      .update({
+        current_usages: newUses,
+        active: isActive
+      })
+      .eq('id', couponId)
+
+    error = fallback.error
+  }
+
+  if (error && /(current_usages|current_uses)/i.test(error.message || '')) {
+    const fallback = await supabaseAdmin
+      .from('saas_coupons')
+      .update({
+        used_count: newUses,
+        active: isActive
+      })
+      .eq('id', couponId)
 
     error = fallback.error
   }
@@ -249,20 +279,34 @@ serve(async (req) => {
       asaas_subscription_id: subData.id
     }
 
-    if (couponRecord?.id) {
-      companyUpdate.applied_coupon_id = couponRecord.id
-      companyUpdate.coupon_start_date = company.applied_coupon_id === couponRecord.id && company.coupon_start_date
-        ? company.coupon_start_date
-        : new Date().toISOString()
-    }
-
     await supabaseAdmin
       .from('companies')
       .update(companyUpdate)
       .eq('id', companyId)
 
-    if (couponRecord && company.applied_coupon_id !== couponRecord.id) {
-      await incrementCouponUsage(supabaseAdmin, couponRecord)
+    // Se a assinatura foi criada e tinha um cupom, registra o uso e vincula à empresa
+    if (couponId) {
+      // 1. Vincula o cupom à imobiliária
+      await supabaseAdmin
+        .from('companies')
+        .update({
+          applied_coupon_id: couponId,
+          coupon_start_date: new Date().toISOString()
+        })
+        .eq('id', companyId)
+
+      // 2. Busca o cupom para incrementar o uso
+      await incrementCouponUsage(supabaseAdmin, couponId)
+    } else if (couponRecord?.id) {
+      await supabaseAdmin
+        .from('companies')
+        .update({
+          applied_coupon_id: couponRecord.id,
+          coupon_start_date: new Date().toISOString()
+        })
+        .eq('id', companyId)
+
+      await incrementCouponUsage(supabaseAdmin, couponRecord.id)
     }
 
     return new Response(

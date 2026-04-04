@@ -1,134 +1,146 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Icons } from '../../components/Icons';
-import { templatesList, type TemplateStatus } from '../../templates/templateRegistry';
+import { supabase } from '../../lib/supabase';
 
-const statusConfig: Record<
-  TemplateStatus,
-  {
-    label: string;
-    chipClassName: string;
-    Icon: typeof Icons.CheckCircle2;
-  }
-> = {
-  disponivel: {
-    label: 'Ativo',
-    chipClassName:
-      'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400',
-    Icon: Icons.CheckCircle2,
-  },
-  em_breve: {
-    label: 'Em breve',
-    chipClassName:
-      'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
-    Icon: Icons.Clock,
-  },
-  manutencao: {
-    label: 'Manutenção',
-    chipClassName: 'bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400',
-    Icon: Icons.AlertTriangle,
-  },
-};
+interface Template {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  status: 'active' | 'construction' | 'exclusive';
+  exclusive_company_id: string | null;
+}
 
 export default function SaasTemplates() {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const filteredTemplates = templatesList.filter(
-    (template) =>
-      template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      template.id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  useEffect(() => {
+    fetchTemplates();
+  }, []);
+
+  const fetchTemplates = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('saas_templates')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setTemplates(data || []);
+    } catch (err) {
+      console.error('Erro ao buscar templates:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleTemplateStatus = async (template: Template) => {
+    // Não permite alterar status de templates exclusivos por este botão rápido
+    if (template.status === 'exclusive') return;
+
+    const newStatus = template.status === 'active' ? 'construction' : 'active';
+    
+    // Atualização otimista na tela
+    setTemplates(prev => prev.map(t => t.id === template.id ? { ...t, status: newStatus } : t));
+
+    try {
+      const { error } = await supabase
+        .from('saas_templates')
+        .update({ status: newStatus })
+        .eq('id', template.id);
+
+      if (error) throw error;
+    } catch (err) {
+      console.error('Erro ao atualizar status:', err);
+      // Reverte em caso de erro
+      fetchTemplates();
+    }
+  };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+    <div className="font-['DM_Sans'] animate-in fade-in duration-300">
+      <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black text-slate-800 dark:text-white">
-            Gestão de Templates
-          </h1>
-          <p className="mt-1 text-slate-500 dark:text-slate-400">
-            Controle os temas disponíveis para as imobiliárias do SaaS.
-          </p>
+          <h1 className="text-3xl font-black text-slate-800 dark:text-white">Templates de Sites</h1>
+          <p className="mt-1 text-slate-500">Controle a disponibilidade dos temas no Wizard dos clientes.</p>
         </div>
-
-        <div className="relative w-full sm:w-auto">
-          <Icons.Search
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            size={18}
-          />
-          <input
-            type="text"
-            placeholder="Buscar template..."
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-4 focus:ring-2 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 sm:w-64"
-          />
-        </div>
+        <button className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-brand-500 transition-colors">
+          <Icons.Plus size={16} /> Novo Template
+        </button>
       </div>
 
-      {filteredTemplates.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 px-6 py-16 text-center dark:border-slate-700 dark:bg-slate-900/60">
-          <Icons.Search size={28} className="mx-auto text-slate-300 dark:text-slate-600" />
-          <h2 className="mt-4 text-lg font-bold text-slate-800 dark:text-white">
-            Nenhum template encontrado
-          </h2>
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-            Ajuste a busca para encontrar um tema pelo nome ou ID técnico.
-          </p>
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-[24px] border border-slate-200">
+          <Icons.Loader2 className="w-10 h-10 text-[#1a56db] animate-spin mb-4" />
+          <p className="font-bold text-slate-700">Carregando catálogo...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredTemplates.map((template) => {
-            const status = statusConfig[template.status];
-
-            return (
-              <div
-                key={template.id}
-                className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-800"
-              >
-                <div className="group relative flex aspect-video items-center justify-center border-b border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900">
-                  <Icons.Layout
-                    size={48}
-                    className="text-slate-300 transition-transform group-hover:scale-110 dark:text-slate-700"
-                  />
-                  <div className="absolute inset-0 bg-brand-600/0 transition-colors group-hover:bg-brand-600/10" />
-                </div>
-
-                <div className="p-5">
-                  <div className="mb-2 flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-bold text-slate-800 dark:text-white">{template.name}</h3>
-                      <code className="rounded bg-brand-50 px-2 py-0.5 text-xs text-brand-600 dark:bg-brand-900/30 dark:text-brand-400">
-                        ID: {template.id}
-                      </code>
-                    </div>
-
-                    <div
-                      className={`flex items-center gap-1 rounded px-2 py-1 text-xs font-medium ${status.chipClassName}`}
-                    >
-                      <status.Icon size={14} />
-                      {status.label}
-                    </div>
-                  </div>
-
-                  <p className="mt-3 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">
-                    {template.description || 'Template otimizado para alta conversão.'}
-                  </p>
-
-                  <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 dark:border-slate-700">
-                    <span className="text-xs font-medium text-slate-500">
-                      {template.id === 'modern' ? 'Padrão do Sistema' : 'Template Premium'}
-                    </span>
-                    <button
-                      type="button"
-                      className="flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
-                    >
-                      <Icons.Settings size={16} /> Configurar
-                    </button>
-                  </div>
-                </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {templates.map((template) => (
+            <div key={template.id} className="relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm overflow-hidden flex flex-col group">
+              
+              {/* Badge de Status */}
+              <div className="absolute top-5 right-5 z-10">
+                {template.status === 'active' && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Disponível
+                  </span>
+                )}
+                {template.status === 'construction' && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-700">
+                    <Icons.Wrench size={10} /> Em Construção
+                  </span>
+                )}
+                {template.status === 'exclusive' && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 px-2.5 py-1 text-[10px] font-bold text-purple-700">
+                    <Icons.Lock size={10} /> Exclusivo
+                  </span>
+                )}
               </div>
-            );
-          })}
+
+              {/* Preview (Placeholder) */}
+              <div className="h-40 w-full rounded-xl bg-slate-100 mb-4 flex items-center justify-center border border-slate-200 group-hover:border-brand-200 transition-colors">
+                <Icons.LayoutTemplate size={40} className="text-slate-300 group-hover:text-brand-300 transition-colors" />
+              </div>
+
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="text-lg font-black text-slate-800">{template.name}</h3>
+                  <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">/{template.slug}</span>
+                </div>
+                <p className="text-sm text-slate-500 mb-6">{template.description}</p>
+              </div>
+
+              {/* Ações */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                <button 
+                  onClick={() => toggleTemplateStatus(template)}
+                  disabled={template.status === 'exclusive'}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+                    template.status === 'active' 
+                      ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' 
+                      : template.status === 'construction'
+                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      : 'bg-slate-50 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  {template.status === 'active' ? (
+                    <><Icons.EyeOff size={14} /> Ocultar do Wizard</>
+                  ) : template.status === 'construction' ? (
+                    <><Icons.Eye size={14} /> Liberar no Wizard</>
+                  ) : (
+                    <><Icons.Lock size={14} /> Cliente VIP</>
+                  )}
+                </button>
+
+                <button className="text-slate-400 hover:text-brand-600 transition-colors p-2 rounded-lg hover:bg-brand-50">
+                  <Icons.Settings size={18} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
