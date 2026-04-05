@@ -41,6 +41,12 @@ const ModernAbout = React.lazy(() => import('./modern/pages/About'));
 const ModernServices = React.lazy(() => import('./modern/pages/Services'));
 const ModernFinanciamentos = React.lazy(() => import('./modern/pages/Financiamentos'));
 
+// Draft Modern (V2)
+const DraftModernLayout = React.lazy(() => import('./draft_modern/ModernLayout'));
+const DraftModernHome = React.lazy(() => import('./draft_modern/pages/Home'));
+const DraftModernProperties = React.lazy(() => import('./draft_modern/pages/ModernProperties'));
+const DraftModernPropertyDetail = React.lazy(() => import('./draft_modern/pages/ModernPropertyDetail'));
+
 const TemplateLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-[#0e0e0e]">
     <div className="w-8 h-8 border-4 border-neutral-800 border-t-white rounded-full animate-spin"></div>
@@ -102,6 +108,7 @@ export default function TenantRouter(_props: TenantRouterProps) {
     safeTemplateId === 'basico' ? BasicoLayout :
     safeTemplateId === 'classic' ? ClassicLayout :
     safeTemplateId === 'minimalist' ? MinimalistLayout :
+    safeTemplateId === 'draft_modern' ? DraftModernLayout :
     ModernLayout;
 
   const Home =
@@ -109,18 +116,21 @@ export default function TenantRouter(_props: TenantRouterProps) {
     safeTemplateId === 'basico' ? BasicoHome :
     safeTemplateId === 'classic' ? ClassicHome :
     safeTemplateId === 'minimalist' ? MinimalistHome :
+    safeTemplateId === 'draft_modern' ? DraftModernHome :
     ModernHome;
 
   const PropertiesPage =
     safeTemplateId === 'luxury' ? LuxuryProperties :
     safeTemplateId === 'basico' ? BasicoProperties :
     safeTemplateId === 'classic' ? ClassicProperties :
+    safeTemplateId === 'draft_modern' ? DraftModernProperties :
     ModernProperties;
 
   const PropertyDetailPage =
     safeTemplateId === 'luxury' ? LuxuryPropertyDetail :
     safeTemplateId === 'basico' ? BasicoPropertyDetail :
     safeTemplateId === 'classic' ? ClassicPropertyDetail :
+    safeTemplateId === 'draft_modern' ? DraftModernPropertyDetail :
     ModernPropertyDetail;
 
   const AboutPage =

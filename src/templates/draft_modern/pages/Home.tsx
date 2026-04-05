@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTenant } from '../../../contexts/TenantContext';
 import { supabase } from '../../../lib/supabase';
-import ModernPropertyCard, { ModernProperty } from '../../../templates/modern/components/ModernPropertyCard';
+import ModernPropertyCard, { ModernProperty } from '../../../templates/draft_modern/components/ModernPropertyCard';
 
 // ─── Dados estáticos ───────────────────────────────────────────
 const SERVICES = [

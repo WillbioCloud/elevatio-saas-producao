@@ -20,6 +20,13 @@ export default function SaasTemplates() {
   // Estados da Gaveta de Edição
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
+  const [newTemplate, setNewTemplate] = useState({
+    name: '',
+    slug: '',
+    description: '',
+    status: 'construction' as const
+  });
 
   useEffect(() => {
     fetchTemplates();
@@ -105,6 +112,38 @@ export default function SaasTemplates() {
     }
   };
 
+  const handleCreateTemplate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+
+    try {
+      // Sanitiza o slug: minusculas, sem espacos, sem caracteres especiais
+      const cleanSlug = newTemplate.slug
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/[^\w-]+/g, '');
+
+      const { error } = await supabase
+        .from('saas_templates')
+        .insert([{
+          ...newTemplate,
+          slug: cleanSlug
+        }]);
+
+      if (error) throw error;
+
+      await fetchTemplates();
+      setIsCreateDrawerOpen(false);
+      setNewTemplate({ name: '', slug: '', description: '', status: 'construction' });
+    } catch (error: any) {
+      console.error('Erro ao criar template:', error);
+      alert('Erro ao criar template. Verifique se o slug ja nao existe.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="font-['DM_Sans'] animate-in fade-in duration-300">
       <div className="mb-8 flex items-center justify-between">
@@ -112,7 +151,10 @@ export default function SaasTemplates() {
           <h1 className="text-3xl font-black text-slate-800 dark:text-white">Templates de Sites</h1>
           <p className="mt-1 text-slate-500">Controle a disponibilidade dos temas no Wizard e no Painel dos clientes.</p>
         </div>
-        <button className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-brand-500 transition-colors">
+        <button 
+          onClick={() => setIsCreateDrawerOpen(true)}
+          className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-brand-500 transition-colors"
+        >
           <Icons.Plus size={16} /> Novo Template
         </button>
       </div>
@@ -192,6 +234,38 @@ export default function SaasTemplates() {
       )}
 
       {/* GAVETA DE CONFIGURAÇÃO (PORTAL) */}
+      {isCreateDrawerOpen && createPortal(
+        <div className="fixed inset-0 z-[99999] flex justify-end font-['DM_Sans']">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !isSaving && setIsCreateDrawerOpen(false)} />
+          <div className="relative w-full max-w-md h-screen bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50">
+              <h2 className="text-lg font-black text-slate-800">Novo Template</h2>
+              <button onClick={() => setIsCreateDrawerOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><Icons.X size={20} /></button>
+            </div>
+            <form onSubmit={handleCreateTemplate} className="flex-1 p-6 space-y-6 flex flex-col">
+              <div className="space-y-4 flex-1">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Nome do Template</label>
+                  <input type="text" required value={newTemplate.name} onChange={e => setNewTemplate({...newTemplate, name: e.target.value})} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold" placeholder="Ex: Moderno V2" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Slug (Identificador no cÃ³digo)</label>
+                  <input type="text" required value={newTemplate.slug} onChange={e => setNewTemplate({...newTemplate, slug: e.target.value})} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-mono" placeholder="ex: moderno-v2" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">DescriÃ§Ã£o</label>
+                  <textarea required value={newTemplate.description} onChange={e => setNewTemplate({...newTemplate, description: e.target.value})} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm h-24 resize-none" placeholder="Descreva as caracterÃ­sticas..." />
+                </div>
+              </div>
+              <button type="submit" disabled={isSaving} className="w-full flex items-center justify-center gap-2 rounded-xl bg-brand-600 py-4 text-sm font-bold text-white shadow-md hover:bg-brand-700 disabled:opacity-70">
+                {isSaving ? <Icons.Loader2 className="animate-spin" size={18} /> : <Icons.Save size={18} />} Salvar Template no CatÃ¡logo
+              </button>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {editingTemplate && createPortal(
         <div className="fixed inset-0 z-[99999] flex justify-end font-['DM_Sans']">
           <div 

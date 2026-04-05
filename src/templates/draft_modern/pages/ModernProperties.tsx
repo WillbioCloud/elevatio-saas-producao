@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTenant } from '../../../contexts/TenantContext';
 import { supabase } from '../../../lib/supabase';
-import ModernPropertyCard, { ModernProperty } from '../../../templates/modern/components/ModernPropertyCard';
+import ModernPropertyCard, { ModernProperty } from '../../../templates/draft_modern/components/ModernPropertyCard';
 
 const TYPES = ['Apartamento', 'Casa', 'Cobertura', 'Terreno', 'Comercial', 'Sítio'];
 const PAGE_SIZE = 12;
