@@ -104,11 +104,11 @@ const DroppableColumn = ({
         >
           <div
             className={`w-2 h-2 rounded-full ${
-              title === 'Novo'
+              title.toLowerCase().includes('aguardando') || title === 'Aguardando Atendimento'
                 ? 'bg-blue-500'
-                : title === 'Em Contato'
+                : title === 'Em Contato' || title === 'Tentando contato'
                 ? 'bg-amber-500'
-                : title === 'Fechado'
+                : title === 'Fechado' || title === 'Venda Fechada'
                 ? 'bg-emerald-500'
                 : 'bg-slate-400'
             }`}
@@ -469,11 +469,20 @@ const AdminLeads: React.FC = () => {
         (assigneesData || []).forEach((a: any) => assigneesMap.set(a.id, a));
       }
 
-      const formattedLeads = (leadsData || []).map((lead: any) => ({
-        ...lead,
-        property: propertiesMap.get(lead.property_id || lead.propertyId),
-        assignee: assigneesMap.get(lead.assigned_to)
-      }));
+      const formattedLeads = (leadsData || []).map((lead: any) => {
+        // Normaliza leads que entram de integrações/site com status "Novo" ou vazio para o padrão correto do CRM
+        let status = lead.status;
+        if (!status || status === 'Novo') {
+          status = 'Aguardando Atendimento';
+        }
+
+        return {
+          ...lead,
+          status,
+          property: propertiesMap.get(lead.property_id || lead.propertyId),
+          assignee: assigneesMap.get(lead.assigned_to)
+        };
+      });
 
       setLeads(formattedLeads as Lead[]);
     } catch (error) {
@@ -566,7 +575,7 @@ const AdminLeads: React.FC = () => {
 
     if (lead && (isMasterView || lead.status !== newStatus)) {
       const newFunnel = isMasterView ? newStatus : effectiveFunnel;
-      const targetStatus = isMasterView ? kanbanConfig[newFunnel]?.[0] || 'Novo' : newStatus;
+      const targetStatus = isMasterView ? kanbanConfig[newFunnel]?.[0] || 'Aguardando Atendimento' : newStatus;
 
       if (isAdmin && lead.funnel_step === 'pre_atendimento' && newFunnel !== 'pre_atendimento') {
         setTransferModal({ isOpen: true, lead, newFunnel, newStatus: targetStatus });

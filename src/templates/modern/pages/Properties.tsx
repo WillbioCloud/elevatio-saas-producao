@@ -173,11 +173,13 @@ const Properties: React.FC = () => {
   }, [currentCity, currentNeighborhood, currentType, currentFeatured, listingType, searchQuery]);
 
   useEffect(() => {
-    if (totalPages === 0 && currentPage !== 1) {
-      setCurrentPage(1);
+    // Se não houver páginas (ex: carregando ou sem resultados), trava na página 1
+    if (totalPages === 0) {
+      if (currentPage !== 1) setCurrentPage(1);
       return;
     }
 
+    // Só reajusta se houver páginas e a atual for maior que o limite
     if (currentPage > totalPages) {
       setCurrentPage(totalPages);
     }

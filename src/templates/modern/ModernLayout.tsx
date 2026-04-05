@@ -96,39 +96,6 @@ const ModernLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col font-sans text-gray-800 bg-gray-50">
-      <div className="bg-slate-900 text-white py-2 text-xs md:text-sm">
-        <div className="container mx-auto px-4 flex justify-between items-center gap-4">
-          <div className="flex items-center gap-4">
-            {saleWhatsappLink ? (
-              <a
-                href={saleWhatsappLink}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 hover:text-amber-400 transition-colors"
-              >
-                <Icons.House size={14} />
-                Venda seu Imóvel Conosco
-              </a>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsContactModalOpen(true)}
-                className="flex items-center gap-1 hover:text-amber-400 transition-colors"
-              >
-                <Icons.House size={14} />
-                Venda seu Imóvel Conosco
-              </button>
-            )}
-          </div>
-
-          <div className="hidden md:flex gap-4 items-center">
-            {contactPhone && <span>{contactPhone}</span>}
-            <Link to="/admin/login" className="hover:text-amber-400 transition-colors">
-              Área do Corretor
-            </Link>
-          </div>
-        </div>
-      </div>
 
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center gap-4">

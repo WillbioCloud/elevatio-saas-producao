@@ -44,7 +44,7 @@ export default function SimilarProperties({
           .select('*, profiles(name, phone, email)')
           .eq('company_id', tenant.id)
           .eq('listing_type', listingType)
-          .eq('is_available', true)
+          .eq('status', 'Disponível') // Substituímos is_available por status
           .neq('id', currentPropertyId)
           .limit(10); // Busca até 10 para ranquear por localidade no front
 

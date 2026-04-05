@@ -236,7 +236,7 @@ const PropertyDetail: React.FC = () => {
         email: contactForm.email || null,
         phone: contactForm.phone,
         message: contactForm.message || 'Tenho interesse neste imóvel.',
-        status: 'novo',
+        status: 'Aguardando Atendimento',
         source: 'Site Público',
       });
 
