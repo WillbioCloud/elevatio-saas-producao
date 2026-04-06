@@ -90,7 +90,12 @@ const AdminContractDetails: React.FC = () => {
     
     let contractQuery = supabase
       .from('contracts')
-      .select('*, lead:leads(name, phone, email), property:properties(title), broker:profiles(name)')
+      .select(`
+        *,
+        lead:leads!contracts_lead_id_fkey(*),
+        property:properties(*),
+        broker:profiles!contracts_broker_id_fkey(*)
+      `)
       .eq('id', id);
     
     // Multi-Tenant: Filtra por company_id se não for admin

@@ -140,6 +140,7 @@ import {
   Ticket,
   BadgeCheck,
   ArrowUpAZ,
+  PenTool,
 } from 'lucide-react';
 
 const Google = (props: ComponentPropsWithoutRef<'svg'>) => (
@@ -312,5 +313,6 @@ export const Icons = {
   Percent,
   Ticket,
   BadgeCheck,
+  PenTool,
   SortAsc: ArrowUpAZ,
 };

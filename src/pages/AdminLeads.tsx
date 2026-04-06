@@ -8,7 +8,7 @@ import { useToast } from '../contexts/ToastContext';
 import { TOOLTIPS } from '../constants/tooltips';
 import Loading from '../components/Loading';
 import { addXp } from '../services/gamification';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -265,6 +265,7 @@ const DraggableCardWrapper = ({
 const AdminLeads: React.FC = () => {
   const { user } = useAuth();
   const { addToast } = useToast();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentFunnel = searchParams.get('funnel') || 'atendimento';
   const isAdmin = (user as any)?.role === 'admin';
@@ -708,6 +709,8 @@ const AdminLeads: React.FC = () => {
 
     setSavingClosing(true);
     try {
+      const closedLeadId = closingLead.id;
+
       // 1. Atualizar o Lead para Venda Fechada
       const { error: leadError } = await supabase.from('leads').update({
         status: 'Fechado',
@@ -741,6 +744,7 @@ const AdminLeads: React.FC = () => {
       setIsCustomValue(false);
       fetchLeads();
       fetchAvailableProperties();
+      navigate(`/admin/clientes?editLeadId=${closedLeadId}`);
     } catch (error) {
       console.error('Erro ao fechar venda:', error);
       addToast('Erro ao processar o fechamento da venda.', 'error');

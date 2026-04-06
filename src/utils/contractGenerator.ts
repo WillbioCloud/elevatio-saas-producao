@@ -16,7 +16,142 @@ const fetchImageAsBase64PNG = (url: string): Promise<string> => {
   });
 };
 
-export const generateContract = async (type: string, data: any, tenant: any, company_logo?: string, broker_name?: string, broker_document?: string, broker_creci?: string, company_name?: string, customTemplateContent?: string) => {
+const parseCurrencyNumber = (value: unknown): number => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value
+      .trim()
+      .replace(/\s/g, '')
+      .replace(/[R$r$]/g, '')
+      .replace(/\.(?=\d{3}(\D|$))/g, '')
+      .replace(',', '.')
+      .replace(/[^\d.-]/g, '');
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+};
+
+const joinPtBr = (parts: string[]) => {
+  const filtered = parts.filter(Boolean);
+  if (filtered.length <= 1) return filtered[0] || '';
+  return `${filtered.slice(0, -1).join(', ')} e ${filtered[filtered.length - 1]}`;
+};
+
+const numberToWordsPtBr = (value: number): string => {
+  const safeValue = Math.floor(Math.abs(value));
+  if (safeValue === 0) return 'zero';
+
+  const units = ['zero', 'um', 'dois', 'tres', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
+  const teens = ['dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+  const tens = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+  const hundreds = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+  const scales = [
+    { singular: '', plural: '' },
+    { singular: 'mil', plural: 'mil' },
+    { singular: 'milhao', plural: 'milhoes' },
+    { singular: 'bilhao', plural: 'bilhoes' },
+    { singular: 'trilhao', plural: 'trilhoes' },
+  ];
+
+  const convertHundreds = (chunk: number): string => {
+    if (chunk === 0) return '';
+    if (chunk === 100) return 'cem';
+
+    const parts: string[] = [];
+    const hundred = Math.floor(chunk / 100);
+    const remainder = chunk % 100;
+
+    if (hundred > 0) {
+      parts.push(hundreds[hundred]);
+    }
+
+    if (remainder > 0) {
+      if (remainder < 10) {
+        parts.push(units[remainder]);
+      } else if (remainder < 20) {
+        parts.push(teens[remainder - 10]);
+      } else {
+        const ten = Math.floor(remainder / 10);
+        const unit = remainder % 10;
+        parts.push(unit ? `${tens[ten]} e ${units[unit]}` : tens[ten]);
+      }
+    }
+
+    return parts.join(' e ');
+  };
+
+  const chunks: number[] = [];
+  let remaining = safeValue;
+
+  while (remaining > 0) {
+    chunks.unshift(remaining % 1000);
+    remaining = Math.floor(remaining / 1000);
+  }
+
+  const parts = chunks.reduce<string[]>((acc, chunk, index) => {
+    if (!chunk) return acc;
+
+    const scaleIndex = chunks.length - 1 - index;
+    const chunkText = convertHundreds(chunk);
+
+    if (scaleIndex === 0) {
+      acc.push(chunkText);
+      return acc;
+    }
+
+    if (scaleIndex === 1) {
+      acc.push(chunk === 1 ? 'mil' : `${chunkText} mil`);
+      return acc;
+    }
+
+    const scale = scales[scaleIndex] || scales[scales.length - 1];
+    acc.push(`${chunk === 1 ? 'um' : chunkText} ${chunk === 1 ? scale.singular : scale.plural}`);
+    return acc;
+  }, []);
+
+  return joinPtBr(parts);
+};
+
+const currencyToWordsPtBr = (value: unknown): string => {
+  const amount = parseCurrencyNumber(value);
+
+  if (!amount) {
+    return 'zero real';
+  }
+
+  const integerPart = Math.floor(amount);
+  const centsPart = Math.round((amount - integerPart) * 100);
+  const textParts: string[] = [];
+
+  if (integerPart > 0) {
+    textParts.push(`${numberToWordsPtBr(integerPart)} ${integerPart === 1 ? 'real' : 'reais'}`);
+  }
+
+  if (centsPart > 0) {
+    textParts.push(`${numberToWordsPtBr(centsPart)} ${centsPart === 1 ? 'centavo' : 'centavos'}`);
+  }
+
+  return joinPtBr(textParts);
+};
+
+const formatLongDatePtBr = (value: string | Date) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '___ de __________ de _____';
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+};
+
+export const buildContractHtml = async (type: string, data: any, tenant: any, company_logo?: string, broker_name?: string, broker_document?: string, broker_creci?: string, company_name?: string, customTemplateContent?: string) => {
   // Converte a logo para Base64/PNG para evitar CORS e incompatibilidade de formato
   let logoSrc = tenant?.logo_url || '/img/Logo-contrato.png';
   const logoToConvert = company_logo || tenant?.logo_url;
@@ -29,11 +164,14 @@ export const generateContract = async (type: string, data: any, tenant: any, com
     }
   }
 
-  // Configuração da janela de impressão
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    alert('Por favor, permita os pop-ups para gerar o contrato.');
-    return;
+  let adminSignatureSrc = '';
+  if (tenant?.admin_signature_url) {
+    try {
+      adminSignatureSrc = await fetchImageAsBase64PNG(tenant.admin_signature_url);
+    } catch (e) {
+      console.warn('Erro ao converter assinatura, usando URL original', e);
+      adminSignatureSrc = tenant.admin_signature_url;
+    }
   }
 
   // Estilos CSS para simular uma folha A4 e formatação jurídica
@@ -118,6 +256,24 @@ export const generateContract = async (type: string, data: any, tenant: any, com
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 40px;
+    }
+
+    .signature-block {
+      margin-top: 40px;
+      page-break-inside: avoid;
+      text-align: center;
+    }
+
+    .signature-block .signature-line {
+      margin-top: 6px;
+    }
+
+    .signature-image {
+      display: block;
+      max-height: 72px;
+      max-width: 220px;
+      margin: 0 auto;
+      object-fit: contain;
     }
     
     .signature-line {
@@ -211,13 +367,23 @@ export const generateContract = async (type: string, data: any, tenant: any, com
   }
   const companyPhone = siteData.contact_phone || tenant?.phone || '________________';
   const companyEmail = siteData.contact_email || (tenant?.subdomain ? `contato@${tenant.subdomain}.com.br` : '________________');
+  const propertyAddress =
+    data.property_address ||
+    `${data.property?.street || '_________________'}, ${data.property?.number || 's/n'} - ${data.property?.neighborhood || '_________________'}, ${data.property?.city || '________'}/${data.property?.state || '___'}`;
+  const dealValue = data.sale_total_value || data.total_value || data.rent_value || 0;
+  const adminSignatureMarkup = adminSignatureSrc
+    ? `<img src="${adminSignatureSrc}" alt="Assinatura da imobiliaria" class="signature-image" />`
+    : '';
 
   // Bloco HTML reutilizável para a assinatura do intermediador
   const brokerSignature = (label: string) => `
-        <div class="signature-line">
-          <strong>${brokerDisplayName}</strong><br/>
-          ${brokerDisplayDoc}${brokerDisplayCreci ? `<br/>${brokerDisplayCreci}` : ''}<br/>
-          ${label}
+        <div class="signature-block">
+          ${adminSignatureMarkup}
+          <div class="signature-line">
+            <strong>${brokerDisplayName}</strong><br/>
+            ${brokerDisplayDoc}${brokerDisplayCreci ? `<br/>${brokerDisplayCreci}` : ''}<br/>
+            ${label}
+          </div>
         </div>`;
 
   // Conteúdo dinâmico dependendo do tipo de contrato
@@ -225,18 +391,22 @@ export const generateContract = async (type: string, data: any, tenant: any, com
 
   // LÓGICA DO CONTRATO CUSTOMIZADO (ENGINE DE SHORTCODES)
   if (type.startsWith('custom_') && customTemplateContent) {
-    const formatCurrency = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);
-    const formatDate = (dateStr: string) => dateStr ? new Date(dateStr).toLocaleDateString('pt-BR') : '___/___/_____';
+    const formatCurrency = (v: unknown) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parseCurrencyNumber(v));
+    const leaseDuration = data.lease_duration || data.installments_count || '____________________';
+    const dueDateLabel = data.due_day ? `dia ${data.due_day}` : '____________________';
 
     let parsedContent = customTemplateContent
       // DADOS DA IMOBILIÁRIA / CORRETOR
       .replace(/\{\{IMOBILIARIA_NOME\}\}/g, siteData.corporate_name || tenant?.name || '____________________')
+      .replace(/\{\{IMOBILIARIA_CNPJ\}\}/g, finalDocument || '____________________')
+      .replace(/\{\{IMOBILIARIA_ENDERECO\}\}/g, companyFullAddress)
+      .replace(/\{\{IMOBILIARIA_ASSINATURA\}\}/g, adminSignatureMarkup)
       .replace(/\{\{CORRETOR_NOME\}\}/g, brokerDisplayName)
       .replace(/\{\{CORRETOR_CPF\}\}/g, finalDocument || '____________________')
       .replace(/\{\{CORRETOR_CRECI\}\}/g, finalCreci || '____________________')
       // DADOS DO IMÓVEL
       .replace(/\{\{IMOVEL_TITULO\}\}/g, data.property?.title || '____________________')
-      .replace(/\{\{IMOVEL_ENDERECO\}\}/g, `${data.property?.street || '_________________'}, ${data.property?.number || 's/n'} - ${data.property?.neighborhood || '_________________'}, ${data.property?.city || '________'}/${data.property?.state || '___'}`)
+      .replace(/\{\{IMOVEL_ENDERECO\}\}/g, propertyAddress)
       .replace(/\{\{IMOVEL_MATRICULA\}\}/g, data.property?.registration_number || data.property?.iptu_number || '____________________')
       // DADOS DO LOCATÁRIO / COMPRADOR (CLIENTE PRINCIPAL)
       .replace(/\{\{LOCATARIO_NOME\}\}/g, data.tenant_name || data.buyer_name || data.lead?.name || '____________________')
@@ -254,8 +424,10 @@ export const generateContract = async (type: string, data: any, tenant: any, com
       .replace(/\{\{CLIENTE_NOME\}\}/g, data.tenant_name || data.buyer_name || data.lead?.name || '____________________')
       .replace(/\{\{CLIENTE_CPF\}\}/g, data.tenant_document || data.buyer_document || '____________________')
       .replace(/\{\{CLIENTE_RG\}\}/g, data.tenant_rg || data.buyer_rg || '____________________')
+      .replace(/\{\{CLIENTE_NACIONALIDADE\}\}/g, data.tenant_nationality || data.buyer_nationality || '____________________')
       .replace(/\{\{CLIENTE_PROFISSAO\}\}/g, data.tenant_profession || data.buyer_profession || 'Autônomo')
       .replace(/\{\{CLIENTE_ESTADO_CIVIL\}\}/g, data.tenant_marital_status || data.buyer_marital_status || '____________________')
+      .replace(/\{\{CLIENTE_ENDERECO\}\}/g, data.tenant_address || data.buyer_address || '____________________')
       .replace(/\{\{CLIENTE_EMAIL\}\}/g, data.lead?.email || '____________________')
       .replace(/\{\{CLIENTE_TELEFONE\}\}/g, data.lead?.phone || '____________________')
       // DADOS DO LOCADOR / PROPRIETÁRIO (VENDEDOR)
@@ -274,6 +446,7 @@ export const generateContract = async (type: string, data: any, tenant: any, com
       .replace(/\{\{PROPRIETARIO_RG\}\}/g, data.landlord_rg || data.seller_rg || '____________________')
       .replace(/\{\{PROPRIETARIO_PROFISSAO\}\}/g, data.landlord_profession || data.seller_profession || 'Autônomo')
       .replace(/\{\{PROPRIETARIO_ESTADO_CIVIL\}\}/g, data.landlord_marital_status || data.seller_marital_status || '____________________')
+      .replace(/\{\{PROPRIETARIO_ENDERECO\}\}/g, data.landlord_address || data.seller_address || '____________________')
       // DADOS DO FIADOR (SE HOUVER)
       .replace(/\{\{FIADOR_NOME\}\}/g, data.guarantor_name || '____________________')
       .replace(/\{\{FIADOR_CPF\}\}/g, data.guarantor_document || '____________________')
@@ -282,13 +455,17 @@ export const generateContract = async (type: string, data: any, tenant: any, com
       .replace(/\{\{FIADOR_ESTADO_CIVIL\}\}/g, data.guarantor_marital_status || '____________________')
       .replace(/\{\{FIADOR_ENDERECO\}\}/g, data.guarantor_address || '____________________')
       // VALORES E CONDIÇÕES
-      .replace(/\{\{VALOR_NEGOCIADO\}\}/g, formatCurrency(data.sale_total_value || data.rent_value))
+      .replace(/\{\{VALOR_NEGOCIADO\}\}/g, formatCurrency(dealValue))
+      .replace(/\{\{VALOR_TOTAL\}\}/g, formatCurrency(dealValue))
+      .replace(/\{\{VALOR_TOTAL_EXTENSO\}\}/g, currencyToWordsPtBr(dealValue))
       .replace(/\{\{VALOR_SINAL\}\}/g, formatCurrency(data.sale_down_payment))
       .replace(/\{\{VALOR_FINANCIAMENTO\}\}/g, formatCurrency(data.sale_financing_value))
       .replace(/\{\{VALOR_FGTS\}\}/g, formatCurrency(data.sale_consortium_value))
       .replace(/\{\{VALOR_PERMUTA\}\}/g, formatCurrency(data.permutation_value))
       .replace(/\{\{QTD_PARCELAS\}\}/g, data.installments_count || '0')
-      .replace(/\{\{DATA_ATUAL\}\}/g, formatDate(new Date().toISOString()));
+      .replace(/\{\{DATA_VENCIMENTO\}\}/g, dueDateLabel)
+      .replace(/\{\{PRAZO_MESES\}\}/g, String(leaseDuration))
+      .replace(/\{\{DATA_ATUAL\}\}/g, formatLongDatePtBr(new Date()));
 
     contractContent = `<div style="text-align: justify; line-height: 1.6; font-size: 14px;">${parsedContent.replace(/\n/g, '<br/>')}</div>`;
   } else if (type === 'sale_standard') {
@@ -1140,6 +1317,115 @@ export const generateContract = async (type: string, data: any, tenant: any, com
   </script>
 </body>
 </html>`;
+
+  return html;
+};
+
+type SignatureManifestCompany = {
+  admin_signature_url?: string | null;
+  name?: string | null;
+};
+
+type SignatureManifestEntry = {
+  signer_name?: string | null;
+  signer_role?: string | null;
+  signer_email?: string | null;
+  ip_address?: string | null;
+  signed_at?: string | null;
+  token?: string | null;
+  signature_image?: string | null;
+};
+
+export const appendSignatureManifest = (
+  originalHtml: string,
+  company: SignatureManifestCompany | null | undefined,
+  signatures: SignatureManifestEntry[] = []
+): string => {
+  if (!company?.admin_signature_url && signatures.length === 0) {
+    return originalHtml;
+  }
+
+  const manifestHtml = `
+    <div style="page-break-before: always; padding: 40px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1e293b;">
+      <h2 style="text-align: center; font-size: 22px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 30px; font-weight: bold;">
+        Manifesto de Assinaturas Eletronicas
+      </h2>
+
+      ${company?.admin_signature_url ? `
+        <div style="margin-bottom: 40px;">
+          <h3 style="font-size: 15px; margin-bottom: 12px; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;">Representante Legal / Imobiliaria</h3>
+          <div style="border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; background-color: #f8fafc;">
+            <img src="${company.admin_signature_url}" style="max-height: 80px; display: block; margin-bottom: 10px;" alt="Assinatura Imobiliaria" />
+            <p style="margin: 0; font-size: 14px; font-weight: bold;">${company.name || 'Imobiliaria'}</p>
+            <p style="margin: 4px 0 0 0; font-size: 12px; color: #64748b;">Assinatura Digital do Responsavel</p>
+          </div>
+        </div>
+      ` : ''}
+
+      ${signatures.length > 0 ? `
+        <h3 style="font-size: 15px; margin-bottom: 12px; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;">Signatarios (Partes Envolvidas)</h3>
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+          ${signatures.map((sig) => `
+            <div style="border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; background-color: #f8fafc;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+                <div>
+                  <p style="margin: 0; font-size: 14px; font-weight: bold; color: #0f172a;">
+                    ${sig.signer_name || 'Signatario'}
+                    <span style="font-size: 10px; font-weight: 600; background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; margin-left: 8px; text-transform: uppercase;">${sig.signer_role || 'Parte'}</span>
+                  </p>
+                  <p style="margin: 6px 0 2px; font-size: 12px; color: #64748b;"><b>E-mail:</b> ${sig.signer_email || 'Nao informado'}</p>
+                  <p style="margin: 2px 0; font-size: 12px; color: #64748b;"><b>Endereco IP:</b> ${sig.ip_address || 'Nao registado'}</p>
+                  <p style="margin: 2px 0; font-size: 12px; color: #64748b;"><b>Data/Hora:</b> ${sig.signed_at ? new Date(sig.signed_at).toLocaleString('pt-PT') : 'Pendente'}</p>
+                  <p style="margin: 6px 0 0; font-size: 10px; color: #94a3b8; font-family: monospace;">Hash Autenticador: ${sig.token || 'Nao disponivel'}</p>
+                </div>
+                ${sig.signature_image ? `
+                  <div style="text-align: right;">
+                    <img src="${sig.signature_image}" style="max-height: 70px; max-width: 150px; object-fit: contain; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;" alt="Assinatura" />
+                    <p style="margin: 4px 0 0; font-size: 10px; color: #10b981; font-weight: bold;">Assinado Eletronicamente</p>
+                  </div>
+                ` : `
+                  <div style="padding: 8px 12px; background: #fffbeb; color: #b45309; font-size: 12px; border-radius: 6px; border: 1px solid #fde68a; font-weight: 500;">
+                    Aguardando Assinatura
+                  </div>
+                `}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      <div style="margin-top: 50px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 20px;">
+        Documento gerado, processado e validado juridicamente pela plataforma <b>Elevatio Vendas</b>.<br/>
+        A assinatura eletronica possui validade legal nos termos da legislacao em vigor.
+      </div>
+    </div>
+  `;
+
+  if (/<\/body>/i.test(originalHtml)) {
+    return originalHtml.replace(/<\/body>/i, `${manifestHtml}\n</body>`);
+  }
+
+  return originalHtml + manifestHtml;
+};
+
+export const generateContract = async (type: string, data: any, tenant: any, company_logo?: string, broker_name?: string, broker_document?: string, broker_creci?: string, company_name?: string, customTemplateContent?: string) => {
+  const html = await buildContractHtml(
+    type,
+    data,
+    tenant,
+    company_logo,
+    broker_name,
+    broker_document,
+    broker_creci,
+    company_name,
+    customTemplateContent
+  );
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Por favor, permita os pop-ups para gerar o contrato.');
+    return;
+  }
 
   printWindow.document.write(html);
   printWindow.document.close();

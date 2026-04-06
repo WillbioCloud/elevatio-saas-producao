@@ -4,8 +4,31 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } 
 import { Icons } from '../components/Icons';
 import SaleContractModal from '../components/SaleContractModal';
 import RentContractModal from '../components/RentContractModal';
+import SignatureManagerModal from '../components/SignatureManagerModal';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { appendSignatureManifest, buildContractHtml } from '../utils/contractGenerator';
+
+interface ContractSignatureRow {
+  contract_id: string | null;
+  status: 'pending' | 'signed' | 'rejected' | null;
+}
+
+interface ContractSignatureSummary {
+  signatures_count: number;
+  pending_signatures_count: number;
+  signed_signatures_count: number;
+  rejected_signatures_count: number;
+}
+
+type ContractWithSignatureState = any & ContractSignatureSummary;
+
+const EMPTY_SIGNATURE_SUMMARY: ContractSignatureSummary = {
+  signatures_count: 0,
+  pending_signatures_count: 0,
+  signed_signatures_count: 0,
+  rejected_signatures_count: 0,
+};
 
 const AdminContracts: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -20,39 +43,99 @@ const AdminContracts: React.FC = () => {
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
   const [isRentModalOpen, setIsRentModalOpen] = useState(false);
   const [viewContractData, setViewContractData] = useState<any | null>(null);
-  const [contracts, setContracts] = useState<any[]>([]);
+  const [contracts, setContracts] = useState<ContractWithSignatureState[]>([]);
   const [loading, setLoading] = useState(true);
   const [installments, setInstallments] = useState<any[]>([]);
   const [showOverdue, setShowOverdue] = useState(false);
   const [contractTab, setContractTab] = useState<'pending' | 'active' | 'archived'>('active');
   const [maxContracts, setMaxContracts] = useState<number | null>(null);
   const [loadingPlanLimit, setLoadingPlanLimit] = useState(true);
+  const [signatureModalState, setSignatureModalState] = useState<{ contractId: string; companyId: string } | null>(null);
+  const [downloadingContractId, setDownloadingContractId] = useState<string | null>(null);
 
   const fetchContracts = async () => {
     if (!user) return;
     setLoading(true);
     
     // Multi-Tenant: Filtra por company_id se não for super admin
-    let contractsQuery = supabase.from('contracts').select('*, lead:leads(name), property:properties(title)');
+    let contractsQuery = supabase
+      .from('contracts')
+      .select(`
+        *,
+        lead:leads!contracts_lead_id_fkey(*),
+        property:properties(*),
+        broker:profiles!contracts_broker_id_fkey(*)
+      `);
     let installmentsQuery = supabase.from('installments').select('*');
+    let signaturesQuery = supabase.from('contract_signatures').select('contract_id, status');
     
     if (!isSuperAdmin && user.company_id) {
       contractsQuery = contractsQuery.eq('company_id', user.company_id);
       installmentsQuery = installmentsQuery.eq('company_id', user.company_id);
+      signaturesQuery = signaturesQuery.eq('company_id', user.company_id);
     }
     
-    const [contractsRes, installmentsRes] = await Promise.all([
-      contractsQuery.order('created_at', { ascending: false }),
-      installmentsQuery.order('due_date', { ascending: true })
-    ]);
+    try {
+      const [contractsRes, installmentsRes, signaturesRes] = await Promise.all([
+        contractsQuery.order('created_at', { ascending: false }),
+        installmentsQuery.order('due_date', { ascending: true }),
+        signaturesQuery,
+      ]);
 
-    if (contractsRes.error) console.error('Erro contratos:', contractsRes.error);
-    else if (contractsRes.data) setContracts(contractsRes.data);
+      if (contractsRes.error) {
+        console.error('Erro contratos:', contractsRes.error);
+      } else if (contractsRes.data) {
+        const signatureRows = (signaturesRes.data as ContractSignatureRow[] | null) ?? [];
+        const signatureSummaryByContract = signatureRows.reduce<Record<string, ContractSignatureSummary>>(
+          (accumulator, signature) => {
+            if (!signature.contract_id) {
+              return accumulator;
+            }
 
-    if (installmentsRes.error) console.error('Erro parcelas:', installmentsRes.error);
-    else if (installmentsRes.data) setInstallments(installmentsRes.data);
+            const currentSummary = accumulator[signature.contract_id] ?? {
+              ...EMPTY_SIGNATURE_SUMMARY,
+            };
 
-    setLoading(false);
+            currentSummary.signatures_count += 1;
+
+            if (signature.status === 'signed') {
+              currentSummary.signed_signatures_count += 1;
+            } else {
+              currentSummary.pending_signatures_count += 1;
+
+              if (signature.status === 'rejected') {
+                currentSummary.rejected_signatures_count += 1;
+              }
+            }
+
+            accumulator[signature.contract_id] = currentSummary;
+            return accumulator;
+          },
+          {}
+        );
+
+        setContracts(
+          contractsRes.data.map((contract) => ({
+            ...contract,
+            ...(signatureSummaryByContract[contract.id] ?? EMPTY_SIGNATURE_SUMMARY),
+          }))
+        );
+      }
+
+      if (installmentsRes.error) {
+        console.error('Erro parcelas:', installmentsRes.error);
+      } else if (installmentsRes.data) {
+        setInstallments(installmentsRes.data);
+      }
+
+      if (signaturesRes.error) {
+        console.error('Erro assinaturas:', signaturesRes.error);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar contratos:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -268,6 +351,15 @@ const AdminContracts: React.FC = () => {
 
   const salesContracts = contracts.filter((c) => c.type === 'sale');
   const rentContracts = contracts.filter((c) => c.type === 'rent');
+  const filterContractsByTab = (list: ContractWithSignatureState[]) =>
+    list.filter((contract) => {
+      if (contractTab === 'active') return contract.status === 'active';
+      if (contractTab === 'pending') return contract.status === 'pending';
+      if (contractTab === 'archived') return contract.status === 'canceled' || contract.status === 'archived';
+      return true;
+    });
+  const filteredSalesContracts = useMemo(() => filterContractsByTab(salesContracts), [contractTab, salesContracts]);
+  const filteredRentContracts = useMemo(() => filterContractsByTab(rentContracts), [contractTab, rentContracts]);
   const activeRentContractsCount = useMemo(
     () => contracts.filter((contract) => contract.type === 'rent' && contract.status === 'active').length,
     [contracts]
@@ -308,6 +400,567 @@ const AdminContracts: React.FC = () => {
 
   const setTab = (tab: string) => {
     setSearchParams({ tab });
+  };
+
+  const handleOpenSignatureManager = (contractId: string, companyId?: string | null) => {
+    if (!companyId) {
+      alert('Este contrato nao possui uma empresa vinculada para gerar links de assinatura.');
+      return;
+    }
+
+    setSignatureModalState({ contractId, companyId });
+  };
+
+  const inferDocumentType = (contract: ContractWithSignatureState) => {
+    const storedTypeCandidates = [
+      contract?.document_type,
+      contract?.contract_data?.document_type,
+    ];
+
+    const storedType = storedTypeCandidates.find(
+      (value): value is string => typeof value === 'string' && value.trim().length > 0
+    );
+
+    if (storedType) {
+      return storedType;
+    }
+
+    if (contract.type === 'sale') {
+      if (contract.has_permutation) return 'permuta';
+      if (contract.sale_is_cash) return 'sale_cash';
+      return 'sale_standard';
+    }
+
+    if (contract.type === 'rent') {
+      const guaranteeType = String(contract.rent_guarantee_type || '').toLowerCase();
+      if (guaranteeType.includes('sem') || guaranteeType === 'none') {
+        return 'rent_noguarantee';
+      }
+
+      return 'rent_guarantor';
+    }
+
+    return '';
+  };
+
+  const ensurePrintableDocument = (html: string) => {
+    if (/<html[\s>]/i.test(html) || /<!doctype/i.test(html)) {
+      return html;
+    }
+
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Contrato Final</title>
+</head>
+<body style="margin: 0; background: #fff;">
+  ${html}
+</body>
+</html>`;
+  };
+
+  const handleDownloadFinalPDF = async (contract: ContractWithSignatureState) => {
+    setDownloadingContractId(contract.id);
+
+    try {
+      const companyId = contract.company_id || user?.company_id;
+      if (!companyId) {
+        throw new Error('Empresa vinculada nao encontrada para este contrato.');
+      }
+
+      const [{ data: signatures, error: signaturesError }, { data: companyData, error: companyError }] = await Promise.all([
+        supabase
+          .from('contract_signatures')
+          .select('*')
+          .eq('contract_id', contract.id)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('companies')
+          .select('id, name, subdomain, site_data, admin_signature_url, phone')
+          .eq('id', companyId)
+          .maybeSingle(),
+      ]);
+
+      if (signaturesError) throw signaturesError;
+      if (companyError) throw companyError;
+      if (!companyData) throw new Error('Dados da imobiliaria nao encontrados.');
+
+      let parsedSiteData: Record<string, unknown> | null = null;
+      if (typeof companyData.site_data === 'string') {
+        try {
+          parsedSiteData = JSON.parse(companyData.site_data) as Record<string, unknown>;
+        } catch {
+          parsedSiteData = null;
+        }
+      } else if (companyData.site_data && typeof companyData.site_data === 'object') {
+        parsedSiteData = companyData.site_data as Record<string, unknown>;
+      }
+
+      const companyForGenerator = {
+        ...companyData,
+        site_data: parsedSiteData,
+        logo_url: typeof parsedSiteData?.logo_url === 'string' ? parsedSiteData.logo_url : null,
+        phone:
+          companyData.phone ||
+          (typeof parsedSiteData?.contact_phone === 'string' ? parsedSiteData.contact_phone : null),
+      };
+
+      const propertyAddress =
+        contract.property_address ||
+        contract.property?.address ||
+        [
+          contract.property?.street,
+          contract.property?.number,
+          contract.property?.neighborhood,
+          contract.property?.city && contract.property?.state
+            ? `${contract.property.city} - ${contract.property.state}`
+            : contract.property?.city || contract.property?.state,
+        ]
+          .filter(Boolean)
+          .join(', ');
+
+      const liveContractData = {
+        ...contract,
+        ...(contract.contract_data || {}),
+        lead: contract.lead,
+        property: contract.property,
+        broker: contract.broker,
+        locatario_nome: contract.lead?.name || contract.tenant_name || '',
+        locatario_cpf: contract.lead?.cpf || contract.tenant_document || '',
+        locatario_rg: contract.lead?.rg || contract.tenant_rg || '',
+        comprador_nome: contract.lead?.name || contract.buyer_name || '',
+        comprador_cpf: contract.lead?.cpf || contract.buyer_document || '',
+        vendedor_nome: contract.property?.owner_name || contract.seller_name || '',
+        vendedor_cpf: contract.property?.owner_cpf || contract.property?.owner_document || contract.seller_document || '',
+        imovel_titulo: contract.property?.title || '',
+        imovel_endereco: propertyAddress || '',
+        tenant_name:
+          contract.tenant_name ||
+          contract.contract_data?.tenant_name ||
+          contract.contract_data?.lessee_name ||
+          contract.lead?.name ||
+          '',
+        tenant_document:
+          contract.tenant_document ||
+          contract.contract_data?.tenant_document ||
+          contract.lead?.cpf ||
+          '',
+        tenant_rg: contract.tenant_rg || contract.contract_data?.tenant_rg || contract.lead?.rg || '',
+        tenant_profession:
+          contract.tenant_profession ||
+          contract.contract_data?.tenant_profession ||
+          contract.lead?.profissao ||
+          '',
+        tenant_marital_status:
+          contract.tenant_marital_status ||
+          contract.contract_data?.tenant_marital_status ||
+          contract.lead?.estado_civil ||
+          '',
+        tenant_address:
+          contract.tenant_address ||
+          contract.contract_data?.tenant_address ||
+          contract.lead?.endereco ||
+          '',
+        tenant_phone:
+          contract.tenant_phone ||
+          contract.contract_data?.tenant_phone ||
+          contract.lead?.phone ||
+          '',
+        tenant_email:
+          contract.tenant_email ||
+          contract.contract_data?.tenant_email ||
+          contract.lead?.email ||
+          '',
+        tenant_spouse_name:
+          contract.tenant_spouse_name ||
+          contract.contract_data?.tenant_spouse_name ||
+          contract.lead?.spouse_name ||
+          '',
+        tenant_spouse_document:
+          contract.tenant_spouse_document ||
+          contract.contract_data?.tenant_spouse_document ||
+          contract.lead?.spouse_cpf ||
+          '',
+        tenant_spouse_rg:
+          contract.tenant_spouse_rg ||
+          contract.contract_data?.tenant_spouse_rg ||
+          contract.lead?.spouse_rg ||
+          '',
+        buyer_name:
+          contract.buyer_name ||
+          contract.contract_data?.buyer_name ||
+          contract.lead?.name ||
+          '',
+        buyer_document:
+          contract.buyer_document ||
+          contract.contract_data?.buyer_document ||
+          contract.lead?.cpf ||
+          '',
+        buyer_rg: contract.buyer_rg || contract.contract_data?.buyer_rg || contract.lead?.rg || '',
+        buyer_profession:
+          contract.buyer_profession ||
+          contract.contract_data?.buyer_profession ||
+          contract.lead?.profissao ||
+          '',
+        buyer_marital_status:
+          contract.buyer_marital_status ||
+          contract.contract_data?.buyer_marital_status ||
+          contract.lead?.estado_civil ||
+          '',
+        buyer_address:
+          contract.buyer_address ||
+          contract.contract_data?.buyer_address ||
+          contract.lead?.endereco ||
+          '',
+        buyer_phone:
+          contract.buyer_phone ||
+          contract.contract_data?.buyer_phone ||
+          contract.lead?.phone ||
+          '',
+        buyer_email:
+          contract.buyer_email ||
+          contract.contract_data?.buyer_email ||
+          contract.lead?.email ||
+          '',
+        buyer_spouse_name:
+          contract.buyer_spouse_name ||
+          contract.contract_data?.buyer_spouse_name ||
+          contract.lead?.spouse_name ||
+          '',
+        buyer_spouse_document:
+          contract.buyer_spouse_document ||
+          contract.contract_data?.buyer_spouse_document ||
+          contract.lead?.spouse_cpf ||
+          '',
+        buyer_spouse_rg:
+          contract.buyer_spouse_rg ||
+          contract.contract_data?.buyer_spouse_rg ||
+          contract.lead?.spouse_rg ||
+          '',
+        seller_name:
+          contract.seller_name ||
+          contract.contract_data?.seller_name ||
+          contract.property?.owner_name ||
+          '',
+        seller_document:
+          contract.seller_document ||
+          contract.contract_data?.seller_document ||
+          contract.property?.owner_cpf ||
+          contract.property?.owner_document ||
+          '',
+        seller_rg:
+          contract.seller_rg ||
+          contract.contract_data?.seller_rg ||
+          contract.property?.owner_rg ||
+          '',
+        seller_profession:
+          contract.seller_profession ||
+          contract.contract_data?.seller_profession ||
+          contract.property?.owner_profession ||
+          '',
+        seller_marital_status:
+          contract.seller_marital_status ||
+          contract.contract_data?.seller_marital_status ||
+          contract.property?.owner_marital_status ||
+          '',
+        seller_address:
+          contract.seller_address ||
+          contract.contract_data?.seller_address ||
+          contract.property?.owner_address ||
+          '',
+        seller_phone:
+          contract.seller_phone ||
+          contract.contract_data?.seller_phone ||
+          contract.property?.owner_phone ||
+          '',
+        seller_email:
+          contract.seller_email ||
+          contract.contract_data?.seller_email ||
+          contract.property?.owner_email ||
+          '',
+        seller_spouse_name:
+          contract.seller_spouse_name ||
+          contract.contract_data?.seller_spouse_name ||
+          contract.property?.owner_spouse_name ||
+          '',
+        seller_spouse_document:
+          contract.seller_spouse_document ||
+          contract.contract_data?.seller_spouse_document ||
+          contract.property?.owner_spouse_cpf ||
+          '',
+        seller_spouse_rg:
+          contract.seller_spouse_rg ||
+          contract.contract_data?.seller_spouse_rg ||
+          contract.property?.owner_spouse_rg ||
+          '',
+        landlord_name:
+          contract.landlord_name ||
+          contract.contract_data?.landlord_name ||
+          contract.contract_data?.lessor_name ||
+          contract.seller_name ||
+          contract.property?.owner_name ||
+          '',
+        landlord_document:
+          contract.landlord_document ||
+          contract.contract_data?.landlord_document ||
+          contract.property?.owner_cpf ||
+          contract.property?.owner_document ||
+          '',
+        landlord_rg:
+          contract.landlord_rg ||
+          contract.contract_data?.landlord_rg ||
+          contract.property?.owner_rg ||
+          '',
+        landlord_profession:
+          contract.landlord_profession ||
+          contract.contract_data?.landlord_profession ||
+          contract.property?.owner_profession ||
+          '',
+        landlord_marital_status:
+          contract.landlord_marital_status ||
+          contract.contract_data?.landlord_marital_status ||
+          contract.property?.owner_marital_status ||
+          '',
+        landlord_address:
+          contract.landlord_address ||
+          contract.contract_data?.landlord_address ||
+          contract.property?.owner_address ||
+          '',
+        landlord_phone:
+          contract.landlord_phone ||
+          contract.contract_data?.landlord_phone ||
+          contract.property?.owner_phone ||
+          '',
+        landlord_email:
+          contract.landlord_email ||
+          contract.contract_data?.landlord_email ||
+          contract.property?.owner_email ||
+          '',
+        landlord_spouse_name:
+          contract.landlord_spouse_name ||
+          contract.contract_data?.landlord_spouse_name ||
+          contract.property?.owner_spouse_name ||
+          '',
+        landlord_spouse_document:
+          contract.landlord_spouse_document ||
+          contract.contract_data?.landlord_spouse_document ||
+          contract.property?.owner_spouse_cpf ||
+          '',
+        landlord_spouse_rg:
+          contract.landlord_spouse_rg ||
+          contract.contract_data?.landlord_spouse_rg ||
+          contract.property?.owner_spouse_rg ||
+          '',
+        property_address: propertyAddress || '',
+      };
+
+      const templateCandidates = [
+        typeof contract?.contract_data?.template_content === 'string' ? contract.contract_data.template_content : '',
+        typeof contract?.content === 'string' ? contract.content : '',
+        typeof contract?.html_content === 'string' ? contract.html_content : '',
+      ];
+      const liveTemplate = templateCandidates.find(
+        (value) => typeof value === 'string' && value.trim().length > 0 && /\{\{[^}]+\}\}/.test(value)
+      );
+
+      let processedHtml = '';
+
+      if (liveTemplate) {
+        processedHtml = await buildContractHtml(
+          'custom_runtime',
+          liveContractData,
+          companyForGenerator,
+          contract?.broker?.company_logo || undefined,
+          contract?.broker?.name || undefined,
+          contract?.broker?.cpf_cnpj || undefined,
+          contract?.broker?.creci || undefined,
+          companyData.name || undefined,
+          liveTemplate
+        );
+      } else {
+        const documentType = inferDocumentType(contract);
+        if (!documentType) {
+          throw new Error('Nao foi possivel determinar o modelo deste contrato para gerar o PDF.');
+        }
+
+        let customTemplateContent: string | undefined;
+        if (documentType.startsWith('custom_')) {
+          const storedTemplateContent =
+            typeof contract?.contract_data?.template_content === 'string' &&
+            contract.contract_data.template_content.trim().length > 0
+              ? contract.contract_data.template_content
+              : null;
+
+          if (storedTemplateContent) {
+            customTemplateContent = storedTemplateContent;
+          } else {
+            const templateId = documentType.replace(/^custom_/, '');
+            const { data: templateData, error: templateError } = await supabase
+              .from('contract_templates')
+              .select('content')
+              .eq('id', templateId)
+              .maybeSingle();
+
+            if (templateError) throw templateError;
+            customTemplateContent = templateData?.content || undefined;
+          }
+        }
+
+        processedHtml = await buildContractHtml(
+          documentType,
+          liveContractData,
+          companyForGenerator,
+          contract?.broker?.company_logo || undefined,
+          contract?.broker?.name || undefined,
+          contract?.broker?.cpf_cnpj || undefined,
+          contract?.broker?.creci || undefined,
+          companyData.name || undefined,
+          customTemplateContent
+        );
+      }
+
+      const htmlFinal = ensurePrintableDocument(
+        appendSignatureManifest(processedHtml, companyForGenerator, signatures || [])
+      );
+
+      const printWindow = window.open('', '', 'width=900,height=700');
+      if (!printWindow) {
+        throw new Error('Por favor, permita os pop-ups para gerar o PDF final.');
+      }
+
+      printWindow.document.write(htmlFinal);
+      printWindow.document.close();
+      window.setTimeout(() => {
+        if (!printWindow.closed) {
+          printWindow.focus();
+          printWindow.print();
+          printWindow.close();
+        }
+      }, 600);
+    } catch (error) {
+      console.error('Erro ao gerar PDF Final:', error);
+      const message = error instanceof Error ? error.message : 'Ocorreu um erro ao gerar o documento.';
+      alert(message);
+    } finally {
+      setDownloadingContractId(null);
+    }
+  };
+
+  const getSignatureState = (contract: ContractWithSignatureState) => {
+    const signaturesCount = Number(contract.signatures_count ?? 0);
+    const pendingSignaturesCount = Number(contract.pending_signatures_count ?? 0);
+    const signedSignaturesCount = Number(contract.signed_signatures_count ?? 0);
+    const rejectedSignaturesCount = Number(contract.rejected_signatures_count ?? 0);
+    const hasSignatures = signaturesCount > 0;
+    const isFullySigned = hasSignatures && pendingSignaturesCount === 0;
+
+    return {
+      signaturesCount,
+      pendingSignaturesCount,
+      signedSignaturesCount,
+      rejectedSignaturesCount,
+      hasSignatures,
+      isFullySigned,
+    };
+  };
+
+  const handleApproveContract = async (contractId: string) => {
+    if (!window.confirm('Aprovar este contrato?')) {
+      return;
+    }
+
+    await supabase.from('contracts').update({ status: 'active' }).eq('id', contractId);
+    fetchContracts();
+  };
+
+  const renderSignatureStatus = (contract: ContractWithSignatureState) => {
+    const signatureState = getSignatureState(contract);
+
+    if (!signatureState.hasSignatures) {
+      return (
+        <button
+          type="button"
+          onClick={() => handleOpenSignatureManager(contract.id, contract.company_id)}
+          className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-100"
+        >
+          <Icons.PenTool size={14} /> Solicitar Assinaturas
+        </button>
+      );
+    }
+
+    const hasRejectedSignature = signatureState.rejectedSignaturesCount > 0;
+    const badgeClasses = hasRejectedSignature
+      ? 'border-red-200 bg-red-50 text-red-700'
+      : signatureState.isFullySigned
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+        : 'border-amber-200 bg-amber-50 text-amber-700';
+    const statusLabel = hasRejectedSignature
+      ? 'Assinatura recusada'
+      : signatureState.isFullySigned
+        ? 'Assinado'
+        : 'Pendente de Assinatura';
+    const StatusIcon = hasRejectedSignature
+      ? Icons.AlertTriangle
+      : signatureState.isFullySigned
+        ? Icons.CheckCircle2
+        : Icons.Clock;
+
+    return (
+      <div className="flex flex-col items-start gap-2">
+        <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeClasses}`}>
+          <StatusIcon size={13} />
+          <span>{statusLabel}</span>
+        </div>
+        <span className="text-xs text-slate-500 dark:text-slate-400">
+          {signatureState.signedSignaturesCount}/{signatureState.signaturesCount} assinaturas
+        </span>
+        <button
+          type="button"
+          onClick={() => handleOpenSignatureManager(contract.id, contract.company_id)}
+          className="text-xs font-semibold text-brand-600 transition-colors hover:text-brand-700"
+        >
+          {signatureState.isFullySigned ? 'Ver assinaturas' : 'Gerenciar'}
+        </button>
+      </div>
+    );
+  };
+
+  const renderApproveAction = (contract: ContractWithSignatureState) => {
+    if (contract.status !== 'pending' || user?.role !== 'admin') {
+      return null;
+    }
+
+    const { isFullySigned } = getSignatureState(contract);
+
+    return (
+      <button
+        type="button"
+        onClick={() => void handleApproveContract(contract.id)}
+        disabled={!isFullySigned}
+        className="rounded-lg border border-slate-200 bg-white p-2 text-emerald-600 shadow-sm transition-colors hover:bg-emerald-50 dark:border-dark-border dark:bg-dark-card dark:hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:border-amber-100 disabled:bg-amber-50 disabled:text-amber-400 disabled:hover:bg-amber-50"
+        title={!isFullySigned ? 'Aguardando assinaturas do cliente' : 'Aprovar Contrato'}
+      >
+        <Icons.CheckCircle size={16} />
+      </button>
+    );
+  };
+
+  const renderFinalPdfButton = (contract: ContractWithSignatureState) => {
+    const isDownloading = downloadingContractId === contract.id;
+
+    return (
+      <button
+        type="button"
+        onClick={() => void handleDownloadFinalPDF(contract)}
+        disabled={isDownloading}
+        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+        title="Gerar PDF com Manifesto de Assinaturas"
+      >
+        {isDownloading ? <Icons.Loader2 className="animate-spin" size={14} /> : <Icons.Download size={14} />}
+        <span>PDF Final</span>
+      </button>
+    );
   };
 
   return (
@@ -590,33 +1243,23 @@ const AdminContracts: React.FC = () => {
                       <th className="p-4">Cliente</th>
                       <th className="p-4">Imóvel</th>
                       <th className="p-4">Valor</th>
+                      <th className="p-4">Assinaturas</th>
                       <th className="p-4 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-white/5 text-sm text-slate-600 dark:text-slate-300">
-                    {salesContracts.filter(c => {
-                      if (contractTab === 'active') return c.status === 'active';
-                      if (contractTab === 'pending') return c.status === 'pending';
-                      if (contractTab === 'archived') return c.status === 'canceled' || c.status === 'archived';
-                      return true;
-                    }).map((contract) => (
+                    {filteredSalesContracts.map((contract) => (
                       <tr key={contract.id} className="hover:bg-slate-50 dark:hover:bg-white/5">
                         <td className="p-4 font-semibold font-serif">{contract.lead?.name || 'Não informado'}</td>
                         <td className="p-4">{contract.property?.title || 'Não informado'}</td>
                         <td className="p-4 font-bold font-serif text-slate-700 dark:text-slate-200">{Number(contract.sale_total_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="p-4 align-middle">{renderSignatureStatus(contract)}</td>
                         <td className="p-4 text-right">
                           <div className="flex justify-end gap-2">
                             <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Detalhes (Gestão)"><Icons.Eye size={16} /></button>
                             <button onClick={() => setViewContractData(contract)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Formulário Original"><Icons.FileText size={16} /></button>
-                            
-                            {contract.status === 'pending' && user?.role === 'admin' && (
-                               <button onClick={async () => {
-                                 if(window.confirm('Aprovar este contrato?')) {
-                                   await supabase.from('contracts').update({status: 'active'}).eq('id', contract.id);
-                                   fetchContracts();
-                                 }
-                               }} className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Aprovar Contrato"><Icons.CheckCircle size={16} /></button>
-                            )}
+                            {renderFinalPdfButton(contract)}
+                            {renderApproveAction(contract)}
 
                             {user?.role === 'admin' && (
                               <>
@@ -672,25 +1315,16 @@ const AdminContracts: React.FC = () => {
                         <th className="p-4">Imóvel & Locatário</th>
                         <th className="p-4">Vencimento Contrato</th>
                         <th className="p-4 text-right">Aluguel Mensal</th>
+                        <th className="p-4">Assinaturas</th>
                         <th className="p-4 text-center">Garantia</th>
                         <th className="p-4 text-right">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/5 text-sm">
-                      {rentContracts.filter(c => {
-                        if (contractTab === 'active') return c.status === 'active';
-                        if (contractTab === 'pending') return c.status === 'pending';
-                        if (contractTab === 'archived') return c.status === 'canceled' || c.status === 'archived';
-                        return true;
-                      }).length === 0 ? (
-                        <tr><td colSpan={5} className="p-8 text-center text-slate-400">Nenhum contrato encontrado nesta categoria.</td></tr>
+                      {filteredRentContracts.length === 0 ? (
+                        <tr><td colSpan={6} className="p-8 text-center text-slate-400">Nenhum contrato encontrado nesta categoria.</td></tr>
                       ) : (
-                        rentContracts.filter(c => {
-                          if (contractTab === 'active') return c.status === 'active';
-                          if (contractTab === 'pending') return c.status === 'pending';
-                          if (contractTab === 'archived') return c.status === 'canceled' || c.status === 'archived';
-                          return true;
-                        }).map((contract) => (
+                        filteredRentContracts.map((contract) => (
                           <tr key={contract.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
                             <td className="p-4">
                               <p className="font-bold font-serif text-slate-800 dark:text-white">{contract.property?.title || 'Imóvel Excluído'}</p>
@@ -700,6 +1334,7 @@ const AdminContracts: React.FC = () => {
                             <td className="p-4 text-right font-bold font-serif text-slate-800 dark:text-white">
                               {Number(contract.rent_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </td>
+                            <td className="p-4 align-middle">{renderSignatureStatus(contract)}</td>
                             <td className="p-4 text-center text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
                               {contract.rent_guarantee_type?.replace('_', ' ')}
                             </td>
@@ -707,15 +1342,8 @@ const AdminContracts: React.FC = () => {
                               <div className="flex justify-end gap-2">
                                 <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Detalhes (Gestão)"><Icons.Eye size={16} /></button>
                                 <button onClick={() => setViewContractData(contract)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Formulário Original"><Icons.FileText size={16} /></button>
-                                
-                                {contract.status === 'pending' && user?.role === 'admin' && (
-                                   <button onClick={async () => {
-                                     if(window.confirm('Aprovar este contrato?')) {
-                                       await supabase.from('contracts').update({status: 'active'}).eq('id', contract.id);
-                                       fetchContracts();
-                                     }
-                                   }} className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Aprovar Contrato"><Icons.CheckCircle size={16} /></button>
-                                )}
+                                {renderFinalPdfButton(contract)}
+                                {renderApproveAction(contract)}
 
                                 {user?.role === 'admin' && (
                                   <>
@@ -757,6 +1385,17 @@ const AdminContracts: React.FC = () => {
           fetchContracts();
         }} 
       />
+
+      {signatureModalState && (
+        <SignatureManagerModal
+          contractId={signatureModalState.contractId}
+          companyId={signatureModalState.companyId}
+          onClose={() => {
+            setSignatureModalState(null);
+            fetchContracts();
+          }}
+        />
+      )}
 
     </div>
   );

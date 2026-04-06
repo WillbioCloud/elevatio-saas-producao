@@ -6,7 +6,6 @@ import { useNotification } from '../contexts/NotificationContext';
 import { generateContract } from '../utils/contractGenerator';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
-import { RENT_DOCUMENTS, ADMIN_DOCUMENTS } from '../constants/contractTypes';
 
 interface RentContractModalProps {
   isOpen: boolean;
@@ -14,6 +13,14 @@ interface RentContractModalProps {
   onSuccess: () => void;
   contractData?: any;
 }
+
+const formatRgWithIssuer = (rg?: string | null, org?: string | null, uf?: string | null) => {
+  const baseRg = String(rg || '').trim();
+  if (!baseRg) return '';
+
+  const issuer = [org, uf].filter(Boolean).join('/');
+  return issuer ? `${baseRg} ${issuer}`.trim() : baseRg;
+};
 
 const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, onSuccess, contractData: _contractData }) => {
   const { user } = useAuth();
@@ -44,6 +51,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
 
   const [formData, setFormData] = useState({
     lead_id: '',
+    client_id: null as string | null,
     property_id: '',
     broker_id: '',
     start_date: '',
@@ -61,6 +69,8 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
     due_day: '5',
   });
 
+  const selectedLeadRecord = leads.find((lead) => lead.id === formData.lead_id);
+  const contractClientRecord = selectedLeadRecord;
   const selectedProperty = properties.find((property) => property.id === formData.property_id);
 
   // --- Cálculos Financeiros (Split) ---
@@ -96,17 +106,53 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
   const totalContractValue = (totalMonthlyValue * contractDurationMonths) + calculatedGuaranteeValue;
 
   useEffect(() => {
-    if (formData.property_id && properties.length > 0) {
-      const selectedProp = properties.find(p => p.id === formData.property_id);
+    if (formData.lead_id && !_contractData) {
+      const selectedLead = leads.find((lead) => lead.id === formData.lead_id);
+      if (selectedLead) {
+        setFormData((prev) => ({
+          ...prev,
+          client_id: selectedLead.id,
+        }));
+        setContractDetails((prev) => ({
+          ...prev,
+          tenant_name: selectedLead.name || '',
+          tenant_document: selectedLead.cpf || '',
+          tenant_rg: selectedLead.rg || '',
+          tenant_profession: selectedLead.profissao || '',
+          tenant_marital_status: selectedLead.estado_civil || '',
+          tenant_address: selectedLead.endereco || '',
+        }));
+      }
+    }
+  }, [formData.lead_id, leads, _contractData]);
+
+  useEffect(() => {
+    if (formData.property_id && !_contractData && properties.length > 0) {
+      const selectedProp = properties.find((property) => property.id === formData.property_id);
       if (selectedProp) {
+        const landlordRg = formatRgWithIssuer(
+          selectedProp.owner_rg,
+          selectedProp.owner_rg_org,
+          selectedProp.owner_rg_uf
+        );
+        const landlordSpouseRg = formatRgWithIssuer(
+          selectedProp.owner_spouse_rg,
+          selectedProp.owner_spouse_rg_org,
+          selectedProp.owner_spouse_rg_uf
+        );
+
         setContractDetails(prev => ({
           ...prev,
-          landlord_document: selectedProp.owner_document || prev.landlord_document,
-          landlord_rg: (selectedProp as any).owner_rg || prev.landlord_rg,
-          landlord_nationality: (selectedProp as any).owner_nationality || prev.landlord_nationality,
-          landlord_profession: selectedProp.owner_profession || prev.landlord_profession,
-          landlord_marital_status: selectedProp.owner_marital_status || prev.landlord_marital_status,
-          landlord_address: selectedProp.owner_address || prev.landlord_address,
+          landlord_name: selectedProp.owner_name || '',
+          landlord_document: selectedProp.owner_cpf || selectedProp.owner_document || '',
+          landlord_rg: landlordRg,
+          landlord_nationality: selectedProp.owner_nationality || prev.landlord_nationality,
+          landlord_profession: selectedProp.owner_profession || '',
+          landlord_marital_status: selectedProp.owner_marital_status || '',
+          landlord_address: selectedProp.owner_address || '',
+          landlord_spouse_name: selectedProp.owner_spouse_name || '',
+          landlord_spouse_document: selectedProp.owner_spouse_cpf || selectedProp.owner_spouse_document || '',
+          landlord_spouse_rg: landlordSpouseRg,
         }));
         // Auto-preenchimento inteligente dos valores da locação
         setFormData(prev => ({
@@ -117,13 +163,12 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         }));
       }
     }
-  }, [formData.property_id, properties]);
+  }, [formData.property_id, properties, _contractData]);
 
   const handleGeneratePDF = async (e: React.MouseEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const selectedLead = leads.find(l => l.id === formData.lead_id);
       const selectedPropertyData = properties.find(p => p.id === formData.property_id);
 
       const startDate = new Date(formData.start_date);
@@ -132,13 +177,13 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
       if (months <= 0) months = 12;
 
       const contractDataObj = {
-        tenant_name: selectedLead?.name || '',
-        tenant_phone: selectedLead?.phone || '',
+        tenant_name: contractDetails.tenant_name || contractClientRecord?.name || '',
+        tenant_phone: contractClientRecord?.phone || '',
         tenant_document: contractDetails.tenant_document,
         tenant_profession: contractDetails.tenant_profession,
         tenant_marital_status: contractDetails.tenant_marital_status,
         tenant_address: contractDetails.tenant_address,
-        landlord_name: selectedPropertyData?.owner_name || 'Proprietário Atual',
+        landlord_name: contractDetails.landlord_name || selectedPropertyData?.owner_name || 'Proprietário Atual',
         landlord_phone: selectedPropertyData?.owner_phone || '',
         landlord_document: contractDetails.landlord_document,
         landlord_profession: contractDetails.landlord_profession,
@@ -207,9 +252,19 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
 
       // Se existir _contractData, estamos no MODO VISUALIZAÇÃO!
       if (_contractData) {
+        const rawGuaranteeType = String(_contractData.rent_guarantee_type || '').toLowerCase();
+        const storedDocumentType =
+          typeof _contractData?.contract_data?.document_type === 'string' && _contractData.contract_data.document_type
+            ? _contractData.contract_data.document_type
+            : rawGuaranteeType.includes('sem') || rawGuaranteeType === 'none'
+              ? 'rent_noguarantee'
+              : 'rent_guarantor';
+
+        setDocumentType(storedDocumentType);
         setFormData(prev => ({
           ...prev,
           lead_id: _contractData.lead_id || '',
+          client_id: _contractData.client_id || _contractData.lead_id || null,
           property_id: _contractData.property_id || '',
           broker_id: _contractData.broker_id || '',
           start_date: _contractData.start_date || '',
@@ -330,12 +385,16 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
 
     try {
       const selectedLeadForSave = leads.find(l => l.id === formData.lead_id);
+      const contractClientForSave = selectedLeadForSave;
       const selectedPropForSave = properties.find(p => p.id === formData.property_id);
+      const selectedTemplate = customTemplates.find(t => `custom_${t.id}` === documentType);
+      const resolvedClientId = formData.client_id || formData.lead_id || null;
 
       const payload = {
         type: 'rent',
         status: 'pending',
         lead_id: formData.lead_id || null,
+        client_id: resolvedClientId,
         property_id: formData.property_id || null,
         broker_id: formData.broker_id || null,
         start_date: formData.start_date,
@@ -354,8 +413,10 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         // CORREÇÃO CRÍTICA: Salvando os nomes para a aba Financeiro ler depois!
         contract_data: {
           ...contractDetails,
+          document_type: documentType,
+          template_content: selectedTemplate?.content || null,
           lessor_name: contractDetails.landlord_name || selectedPropForSave?.owner_name || 'Proprietário',
-          lessee_name: selectedLeadForSave?.name || 'Inquilino',
+          lessee_name: contractDetails.tenant_name || contractClientForSave?.name || 'Inquilino',
           guarantor_name: guarantorName,
           guarantor_document: guarantorDocument,
           guarantor_address: guarantorAddress,
@@ -368,6 +429,23 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
 
       const { data: contract, error } = await supabase.from('contracts').insert([payload]).select().single();
       if (error) throw error;
+
+      if (resolvedClientId) {
+        const { error: clientEnrichmentError } = await supabase
+          .from('leads')
+          .update({
+            cpf: contractDetails.tenant_document,
+            rg: contractDetails.tenant_rg,
+            profissao: contractDetails.tenant_profession,
+            estado_civil: contractDetails.tenant_marital_status,
+            endereco: contractDetails.tenant_address
+          })
+          .eq('id', resolvedClientId);
+
+        if (clientEnrichmentError) {
+          console.error('Erro ao enriquecer o cadastro do cliente:', clientEnrichmentError);
+        }
+      }
 
       if (contract) {
         const installments = [];
@@ -460,7 +538,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1">Locatário (Inquilino)</label>
-                  <select required value={formData.lead_id} onChange={e => setFormData({ ...formData, lead_id: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-indigo-500 bg-white text-sm">
+                  <select required value={formData.lead_id} onChange={e => setFormData({ ...formData, lead_id: e.target.value, client_id: e.target.value || null })} className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-indigo-500 bg-white text-sm">
                     <option value="">Selecione um cliente...</option>
                     {leads.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                   </select>

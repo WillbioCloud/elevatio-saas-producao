@@ -31,7 +31,7 @@ export const useInstallmentReminders = () => {
 
         const { data: installments, error } = await supabase
           .from('installments')
-          .select('id, amount, due_date, contract:contracts(id, broker_id, lead:leads(name))')
+          .select('id, amount, due_date, contract:contracts(id, broker_id, lead:leads!contracts_lead_id_fkey(name))')
           .eq('status', 'pending')
           .eq('notified_due', false)
           .lte('due_date', dateString);

@@ -99,6 +99,7 @@ export interface Company {
   template?: string;
   logo_url?: string | null;
   logo_white_url?: string | null;
+  admin_signature_url?: string | null;
   email?: string | null;
   phone?: string | null;
   address?: string | null;
@@ -189,14 +190,26 @@ export interface Property {
   owner_name?: string;
   owner_phone?: string;
   owner_email?: string;
+  owner_cpf?: string;
   owner_document?: string;
+  owner_rg?: string;
+  owner_rg_org?: string;
+  owner_rg_uf?: string;
   owner_profession?: string;
   owner_marital_status?: string;
+  owner_nationality?: string;
   owner_address?: string;
   owner_pix_key?: string | null;
   owner_pix_type?: string | null;
   owner_spouse_name?: string;
+  owner_spouse_cpf?: string;
   owner_spouse_document?: string;
+  owner_spouse_rg?: string;
+  owner_spouse_rg_org?: string;
+  owner_spouse_rg_uf?: string;
+  property_registration?: string;
+  property_registry_office?: string;
+  property_municipal_registration?: string;
   created_at?: string;
 
   // SEO
@@ -238,6 +251,11 @@ export interface Lead {
   name: string;
   email: string;
   phone: string;
+  cpf?: string;
+  rg?: string;
+  profissao?: string;
+  estado_civil?: string;
+  endereco?: string;
   message?: string;
   status: LeadStatus | string;
   propertyId?: string;

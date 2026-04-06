@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import SignaturePad from 'react-signature-canvas';
 import heic2any from 'heic2any';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
@@ -76,7 +77,7 @@ interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_sec
 type SitePartner = NonNullable<SiteData['partners']>[number];
 type TenantFinanceRecord = Pick<
   Company,
-  'id' | 'name' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template'
+  'id' | 'name' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template' | 'admin_signature_url'
 > & {
   finance_config?: FinanceConfig | null;
 };
@@ -344,6 +345,8 @@ const AdminConfig: React.FC = () => {
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isAdmin = user?.role === 'admin';
+  const canManageOfficialSignature = user?.role === 'admin' || user?.role === 'super_admin';
+  const adminCompanyId = user?.company_id ?? null;
 
   const [activeTab, setActiveTab] = useState<'profile' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance'>('profile');
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -355,6 +358,8 @@ const AdminConfig: React.FC = () => {
   const [savingPassword, setSavingPassword] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isUploadingSignature, setIsUploadingSignature] = useState(false);
+  const [adminSignatureUrl, setAdminSignatureUrl] = useState<string | null>(null);
   const [isXpModalOpen, setIsXpModalOpen] = useState(false);
   const [siteSettings, setSiteSettings] = useState({ route_to_central: true, central_whatsapp: '', central_user_id: '' });
   const [savingSettings, setSavingSettings] = useState(false);
@@ -416,6 +421,7 @@ const AdminConfig: React.FC = () => {
   const [isSecondaryConfirmed, setIsSecondaryConfirmed] = useState(false);
   const isLoading = isGeneratingCheckout || isReactivating || isUpgrading !== null;
   const setIsLoading = setIsGeneratingCheckout;
+  const signaturePadRef = useRef<SignaturePad | null>(null);
 
   const checkoutDomainInfo = useMemo(() => {
     const companyDomain = siteDomain || (companySubdomain ? `${companySubdomain}.elevatio.app` : '');
@@ -445,6 +451,7 @@ const AdminConfig: React.FC = () => {
       domain_status: companyDomainStatus ?? tenant?.domain_status ?? null,
       domain_secondary_status: tenant?.domain_secondary_status ?? null,
       template: tenant?.template || null,
+      admin_signature_url: tenant?.admin_signature_url || null,
     }),
     [
       tenant?.id,
@@ -458,6 +465,7 @@ const AdminConfig: React.FC = () => {
       tenant?.domain_status,
       tenant?.domain_secondary_status,
       tenant?.template,
+      tenant?.admin_signature_url,
     ]
   );
 
@@ -709,6 +717,7 @@ const AdminConfig: React.FC = () => {
       .select(`
         id,
         name,
+        admin_signature_url,
         subdomain,
         domain,
         domain_secondary,
@@ -749,6 +758,7 @@ const AdminConfig: React.FC = () => {
       setTenant({
         id: data.id,
         name: data.name || '',
+        admin_signature_url: data.admin_signature_url ?? null,
         subdomain: data.subdomain || null,
         domain: data.domain || null,
         domain_secondary: data.domain_secondary || null,
@@ -853,6 +863,39 @@ const AdminConfig: React.FC = () => {
       fetchPlans();
     }
   }, [isAdmin, user?.id]);
+
+  useEffect(() => {
+    setAdminSignatureUrl(tenant?.admin_signature_url ?? null);
+  }, [tenant?.admin_signature_url]);
+
+  const fetchAdminSignature = async () => {
+    if (!adminCompanyId) {
+      setAdminSignatureUrl(null);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('admin_signature_url')
+        .eq('id', adminCompanyId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const nextSignatureUrl = data?.admin_signature_url || null;
+      setAdminSignatureUrl(nextSignatureUrl);
+      setTenant((prev) => (prev ? { ...prev, admin_signature_url: nextSignatureUrl } : prev));
+    } catch (error) {
+      console.error('Erro ao buscar assinatura admin:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'profile' && canManageOfficialSignature && adminCompanyId) {
+      void fetchAdminSignature();
+    }
+  }, [activeTab, canManageOfficialSignature, adminCompanyId]);
 
   useEffect(() => {
     if (activeTab !== 'subscription' || !user?.company_id) return;
@@ -1163,6 +1206,74 @@ const AdminConfig: React.FC = () => {
     } finally {
       setIsUploadingLogo(false);
       e.target.value = '';
+    }
+  };
+
+  const handleAdminSignatureUpload = async (file: File) => {
+    if (!company?.id) return;
+
+    try {
+      setIsUploadingSignature(true);
+      const url = await uploadCompanyAsset(file, company.id, 'signature');
+
+      const { error } = await supabase
+        .from('companies')
+        .update({ admin_signature_url: url })
+        .eq('id', company.id);
+
+      if (error) throw error;
+
+      setTenant((prev) => (prev ? { ...prev, admin_signature_url: url } : prev));
+      setAdminSignatureUrl(url);
+      addToast('Assinatura salva com sucesso!', 'success');
+    } catch (error: any) {
+      console.error('Erro ao salvar assinatura do responsável:', error);
+      addToast(error.message || 'Erro ao salvar assinatura.', 'error');
+    } finally {
+      setIsUploadingSignature(false);
+    }
+  };
+
+  const handleSaveAdminSignature = async () => {
+    if (!signaturePadRef.current || signaturePadRef.current.isEmpty() || !adminCompanyId || !user?.id) return;
+
+    setIsUploadingSignature(true);
+
+    try {
+      const signatureDataUrl = signaturePadRef.current.getTrimmedCanvas().toDataURL('image/png');
+      const blob = await (await fetch(signatureDataUrl)).blob();
+      const fileName = `admin_sig_${user.id}_${Date.now()}.png`;
+      const filePath = `companies/${adminCompanyId}/signatures/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('company-assets')
+        .upload(filePath, blob, {
+          contentType: 'image/png',
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from('company-assets').getPublicUrl(filePath);
+
+      const { error: updateError } = await supabase
+        .from('companies')
+        .update({ admin_signature_url: publicUrl })
+        .eq('id', adminCompanyId);
+
+      if (updateError) throw updateError;
+
+      setAdminSignatureUrl(publicUrl);
+      setTenant((prev) => (prev ? { ...prev, admin_signature_url: publicUrl } : prev));
+      signaturePadRef.current.clear();
+      addToast('Assinatura oficial salva com sucesso!', 'success');
+    } catch (error) {
+      console.error('Erro ao salvar assinatura admin:', error);
+      addToast('Ocorreu um erro ao salvar a assinatura oficial.', 'error');
+    } finally {
+      setIsUploadingSignature(false);
     }
   };
 
@@ -1786,6 +1897,70 @@ const AdminConfig: React.FC = () => {
                   disabled
                 />
               </div>
+
+              {canManageOfficialSignature && adminCompanyId && (
+                <div className="border-t border-slate-100 pt-6 dark:border-slate-800">
+                  <h4 className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Assinatura Oficial do Responsável</h4>
+                  <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                    Esta assinatura será utilizada como rubrica da imobiliária nos contratos gerados.
+                  </p>
+
+                  <div className="flex flex-col gap-4 sm:flex-row">
+                    <div className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/60 sm:w-auto">
+                      {adminSignatureUrl ? (
+                        <div className="space-y-3">
+                          <img
+                            src={adminSignatureUrl}
+                            alt="Assinatura oficial"
+                            className="max-h-24 max-w-[250px] object-contain border-b border-slate-200 pb-2 dark:border-slate-700"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAdminSignatureUrl(null);
+                              signaturePadRef.current?.clear();
+                            }}
+                            className="text-xs font-semibold text-rose-600 transition-colors hover:text-rose-700"
+                          >
+                            Alterar Assinatura
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950">
+                            <SignaturePad
+                              ref={signaturePadRef}
+                              penColor="#0f172a"
+                              canvasProps={{
+                                className: 'sigCanvas h-24 w-full',
+                              }}
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => signaturePadRef.current?.clear()}
+                              className="rounded border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                              Limpar Pad
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleSaveAdminSignature}
+                              disabled={isUploadingSignature}
+                              className="flex items-center gap-2 rounded bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-60"
+                            >
+                              {isUploadingSignature ? <Icons.Loader2 size={14} className="animate-spin" /> : <Icons.Save size={14} />}
+                              Salvar Assinatura Oficial
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <button
                 type="submit"
@@ -3039,6 +3214,58 @@ const AdminConfig: React.FC = () => {
                 />
               </div>
 
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-800 dark:bg-slate-900/50">
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                    <Icons.PenTool size={16} className="text-brand-600" /> Assinatura do Responsável
+                  </label>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Esta assinatura será anexada automaticamente ao final dos contratos gerados em PDF.
+                  </p>
+                </div>
+
+                <div className="mt-5 flex items-start gap-6">
+                  <div className="group relative flex h-24 w-48 items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950">
+                    {company?.admin_signature_url ? (
+                      <>
+                        <img
+                          src={company.admin_signature_url}
+                          alt="Assinatura"
+                          className="max-h-full max-w-full object-contain p-2"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                          <Upload className="text-white" size={24} />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="p-4 text-center">
+                        <ImageOff size={24} className="mx-auto mb-2 text-slate-300" />
+                        <span className="text-xs font-medium text-slate-400">Fundo Transparente (PNG)</span>
+                      </div>
+                    )}
+
+                    {isUploadingSignature && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-slate-950/65">
+                        <Loader2 size={24} className="animate-spin text-white" />
+                      </div>
+                    )}
+
+                    <input
+                      type="file"
+                      accept="image/png, image/jpeg"
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                      disabled={isUploadingSignature || !company?.id}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        await handleAdminSignatureUpload(file);
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
@@ -3585,13 +3812,10 @@ const AdminConfig: React.FC = () => {
                 </div>
                 <p className="text-[10px] text-slate-500 mb-2">Pode clicar nos botões abaixo para inserir manualmente, ou usar a IA acima para substituir nomes reais do seu documento pelas tags automaticamente.</p>
                 <div className="flex flex-wrap gap-2">
-                  {['{{IMOBILIARIA_NOME}}', '{{CORRETOR_NOME}}', '{{CORRETOR_CPF}}', '{{CORRETOR_CRECI}}',
-                    '{{IMOVEL_TITULO}}', '{{IMOVEL_ENDERECO}}', '{{IMOVEL_MATRICULA}}',
-                    '{{VALOR_NEGOCIADO}}', '{{VALOR_SINAL}}', '{{VALOR_FINANCIAMENTO}}', '{{VALOR_FGTS}}', '{{VALOR_PERMUTA}}', '{{QTD_PARCELAS}}',
-                    '{{LOCATARIO_NOME}}', '{{LOCATARIO_CPF}}', '{{LOCATARIO_RG}}', '{{LOCATARIO_PROFISSAO}}', '{{LOCATARIO_ESTADO_CIVIL}}', '{{LOCATARIO_ENDERECO}}',
-                    '{{LOCADOR_NOME}}', '{{LOCADOR_CPF}}', '{{LOCADOR_RG}}', '{{LOCADOR_PROFISSAO}}', '{{LOCADOR_ESTADO_CIVIL}}', '{{LOCADOR_ENDERECO}}',
-                    '{{FIADOR_NOME}}', '{{FIADOR_CPF}}', '{{FIADOR_RG}}', '{{FIADOR_PROFISSAO}}', '{{FIADOR_ESTADO_CIVIL}}', '{{FIADOR_ENDERECO}}',
-                    '{{DATA_ATUAL}}'].map(tag => (
+                  {['{{IMOBILIARIA_NOME}}', '{{IMOBILIARIA_CNPJ}}', '{{IMOBILIARIA_ENDERECO}}', '{{CORRETOR_NOME}}', '{{CORRETOR_CRECI}}', '{{IMOBILIARIA_ASSINATURA}}',
+                    '{{CLIENTE_NOME}}', '{{CLIENTE_CPF}}', '{{CLIENTE_RG}}', '{{CLIENTE_NACIONALIDADE}}', '{{CLIENTE_PROFISSAO}}', '{{CLIENTE_ESTADO_CIVIL}}', '{{CLIENTE_ENDERECO}}',
+                    '{{PROPRIETARIO_NOME}}', '{{PROPRIETARIO_CPF}}', '{{PROPRIETARIO_RG}}', '{{PROPRIETARIO_ESTADO_CIVIL}}', '{{PROPRIETARIO_ENDERECO}}',
+                    '{{IMOVEL_ENDERECO}}', '{{IMOVEL_MATRICULA}}', '{{VALOR_TOTAL}}', '{{VALOR_TOTAL_EXTENSO}}', '{{DATA_VENCIMENTO}}', '{{PRAZO_MESES}}', '{{DATA_ATUAL}}'].map(tag => (
                     <button key={tag} type="button" onClick={() => { navigator.clipboard.writeText(tag); addToast(`${tag} copiado!`, 'success'); }} className="px-2 py-1 bg-white dark:bg-slate-800 text-[10px] font-mono font-bold text-brand-600 rounded-lg shadow-sm border border-brand-100 hover:scale-105 transition-transform">{tag}</button>
                   ))}
                 </div>

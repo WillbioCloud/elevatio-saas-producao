@@ -15,6 +15,14 @@ interface SaleContractModalProps {
   contractData?: any;
 }
 
+const formatRgWithIssuer = (rg?: string | null, org?: string | null, uf?: string | null) => {
+  const baseRg = String(rg || '').trim();
+  if (!baseRg) return '';
+
+  const issuer = [org, uf].filter(Boolean).join('/');
+  return issuer ? `${baseRg} ${issuer}`.trim() : baseRg;
+};
+
 const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, onSuccess, contractData }) => {
   const { user } = useAuth();
   const { tenant } = useTenant();
@@ -34,6 +42,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
 
   const [contractDetails, setContractDetails] = useState({
     buyer_document: '',
+    buyer_rg: '',
     buyer_profession: '',
     buyer_marital_status: '',
     buyer_address: '',
@@ -41,11 +50,13 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     buyer_spouse_document: '',
     buyer_spouse_profession: '',
     seller_document: '',
+    seller_rg: '',
     seller_profession: '',
     seller_marital_status: '',
     seller_address: '',
     seller_spouse_name: '',
     seller_spouse_document: '',
+    seller_spouse_rg: '',
     seller_spouse_profession: '',
     permuta_address: '',
     permuta_description: '',
@@ -54,6 +65,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
 
   const [formData, setFormData] = useState({
     lead_id: '',
+    client_id: null as string | null,
     property_id: '',
     broker_id: '',
     sale_date: new Date().toISOString().split('T')[0],
@@ -76,23 +88,59 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     spouse_details: '',
   });
 
+  const selectedLeadRecord = leads.find((lead) => lead.id === formData.lead_id);
+  const contractClientRecord = selectedLeadRecord;
+
   // Autofill dos dados do Proprietário quando um imóvel é selecionado
   useEffect(() => {
-    if (formData.property_id && properties.length > 0) {
-      const selectedProp = properties.find(p => p.id === formData.property_id);
-      if (selectedProp) {
-        setContractDetails(prev => ({
+    if (formData.lead_id && !contractData) {
+      const selectedLead = leads.find((lead) => lead.id === formData.lead_id);
+      if (selectedLead) {
+        setFormData((prev) => ({
           ...prev,
-          seller_document: selectedProp.owner_document || prev.seller_document,
-          seller_profession: selectedProp.owner_profession || prev.seller_profession,
-          seller_marital_status: selectedProp.owner_marital_status || prev.seller_marital_status,
-          seller_address: selectedProp.owner_address || prev.seller_address,
-          seller_spouse_name: selectedProp.owner_spouse_name || prev.seller_spouse_name,
-          seller_spouse_document: selectedProp.owner_spouse_document || prev.seller_spouse_document,
+          client_id: selectedLead.id,
+        }));
+        setContractDetails((prev) => ({
+          ...prev,
+          buyer_document: selectedLead.cpf || '',
+          buyer_rg: selectedLead.rg || '',
+          buyer_profession: selectedLead.profissao || '',
+          buyer_marital_status: selectedLead.estado_civil || '',
+          buyer_address: selectedLead.endereco || '',
         }));
       }
     }
-  }, [formData.property_id, properties]);
+  }, [formData.lead_id, leads, contractData]);
+
+  useEffect(() => {
+    if (formData.property_id && !contractData && properties.length > 0) {
+      const selectedProp = properties.find((property) => property.id === formData.property_id);
+      if (selectedProp) {
+        const sellerRg = formatRgWithIssuer(
+          selectedProp.owner_rg,
+          selectedProp.owner_rg_org,
+          selectedProp.owner_rg_uf
+        );
+        const sellerSpouseRg = formatRgWithIssuer(
+          selectedProp.owner_spouse_rg,
+          selectedProp.owner_spouse_rg_org,
+          selectedProp.owner_spouse_rg_uf
+        );
+
+        setContractDetails(prev => ({
+          ...prev,
+          seller_document: selectedProp.owner_cpf || selectedProp.owner_document || '',
+          seller_rg: sellerRg,
+          seller_profession: selectedProp.owner_profession || '',
+          seller_marital_status: selectedProp.owner_marital_status || '',
+          seller_address: selectedProp.owner_address || '',
+          seller_spouse_name: selectedProp.owner_spouse_name || '',
+          seller_spouse_document: selectedProp.owner_spouse_cpf || selectedProp.owner_spouse_document || '',
+          seller_spouse_rg: sellerSpouseRg,
+        }));
+      }
+    }
+  }, [formData.property_id, properties, contractData]);
 
   useEffect(() => {
     if (isOpen) fetchData();
@@ -150,9 +198,20 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
   // MODO DE VISUALIZAÇÃO
   useEffect(() => {
     if (isOpen && contractData) {
+      const storedDocumentType =
+        typeof contractData?.contract_data?.document_type === 'string' && contractData.contract_data.document_type
+          ? contractData.contract_data.document_type
+          : contractData?.has_permutation
+            ? 'permuta'
+            : contractData?.sale_is_cash
+              ? 'sale_cash'
+              : 'sale_standard';
+
+      setDocumentType(storedDocumentType);
       setFormData(prev => ({
         ...prev,
         lead_id: contractData.lead_id || '',
+        client_id: contractData.client_id || contractData.lead_id || null,
         property_id: contractData.property_id || '',
         broker_id: contractData.broker_id || '',
         sale_date: contractData.start_date || '',
@@ -169,6 +228,13 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         sale_payment_method: contractData.sale_payment_method || 'Pix',
         sale_consortium_value: String(contractData.sale_consortium_value || ''),
       }));
+
+      if (contractData.contract_data) {
+        setContractDetails(prev => ({
+          ...prev,
+          ...contractData.contract_data
+        }));
+      }
     }
   }, [isOpen, contractData]);
 
@@ -257,13 +323,13 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     e.preventDefault();
     setLoading(true);
     try {
-      const selectedLead = leads.find(l => l.id === formData.lead_id);
       const selectedPropertyData = properties.find(p => p.id === formData.property_id);
       const contractDataObj = {
-        buyer_name: selectedLead?.name || '',
-        buyer_phone: selectedLead?.phone || '',
-        buyer_email: selectedLead?.email || '',
+        buyer_name: contractClientRecord?.name || '',
+        buyer_phone: contractClientRecord?.phone || '',
+        buyer_email: contractClientRecord?.email || '',
         buyer_document: contractDetails.buyer_document,
+        buyer_rg: contractDetails.buyer_rg,
         buyer_profession: contractDetails.buyer_profession,
         buyer_marital_status: contractDetails.buyer_marital_status,
         buyer_address: contractDetails.buyer_address,
@@ -274,11 +340,13 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         seller_phone: selectedPropertyData?.owner_phone || '',
         seller_email: selectedPropertyData?.owner_email || '',
         seller_document: contractDetails.seller_document,
+        seller_rg: contractDetails.seller_rg,
         seller_profession: contractDetails.seller_profession,
         seller_marital_status: contractDetails.seller_marital_status,
         seller_address: contractDetails.seller_address,
         seller_spouse_name: contractDetails.seller_spouse_name,
         seller_spouse_document: contractDetails.seller_spouse_document,
+        seller_spouse_rg: contractDetails.seller_spouse_rg,
         seller_spouse_profession: contractDetails.seller_spouse_profession,
         permuta_address: contractDetails.permuta_address,
         permuta_description: contractDetails.permuta_description,
@@ -309,9 +377,14 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     if (totalValue <= 0) return alert('O valor total da venda deve ser maior que zero.');
     setLoading(true);
     try {
+      const selectedLeadForSave = leads.find((lead) => lead.id === formData.lead_id);
+      const selectedPropForSave = properties.find((property) => property.id === formData.property_id);
+      const selectedTemplate = customTemplates.find(t => `custom_${t.id}` === documentType);
+      const resolvedClientId = formData.client_id || formData.lead_id || null;
       const payload = {
         type: 'sale', status: 'pending',
         lead_id: formData.lead_id || null,
+        client_id: resolvedClientId,
         property_id: formData.property_id || null,
         broker_id: formData.broker_id || null,
         start_date: formData.sale_date,
@@ -327,10 +400,34 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         sale_payment_method: formData.sale_is_cash ? formData.sale_payment_method : null,
         commission_percentage: Number(formData.commission_percentage) || 0,
         commission_total: Number(formData.commission_value) || 0,
+        contract_data: {
+          ...contractDetails,
+          buyer_name: selectedLeadForSave?.name || '',
+          seller_name: selectedPropForSave?.owner_name || 'Proprietário',
+          document_type: documentType,
+          template_content: selectedTemplate?.content || null,
+        },
         company_id: user?.company_id,
       };
       const { data: contract, error } = await supabase.from('contracts').insert([payload]).select().single();
       if (error) throw error;
+
+      if (resolvedClientId) {
+        const { error: clientEnrichmentError } = await supabase
+          .from('leads')
+          .update({
+            cpf: contractDetails.buyer_document,
+            rg: contractDetails.buyer_rg,
+            profissao: contractDetails.buyer_profession,
+            estado_civil: contractDetails.buyer_marital_status,
+            endereco: contractDetails.buyer_address
+          })
+          .eq('id', resolvedClientId);
+
+        if (clientEnrichmentError) {
+          console.error('Erro ao enriquecer o cadastro do cliente:', clientEnrichmentError);
+        }
+      }
 
       if (!formData.sale_is_cash && contract && saldoDevedor > 0) {
         const installments = [];
@@ -390,11 +487,11 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         </div>
 
         <div className="flex-1 overflow-y-auto bg-slate-50/50 p-6 custom-scrollbar">
-          <form id="sale-form" onSubmit={handleSubmit} className="space-y-6 max-w-5xl mx-auto">
+          <form id="sale-form" onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-5xl mx-auto">
             <fieldset disabled={!!contractData} className="contents">
 
               {/* SECTION 1: TIPO DE CONTRATO */}
-              <section className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl relative overflow-hidden">
+              <section className="order-3 bg-slate-900 text-white p-6 rounded-2xl shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-6 opacity-10 pointer-events-none">
                   <Icons.FileText size={120} />
                 </div>
@@ -430,13 +527,223 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                 </div>
               </section>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <section className="order-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-2">
+                  <Icons.FileText size={16} className="text-brand-500" /> Dados do Comprador e do Vendedor
+                </h3>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <p className="text-xs font-bold text-slate-500 mb-3 uppercase flex items-center justify-between">
+                      Dados do Comprador
+                      <span className="text-[10px] text-brand-500 bg-brand-50 px-2 py-1 rounded-md">Auto do Lead</span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] uppercase text-slate-500 mb-1">CPF/CNPJ</label>
+                        <input type="text" value={contractDetails.buyer_document} onChange={e => setContractDetails({ ...contractDetails, buyer_document: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase text-slate-500 mb-1">RG</label>
+                        <input type="text" value={contractDetails.buyer_rg} onChange={e => setContractDetails({ ...contractDetails, buyer_rg: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Estado Civil</label>
+                        <select value={contractDetails.buyer_marital_status} onChange={e => setContractDetails({ ...contractDetails, buyer_marital_status: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none">
+                          <option value="">Selecione...</option>
+                          <option value="Solteiro(a)">Solteiro(a)</option>
+                          <option value="Casado(a)">Casado(a)</option>
+                          <option value="Divorciado(a)">Divorciado(a)</option>
+                          <option value="Viúvo(a)">Viúvo(a)</option>
+                          <option value="União Estável">União Estável</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Profissão</label>
+                        <input type="text" value={contractDetails.buyer_profession} onChange={e => setContractDetails({ ...contractDetails, buyer_profession: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Endereço</label>
+                        <input type="text" value={contractDetails.buyer_address} onChange={e => setContractDetails({ ...contractDetails, buyer_address: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                    </div>
+                    {(contractDetails.buyer_marital_status === 'Casado(a)' || contractDetails.buyer_marital_status === 'União Estável') && (
+                      <div className="mt-3 pt-3 border-t border-slate-200 grid grid-cols-3 gap-3 animate-fade-in">
+                        <div>
+                          <label className="block text-[10px] uppercase text-slate-500 mb-1">Nome do Cônjuge</label>
+                          <input type="text" value={contractDetails.buyer_spouse_name} onChange={e => setContractDetails({ ...contractDetails, buyer_spouse_name: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] uppercase text-slate-500 mb-1">CPF do Cônjuge</label>
+                          <input type="text" value={contractDetails.buyer_spouse_document} onChange={e => setContractDetails({ ...contractDetails, buyer_spouse_document: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] uppercase text-slate-500 mb-1">Profissão do Cônjuge</label>
+                          <input type="text" value={contractDetails.buyer_spouse_profession} onChange={e => setContractDetails({ ...contractDetails, buyer_spouse_profession: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <p className="text-xs font-bold text-slate-500 mb-3 uppercase flex items-center justify-between">
+                      Dados do Vendedor
+                      <span className="text-[10px] text-brand-500 bg-brand-50 px-2 py-1 rounded-md">Auto do Imóvel</span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] uppercase text-slate-500 mb-1">CPF/CNPJ</label>
+                        <input type="text" value={contractDetails.seller_document} onChange={e => setContractDetails({ ...contractDetails, seller_document: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase text-slate-500 mb-1">RG</label>
+                        <input type="text" value={contractDetails.seller_rg} onChange={e => setContractDetails({ ...contractDetails, seller_rg: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Estado Civil</label>
+                        <select value={contractDetails.seller_marital_status} onChange={e => setContractDetails({ ...contractDetails, seller_marital_status: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none">
+                          <option value="">Selecione...</option>
+                          <option value="Solteiro(a)">Solteiro(a)</option>
+                          <option value="Casado(a)">Casado(a)</option>
+                          <option value="Divorciado(a)">Divorciado(a)</option>
+                          <option value="Viúvo(a)">Viúvo(a)</option>
+                          <option value="União Estável">União Estável</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Profissão</label>
+                        <input type="text" value={contractDetails.seller_profession} onChange={e => setContractDetails({ ...contractDetails, seller_profession: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Endereço</label>
+                        <input type="text" value={contractDetails.seller_address} onChange={e => setContractDetails({ ...contractDetails, seller_address: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                      </div>
+                    </div>
+                    {(contractDetails.seller_marital_status === 'Casado(a)' || contractDetails.seller_marital_status === 'União Estável') && (
+                      <div className="mt-3 pt-3 border-t border-slate-200 grid grid-cols-4 gap-3 animate-fade-in">
+                        <div>
+                          <label className="block text-[10px] uppercase text-slate-500 mb-1">Nome do Cônjuge</label>
+                          <input type="text" value={contractDetails.seller_spouse_name} onChange={e => setContractDetails({ ...contractDetails, seller_spouse_name: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] uppercase text-slate-500 mb-1">CPF do Cônjuge</label>
+                          <input type="text" value={contractDetails.seller_spouse_document} onChange={e => setContractDetails({ ...contractDetails, seller_spouse_document: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] uppercase text-slate-500 mb-1">RG do Cônjuge</label>
+                          <input type="text" value={contractDetails.seller_spouse_rg} onChange={e => setContractDetails({ ...contractDetails, seller_spouse_rg: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] uppercase text-slate-500 mb-1">Profissão do Cônjuge</label>
+                          <input type="text" value={contractDetails.seller_spouse_profession} onChange={e => setContractDetails({ ...contractDetails, seller_spouse_profession: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {isCashContract ? (
+                <section className="order-5 bg-emerald-500 text-white p-6 rounded-2xl shadow-lg border border-emerald-400 relative overflow-hidden animate-in fade-in slide-in-from-right-4">
+                  <div className="absolute top-0 right-0 p-4 opacity-20 pointer-events-none"><Icons.DollarSign size={100} /></div>
+                  <div className="relative z-10">
+                    <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center mb-4">
+                      <Icons.CheckCircle2 size={24} className="text-white" />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">Pagamento à Vista</h3>
+                    <p className="text-emerald-100 text-sm mb-6">O contrato será gerado com cláusula de quitação no ato da assinatura. Não há saldo devedor.</p>
+                    <div className="bg-white/10 p-4 rounded-xl border border-white/20">
+                      <p className="text-xs font-bold text-emerald-200 uppercase tracking-wider mb-1">Valor a ser Transferido (Pix/TED)</p>
+                      <p className="text-3xl font-black">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalValue)}</p>
+                    </div>
+                  </div>
+                </section>
+              ) : (
+                <section className="order-5 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm animate-in fade-in slide-in-from-right-4">
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-2">
+                    <Icons.CreditCard size={16} className="text-brand-500" /> Formas de Pagamento
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Sinal / Entrada (R$)</label>
+                      <input type="number" value={formData.sale_down_payment} onChange={e => setFormData({ ...formData, sale_down_payment: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 text-sm font-bold text-slate-800 bg-slate-50" placeholder="0.00" />
+                    </div>
+                    {(isStandardContract || !isPermutaContract) && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="col-span-2">
+                          <label className="block text-xs font-bold text-slate-600 mb-1">Financiamento Bancário (R$)</label>
+                          <input type="number" value={formData.sale_financing_value} onChange={e => setFormData({ ...formData, sale_financing_value: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 text-sm" placeholder="0.00" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 mb-1">Banco Financiador</label>
+                          <input type="text" value={formData.sale_financing_bank} onChange={e => setFormData({ ...formData, sale_financing_bank: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 text-sm" placeholder="Ex: Caixa" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 mb-1">FGTS / Consórcio (R$)</label>
+                          <input type="number" value={formData.sale_consortium_value} onChange={e => setFormData({ ...formData, sale_consortium_value: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 text-sm" placeholder="0.00" />
+                        </div>
+                      </div>
+                    )}
+
+                    {(isPermutaContract || formData.has_permutation) && (
+                      <div className="bg-brand-50 border border-brand-200 p-4 rounded-xl animate-in fade-in">
+                        <div className="flex justify-between items-center mb-3">
+                          <p className="text-xs font-bold text-brand-700 uppercase">Imóvel como Parte de Pagamento</p>
+                          {!isPermutaContract && (
+                            <button type="button" onClick={() => setFormData({ ...formData, has_permutation: false })} className="text-xs text-red-500 hover:underline">Remover</button>
+                          )}
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Endereço / Descrição</label>
+                            <input type="text" value={contractDetails.permuta_address} onChange={e => setContractDetails({ ...contractDetails, permuta_address: e.target.value })} className="w-full bg-white border border-brand-200 rounded-lg px-3 py-2 text-sm outline-none" placeholder="Ex: Lote 12, Quadra B..." />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Valor Atribuído (R$)</label>
+                            <input type="number" value={formData.permutation_value} onChange={e => setFormData({ ...formData, permutation_value: e.target.value })} className="w-full bg-white border border-brand-200 rounded-lg px-3 py-2 text-sm outline-none font-bold" placeholder="0.00" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {!isPermutaContract && !formData.has_permutation && (
+                      <button type="button" onClick={() => setFormData({ ...formData, has_permutation: true })} className="w-full py-2 border border-dashed border-slate-300 text-slate-500 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors">
+                        + Adicionar Imóvel/Veículo como Permuta
+                      </button>
+                    )}
+
+                    <div className={`mt-2 p-4 rounded-xl border ${saldoDevedor > 0 ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                      <p className={`text-[10px] font-bold uppercase ${saldoDevedor > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>Saldo Restante</p>
+                      <p className={`text-2xl font-black ${saldoDevedor > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoDevedor)}
+                      </p>
+                      {saldoDevedor > 0 && (
+                        <div className="mt-4 pt-4 border-t border-amber-200/50 grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-amber-700 mb-1">Nº de Parcelas Diretas</label>
+                            <input type="number" min="1" value={formData.installments_count} onChange={e => setFormData({ ...formData, installments_count: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-amber-200 outline-none focus:border-amber-500 text-sm bg-white" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-amber-700 mb-1">Índice Correção</label>
+                            <select value={formData.readjustment_index} onChange={e => setFormData({ ...formData, readjustment_index: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-amber-200 outline-none focus:border-amber-500 text-sm bg-white">
+                              <option value="FIXO">Fixo (Sem Juros)</option>
+                              <option value="IPCA">IPCA</option>
+                              <option value="INCC">INCC</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              <div className="order-1 grid grid-cols-1 lg:grid-cols-12 gap-6">
 
                 {/* COLUNA ESQUERDA: DADOS BASE */}
-                <div className="lg:col-span-7 space-y-6">
+                <div className="lg:col-span-12 flex flex-col gap-6">
 
                   {/* IMÓVEL E VALORES */}
-                  <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                  <section className="order-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                     <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-2">
                       <Icons.Home size={16} className="text-brand-500" /> Imóvel e Valor
                     </h3>
@@ -466,14 +773,14 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                   </section>
 
                   {/* PARTES ENVOLVIDAS */}
-                  <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                  <section className="order-1 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                     <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-2">
                       <Icons.Users size={16} className="text-brand-500" /> Envolvidos
                     </h3>
                     <div className="space-y-4">
                       <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">Comprador (Lead) *</label>
-                        <select required value={formData.lead_id} onChange={e => setFormData({ ...formData, lead_id: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 bg-slate-50 text-sm font-medium">
+                        <select required value={formData.lead_id} onChange={e => setFormData({ ...formData, lead_id: e.target.value, client_id: e.target.value || null })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 bg-slate-50 text-sm font-medium">
                           <option value="">Selecione o cliente...</option>
                           {leads.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                         </select>
@@ -493,12 +800,16 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                       </div>
 
                       {/* Qualificação Comprador */}
-                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                      <div className="hidden">
                         <p className="text-xs font-bold text-slate-500 mb-3 uppercase">Qualificação do Comprador</p>
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-[10px] uppercase text-slate-500 mb-1">CPF/CNPJ</label>
                             <input type="text" value={contractDetails.buyer_document} onChange={e => setContractDetails({...contractDetails, buyer_document: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-500 mb-1">RG</label>
+                            <input type="text" value={contractDetails.buyer_rg} onChange={e => setContractDetails({...contractDetails, buyer_rg: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
                           </div>
                           <div>
                             <label className="block text-[10px] uppercase text-slate-500 mb-1">Estado Civil</label>
@@ -539,7 +850,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                       </div>
 
                       {/* Qualificação Vendedor */}
-                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                      <div className="hidden">
                         <p className="text-xs font-bold text-slate-500 mb-3 uppercase flex items-center justify-between">
                           Qualificação do Vendedor
                           <span className="text-[10px] text-brand-500 bg-brand-50 px-2 py-1 rounded-md">Puxado do Imóvel</span>
@@ -548,6 +859,10 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                           <div>
                             <label className="block text-[10px] uppercase text-slate-500 mb-1">CPF/CNPJ</label>
                             <input type="text" value={contractDetails.seller_document} onChange={e => setContractDetails({...contractDetails, seller_document: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] uppercase text-slate-500 mb-1">RG</label>
+                            <input type="text" value={contractDetails.seller_rg} onChange={e => setContractDetails({...contractDetails, seller_rg: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
                           </div>
                           <div>
                             <label className="block text-[10px] uppercase text-slate-500 mb-1">Estado Civil</label>
@@ -570,7 +885,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                           </div>
                         </div>
                         {(contractDetails.seller_marital_status === 'Casado(a)' || contractDetails.seller_marital_status === 'União Estável') && (
-                          <div className="mt-3 pt-3 border-t border-slate-200 grid grid-cols-3 gap-3 animate-fade-in">
+                          <div className="mt-3 pt-3 border-t border-slate-200 grid grid-cols-4 gap-3 animate-fade-in">
                             <div>
                               <label className="block text-[10px] uppercase text-slate-500 mb-1">Nome do Cônjuge</label>
                               <input type="text" value={contractDetails.seller_spouse_name} onChange={e => setContractDetails({...contractDetails, seller_spouse_name: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
@@ -578,6 +893,10 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                             <div>
                               <label className="block text-[10px] uppercase text-slate-500 mb-1">CPF do Cônjuge</label>
                               <input type="text" value={contractDetails.seller_spouse_document} onChange={e => setContractDetails({...contractDetails, seller_spouse_document: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] uppercase text-slate-500 mb-1">RG do Cônjuge</label>
+                              <input type="text" value={contractDetails.seller_spouse_rg} onChange={e => setContractDetails({...contractDetails, seller_spouse_rg: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
                             </div>
                             <div>
                               <label className="block text-[10px] uppercase text-slate-500 mb-1">Profissão Cônjuge</label>
@@ -591,7 +910,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                 </div>
 
                 {/* COLUNA DIREITA: CONDIÇÕES DE PAGAMENTO (DINÂMICO) */}
-                <div className="lg:col-span-5 space-y-6">
+                <div className="hidden">
                   {isCashContract ? (
                     <section className="bg-emerald-500 text-white p-6 rounded-2xl shadow-lg border border-emerald-400 relative overflow-hidden animate-in fade-in slide-in-from-right-4">
                       <div className="absolute top-0 right-0 p-4 opacity-20 pointer-events-none"><Icons.DollarSign size={100} /></div>

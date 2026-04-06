@@ -27,6 +27,7 @@ import { supabase } from './lib/supabase';
 // Public Pages
 import Login from './pages/Login';
 import PublicCheckout from './pages/PublicCheckout';
+import SignDocument from './pages/SignDocument';
 
 // Website Landing Pages (Master Domain Only)
 import LandingPage from './pages/website/LandingPage';
@@ -183,6 +184,7 @@ const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomai
           {/* === 4. A ROTA DE LOGIN DO CRM (COMUM A TODOS) === */}
           <Route path="/admin/login" element={<AnimatedPage><Login /></AnimatedPage>} />
           <Route path="/pay/:id" element={<PublicCheckout />} />
+          <Route path="/assinar/:token" element={<SignDocument />} />
 
           {/* Rota de Convite de Equipe */}
           <Route path="/convite" element={<InviteSignup />} />

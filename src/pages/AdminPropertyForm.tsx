@@ -14,6 +14,9 @@ import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
+const UFs = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
+const ORGAOS = ['SSP', 'Detran', 'Policia Federal', 'Cartorio Civil', 'OAB', 'CREA', 'CRM'];
+
 type WizardStep = 'basic' | 'details' | 'owner' | 'media' | 'seo';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -73,13 +76,19 @@ interface FormState {
   owner_phone: string;
   owner_email: string;
   owner_document: string;
+  owner_rg: string;
+  owner_rg_org: string;
+  owner_rg_uf: string;
   owner_profession: string;
   owner_marital_status: string;
   owner_address: string;
   owner_pix_key: string;
   owner_pix_type: string;
   owner_spouse_name: string;
-  owner_spouse_document: string;
+  owner_spouse_cpf: string;
+  owner_spouse_rg: string;
+  owner_spouse_rg_org: string;
+  owner_spouse_rg_uf: string;
 }
 
 const STEP_ORDER: WizardStep[] = ['basic', 'details', 'owner', 'media', 'seo'];
@@ -127,13 +136,19 @@ const defaultForm: FormState = {
   owner_phone: '',
   owner_email: '',
   owner_document: '',
+  owner_rg: '',
+  owner_rg_org: '',
+  owner_rg_uf: '',
   owner_profession: '',
   owner_marital_status: '',
   owner_address: '',
   owner_pix_key: '',
   owner_pix_type: '',
   owner_spouse_name: '',
-  owner_spouse_document: '',
+  owner_spouse_cpf: '',
+  owner_spouse_rg: '',
+  owner_spouse_rg_org: '',
+  owner_spouse_rg_uf: '',
 };
 
 const createSlug = (value: string) =>
@@ -391,13 +406,19 @@ const AdminPropertyForm: React.FC = () => {
         owner_phone: data.owner_phone || '',
         owner_email: data.owner_email || '',
         owner_document: data.owner_document || '',
+        owner_rg: data.owner_rg || '',
+        owner_rg_org: data.owner_rg_org || '',
+        owner_rg_uf: data.owner_rg_uf || '',
         owner_profession: data.owner_profession || '',
         owner_marital_status: data.owner_marital_status || '',
         owner_address: data.owner_address || '',
         owner_pix_key: data.owner_pix_key || '',
         owner_pix_type: data.owner_pix_type || '',
         owner_spouse_name: data.owner_spouse_name || '',
-        owner_spouse_document: data.owner_spouse_document || '',
+        owner_spouse_cpf: data.owner_spouse_cpf || '',
+        owner_spouse_rg: data.owner_spouse_rg || '',
+        owner_spouse_rg_org: data.owner_spouse_rg_org || '',
+        owner_spouse_rg_uf: data.owner_spouse_rg_uf || '',
       });
 
       setOriginalAgentId(data.agent_id);
@@ -869,13 +890,19 @@ const AdminPropertyForm: React.FC = () => {
         owner_phone: formData.owner_phone,
         owner_email: formData.owner_email,
         owner_document: formData.owner_document,
+        owner_rg: formData.owner_rg,
+        owner_rg_org: formData.owner_rg_org || null,
+        owner_rg_uf: formData.owner_rg_uf || null,
         owner_profession: formData.owner_profession,
         owner_marital_status: formData.owner_marital_status,
         owner_address: formData.owner_address,
         owner_pix_key: formData.owner_pix_key || null,
         owner_pix_type: formData.owner_pix_type || null,
         owner_spouse_name: formData.owner_spouse_name,
-        owner_spouse_document: formData.owner_spouse_document,
+        owner_spouse_cpf: formData.owner_spouse_cpf || null,
+        owner_spouse_rg: formData.owner_spouse_rg || null,
+        owner_spouse_rg_org: formData.owner_spouse_rg_org || null,
+        owner_spouse_rg_uf: formData.owner_spouse_rg_uf || null,
         images: images.map((item) => item.url),
         slug: isEditing ? undefined : createSlug(formData.title),
         agent_id: formData.agent_id || user?.id,
@@ -1663,6 +1690,32 @@ const AdminPropertyForm: React.FC = () => {
                   </select>
                 </div>
                 <div>
+                  <label htmlFor="owner_rg" className="block text-sm font-bold text-slate-600 mb-2">RG do Proprietário</label>
+                  <input id="owner_rg" value={formData.owner_rg} onChange={(e) => handleInput('owner_rg', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500" placeholder="Apenas números" />
+                </div>
+                <div>
+                  <label htmlFor="owner_rg_org" className="block text-sm font-bold text-slate-600 mb-2">Órgão Emissor</label>
+                  <select id="owner_rg_org" value={formData.owner_rg_org} onChange={(e) => handleInput('owner_rg_org', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500">
+                    <option value="">Selecione...</option>
+                    {ORGAOS.map((org) => (
+                      <option key={org} value={org}>
+                        {org}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="owner_rg_uf" className="block text-sm font-bold text-slate-600 mb-2">UF do RG</label>
+                  <select id="owner_rg_uf" value={formData.owner_rg_uf} onChange={(e) => handleInput('owner_rg_uf', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500">
+                    <option value="">UF...</option>
+                    {UFs.map((uf) => (
+                      <option key={uf} value={uf}>
+                        {uf}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label htmlFor="owner_profession" className="block text-sm font-bold text-slate-600 mb-2">Profissão</label>
                   <input id="owner_profession" value={formData.owner_profession} onChange={(e) => handleInput('owner_profession', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500" placeholder="Ex: Engenheiro" />
                 </div>
@@ -1725,8 +1778,34 @@ const AdminPropertyForm: React.FC = () => {
                       <input id="owner_spouse_name" value={formData.owner_spouse_name} onChange={(e) => handleInput('owner_spouse_name', e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-brand-500 text-sm" />
                     </div>
                     <div>
-                      <label htmlFor="owner_spouse_document" className="block text-xs font-bold text-slate-500 mb-1">CPF do Cônjuge</label>
-                      <input id="owner_spouse_document" value={formData.owner_spouse_document} onChange={(e) => handleInput('owner_spouse_document', e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-brand-500 text-sm" />
+                      <label htmlFor="owner_spouse_cpf" className="block text-xs font-bold text-slate-500 mb-1">CPF do Cônjuge</label>
+                      <input id="owner_spouse_cpf" value={formData.owner_spouse_cpf} onChange={(e) => handleInput('owner_spouse_cpf', e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-brand-500 text-sm" />
+                    </div>
+                    <div>
+                      <label htmlFor="owner_spouse_rg" className="block text-xs font-bold text-slate-500 mb-1">RG do Cônjuge</label>
+                      <input id="owner_spouse_rg" value={formData.owner_spouse_rg} onChange={(e) => handleInput('owner_spouse_rg', e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-brand-500 text-sm" />
+                    </div>
+                    <div>
+                      <label htmlFor="owner_spouse_rg_org" className="block text-xs font-bold text-slate-500 mb-1">Órgão Emissor</label>
+                      <select id="owner_spouse_rg_org" value={formData.owner_spouse_rg_org} onChange={(e) => handleInput('owner_spouse_rg_org', e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-brand-500 text-sm">
+                        <option value="">Selecione...</option>
+                        {ORGAOS.map((org) => (
+                          <option key={org} value={org}>
+                            {org}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="owner_spouse_rg_uf" className="block text-xs font-bold text-slate-500 mb-1">UF do RG</label>
+                      <select id="owner_spouse_rg_uf" value={formData.owner_spouse_rg_uf} onChange={(e) => handleInput('owner_spouse_rg_uf', e.target.value)} className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-brand-500 text-sm">
+                        <option value="">UF...</option>
+                        {UFs.map((uf) => (
+                          <option key={uf} value={uf}>
+                            {uf}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </div>

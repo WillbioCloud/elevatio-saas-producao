@@ -234,26 +234,52 @@ export const mapPropertyToCandidate = (property: Property): CandidateProperty =>
 export async function autoTagContractTemplate(rawContent: string): Promise<string> {
   if (!genAI) throw new Error("Gemini API Key não configurada.");
 
-  // Utiliza o nome exato reconhecido pela API v1beta ou cai para o gemini-pro clásico
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-  const prompt = `Você é um assistente de IA especialista em contratos imobiliários SaaS.
-Sua tarefa é analisar o contrato abaixo e substituir Nomes Próprios, CPFs, RGs, Endereços, Profissões, Estados Civis, Nacionalidades e Valores reais (ou espaços em branco como '________') pelas tags (shortcodes) correspondentes do nosso sistema.
+  const prompt = `Você é um Assistente Jurídico Imobiliário. Sua tarefa é ler o contrato bruto fornecido e substituir os dados reais, nomes e valores por nossas TAGS (Shortcodes) padronizadas.
 
-Lista EXATA de tags permitidas:
-{{IMOBILIARIA_NOME}}, {{CORRETOR_NOME}}, {{CORRETOR_CPF}}, {{CORRETOR_CRECI}}
-{{IMOVEL_TITULO}}, {{IMOVEL_ENDERECO}}, {{IMOVEL_MATRICULA}}
-{{VALOR_NEGOCIADO}}, {{VALOR_SINAL}}, {{VALOR_FINANCIAMENTO}}, {{VALOR_FGTS}}, {{VALOR_PERMUTA}}, {{QTD_PARCELAS}}
-{{LOCATARIO_NOME}}, {{LOCATARIO_CPF}}, {{LOCATARIO_RG}}, {{LOCATARIO_PROFISSAO}}, {{LOCATARIO_ESTADO_CIVIL}}, {{LOCATARIO_ENDERECO}}
-{{LOCADOR_NOME}}, {{LOCADOR_CPF}}, {{LOCADOR_RG}}, {{LOCADOR_PROFISSAO}}, {{LOCADOR_ESTADO_CIVIL}}, {{LOCADOR_ENDERECO}}
-{{FIADOR_NOME}}, {{FIADOR_CPF}}, {{FIADOR_RG}}, {{FIADOR_PROFISSAO}}, {{FIADOR_ESTADO_CIVIL}}, {{FIADOR_ENDERECO}}
-{{DATA_ATUAL}}
+MANTENHA toda a formatação HTML, negritos e estrutura do texto original. APENAS substitua os dados específicos pelas tags abaixo.
+
+Dicionário de Variáveis Disponíveis:
+
+[DADOS DA IMOBILIÁRIA / CORRETOR]
+{{IMOBILIARIA_NOME}} - Nome da sua empresa
+{{IMOBILIARIA_CNPJ}} - CNPJ da imobiliária
+{{IMOBILIARIA_ENDERECO}} - Endereço da imobiliária
+{{CORRETOR_NOME}} - Nome do corretor responsável
+{{CORRETOR_CRECI}} - CRECI do corretor
+{{IMOBILIARIA_ASSINATURA}} - A imagem da assinatura salva nas configurações
+
+[DADOS DO CLIENTE / LOCATÁRIO / COMPRADOR]
+{{CLIENTE_NOME}} - Nome completo
+{{CLIENTE_CPF}} - CPF ou CNPJ
+{{CLIENTE_RG}} - RG
+{{CLIENTE_NACIONALIDADE}} - Ex: Brasileiro
+{{CLIENTE_PROFISSAO}} - Ex: Engenheiro
+{{CLIENTE_ESTADO_CIVIL}} - Ex: Casado, Solteiro
+{{CLIENTE_ENDERECO}} - Endereço de residência atual
+
+[DADOS DO PROPRIETÁRIO / LOCADOR / VENDEDOR]
+{{PROPRIETARIO_NOME}}
+{{PROPRIETARIO_CPF}}
+{{PROPRIETARIO_RG}}
+{{PROPRIETARIO_ESTADO_CIVIL}}
+{{PROPRIETARIO_ENDERECO}}
+
+[DADOS DO IMÓVEL E FINANCEIRO]
+{{IMOVEL_ENDERECO}} - Endereço completo do imóvel negociado
+{{IMOVEL_MATRICULA}} - Número da matrícula no cartório
+{{VALOR_TOTAL}} - Valor total do aluguel ou venda (em números)
+{{VALOR_TOTAL_EXTENSO}} - Valor escrito por extenso
+{{DATA_VENCIMENTO}} - Dia do vencimento (ex: dia 10)
+{{PRAZO_MESES}} - Prazo de vigência do contrato (ex: 30 meses)
+{{DATA_ATUAL}} - Data de geração do contrato (ex: 15 de Março de 2026)
 
 Regras rigorosas:
 1. Preserve RIGOROSAMENTE todo o texto jurídico, pontuação, quebras de linha e cláusulas originais.
-2. Identifique pelo contexto da frase quem é o Locador (Proprietário/Vendedor) e quem é o Locatário (Inquilino/Comprador) para usar a tag certa.
-3. Se o contrato for de Venda, use a família LOCADOR para o Vendedor e a família LOCATARIO para o Comprador.
-4. Retorne APENAS o texto do contrato com as tags aplicadas. Não adicione saudações, nem formatação Markdown (como \`\`\` ou dicas).
+2. Quando o contrato mencionar cliente, locatário ou comprador, normalize para a família CLIENTE.
+3. Quando o contrato mencionar proprietário, locador ou vendedor, normalize para a família PROPRIETARIO.
+4. Retorne APENAS o texto do contrato com as tags aplicadas. Não adicione saudações, explicações ou formatação Markdown extra.
 
 CONTRATO ORIGINAL PARA ANALISAR:
 ${rawContent}`;

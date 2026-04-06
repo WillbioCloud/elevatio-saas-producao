@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-type AssetType = 'logo' | 'logo_alt' | 'hero' | 'favicon' | 'about' | `region_${string}`;
+type AssetType = 'logo' | 'logo_alt' | 'hero' | 'favicon' | 'about' | 'signature' | `region_${string}`;
 
 export async function uploadCompanyAsset(
   file: File,
