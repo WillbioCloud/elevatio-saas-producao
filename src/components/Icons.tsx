@@ -141,6 +141,9 @@ import {
   BadgeCheck,
   ArrowUpAZ,
   PenTool,
+  UploadCloud,
+  QrCode,
+  Smartphone,
 } from 'lucide-react';
 
 const Google = (props: ComponentPropsWithoutRef<'svg'>) => (
@@ -314,5 +317,8 @@ export const Icons = {
   Ticket,
   BadgeCheck,
   PenTool,
+  UploadCloud,
   SortAsc: ArrowUpAZ,
+  QrCode,
+  Smartphone,
 };

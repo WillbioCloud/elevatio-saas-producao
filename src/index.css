@@ -1,3 +1,11 @@
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Chilanka&family=Dancing+Script:wght@400;700&family=Grand+Hotel&family=Inter:wght@400;500;700&family=Satisfy&display=swap');
+
+.font-dancing { font-family: 'Dancing Script', cursive; }
+.font-chilanka { font-family: 'Chilanka', cursive; }
+.font-grand { font-family: 'Grand Hotel', cursive; }
+.font-inter { font-family: 'Inter', sans-serif; }
+.font-satisfy { font-family: 'Satisfy', cursive; }
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -14,6 +22,10 @@ html, body {
 
 body {
 @apply bg-background text-foreground antialiased font-sans;
+}
+
+.font-signature {
+  font-family: 'Caveat', cursive;
 }
 
 /* Melhor renderização (fica mais “premium”) */
@@ -223,4 +235,3 @@ input:disabled, textarea:disabled, select:disabled {
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 }
-
