@@ -75,12 +75,59 @@ interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_sec
 }
 
 type SitePartner = NonNullable<SiteData['partners']>[number];
+type OfficialSignatureTab = 'draw' | 'type' | 'upload';
 type TenantFinanceRecord = Pick<
   Company,
   'id' | 'name' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template' | 'admin_signature_url'
 > & {
   finance_config?: FinanceConfig | null;
 };
+
+const TYPED_CANVAS_WIDTH = 1200;
+const TYPED_CANVAS_HEIGHT = 360;
+
+const OFFICIAL_SIGNATURE_FONT_OPTIONS = [
+  {
+    id: 'font-dancing',
+    label: 'Dancing',
+    className: 'font-dancing',
+    canvasFamily: '"Dancing Script", cursive',
+  },
+  {
+    id: 'font-chilanka',
+    label: 'Chilanka',
+    className: 'font-chilanka',
+    canvasFamily: '"Chilanka", cursive',
+  },
+  {
+    id: 'font-grand',
+    label: 'Grand',
+    className: 'font-grand',
+    canvasFamily: '"Grand Hotel", cursive',
+  },
+  {
+    id: 'font-inter',
+    label: 'Inter',
+    className: 'font-inter',
+    canvasFamily: '"Inter", sans-serif',
+  },
+  {
+    id: 'font-satisfy',
+    label: 'Satisfy',
+    className: 'font-satisfy',
+    canvasFamily: '"Satisfy", cursive',
+  },
+] as const;
+
+const OFFICIAL_SIGNATURE_TABS: Array<{
+  id: OfficialSignatureTab;
+  label: string;
+  icon: React.ComponentType<{ className?: string; size?: number }>;
+}> = [
+  { id: 'draw', label: 'Desenhar', icon: Icons.PenTool },
+  { id: 'type', label: 'Digitar', icon: Icons.Edit2 },
+  { id: 'upload', label: 'Upload / Câmera', icon: Icons.Upload },
+];
 
 const normalizePartners = (partners: unknown): SitePartner[] => {
   if (!Array.isArray(partners)) return [];
@@ -230,6 +277,33 @@ const getPresenceStatus = (lastSeen?: string) => {
   };
 };
 
+const clampChannel = (value: number) => Math.max(0, Math.min(255, value));
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error('Não foi possível ler a imagem selecionada.'));
+    };
+
+    reader.onerror = () => reject(new Error('Não foi possível ler a imagem selecionada.'));
+    reader.readAsDataURL(file);
+  });
+
+const loadImage = (src: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Não foi possível processar a imagem enviada.'));
+    image.src = src;
+  });
+
 interface ImageUploaderProps {
   label: string;
   currentUrl: string | null;
@@ -360,6 +434,16 @@ const AdminConfig: React.FC = () => {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isUploadingSignature, setIsUploadingSignature] = useState(false);
   const [adminSignatureUrl, setAdminSignatureUrl] = useState<string | null>(null);
+  const [isSignModalOpen, setIsSignModalOpen] = useState(false);
+  const [signTab, setSignTab] = useState<OfficialSignatureTab>('draw');
+  const [typedName, setTypedName] = useState('');
+  const [selectedFont, setSelectedFont] = useState<(typeof OFFICIAL_SIGNATURE_FONT_OPTIONS)[number]['id']>('font-dancing');
+  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [showSignatureQrCode, setShowSignatureQrCode] = useState(false);
+  const [isSignatureCameraOpen, setIsSignatureCameraOpen] = useState(false);
+  const [isProcessingSignatureUpload, setIsProcessingSignatureUpload] = useState(false);
+  const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
+  const [signatureModalError, setSignatureModalError] = useState('');
   const [isXpModalOpen, setIsXpModalOpen] = useState(false);
   const [siteSettings, setSiteSettings] = useState({ route_to_central: true, central_whatsapp: '', central_user_id: '' });
   const [savingSettings, setSavingSettings] = useState(false);
@@ -422,6 +506,21 @@ const AdminConfig: React.FC = () => {
   const isLoading = isGeneratingCheckout || isReactivating || isUpgrading !== null;
   const setIsLoading = setIsGeneratingCheckout;
   const signaturePadRef = useRef<SignaturePad | null>(null);
+  const signatureUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const signatureVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  const activeSignatureFont = useMemo(
+    () => OFFICIAL_SIGNATURE_FONT_OPTIONS.find((option) => option.id === selectedFont) ?? OFFICIAL_SIGNATURE_FONT_OPTIONS[0],
+    [selectedFont]
+  );
+
+  const signatureQrCodeUrl = useMemo(
+    () =>
+      typeof window !== 'undefined'
+        ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(window.location.href)}`
+        : '',
+    []
+  );
 
   const checkoutDomainInfo = useMemo(() => {
     const companyDomain = siteDomain || (companySubdomain ? `${companySubdomain}.elevatio.app` : '');
@@ -898,6 +997,42 @@ const AdminConfig: React.FC = () => {
   }, [activeTab, canManageOfficialSignature, adminCompanyId]);
 
   useEffect(() => {
+    if (activeTab === 'profile') return;
+
+    setIsSignModalOpen(false);
+    setShowSignatureQrCode(false);
+    setIsSignatureCameraOpen(false);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (isSignatureCameraOpen) {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        addToast('Câmera indisponível neste navegador.', 'error');
+        setIsSignatureCameraOpen(false);
+        return;
+      }
+
+      navigator.mediaDevices
+        .getUserMedia({ video: { facingMode: 'environment' } })
+        .then((stream) => {
+          if (signatureVideoRef.current) {
+            signatureVideoRef.current.srcObject = stream;
+          }
+        })
+        .catch(() => {
+          addToast('Câmera indisponível. Use HTTPS ou faça upload de um arquivo.', 'error');
+          setIsSignatureCameraOpen(false);
+        });
+    } else {
+      const stream = signatureVideoRef.current?.srcObject as MediaStream | null;
+      stream?.getTracks().forEach((track) => track.stop());
+      if (signatureVideoRef.current) {
+        signatureVideoRef.current.srcObject = null;
+      }
+    }
+  }, [addToast, isSignatureCameraOpen]);
+
+  useEffect(() => {
     if (activeTab !== 'subscription' || !user?.company_id) return;
 
     let ignore = false;
@@ -1209,38 +1344,218 @@ const AdminConfig: React.FC = () => {
     }
   };
 
-  const handleAdminSignatureUpload = async (file: File) => {
-    if (!company?.id) return;
+  const resetSignatureModalState = () => {
+    setSignTab('draw');
+    setTypedName('');
+    setSelectedFont('font-dancing');
+    setUploadPreview(null);
+    setShowSignatureQrCode(false);
+    setIsSignatureCameraOpen(false);
+    setIsProcessingSignatureUpload(false);
+    setHasDrawnSignature(false);
+    setSignatureModalError('');
+    signaturePadRef.current?.clear();
 
-    try {
-      setIsUploadingSignature(true);
-      const url = await uploadCompanyAsset(file, company.id, 'signature');
-
-      const { error } = await supabase
-        .from('companies')
-        .update({ admin_signature_url: url })
-        .eq('id', company.id);
-
-      if (error) throw error;
-
-      setTenant((prev) => (prev ? { ...prev, admin_signature_url: url } : prev));
-      setAdminSignatureUrl(url);
-      addToast('Assinatura salva com sucesso!', 'success');
-    } catch (error: any) {
-      console.error('Erro ao salvar assinatura do responsável:', error);
-      addToast(error.message || 'Erro ao salvar assinatura.', 'error');
-    } finally {
-      setIsUploadingSignature(false);
+    if (signatureUploadInputRef.current) {
+      signatureUploadInputRef.current.value = '';
     }
   };
 
+  const openSignatureModal = () => {
+    resetSignatureModalState();
+    setIsSignModalOpen(true);
+  };
+
+  const closeSignatureModal = () => {
+    setIsSignModalOpen(false);
+    resetSignatureModalState();
+  };
+
+  const clearDrawSignature = () => {
+    signaturePadRef.current?.clear();
+    setHasDrawnSignature(false);
+  };
+
+  const clearUploadPreview = () => {
+    setUploadPreview(null);
+
+    if (signatureUploadInputRef.current) {
+      signatureUploadInputRef.current.value = '';
+    }
+  };
+
+  const processUploadedSignature = async (file: File) => {
+    const source = await readFileAsDataUrl(file);
+    const image = await loadImage(source);
+
+    const outputWidth = Math.min(1400, Math.max(700, image.width));
+    const scale = outputWidth / image.width;
+    const outputHeight = Math.max(220, Math.round(image.height * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = outputWidth;
+    canvas.height = outputHeight;
+
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      throw new Error('Não foi possível preparar a imagem da assinatura.');
+    }
+
+    context.clearRect(0, 0, outputWidth, outputHeight);
+    context.drawImage(image, 0, 0, outputWidth, outputHeight);
+
+    const imageData = context.getImageData(0, 0, outputWidth, outputHeight);
+    const pixels = imageData.data;
+
+    for (let index = 0; index < pixels.length; index += 4) {
+      const red = pixels[index];
+      const green = pixels[index + 1];
+      const blue = pixels[index + 2];
+      const grayscale = red * 0.299 + green * 0.587 + blue * 0.114;
+      const contrasted = clampChannel((grayscale - 168) * 2.35 + 168);
+      const darkness = 255 - contrasted;
+
+      if (darkness < 26) {
+        pixels[index] = 255;
+        pixels[index + 1] = 255;
+        pixels[index + 2] = 255;
+        pixels[index + 3] = 0;
+        continue;
+      }
+
+      const inkTone = clampChannel(18 - darkness * 0.04);
+      pixels[index] = inkTone;
+      pixels[index + 1] = inkTone;
+      pixels[index + 2] = inkTone;
+      pixels[index + 3] = clampChannel(140 + darkness * 3.2);
+    }
+
+    context.clearRect(0, 0, outputWidth, outputHeight);
+    context.putImageData(imageData, 0, 0);
+
+    return canvas.toDataURL('image/png');
+  };
+
+  const handleSignatureUploadSelection = async (file?: File) => {
+    if (!file) return;
+
+    setSignatureModalError('');
+    setSignTab('upload');
+    setIsProcessingSignatureUpload(true);
+
+    try {
+      const processed = await processUploadedSignature(file);
+      setUploadPreview(processed);
+    } catch (error) {
+      console.error('Erro ao processar assinatura enviada:', error);
+      clearUploadPreview();
+      setSignatureModalError('Não foi possível preparar a imagem. Tente outro arquivo.');
+    } finally {
+      setIsProcessingSignatureUpload(false);
+    }
+  };
+
+  const handleSignatureFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    await handleSignatureUploadSelection(event.target.files?.[0]);
+  };
+
+  const captureSignaturePhoto = () => {
+    if (!signatureVideoRef.current) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = signatureVideoRef.current.videoWidth;
+    canvas.height = signatureVideoRef.current.videoHeight;
+    canvas.getContext('2d')?.drawImage(signatureVideoRef.current, 0, 0);
+    setUploadPreview(canvas.toDataURL('image/png'));
+    setSignatureModalError('');
+    setSignTab('upload');
+    setIsSignatureCameraOpen(false);
+  };
+
+  const generateTypedSignatureImage = async () => {
+    const value = typedName.trim();
+
+    if (!value) {
+      return '';
+    }
+
+    if (document.fonts?.load) {
+      try {
+        await document.fonts.load(`700 72px ${activeSignatureFont.canvasFamily}`);
+      } catch {
+        // Segue com a fonte fallback caso a webfont ainda não tenha carregado.
+      }
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = TYPED_CANVAS_WIDTH;
+    canvas.height = TYPED_CANVAS_HEIGHT;
+
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      throw new Error('Não foi possível renderizar a assinatura digitada.');
+    }
+
+    let fontSize = 142;
+    const maxWidth = canvas.width - 140;
+
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillStyle = '#0f172a';
+
+    while (fontSize > 72) {
+      context.font = `700 ${fontSize}px ${activeSignatureFont.canvasFamily}`;
+
+      if (context.measureText(value).width <= maxWidth) {
+        break;
+      }
+
+      fontSize -= 6;
+    }
+
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.font = `700 ${fontSize}px ${activeSignatureFont.canvasFamily}`;
+    context.fillText(value, canvas.width / 2, canvas.height / 2 + fontSize * 0.06);
+
+    return canvas.toDataURL('image/png');
+  };
+
+  const getAdminSignatureDataUrl = async () => {
+    if (signTab === 'draw') {
+      if (!signaturePadRef.current || signaturePadRef.current.isEmpty()) {
+        return '';
+      }
+
+      return signaturePadRef.current.getTrimmedCanvas().toDataURL('image/png');
+    }
+
+    if (signTab === 'type') {
+      return generateTypedSignatureImage();
+    }
+
+    return uploadPreview ?? '';
+  };
+
   const handleSaveAdminSignature = async () => {
-    if (!signaturePadRef.current || signaturePadRef.current.isEmpty() || !adminCompanyId || !user?.id) return;
+    if (!adminCompanyId || !user?.id) {
+      setSignatureModalError('Não foi possível identificar a empresa para salvar a assinatura.');
+      return;
+    }
+
+    setSignatureModalError('');
+
+    const signatureDataUrl = await getAdminSignatureDataUrl();
+
+    if (!signatureDataUrl) {
+      setSignatureModalError('Escolha ou gere uma assinatura antes de salvar.');
+      return;
+    }
 
     setIsUploadingSignature(true);
 
     try {
-      const signatureDataUrl = signaturePadRef.current.getTrimmedCanvas().toDataURL('image/png');
       const blob = await (await fetch(signatureDataUrl)).blob();
       const fileName = `admin_sig_${user.id}_${Date.now()}.png`;
       const filePath = `companies/${adminCompanyId}/signatures/${fileName}`;
@@ -1267,10 +1582,11 @@ const AdminConfig: React.FC = () => {
 
       setAdminSignatureUrl(publicUrl);
       setTenant((prev) => (prev ? { ...prev, admin_signature_url: publicUrl } : prev));
-      signaturePadRef.current.clear();
       addToast('Assinatura oficial salva com sucesso!', 'success');
+      closeSignatureModal();
     } catch (error) {
       console.error('Erro ao salvar assinatura admin:', error);
+      setSignatureModalError('Ocorreu um erro ao salvar a assinatura oficial.');
       addToast('Ocorreu um erro ao salvar a assinatura oficial.', 'error');
     } finally {
       setIsUploadingSignature(false);
@@ -1745,6 +2061,13 @@ const AdminConfig: React.FC = () => {
     }
   };
 
+  const canConfirmOfficialSignature =
+    !isUploadingSignature &&
+    !isProcessingSignatureUpload &&
+    ((signTab === 'draw' && hasDrawnSignature) ||
+      (signTab === 'type' && typedName.trim().length >= 3) ||
+      (signTab === 'upload' && Boolean(uploadPreview)));
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -1899,62 +2222,48 @@ const AdminConfig: React.FC = () => {
               </div>
 
               {canManageOfficialSignature && adminCompanyId && (
-                <div className="border-t border-slate-100 pt-6 dark:border-slate-800">
-                  <h4 className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Assinatura Oficial do Responsável</h4>
-                  <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-                    Esta assinatura será utilizada como rubrica da imobiliária nos contratos gerados.
-                  </p>
+                <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5 shadow-sm dark:border-slate-800 dark:from-slate-900/80 dark:to-slate-950/60">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">
+                        Assinatura Oficial
+                      </p>
+                      <h3 className="mt-2 text-lg font-bold text-slate-900 dark:text-white">
+                        Rubrica automática da imobiliária
+                      </h3>
+                      <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+                        Configure a assinatura do responsável legal para que ela seja aplicada automaticamente nos contratos gerados pelo sistema.
+                      </p>
+                    </div>
 
-                  <div className="flex flex-col gap-4 sm:flex-row">
-                    <div className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/60 sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={openSignatureModal}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-slate-300 transition hover:bg-slate-800 dark:bg-brand-600 dark:hover:bg-brand-500 dark:shadow-brand-950/30"
+                    >
+                      <Icons.PenTool size={18} />
+                      Configurar Assinatura Oficial
+                    </button>
+                  </div>
+
+                  <div className="mt-5 rounded-2xl border border-slate-200 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-950/60">
+                    <p className="mb-3 text-xs font-bold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
+                      Assinatura Atual
+                    </p>
+
+                    <div className="flex min-h-[130px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/70">
                       {adminSignatureUrl ? (
-                        <div className="space-y-3">
-                          <img
-                            src={adminSignatureUrl}
-                            alt="Assinatura oficial"
-                            className="max-h-24 max-w-[250px] object-contain border-b border-slate-200 pb-2 dark:border-slate-700"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAdminSignatureUrl(null);
-                              signaturePadRef.current?.clear();
-                            }}
-                            className="text-xs font-semibold text-rose-600 transition-colors hover:text-rose-700"
-                          >
-                            Alterar Assinatura
-                          </button>
-                        </div>
+                        <img
+                          src={adminSignatureUrl}
+                          alt="Assinatura oficial atual"
+                          className="max-h-[96px] w-auto object-contain mix-blend-multiply dark:mix-blend-normal"
+                        />
                       ) : (
-                        <div className="space-y-3">
-                          <div className="overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950">
-                            <SignaturePad
-                              ref={signaturePadRef}
-                              penColor="#0f172a"
-                              canvasProps={{
-                                className: 'sigCanvas h-24 w-full',
-                              }}
-                            />
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => signaturePadRef.current?.clear()}
-                              className="rounded border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                            >
-                              Limpar Pad
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleSaveAdminSignature}
-                              disabled={isUploadingSignature}
-                              className="flex items-center gap-2 rounded bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-60"
-                            >
-                              {isUploadingSignature ? <Icons.Loader2 size={14} className="animate-spin" /> : <Icons.Save size={14} />}
-                              Salvar Assinatura Oficial
-                            </button>
-                          </div>
+                        <div className="text-center">
+                          <Icons.PenTool size={24} className="mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+                          <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                            Nenhuma assinatura oficial cadastrada.
+                          </p>
                         </div>
                       )}
                     </div>
@@ -3225,43 +3534,36 @@ const AdminConfig: React.FC = () => {
                 </div>
 
                 <div className="mt-5 flex items-start gap-6">
-                  <div className="group relative flex h-24 w-48 items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950">
+                  <div className="flex h-24 w-48 items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950">
                     {company?.admin_signature_url ? (
-                      <>
-                        <img
-                          src={company.admin_signature_url}
-                          alt="Assinatura"
-                          className="max-h-full max-w-full object-contain p-2"
-                        />
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                          <Upload className="text-white" size={24} />
-                        </div>
-                      </>
+                      <img
+                        src={company.admin_signature_url}
+                        alt="Assinatura"
+                        className="max-h-full max-w-full object-contain p-2"
+                      />
                     ) : (
                       <div className="p-4 text-center">
                         <ImageOff size={24} className="mx-auto mb-2 text-slate-300" />
                         <span className="text-xs font-medium text-slate-400">Fundo Transparente (PNG)</span>
                       </div>
                     )}
+                  </div>
 
-                    {isUploadingSignature && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-slate-950/65">
-                        <Loader2 size={24} className="animate-spin text-white" />
-                      </div>
-                    )}
-
-                    <input
-                      type="file"
-                      accept="image/png, image/jpeg"
-                      className="absolute inset-0 cursor-pointer opacity-0"
-                      disabled={isUploadingSignature || !company?.id}
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = '';
-                        if (!file) return;
-                        await handleAdminSignatureUpload(file);
+                  <div className="flex-1 space-y-3">
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      A assinatura oficial agora é centralizada na aba <span className="font-bold text-slate-700 dark:text-slate-200">Perfil</span>, com modal completo para desenhar, digitar ou enviar a rubrica.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('profile');
+                        openSignatureModal();
                       }}
-                    />
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                    >
+                      <Icons.PenTool size={16} />
+                      Gerenciar no Perfil
+                    </button>
                   </div>
                 </div>
               </div>
@@ -4139,6 +4441,315 @@ const AdminConfig: React.FC = () => {
             </button>
           </div>
         </div>
+      )}
+
+      {isSignModalOpen && (
+        <>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+            <div className="relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[32px] border border-white/70 bg-white/92 shadow-[0_40px_120px_-44px_rgba(15,23,42,0.42)] backdrop-blur dark:border-white/10 dark:bg-[#020617]/95">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-5 dark:border-slate-800 sm:px-8">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.26em] text-emerald-500">Assinatura Oficial</p>
+                  <h2 className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">Configure a rubrica da imobiliária</h2>
+                  <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+                    Escolha como deseja criar a assinatura oficial do responsável legal. O resultado será anexado automaticamente aos contratos gerados pelo sistema.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeSignatureModal}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  <Icons.X size={20} />
+                </button>
+              </div>
+
+              <div className="overflow-y-auto px-5 py-5 sm:px-8 sm:py-8">
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_340px]">
+                  <section className="rounded-[30px] border border-white/80 bg-slate-50/85 p-4 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.38)] backdrop-blur dark:border-slate-800 dark:bg-slate-900/70 sm:p-6">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {OFFICIAL_SIGNATURE_TABS.map((tab) => {
+                        const Icon = tab.icon;
+                        const active = signTab === tab.id;
+
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => {
+                              setSignTab(tab.id);
+                              setSignatureModalError('');
+                            }}
+                            className={`flex items-center justify-center gap-3 rounded-[20px] border px-4 py-3 transition-all ${
+                              active
+                                ? 'border-slate-950 bg-slate-950 text-white shadow-lg dark:border-brand-500 dark:bg-brand-600'
+                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900'
+                            }`}
+                          >
+                            <Icon size={18} />
+                            <span className="text-sm font-bold">{tab.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {signTab === 'draw' && (
+                      <div className="mt-6 space-y-5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-sm font-semibold text-slate-950 dark:text-white">Desenhe a assinatura oficial abaixo</p>
+                          <button
+                            type="button"
+                            onClick={clearDrawSignature}
+                            className="text-sm font-semibold text-slate-500 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                          >
+                            Limpar quadro
+                          </button>
+                        </div>
+
+                        <div className="overflow-hidden rounded-[28px] border border-slate-300 bg-white p-1 shadow-inner dark:border-slate-700 dark:bg-slate-950 sm:p-3">
+                          <div className="overflow-hidden rounded-[24px] border border-dashed border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950">
+                            <SignaturePad
+                              ref={signaturePadRef}
+                              penColor="#0f172a"
+                              onEnd={() => setHasDrawnSignature(!(signaturePadRef.current?.isEmpty() ?? true))}
+                              canvasProps={{
+                                className: 'w-full h-[260px] bg-white rounded-[24px] touch-none cursor-crosshair sm:h-[340px] lg:h-[400px]',
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex justify-center">
+                          <button
+                            type="button"
+                            onClick={() => setShowSignatureQrCode(true)}
+                            className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                          >
+                            <Icons.QrCode size={16} />
+                            Assinar pelo Celular (QR Code)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {signTab === 'type' && (
+                      <div className="mt-6 space-y-5">
+                        <input
+                          type="text"
+                          value={typedName}
+                          onChange={(event) => {
+                            setTypedName(event.target.value);
+                            setSignatureModalError('');
+                          }}
+                          placeholder="Digite o nome do responsável..."
+                          className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-900 outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-emerald-500 dark:focus:ring-emerald-500/10"
+                        />
+
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                          {OFFICIAL_SIGNATURE_FONT_OPTIONS.map((option) => {
+                            const active = selectedFont === option.id;
+
+                            return (
+                              <button
+                                key={option.id}
+                                type="button"
+                                onClick={() => setSelectedFont(option.id)}
+                                className={`rounded-[20px] border p-2 transition-all ${
+                                  active
+                                    ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-500/60 dark:bg-emerald-500/10'
+                                    : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:bg-slate-900'
+                                }`}
+                              >
+                                <div className={`flex min-h-[72px] items-center justify-center rounded-[14px] px-2 text-center text-3xl text-slate-900 dark:text-white ${option.className}`}>
+                                  {typedName.trim() || 'Seu nome'}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {signTab === 'upload' && (
+                      <div className="mt-6 space-y-5">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => signatureUploadInputRef.current?.click()}
+                            className="flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-white text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                          >
+                            <Icons.Image size={18} />
+                            Buscar Arquivo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsSignatureCameraOpen(true)}
+                            className="flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-white text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                          >
+                            <Icons.Camera size={18} />
+                            Abrir Câmera
+                          </button>
+                        </div>
+
+                        <input
+                          ref={signatureUploadInputRef}
+                          type="file"
+                          accept="image/png, image/jpeg"
+                          className="hidden"
+                          onChange={handleSignatureFileChange}
+                        />
+
+                        <div className="rounded-[24px] border border-slate-200 bg-white/80 p-5 dark:border-slate-700 dark:bg-slate-950/70">
+                          <div className="mb-4 flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-slate-950 dark:text-white">Prévia da imagem</p>
+                            {uploadPreview ? (
+                              <button
+                                type="button"
+                                onClick={clearUploadPreview}
+                                className="text-sm font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                              >
+                                Remover
+                              </button>
+                            ) : null}
+                          </div>
+
+                          <div className="flex min-h-[220px] items-center justify-center rounded-[20px] border border-dashed border-slate-300 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/70">
+                            {isProcessingSignatureUpload ? (
+                              <Icons.Loader2 className="animate-spin text-slate-400" size={24} />
+                            ) : uploadPreview ? (
+                              <img src={uploadPreview} alt="Prévia da assinatura enviada" className="max-h-40 w-auto object-contain" />
+                            ) : (
+                              <span className="text-sm text-slate-400 dark:text-slate-500">Nenhuma imagem selecionada.</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+
+                  <aside className="flex flex-col justify-between rounded-[30px] border border-white/80 bg-white/92 p-6 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.35)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
+                    <div className="space-y-5">
+                      <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-900/70">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                          Assinatura atual
+                        </p>
+                        <div className="mt-4 flex min-h-[140px] items-center justify-center rounded-[20px] border border-dashed border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
+                          {adminSignatureUrl ? (
+                            <img
+                              src={adminSignatureUrl}
+                              alt="Assinatura oficial atual"
+                              className="max-h-[96px] w-auto object-contain mix-blend-multiply dark:mix-blend-normal"
+                            />
+                          ) : (
+                            <div className="text-center">
+                              <Icons.PenTool size={22} className="mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+                              <p className="text-sm text-slate-400 dark:text-slate-500">Nenhuma assinatura salva</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-900/70">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                          Método selecionado
+                        </p>
+                        <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">
+                          {signTab === 'draw' ? 'Desenho livre' : signTab === 'type' ? 'Assinatura digitada' : 'Imagem enviada'}
+                        </p>
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                          Revise a assinatura antes de confirmar. O arquivo salvo será usado como rubrica oficial da imobiliária.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-6">
+                      {signatureModalError ? (
+                        <div className="mb-4 rounded-[20px] bg-rose-50 p-4 text-sm font-semibold text-rose-600 dark:bg-rose-500/10 dark:text-rose-300">
+                          {signatureModalError}
+                        </div>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={handleSaveAdminSignature}
+                        disabled={!canConfirmOfficialSignature}
+                        className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 text-base font-bold text-white shadow-lg shadow-emerald-300/40 transition hover:bg-emerald-600 disabled:opacity-50 disabled:shadow-none"
+                      >
+                        {isUploadingSignature ? <Icons.Loader2 className="animate-spin" size={18} /> : <Icons.Save size={18} />}
+                        Confirmar e Salvar Assinatura
+                      </button>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {showSignatureQrCode ? (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/65 p-4 backdrop-blur-sm">
+              <div className="relative w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-2xl animate-in zoom-in-95 dark:bg-slate-950">
+                <button
+                  type="button"
+                  onClick={() => setShowSignatureQrCode(false)}
+                  className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <Icons.X size={24} />
+                </button>
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
+                  <Icons.Smartphone size={24} />
+                </div>
+                <h3 className="mt-5 text-xl font-bold text-slate-900 dark:text-white">Continue no celular</h3>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                  Abra esta tela no seu celular para desenhar ou enviar a assinatura oficial com mais conforto.
+                </p>
+                <img
+                  src={signatureQrCodeUrl}
+                  alt="QR Code para abrir no celular"
+                  className="mx-auto mt-6 rounded-2xl border border-slate-200 p-2 shadow-sm dark:border-slate-700"
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {isSignatureCameraOpen ? (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/90 p-4 backdrop-blur-sm">
+              <div className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-black shadow-2xl animate-in zoom-in-95">
+                <div className="relative aspect-[3/4] bg-slate-800 sm:aspect-video">
+                  <video ref={signatureVideoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setIsSignatureCameraOpen(false)}
+                    className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white transition hover:bg-black"
+                  >
+                    <Icons.X size={20} />
+                  </button>
+                </div>
+                <div className="flex flex-col gap-3 bg-white p-6 dark:bg-slate-950">
+                  <button
+                    type="button"
+                    onClick={captureSignaturePhoto}
+                    className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-lg font-bold text-white transition hover:bg-emerald-600"
+                  >
+                    <Icons.Camera size={20} />
+                    Tirar Foto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSignatureCameraOpen(false);
+                      setShowSignatureQrCode(true);
+                    }}
+                    className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-slate-100 font-bold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    <Icons.QrCode size={20} />
+                    Continuar no Celular
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
 
       {/* Modal de Detalhes do Plano Atual */}

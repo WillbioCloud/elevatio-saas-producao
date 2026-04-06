@@ -16,6 +16,144 @@ const fetchImageAsBase64PNG = (url: string): Promise<string> => {
   });
 };
 
+const escapeSignatureStampHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const normalizeSignatureKey = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+const humanizeSignatureKey = (value: string) =>
+  value
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || 'Signatario';
+
+const SIGNATURE_ROLE_ALIASES: Record<string, string[]> = {
+  locatario: ['locatario', 'cliente'],
+  cliente: ['cliente', 'locatario', 'comprador'],
+  comprador: ['comprador', 'cliente'],
+  vendedor: ['vendedor', 'proprietario', 'locador'],
+  proprietario: ['proprietario', 'vendedor', 'locador'],
+  locador: ['locador', 'proprietario', 'vendedor'],
+  fiador: ['fiador'],
+  testemunha: ['testemunha'],
+  corretor: ['corretor', 'imobiliaria', 'administrador', 'administradora'],
+  imobiliaria: ['imobiliaria', 'corretor', 'administrador', 'administradora'],
+  administrador: ['administrador', 'administradora', 'imobiliaria', 'corretor'],
+  administradora: ['administradora', 'administrador', 'imobiliaria', 'corretor'],
+};
+
+type SignatureStampEntry = {
+  signer_name?: string | null;
+  signer_role?: string | null;
+  ip_address?: string | null;
+  signed_at?: string | null;
+  signature_image?: string | null;
+};
+
+type SignatureStampDocumentMap = Record<string, string | null | undefined>;
+
+export const generateSignatureStampHtml = (
+  signatureImage: string | null,
+  name: string,
+  role: string,
+  cpf: string = 'Nao informado',
+  signedAt: string | null,
+  ip: string = 'IP Registrado'
+) => {
+  const safeName = escapeSignatureStampHtml(name || 'Signatario');
+  const safeRole = escapeSignatureStampHtml(role || 'Parte');
+  const safeCpf = escapeSignatureStampHtml(cpf || 'Nao informado');
+  const safeIp = escapeSignatureStampHtml(ip || 'IP Registrado');
+
+  if (!signatureImage || !signedAt) {
+    return `<div style="padding: 20px; border: 1px dashed #cbd5e1; border-radius: 8px; color: #64748b; text-align: center; font-size: 12px; font-family: sans-serif;">Aguardando assinatura digital de<br/><strong>${safeName}</strong> (${safeRole})</div>`;
+  }
+
+  const signedAtDate = new Date(signedAt);
+  const dataFormatada = Number.isNaN(signedAtDate.getTime())
+    ? escapeSignatureStampHtml(signedAt)
+    : signedAtDate.toLocaleString('pt-BR');
+
+  return `
+    <div style="display: inline-flex; align-items: center; gap: 16px; border: 2px solid #e2e8f0; padding: 12px 16px; border-radius: 12px; page-break-inside: avoid; background-color: #f8fafc; font-family: sans-serif; max-width: 100%; min-width: 320px; box-sizing: border-box; margin: 10px 0;">
+      <div style="width: 120px; height: 80px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px;">
+        <img src="${signatureImage}" style="max-width: 100%; max-height: 100%; object-fit: contain; mix-blend-multiply;" alt="Assinatura" />
+      </div>
+      <div style="font-size: 10px; color: #334155; line-height: 1.5;">
+        <span style="font-size: 11px; font-weight: bold; color: #0f172a; text-transform: uppercase;">Documento Assinado Digitalmente</span><br/>
+        <strong>Plataforma:</strong> Elevatio Vendas<br/>
+        <strong>Signatario:</strong> ${safeName}<br/>
+        <strong>Papel:</strong> ${safeRole}<br/>
+        <strong>CPF/CNPJ:</strong> ${safeCpf}<br/>
+        <strong>Data/Hora:</strong> ${dataFormatada} (UTC-03:00)<br/>
+        <strong>IP:</strong> ${safeIp}
+      </div>
+    </div>
+  `;
+};
+
+const getSignatureCandidatesForPlaceholder = (
+  placeholderRole: string,
+  signatures: SignatureStampEntry[]
+) => {
+  const normalizedRole = normalizeSignatureKey(placeholderRole);
+  const match = normalizedRole.match(/^(.*?)(?:_(\d+))?$/);
+  const baseRole = match?.[1] || normalizedRole;
+  const requestedIndex = match?.[2] ? Math.max(Number(match[2]) - 1, 0) : 0;
+  const aliasSet = new Set([baseRole, ...(SIGNATURE_ROLE_ALIASES[baseRole] || [])]);
+  const matchingSignatures = signatures.filter((signature) =>
+    aliasSet.has(normalizeSignatureKey(signature.signer_role || ''))
+  );
+
+  return {
+    baseRole,
+    requestedIndex,
+    matchingSignatures,
+  };
+};
+
+export const injectSignatureStamps = (
+  html: string,
+  signatures: SignatureStampEntry[] = [],
+  documents: SignatureStampDocumentMap = {}
+) => {
+  if (!/\{\{ASSINATURA_[^}]+\}\}/i.test(html)) {
+    return html;
+  }
+
+  return html.replace(/\{\{ASSINATURA_([^}]+)\}\}/gi, (_, placeholderRole: string) => {
+    const { baseRole, requestedIndex, matchingSignatures } = getSignatureCandidatesForPlaceholder(
+      placeholderRole,
+      signatures
+    );
+    const signature = matchingSignatures[requestedIndex] || matchingSignatures[0] || null;
+    const aliasFallback = (SIGNATURE_ROLE_ALIASES[baseRole] || [])[0] || '';
+    const documentValue = documents[baseRole] || documents[aliasFallback] || 'Nao informado';
+    const fallbackLabel = humanizeSignatureKey(baseRole);
+
+    return generateSignatureStampHtml(
+      signature?.signature_image || null,
+      signature?.signer_name || fallbackLabel,
+      signature?.signer_role || fallbackLabel,
+      documentValue || 'Nao informado',
+      signature?.signed_at || null,
+      signature?.ip_address || 'IP Registrado'
+    );
+  });
+};
+
 const parseCurrencyNumber = (value: unknown): number => {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : 0;
@@ -467,6 +605,7 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
       .replace(/\{\{PRAZO_MESES\}\}/g, String(leaseDuration))
       .replace(/\{\{DATA_ATUAL\}\}/g, formatLongDatePtBr(new Date()));
 
+    // As tags {{ASSINATURA_*}} sao injectadas no PDF final, quando temos acesso a contract_signatures.
     contractContent = `<div style="text-align: justify; line-height: 1.6; font-size: 14px;">${parsedContent.replace(/\n/g, '<br/>')}</div>`;
   } else if (type === 'sale_standard') {
     contractContent = `

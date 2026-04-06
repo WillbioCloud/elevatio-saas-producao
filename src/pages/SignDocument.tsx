@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ReactCrop, { type Crop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
 import SignaturePad from 'react-signature-canvas';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -36,8 +38,8 @@ const TYPED_CANVAS_HEIGHT = 360;
 const CONTRACT_FALLBACK_HTML = `
   <div style="display:flex;min-height:760px;align-items:center;justify-content:center;color:#64748b;text-align:center;font-family:DM Sans, sans-serif;">
     <div>
-      <p style="margin:0;font-size:18px;font-weight:700;color:#0f172a;">Pré-visualização indisponível</p>
-      <p style="margin:12px 0 0;max-width:360px;line-height:1.7;">Não foi possível carregar o conteúdo do contrato para esta assinatura.</p>
+      <p style="margin:0;font-size:18px;font-weight:700;color:#0f172a;">PrÃ©-visualizaÃ§Ã£o indisponÃ­vel</p>
+      <p style="margin:12px 0 0;max-width:360px;line-height:1.7;">NÃ£o foi possÃ­vel carregar o conteÃºdo do contrato para esta assinatura.</p>
     </div>
   </div>
 `;
@@ -78,7 +80,7 @@ const FONT_OPTIONS = [
 const SIGN_TABS: Array<{ id: SignTab; label: string; icon: React.ComponentType<{ className?: string; size?: number }> }> = [
   { id: 'draw', label: 'Desenhar', icon: Icons.PenTool },
   { id: 'type', label: 'Digitar', icon: Icons.Edit2 },
-  { id: 'upload', label: 'Upload / Câmera', icon: Icons.Upload },
+  { id: 'upload', label: 'Upload / CÃ¢mera', icon: Icons.Upload },
 ];
 
 const escapeHtml = (value: string) =>
@@ -89,7 +91,6 @@ const escapeHtml = (value: string) =>
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 
-const clampChannel = (value: number) => Math.max(0, Math.min(255, value));
 
 const readContractDataString = (contract: ContractRecord | null, key: string) => {
   const value = contract?.contract_data?.[key];
@@ -144,20 +145,13 @@ const readFileAsDataUrl = (file: File) =>
         return;
       }
 
-      reject(new Error('Não foi possível ler a imagem selecionada.'));
+      reject(new Error('NÃ£o foi possÃ­vel ler a imagem selecionada.'));
     };
 
-    reader.onerror = () => reject(new Error('Não foi possível ler a imagem selecionada.'));
+    reader.onerror = () => reject(new Error('NÃ£o foi possÃ­vel ler a imagem selecionada.'));
     reader.readAsDataURL(file);
   });
 
-const loadImage = (src: string) =>
-  new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('Não foi possível processar a imagem enviada.'));
-    image.src = src;
-  });
 
 export default function SignDocument() {
   const { token } = useParams<{ token: string }>();
@@ -166,7 +160,6 @@ export default function SignDocument() {
   const [loading, setLoading] = useState(true);
   const [submissionError, setSubmissionError] = useState('');
   const [isSigning, setIsSigning] = useState(false);
-  const [isProcessingUpload, setIsProcessingUpload] = useState(false);
   const [ipAddress, setIpAddress] = useState('IP Desconhecido');
   const [step, setStep] = useState<Step>('preview');
   const [signTab, setSignTab] = useState<SignTab>('draw');
@@ -175,11 +168,15 @@ export default function SignDocument() {
   const [typedName, setTypedName] = useState('');
   const [selectedFont, setSelectedFont] = useState<(typeof FONT_OPTIONS)[number]['id']>('font-dancing');
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [uploadFileName, setUploadFileName] = useState('');
+  const [crop, setCrop] = useState<Crop>();
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const [hasDrawn, setHasDrawn] = useState(false);
 
   const signaturePadRef = useRef<SignaturePad | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
 
   const activeFont = useMemo(
     () => FONT_OPTIONS.find((option) => option.id === selectedFont) ?? FONT_OPTIONS[0],
@@ -231,7 +228,7 @@ export default function SignDocument() {
 
       if (sigError || !signatureData) throw sigError;
 
-      // 2. Com o ID do contrato em mãos, busca o contrato e os dados da empresa
+      // 2. Com o ID do contrato em mÃ£os, busca o contrato e os dados da empresa
       const { data: contractData, error: contractError } = await supabase
         .from('contracts')
         .select('*, companies(*)')
@@ -269,7 +266,7 @@ export default function SignDocument() {
           }
         })
         .catch(() => {
-          alert('Câmera indisponível. Requer HTTPS (ngrok) no celular.');
+          alert('CÃ¢mera indisponÃ­vel. Requer HTTPS (ngrok) no celular.');
         });
     } else {
       const stream = videoRef.current?.srcObject as MediaStream | null;
@@ -289,7 +286,10 @@ export default function SignDocument() {
     canvas.width = videoRef.current.videoWidth;
     canvas.height = videoRef.current.videoHeight;
     canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0);
-    setUploadPreview(canvas.toDataURL('image/png'));
+    setUploadPreview(null);
+    setCrop(undefined);
+    setImageToCrop(canvas.toDataURL('image/png'));
+    setUploadFileName('captura-camera.png');
     setSubmissionError('');
     setSignTab('upload');
     setIsCameraOpen(false);
@@ -302,88 +302,79 @@ export default function SignDocument() {
 
   const clearUploadPreview = () => {
     setUploadPreview(null);
+    setImageToCrop(null);
+    setCrop(undefined);
+    setUploadFileName('');
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
-  const processUploadedSignature = async (file: File) => {
-    const source = await readFileAsDataUrl(file);
-    const image = await loadImage(source);
-
-    const outputWidth = Math.min(1400, Math.max(700, image.width));
-    const scale = outputWidth / image.width;
-    const outputHeight = Math.max(220, Math.round(image.height * scale));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = outputWidth;
-    canvas.height = outputHeight;
-
-    const context = canvas.getContext('2d');
-
-    if (!context) {
-      throw new Error('Não foi possível preparar a imagem da assinatura.');
-    }
-
-    context.clearRect(0, 0, outputWidth, outputHeight);
-    context.drawImage(image, 0, 0, outputWidth, outputHeight);
-
-    const imageData = context.getImageData(0, 0, outputWidth, outputHeight);
-    const pixels = imageData.data;
-
-    for (let index = 0; index < pixels.length; index += 4) {
-      const red = pixels[index];
-      const green = pixels[index + 1];
-      const blue = pixels[index + 2];
-      const grayscale = red * 0.299 + green * 0.587 + blue * 0.114;
-      const contrasted = clampChannel((grayscale - 168) * 2.35 + 168);
-      const darkness = 255 - contrasted;
-
-      if (darkness < 26) {
-        pixels[index] = 255;
-        pixels[index + 1] = 255;
-        pixels[index + 2] = 255;
-        pixels[index + 3] = 0;
-        continue;
-      }
-
-      const inkTone = clampChannel(18 - darkness * 0.04);
-      pixels[index] = inkTone;
-      pixels[index + 1] = inkTone;
-      pixels[index + 2] = inkTone;
-      pixels[index + 3] = clampChannel(140 + darkness * 3.2);
-    }
-
-    context.clearRect(0, 0, outputWidth, outputHeight);
-    context.putImageData(imageData, 0, 0);
-
-    return canvas.toDataURL('image/png');
-  };
 
   const handleUploadSelection = async (file?: File) => {
-    if (!file) {
-      return;
-    }
+    if (!file) return;
 
     setSubmissionError('');
     setSignTab('upload');
-    setIsProcessingUpload(true);
+    setUploadPreview(null);
+    setCrop(undefined);
 
     try {
-      const processed = await processUploadedSignature(file);
-      setUploadPreview(processed);
+      const source = await readFileAsDataUrl(file);
+      setImageToCrop(source);
+      setUploadFileName(file.name);
     } catch (error) {
-      console.error('Erro ao processar assinatura enviada:', error);
+      console.error('Erro ao ler assinatura enviada:', error);
       clearUploadPreview();
-      setSubmissionError('Não foi possível preparar a imagem. Tente outro arquivo.');
-    } finally {
-      setIsProcessingUpload(false);
+      setSubmissionError('Falha ao ler a imagem.');
     }
   };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     await handleUploadSelection(event.target.files?.[0]);
+  };
+
+  const getCroppedImage = () => {
+    if (!imageRef.current || !crop?.width || !crop?.height) {
+      setSubmissionError('Selecione a área da assinatura antes de confirmar.');
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    const scaleX = imageRef.current.naturalWidth / imageRef.current.width;
+    const scaleY = imageRef.current.naturalHeight / imageRef.current.height;
+    const outputWidth = Math.max(1, Math.round(crop.width * scaleX));
+    const outputHeight = Math.max(1, Math.round(crop.height * scaleY));
+
+    canvas.width = outputWidth;
+    canvas.height = outputHeight;
+
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      setSubmissionError('Falha ao preparar o recorte da assinatura.');
+      return;
+    }
+
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(
+      imageRef.current,
+      crop.x * scaleX,
+      crop.y * scaleY,
+      crop.width * scaleX,
+      crop.height * scaleY,
+      0,
+      0,
+      outputWidth,
+      outputHeight
+    );
+
+    const base64Image = canvas.toDataURL('image/png');
+    setUploadPreview(base64Image);
+    setImageToCrop(null);
+    setCrop(undefined);
+    setSubmissionError('');
   };
 
   const generateTypedSignatureImage = async () => {
@@ -397,7 +388,7 @@ export default function SignDocument() {
       try {
         await document.fonts.load(`700 72px ${activeFont.canvasFamily}`);
       } catch {
-        // Segue com o fallback do navegador caso a fonte ainda não tenha carregado.
+        // Segue com o fallback do navegador caso a fonte ainda nÃ£o tenha carregado.
       }
     }
 
@@ -408,7 +399,7 @@ export default function SignDocument() {
     const context = canvas.getContext('2d');
 
     if (!context) {
-      throw new Error('Não foi possível renderizar a assinatura digitada.');
+      throw new Error('NÃ£o foi possÃ­vel renderizar a assinatura digitada.');
     }
 
     let fontSize = 142;
@@ -498,7 +489,7 @@ export default function SignDocument() {
       setStep('completed');
     } catch (error) {
       console.error('Erro ao concluir assinatura:', error);
-      setSubmissionError('Não foi possível concluir a assinatura. Tente novamente.');
+      setSubmissionError('NÃ£o foi possÃ­vel concluir a assinatura. Tente novamente.');
     } finally {
       setIsSigning(false);
     }
@@ -506,7 +497,6 @@ export default function SignDocument() {
 
   const canConfirm =
     !isSigning &&
-    !isProcessingUpload &&
     ((signTab === 'draw' && hasDrawn) ||
       (signTab === 'type' && typedName.trim().length >= 3) ||
       (signTab === 'upload' && Boolean(uploadPreview)));
@@ -523,8 +513,8 @@ export default function SignDocument() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
         <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-xl shadow-slate-200/70">
-          <h1 className="text-2xl font-semibold text-slate-900">Link indisponível</h1>
-          <p className="mt-3 text-sm leading-7 text-slate-500">Documento não encontrado.</p>
+          <h1 className="text-2xl font-semibold text-slate-900">Link indisponÃ­vel</h1>
+          <p className="mt-3 text-sm leading-7 text-slate-500">Documento nÃ£o encontrado.</p>
         </div>
       </div>
     );
@@ -541,7 +531,7 @@ export default function SignDocument() {
             <div className="mt-6 text-center">
               <h1 className="text-3xl font-semibold tracking-tight text-slate-950">Sua assinatura foi registrada</h1>
               <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-slate-500">
-                O aceite foi anexado ao documento. {signedAtLabel ? `Registro concluído em ${signedAtLabel}.` : ''}
+                O aceite foi anexado ao documento. {signedAtLabel ? `Registro concluÃ­do em ${signedAtLabel}.` : ''}
               </p>
             </div>
           </div>
@@ -640,8 +630,8 @@ export default function SignDocument() {
                       <Icons.QrCode size={16} /> Assinar pelo Celular
                     </button>
                   </div>
-                </div>
-              ) : null}
+                  </div>
+                  ) : null}
 
               {signTab === 'type' ? (
                 <div className="mt-6 space-y-5">
@@ -683,7 +673,7 @@ export default function SignDocument() {
 
               {signTab === 'upload' ? (
                 <div className="mt-6 space-y-5">
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  {!imageToCrop && !uploadPreview ? <div className="grid gap-3 sm:grid-cols-2">
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
@@ -696,43 +686,92 @@ export default function SignDocument() {
                       onClick={() => setIsCameraOpen(true)}
                       className="flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-white text-sm font-bold text-slate-700 transition hover:bg-slate-50"
                     >
-                      <Icons.Camera size={18} /> Abrir Câmera
+                      <Icons.Camera size={18} /> Tirar Foto
                     </button>
-                  </div>
+                  </div> : null}
 
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/png, image/jpeg"
+                    accept="image/*"
                     className="hidden"
                     onChange={handleFileChange}
                   />
 
-                  <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-slate-950">Prévia da imagem</p>
-                      {uploadPreview ? (
+                  {imageToCrop ? (
+                    <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                      <p className="mb-4 text-center text-sm font-semibold text-slate-950">
+                        Recorte apenas a sua assinatura
+                      </p>
+                      {uploadFileName ? (
+                        <p className="mb-4 text-center text-xs font-medium text-slate-500">{uploadFileName}</p>
+                      ) : null}
+                      <div className="flex justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-white p-2">
+                        <ReactCrop crop={crop} onChange={(nextCrop) => setCrop(nextCrop)} className="max-h-[300px]">
+                          <img
+                            ref={imageRef}
+                            src={imageToCrop}
+                            alt="Recortar"
+                            className="max-h-[300px] w-auto object-contain"
+                            onLoad={(event) => {
+                              const { width, height } = event.currentTarget;
+                              setCrop({
+                                unit: 'px',
+                                x: width * 0.1,
+                                y: height * 0.1,
+                                width: width * 0.8,
+                                height: height * 0.8,
+                              });
+                            }}
+                          />
+                        </ReactCrop>
+                      </div>
+                      <div className="mt-4 flex gap-3">
                         <button
                           type="button"
                           onClick={clearUploadPreview}
-                          className="text-sm font-semibold text-slate-500 hover:text-slate-900"
+                          className="flex-1 rounded-xl bg-slate-200 py-3 text-sm font-bold text-slate-700"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={getCroppedImage}
+                          className="flex-1 rounded-xl bg-emerald-500 py-3 text-sm font-bold text-white shadow-md"
+                        >
+                          Confirmar Recorte
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {uploadPreview && !imageToCrop ? (
+                    <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">Sua Assinatura</p>
+                          {uploadFileName ? (
+                            <p className="mt-1 text-xs font-medium text-slate-500">{uploadFileName}</p>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={clearUploadPreview}
+                          className="text-sm font-semibold text-rose-500 hover:text-rose-700"
                         >
                           Remover
                         </button>
-                      ) : null}
-                    </div>
+                      </div>
 
-                    <div className="flex min-h-[180px] items-center justify-center rounded-[20px] border border-dashed border-slate-300 bg-white p-4">
-                      {isProcessingUpload ? (
-                        <Icons.Loader2 className="animate-spin text-slate-400" size={24} />
-                      ) : uploadPreview ? (
-                        <img src={uploadPreview} alt="Enviada" className="max-h-32 w-auto object-contain" />
-                      ) : (
-                        <span className="text-sm text-slate-400">Nenhuma imagem selecionada.</span>
-                      )}
+                      <div className="flex h-[180px] items-center justify-center rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
+                        <img
+                          src={uploadPreview}
+                          alt="Enviada"
+                          className="max-h-full w-auto object-contain mix-blend-multiply"
+                        />
+                      </div>
                     </div>
-
-                  </div>
+                  ) : null}
                 </div>
               ) : null}
             </section>
@@ -740,7 +779,7 @@ export default function SignDocument() {
             <aside className="flex flex-col justify-between rounded-[32px] border border-white/80 bg-white/90 p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.35)] backdrop-blur lg:sticky lg:top-6">
               <div>
                 <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Signatário</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">SignatÃ¡rio</p>
                   <p className="mt-3 text-lg font-semibold text-slate-950">{data.signer_name}</p>
                   <p className="mt-1 text-sm text-slate-500">{data.signer_role || 'Assinatura digital'}</p>
                 </div>
@@ -775,7 +814,7 @@ export default function SignDocument() {
                 <Icons.X size={24} />
               </button>
               <h3 className="mb-2 text-xl font-bold text-slate-900">Assinar no Celular</h3>
-              <p className="mb-6 text-sm text-slate-500">Aponte a câmera do seu celular para o código abaixo.</p>
+              <p className="mb-6 text-sm text-slate-500">Aponte a cÃ¢mera do seu celular para o cÃ³digo abaixo.</p>
               <img src={qrCodeUrl} alt="QR" className="mx-auto rounded-xl border border-slate-200 p-2 shadow-sm" />
             </div>
           </div>
@@ -851,9 +890,9 @@ export default function SignDocument() {
       <footer className="fixed inset-x-0 bottom-0 z-20 border-t border-white/70 bg-white/92 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div>
-            <p className="text-sm font-semibold text-slate-950">{data.companies?.name || 'TR Imóveis'}</p>
+            <p className="text-sm font-semibold text-slate-950">{data.companies?.name || 'TR ImÃ³veis'}</p>
             <p className="mt-1 text-sm text-slate-500">
-              Revise o conteúdo e avance para a etapa de assinatura.
+              Revise o conteÃºdo e avance para a etapa de assinatura.
             </p>
           </div>
 
@@ -869,3 +908,6 @@ export default function SignDocument() {
     </div>
   );
 }
+
+
+

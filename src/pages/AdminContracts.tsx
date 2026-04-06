@@ -7,7 +7,7 @@ import RentContractModal from '../components/RentContractModal';
 import SignatureManagerModal from '../components/SignatureManagerModal';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { appendSignatureManifest, buildContractHtml } from '../utils/contractGenerator';
+import { appendSignatureManifest, buildContractHtml, injectSignatureStamps } from '../utils/contractGenerator';
 
 interface ContractSignatureRow {
   contract_id: string | null;
@@ -820,8 +820,38 @@ const AdminContracts: React.FC = () => {
         );
       }
 
+      const stampedHtml = injectSignatureStamps(processedHtml, signatures || [], {
+        locatario: liveContractData.tenant_document || liveContractData.locatario_cpf || '',
+        cliente: liveContractData.tenant_document || liveContractData.buyer_document || liveContractData.locatario_cpf || '',
+        comprador: liveContractData.buyer_document || liveContractData.comprador_cpf || '',
+        vendedor: liveContractData.seller_document || liveContractData.vendedor_cpf || '',
+        proprietario:
+          liveContractData.landlord_document ||
+          liveContractData.seller_document ||
+          liveContractData.vendedor_cpf ||
+          '',
+        locador:
+          liveContractData.landlord_document ||
+          liveContractData.seller_document ||
+          liveContractData.vendedor_cpf ||
+          '',
+        fiador:
+          (typeof liveContractData.guarantor_document === 'string' && liveContractData.guarantor_document) ||
+          '',
+        testemunha: '',
+        corretor: contract?.broker?.cpf_cnpj || '',
+        imobiliaria:
+          (typeof parsedSiteData?.cnpj === 'string' && parsedSiteData.cnpj) ||
+          contract?.broker?.cpf_cnpj ||
+          '',
+        administrador:
+          (typeof parsedSiteData?.cnpj === 'string' && parsedSiteData.cnpj) ||
+          contract?.broker?.cpf_cnpj ||
+          '',
+      });
+
       const htmlFinal = ensurePrintableDocument(
-        appendSignatureManifest(processedHtml, companyForGenerator, signatures || [])
+        appendSignatureManifest(stampedHtml, companyForGenerator, signatures || [])
       );
 
       const printWindow = window.open('', '', 'width=900,height=700');
