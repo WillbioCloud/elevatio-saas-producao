@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Icons } from './Icons';
 import { Lead, Property } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
-import { generateContract } from '../utils/contractGenerator';
+import { buildContractHtml, generateContract } from '../utils/contractGenerator';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
 import { SALE_DOCUMENTS, ADMIN_DOCUMENTS } from '../constants/contractTypes';
@@ -381,6 +381,74 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
       const selectedPropForSave = properties.find((property) => property.id === formData.property_id);
       const selectedTemplate = customTemplates.find(t => `custom_${t.id}` === documentType);
       const resolvedClientId = formData.client_id || formData.lead_id || null;
+      const contractDataObj = {
+        buyer_name: selectedLeadForSave?.name || '',
+        buyer_phone: selectedLeadForSave?.phone || '',
+        buyer_email: selectedLeadForSave?.email || '',
+        buyer_document: contractDetails.buyer_document,
+        buyer_rg: contractDetails.buyer_rg,
+        buyer_profession: contractDetails.buyer_profession,
+        buyer_marital_status: contractDetails.buyer_marital_status,
+        buyer_address: contractDetails.buyer_address,
+        buyer_spouse_name: contractDetails.buyer_spouse_name,
+        buyer_spouse_document: contractDetails.buyer_spouse_document,
+        buyer_spouse_profession: contractDetails.buyer_spouse_profession,
+        seller_name: selectedPropForSave?.owner_name || 'Proprietário Atual',
+        seller_phone: selectedPropForSave?.owner_phone || '',
+        seller_email: selectedPropForSave?.owner_email || '',
+        seller_document: contractDetails.seller_document,
+        seller_rg: contractDetails.seller_rg,
+        seller_profession: contractDetails.seller_profession,
+        seller_marital_status: contractDetails.seller_marital_status,
+        seller_address: contractDetails.seller_address,
+        seller_spouse_name: contractDetails.seller_spouse_name,
+        seller_spouse_document: contractDetails.seller_spouse_document,
+        seller_spouse_rg: contractDetails.seller_spouse_rg,
+        seller_spouse_profession: contractDetails.seller_spouse_profession,
+        permuta_address: contractDetails.permuta_address,
+        permuta_description: contractDetails.permuta_description,
+        permuta_value: contractDetails.permuta_value,
+        property_address: selectedPropForSave ? `${selectedPropForSave.address}, ${selectedPropForSave.city}` : '',
+        property_description: selectedPropForSave?.title || '',
+        property_registration: selectedPropForSave?.property_registration || '',
+        property_registry_office: selectedPropForSave?.property_registry_office || '',
+        property_municipal_registration: selectedPropForSave?.property_municipal_registration || '',
+        total_value: formData.sale_total_value,
+        down_payment: formData.sale_down_payment || '0',
+        bank_name: formData.sale_financing_bank || '',
+        bank_agency: '',
+        bank_account: '',
+      };
+      const rawTemplate =
+        selectedTemplate?.content ||
+        (SALE_DOCUMENTS.find((document) => document.id === documentType) as { content?: string } | undefined)?.content ||
+        (ADMIN_DOCUMENTS.find((document) => document.id === documentType) as { content?: string } | undefined)?.content ||
+        '';
+      const contractHtmlData = {
+        ...contractDataObj,
+        lead: selectedLeadForSave,
+        property: selectedPropForSave,
+        sale_total_value: formData.sale_total_value,
+        sale_down_payment: formData.sale_down_payment || '0',
+        sale_financing_value: formData.sale_financing_value || '0',
+        sale_consortium_value: formData.sale_consortium_value || '0',
+        permutation_value: formData.permutation_value || '0',
+        installments_count: formData.installments_count,
+        due_day: formData.due_day,
+        readjustment_index: formData.readjustment_index,
+        interest_rate: formData.interest_rate,
+      };
+      const finalHtml = await buildContractHtml(
+        rawTemplate.trim().length > 0 && !documentType.startsWith('custom_') ? 'custom_runtime' : documentType,
+        contractHtmlData,
+        tenant,
+        brokerProfile?.company_logo,
+        brokerProfile?.name,
+        brokerProfile?.cpf_cnpj,
+        brokerProfile?.creci,
+        (brokerProfile as any)?.companies?.name,
+        rawTemplate || undefined
+      );
       const payload = {
         type: 'sale', status: 'pending',
         lead_id: formData.lead_id || null,
@@ -402,11 +470,14 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         commission_total: Number(formData.commission_value) || 0,
         contract_data: {
           ...contractDetails,
+          ...contractDataObj,
           buyer_name: selectedLeadForSave?.name || '',
           seller_name: selectedPropForSave?.owner_name || 'Proprietário',
           document_type: documentType,
-          template_content: selectedTemplate?.content || null,
+          template_content: rawTemplate || null,
         },
+        content: rawTemplate,
+        html_content: finalHtml,
         company_id: user?.company_id,
       };
       const { data: contract, error } = await supabase.from('contracts').insert([payload]).select().single();

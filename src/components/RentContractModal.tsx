@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Icons } from './Icons';
 import { Lead, Property } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
-import { generateContract } from '../utils/contractGenerator';
+import { buildContractHtml, generateContract } from '../utils/contractGenerator';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
 
@@ -389,6 +389,66 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
       const selectedPropForSave = properties.find(p => p.id === formData.property_id);
       const selectedTemplate = customTemplates.find(t => `custom_${t.id}` === documentType);
       const resolvedClientId = formData.client_id || formData.lead_id || null;
+      const contractDataObj = {
+        tenant_name: contractDetails.tenant_name || contractClientForSave?.name || '',
+        tenant_phone: contractClientForSave?.phone || '',
+        tenant_document: contractDetails.tenant_document,
+        tenant_profession: contractDetails.tenant_profession,
+        tenant_marital_status: contractDetails.tenant_marital_status,
+        tenant_address: contractDetails.tenant_address,
+        landlord_name: contractDetails.landlord_name || selectedPropForSave?.owner_name || 'Proprietário Atual',
+        landlord_phone: selectedPropForSave?.owner_phone || '',
+        landlord_document: contractDetails.landlord_document,
+        landlord_profession: contractDetails.landlord_profession,
+        landlord_marital_status: contractDetails.landlord_marital_status,
+        landlord_address: contractDetails.landlord_address,
+        landlord_spouse_name: contractDetails.landlord_spouse_name,
+        landlord_spouse_document: contractDetails.landlord_spouse_document,
+        landlord_spouse_profession: contractDetails.landlord_spouse_profession,
+        landlord_spouse_rg: contractDetails.landlord_spouse_rg,
+        tenant_spouse_name: contractDetails.tenant_spouse_name,
+        tenant_spouse_document: contractDetails.tenant_spouse_document,
+        tenant_spouse_profession: contractDetails.tenant_spouse_profession,
+        tenant_spouse_rg: contractDetails.tenant_spouse_rg,
+        tenant_rg: contractDetails.tenant_rg,
+        tenant_nationality: contractDetails.tenant_nationality,
+        landlord_rg: contractDetails.landlord_rg,
+        landlord_nationality: contractDetails.landlord_nationality,
+        property_address: selectedPropForSave ? `${(selectedPropForSave as any).street || selectedPropForSave.address || ''}, ${(selectedPropForSave as any).number || 'S/N'} - ${(selectedPropForSave as any).neighborhood || ''}, CEP ${(selectedPropForSave as any).zip_code || ''}, ${selectedPropForSave.city || ''} - ${(selectedPropForSave as any).state || ''}` : '',
+        property_registration: selectedPropForSave?.property_registration || '',
+        property_registry_office: selectedPropForSave?.property_registry_office || '',
+        property_municipal_registration: selectedPropForSave?.property_municipal_registration || '',
+        rent_value: formData.rent_value,
+        due_day: formData.due_day || '5',
+        lease_duration: String(months),
+        start_date: formData.start_date ? new Date(formData.start_date).toLocaleDateString('pt-BR') : '___/___/_____',
+        end_date: formData.end_date ? new Date(formData.end_date).toLocaleDateString('pt-BR') : '___/___/_____',
+        guarantor_name: guarantorName,
+        guarantor_document: guarantorDocument,
+        guarantor_address: guarantorAddress,
+        guarantor_phone: guarantorPhone,
+      };
+      const rawTemplate = selectedTemplate?.content || '';
+      const selectedBroker = brokers.find(b => b.id === formData.broker_id);
+      const brokerName = selectedBroker?.name || brokerProfile?.name;
+      const brokerDoc = (selectedBroker as any)?.cpf_cnpj || brokerProfile?.cpf_cnpj;
+      const brokerCreci = (selectedBroker as any)?.creci || brokerProfile?.creci;
+      const contractHtmlData = {
+        ...contractDataObj,
+        lead: contractClientForSave,
+        property: selectedPropForSave,
+      };
+      const finalHtml = await buildContractHtml(
+        rawTemplate.trim().length > 0 && !documentType.startsWith('custom_') ? 'custom_runtime' : documentType,
+        contractHtmlData,
+        tenant,
+        brokerProfile?.company_logo,
+        brokerName,
+        brokerDoc,
+        brokerCreci,
+        (brokerProfile as any)?.companies?.name,
+        rawTemplate || undefined
+      );
 
       const payload = {
         type: 'rent',
@@ -413,8 +473,9 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         // CORREÇÃO CRÍTICA: Salvando os nomes para a aba Financeiro ler depois!
         contract_data: {
           ...contractDetails,
+          ...contractDataObj,
           document_type: documentType,
-          template_content: selectedTemplate?.content || null,
+          template_content: rawTemplate || null,
           lessor_name: contractDetails.landlord_name || selectedPropForSave?.owner_name || 'Proprietário',
           lessee_name: contractDetails.tenant_name || contractClientForSave?.name || 'Inquilino',
           guarantor_name: guarantorName,
@@ -422,7 +483,8 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
           guarantor_address: guarantorAddress,
           guarantor_phone: guarantorPhone,
         },
-
+        content: rawTemplate,
+        html_content: finalHtml,
         vistoria_items: defaultVistoria,
         company_id: user?.company_id,
       };

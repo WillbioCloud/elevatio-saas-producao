@@ -125,8 +125,8 @@ const normalizeContractMarkup = (markup: string) => {
 
 const buildContractPreviewHtml = (contract: ContractRecord | null) => {
   const candidates = [
-    contract?.content ?? '',
     contract?.html_content ?? '',
+    contract?.content ?? '',
     readContractDataString(contract, 'template_content'),
   ];
 
@@ -441,7 +441,7 @@ export default function SignDocument() {
         return '';
       }
 
-      return signaturePadRef.current.getTrimmedCanvas().toDataURL('image/png');
+      return signaturePadRef.current.getCanvas().toDataURL('image/png');
     }
 
     if (signTab === 'type') {
