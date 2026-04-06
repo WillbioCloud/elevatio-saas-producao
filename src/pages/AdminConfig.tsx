@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ReactCrop, { type Crop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
 import SignaturePad from 'react-signature-canvas';
 import heic2any from 'heic2any';
 import { supabase } from '../lib/supabase';
@@ -439,9 +441,10 @@ const AdminConfig: React.FC = () => {
   const [typedName, setTypedName] = useState('');
   const [selectedFont, setSelectedFont] = useState<(typeof OFFICIAL_SIGNATURE_FONT_OPTIONS)[number]['id']>('font-dancing');
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [crop, setCrop] = useState<Crop>();
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const [showSignatureQrCode, setShowSignatureQrCode] = useState(false);
   const [isSignatureCameraOpen, setIsSignatureCameraOpen] = useState(false);
-  const [isProcessingSignatureUpload, setIsProcessingSignatureUpload] = useState(false);
   const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
   const [signatureModalError, setSignatureModalError] = useState('');
   const [isXpModalOpen, setIsXpModalOpen] = useState(false);
@@ -506,6 +509,7 @@ const AdminConfig: React.FC = () => {
   const isLoading = isGeneratingCheckout || isReactivating || isUpgrading !== null;
   const setIsLoading = setIsGeneratingCheckout;
   const signaturePadRef = useRef<SignaturePad | null>(null);
+  const cropImageRef = useRef<HTMLImageElement | null>(null);
   const signatureUploadInputRef = useRef<HTMLInputElement | null>(null);
   const signatureVideoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -1349,9 +1353,10 @@ const AdminConfig: React.FC = () => {
     setTypedName('');
     setSelectedFont('font-dancing');
     setUploadPreview(null);
+    setCrop(undefined);
+    setImageToCrop(null);
     setShowSignatureQrCode(false);
     setIsSignatureCameraOpen(false);
-    setIsProcessingSignatureUpload(false);
     setHasDrawnSignature(false);
     setSignatureModalError('');
     signaturePadRef.current?.clear();
@@ -1378,86 +1383,52 @@ const AdminConfig: React.FC = () => {
 
   const clearUploadPreview = () => {
     setUploadPreview(null);
+    setCrop(undefined);
+    setImageToCrop(null);
 
     if (signatureUploadInputRef.current) {
       signatureUploadInputRef.current.value = '';
     }
   };
 
-  const processUploadedSignature = async (file: File) => {
-    const source = await readFileAsDataUrl(file);
-    const image = await loadImage(source);
-
-    const outputWidth = Math.min(1400, Math.max(700, image.width));
-    const scale = outputWidth / image.width;
-    const outputHeight = Math.max(220, Math.round(image.height * scale));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = outputWidth;
-    canvas.height = outputHeight;
-
-    const context = canvas.getContext('2d');
-
-    if (!context) {
-      throw new Error('Não foi possível preparar a imagem da assinatura.');
-    }
-
-    context.clearRect(0, 0, outputWidth, outputHeight);
-    context.drawImage(image, 0, 0, outputWidth, outputHeight);
-
-    const imageData = context.getImageData(0, 0, outputWidth, outputHeight);
-    const pixels = imageData.data;
-
-    for (let index = 0; index < pixels.length; index += 4) {
-      const red = pixels[index];
-      const green = pixels[index + 1];
-      const blue = pixels[index + 2];
-      const grayscale = red * 0.299 + green * 0.587 + blue * 0.114;
-      const contrasted = clampChannel((grayscale - 168) * 2.35 + 168);
-      const darkness = 255 - contrasted;
-
-      if (darkness < 26) {
-        pixels[index] = 255;
-        pixels[index + 1] = 255;
-        pixels[index + 2] = 255;
-        pixels[index + 3] = 0;
-        continue;
-      }
-
-      const inkTone = clampChannel(18 - darkness * 0.04);
-      pixels[index] = inkTone;
-      pixels[index + 1] = inkTone;
-      pixels[index + 2] = inkTone;
-      pixels[index + 3] = clampChannel(140 + darkness * 3.2);
-    }
-
-    context.clearRect(0, 0, outputWidth, outputHeight);
-    context.putImageData(imageData, 0, 0);
-
-    return canvas.toDataURL('image/png');
-  };
-
-  const handleSignatureUploadSelection = async (file?: File) => {
+  const handleUploadSelection = async (file?: File) => {
     if (!file) return;
-
     setSignatureModalError('');
     setSignTab('upload');
-    setIsProcessingSignatureUpload(true);
-
-    try {
-      const processed = await processUploadedSignature(file);
-      setUploadPreview(processed);
-    } catch (error) {
-      console.error('Erro ao processar assinatura enviada:', error);
-      clearUploadPreview();
-      setSignatureModalError('Não foi possível preparar a imagem. Tente outro arquivo.');
-    } finally {
-      setIsProcessingSignatureUpload(false);
-    }
+    setUploadPreview(null);
+    setCrop(undefined);
+    setImageToCrop(null);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImageToCrop(reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const handleSignatureFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    await handleSignatureUploadSelection(event.target.files?.[0]);
+  const getCroppedImage = () => {
+    if (!cropImageRef.current || !crop?.width || !crop?.height) return;
+    const canvas = document.createElement('canvas');
+    const scaleX = cropImageRef.current.naturalWidth / cropImageRef.current.width;
+    const scaleY = cropImageRef.current.naturalHeight / cropImageRef.current.height;
+    canvas.width = crop.width;
+    canvas.height = crop.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(
+      cropImageRef.current,
+      crop.x * scaleX,
+      crop.y * scaleY,
+      crop.width * scaleX,
+      crop.height * scaleY,
+      0,
+      0,
+      crop.width,
+      crop.height
+    );
+    setUploadPreview(canvas.toDataURL('image/png'));
+    setImageToCrop(null);
+    setCrop(undefined);
+    setSignatureModalError('');
   };
 
   const captureSignaturePhoto = () => {
@@ -1467,7 +1438,9 @@ const AdminConfig: React.FC = () => {
     canvas.width = signatureVideoRef.current.videoWidth;
     canvas.height = signatureVideoRef.current.videoHeight;
     canvas.getContext('2d')?.drawImage(signatureVideoRef.current, 0, 0);
-    setUploadPreview(canvas.toDataURL('image/png'));
+    setUploadPreview(null);
+    setCrop(undefined);
+    setImageToCrop(canvas.toDataURL('image/png'));
     setSignatureModalError('');
     setSignTab('upload');
     setIsSignatureCameraOpen(false);
@@ -2063,7 +2036,6 @@ const AdminConfig: React.FC = () => {
 
   const canConfirmOfficialSignature =
     !isUploadingSignature &&
-    !isProcessingSignatureUpload &&
     ((signTab === 'draw' && hasDrawnSignature) ||
       (signTab === 'type' && typedName.trim().length >= 3) ||
       (signTab === 'upload' && Boolean(uploadPreview)));
@@ -4468,7 +4440,7 @@ const AdminConfig: React.FC = () => {
               <div className="overflow-y-auto px-5 py-5 sm:px-8 sm:py-8">
                 <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_340px]">
                   <section className="rounded-[30px] border border-white/80 bg-slate-50/85 p-4 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.38)] backdrop-blur dark:border-slate-800 dark:bg-slate-900/70 sm:p-6">
-                    <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="grid gap-3 sm:grid-cols-3 mb-6">
                       {OFFICIAL_SIGNATURE_TABS.map((tab) => {
                         const Icon = tab.icon;
                         const active = signTab === tab.id;
@@ -4477,14 +4449,11 @@ const AdminConfig: React.FC = () => {
                           <button
                             key={tab.id}
                             type="button"
-                            onClick={() => {
-                              setSignTab(tab.id);
-                              setSignatureModalError('');
-                            }}
-                            className={`flex items-center justify-center gap-3 rounded-[20px] border px-4 py-3 transition-all ${
+                            onClick={() => setSignTab(tab.id as OfficialSignatureTab)}
+                            className={`rounded-[20px] border py-3 px-4 transition-all flex items-center justify-center gap-3 ${
                               active
-                                ? 'border-slate-950 bg-slate-950 text-white shadow-lg dark:border-brand-500 dark:bg-brand-600'
-                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900'
+                                ? 'border-slate-950 bg-slate-950 text-white shadow-lg'
+                                : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'
                             }`}
                           >
                             <Icon size={18} />
@@ -4571,61 +4540,53 @@ const AdminConfig: React.FC = () => {
                       </div>
                     )}
 
-                    {signTab === 'upload' && (
+                    {signTab === 'upload' ? (
                       <div className="mt-6 space-y-5">
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <button
-                            type="button"
-                            onClick={() => signatureUploadInputRef.current?.click()}
-                            className="flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-white text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
-                          >
-                            <Icons.Image size={18} />
-                            Buscar Arquivo
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setIsSignatureCameraOpen(true)}
-                            className="flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-white text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
-                          >
-                            <Icons.Camera size={18} />
-                            Abrir Câmera
-                          </button>
-                        </div>
-
+                        {!imageToCrop && !uploadPreview && (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <button type="button" onClick={() => signatureUploadInputRef.current?.click()} className="flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-white text-sm font-bold text-slate-700 transition hover:bg-slate-50"><Icons.Image size={18} /> Buscar Arquivo</button>
+                            <button type="button" onClick={() => setIsSignatureCameraOpen(true)} className="flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-white text-sm font-bold text-slate-700 transition hover:bg-slate-50"><Icons.Camera size={18} /> Tirar Foto</button>
+                          </div>
+                        )}
                         <input
                           ref={signatureUploadInputRef}
                           type="file"
-                          accept="image/png, image/jpeg"
+                          accept="image/*"
                           className="hidden"
-                          onChange={handleSignatureFileChange}
+                          onChange={(event) => handleUploadSelection(event.target.files?.[0])}
                         />
-
-                        <div className="rounded-[24px] border border-slate-200 bg-white/80 p-5 dark:border-slate-700 dark:bg-slate-950/70">
-                          <div className="mb-4 flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-slate-950 dark:text-white">Prévia da imagem</p>
-                            {uploadPreview ? (
-                              <button
-                                type="button"
-                                onClick={clearUploadPreview}
-                                className="text-sm font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-                              >
-                                Remover
-                              </button>
-                            ) : null}
+                        
+                        {imageToCrop && (
+                          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                            <p className="text-sm font-semibold text-slate-950 mb-4 text-center">Recorte a sua assinatura</p>
+                            <div className="flex justify-center bg-white border border-dashed border-slate-300 p-2 rounded-xl overflow-hidden">
+                              <ReactCrop crop={crop} onChange={(nextCrop) => setCrop(nextCrop)} className="max-h-[300px]">
+                                <img ref={cropImageRef} src={imageToCrop} alt="Recortar" className="max-h-[300px] w-auto object-contain" onLoad={(event) => {
+                                  const { width, height } = event.currentTarget;
+                                  setCrop({ unit: 'px', x: width * 0.1, y: height * 0.1, width: width * 0.8, height: height * 0.8 });
+                                }} />
+                              </ReactCrop>
+                            </div>
+                            <div className="mt-4 flex gap-3">
+                              <button type="button" onClick={clearUploadPreview} className="flex-1 py-3 bg-slate-200 text-slate-700 font-bold rounded-xl text-sm">Cancelar</button>
+                              <button type="button" onClick={getCroppedImage} className="flex-1 py-3 bg-emerald-500 text-white font-bold rounded-xl text-sm shadow-md">Confirmar Recorte</button>
+                            </div>
                           </div>
+                        )}
 
-                          <div className="flex min-h-[220px] items-center justify-center rounded-[20px] border border-dashed border-slate-300 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/70">
-                            {isProcessingSignatureUpload ? (
-                              <Icons.Loader2 className="animate-spin text-slate-400" size={24} />
-                            ) : uploadPreview ? (
-                              <img src={uploadPreview} alt="Prévia da assinatura enviada" className="max-h-40 w-auto object-contain" />
-                            ) : (
-                              <span className="text-sm text-slate-400 dark:text-slate-500">Nenhuma imagem selecionada.</span>
-                            )}
+                        {uploadPreview && !imageToCrop && (
+                          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                            <div className="flex items-center justify-between gap-3 mb-4">
+                              <p className="text-sm font-semibold text-slate-950">Prévia da imagem</p>
+                              <button type="button" onClick={clearUploadPreview} className="text-sm font-semibold text-rose-500 hover:text-rose-700">Remover</button>
+                            </div>
+                            <div className="flex h-[180px] items-center justify-center rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
+                              <img src={uploadPreview} alt="Enviada" className="max-h-full w-auto object-contain mix-blend-multiply" />
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
-                    )}
+                    ) : null}
                   </section>
 
                   <aside className="flex flex-col justify-between rounded-[30px] border border-white/80 bg-white/92 p-6 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.35)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
@@ -4676,8 +4637,7 @@ const AdminConfig: React.FC = () => {
                         disabled={!canConfirmOfficialSignature}
                         className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 text-base font-bold text-white shadow-lg shadow-emerald-300/40 transition hover:bg-emerald-600 disabled:opacity-50 disabled:shadow-none"
                       >
-                        {isUploadingSignature ? <Icons.Loader2 className="animate-spin" size={18} /> : <Icons.Save size={18} />}
-                        Confirmar e Salvar Assinatura
+                        {isUploadingSignature ? <Icons.Loader2 className="animate-spin" size={18} /> : 'Confirmar e Salvar Assinatura'}
                       </button>
                     </div>
                   </aside>
