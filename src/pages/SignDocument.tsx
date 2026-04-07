@@ -8,6 +8,7 @@ import { Icons } from '../components/Icons';
 
 interface SignatureCompany {
   name: string | null;
+  admin_signature_url?: string | null;
 }
 
 interface ContractRecord {
@@ -15,6 +16,7 @@ interface ContractRecord {
   content: string | null;
   html_content: string | null;
   contract_data: Record<string, unknown> | null;
+  property_id?: string | null;
 }
 
 interface SignatureDocumentData {
@@ -22,6 +24,7 @@ interface SignatureDocumentData {
   contract_id: string | null;
   status: 'pending' | 'signed' | 'rejected';
   signer_name: string;
+  signer_document?: string | null;
   signer_role: string | null;
   signed_at: string | null;
   signature_image: string | null;
@@ -38,8 +41,8 @@ const TYPED_CANVAS_HEIGHT = 360;
 const CONTRACT_FALLBACK_HTML = `
   <div style="display:flex;min-height:760px;align-items:center;justify-content:center;color:#64748b;text-align:center;font-family:DM Sans, sans-serif;">
     <div>
-      <p style="margin:0;font-size:18px;font-weight:700;color:#0f172a;">PrÃ©-visualizaÃ§Ã£o indisponÃ­vel</p>
-      <p style="margin:12px 0 0;max-width:360px;line-height:1.7;">NÃ£o foi possÃ­vel carregar o conteÃºdo do contrato para esta assinatura.</p>
+      <p style="margin:0;font-size:18px;font-weight:700;color:#0f172a;">Pré-visualização indisponível</p>
+      <p style="margin:12px 0 0;max-width:360px;line-height:1.7;">Não foi possível carregar o conteúdo do contrato para esta assinatura.</p>
     </div>
   </div>
 `;
@@ -124,7 +127,10 @@ const normalizeContractMarkup = (markup: string) => {
   `;
 };
 
-const buildContractPreviewHtml = (contract: ContractRecord | null) => {
+const buildContractPreviewHtml = (
+  contract: ContractRecord | null,
+  company: SignatureCompany | null
+) => {
   const candidates = [
     contract?.html_content ?? '',
     contract?.content ?? '',
@@ -132,7 +138,19 @@ const buildContractPreviewHtml = (contract: ContractRecord | null) => {
   ];
 
   const content = candidates.find((candidate) => candidate.trim().length > 0);
-  return content ? normalizeContractMarkup(content) : CONTRACT_FALLBACK_HTML;
+  if (!content) {
+    return CONTRACT_FALLBACK_HTML;
+  }
+
+  let html = content;
+
+  if (company?.admin_signature_url && html.includes('{{ASSINATURA_IMOBILIARIA}}')) {
+    const staticImage = `<img src="${company.admin_signature_url}" style="max-height: 55px; max-width: 180px; object-fit: contain; mix-blend-multiply;" alt="Assinatura Imobiliária" />`;
+    html = html.replace(/\{\{ASSINATURA_IMOBILIARIA\}\}/g, staticImage);
+  }
+
+  const cleanContent = html.replace(/\{\{ASSINATURA_[^}]+\}\}/g, '');
+  return cleanContent ? normalizeContractMarkup(cleanContent) : CONTRACT_FALLBACK_HTML;
 };
 
 const readFileAsDataUrl = (file: File) =>
@@ -145,10 +163,10 @@ const readFileAsDataUrl = (file: File) =>
         return;
       }
 
-      reject(new Error('NÃ£o foi possÃ­vel ler a imagem selecionada.'));
+      reject(new Error('Não foi possível ler a imagem selecionada.'));
     };
 
-    reader.onerror = () => reject(new Error('NÃ£o foi possÃ­vel ler a imagem selecionada.'));
+    reader.onerror = () => reject(new Error('Não foi possível ler a imagem selecionada.'));
     reader.readAsDataURL(file);
   });
 
@@ -166,6 +184,7 @@ export default function SignDocument() {
   const [showQrCode, setShowQrCode] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [typedName, setTypedName] = useState('');
+  const [signerCpf, setSignerCpf] = useState<string>('');
   const [selectedFont, setSelectedFont] = useState<(typeof FONT_OPTIONS)[number]['id']>('font-dancing');
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const [uploadFileName, setUploadFileName] = useState('');
@@ -183,7 +202,10 @@ export default function SignDocument() {
     [selectedFont]
   );
 
-  const contractHtml = useMemo(() => buildContractPreviewHtml(data?.contract ?? null), [data?.contract]);
+  const contractHtml = useMemo(
+    () => buildContractPreviewHtml(data?.contract ?? null, data?.companies ?? null),
+    [data?.companies, data?.contract]
+  );
 
   const signedAtLabel = useMemo(() => {
     if (!data?.signed_at) {
@@ -231,7 +253,7 @@ export default function SignDocument() {
       // 2. Com o ID do contrato em mÃ£os, busca o contrato e os dados da empresa
       const { data: contractData, error: contractError } = await supabase
         .from('contracts')
-        .select('*, companies(*)')
+        .select('*, companies ( name, admin_signature_url )')
         .eq('id', signatureData.contract_id)
         .single();
 
@@ -243,6 +265,7 @@ export default function SignDocument() {
         contract: contractData,
         companies: contractData?.companies || null
       });
+      setSignerCpf(typeof signatureData.signer_document === 'string' ? signatureData.signer_document : '');
     } catch (error) {
       console.error('Erro ao carregar assinatura:', error);
       setData(null);
@@ -266,7 +289,7 @@ export default function SignDocument() {
           }
         })
         .catch(() => {
-          alert('CÃ¢mera indisponÃ­vel. Requer HTTPS (ngrok) no celular.');
+          alert('Câmera indisponível. Requer HTTPS (ngrok) no celular.');
         });
     } else {
       const stream = videoRef.current?.srcObject as MediaStream | null;
@@ -399,7 +422,7 @@ export default function SignDocument() {
     const context = canvas.getContext('2d');
 
     if (!context) {
-      throw new Error('NÃ£o foi possÃ­vel renderizar a assinatura digitada.');
+      throw new Error('Não foi possível renderizar a assinatura digitada.');
     }
 
     let fontSize = 142;
@@ -449,6 +472,11 @@ export default function SignDocument() {
 
     setSubmissionError('');
 
+    if (!signerCpf || signerCpf.length < 11) {
+      setSubmissionError('Informe seu CPF para concluir a assinatura.');
+      return;
+    }
+
     const signatureImage = await getSignatureBase64();
 
     if (!signatureImage) {
@@ -460,11 +488,15 @@ export default function SignDocument() {
 
     try {
       const signedAt = new Date().toISOString();
+      const contractData = data.contract;
+      const signatureUrl = signatureImage;
       const { error } = await supabase
         .from('contract_signatures')
         .update({
           status: 'signed',
           signed_at: signedAt,
+          signer_ip: ipAddress || 'IP Desconhecido',
+          signer_document: signerCpf,
           ip_address: ipAddress || 'IP Desconhecido',
           user_agent: navigator.userAgent,
           signature_image: signatureImage,
@@ -476,12 +508,28 @@ export default function SignDocument() {
         throw error;
       }
 
+      if (['intermediacao', 'intermed_rent'].includes(contractData?.contract_data?.document_type as string) && contractData?.property_id) {
+        const { error: propertyUpdateError } = await supabase
+          .from('properties')
+          .update({
+            owner_signature_url: signatureUrl,
+            owner_signature_at: signedAt,
+            has_intermediation_signed: true,
+          })
+          .eq('id', contractData.property_id);
+
+        if (propertyUpdateError) {
+          console.error('Erro ao reaproveitar assinatura no imóvel:', propertyUpdateError);
+        }
+      }
+
       setData((current) =>
         current
           ? {
               ...current,
               status: 'signed',
               signed_at: signedAt,
+              signer_document: signerCpf,
               signature_image: signatureImage,
             }
           : current
@@ -489,7 +537,7 @@ export default function SignDocument() {
       setStep('completed');
     } catch (error) {
       console.error('Erro ao concluir assinatura:', error);
-      setSubmissionError('NÃ£o foi possÃ­vel concluir a assinatura. Tente novamente.');
+      setSubmissionError('Não foi possível concluir a assinatura. Tente novamente.');
     } finally {
       setIsSigning(false);
     }
@@ -513,8 +561,8 @@ export default function SignDocument() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
         <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-xl shadow-slate-200/70">
-          <h1 className="text-2xl font-semibold text-slate-900">Link indisponÃ­vel</h1>
-          <p className="mt-3 text-sm leading-7 text-slate-500">Documento nÃ£o encontrado.</p>
+          <h1 className="text-2xl font-semibold text-slate-900">Link indisponível</h1>
+          <p className="mt-3 text-sm leading-7 text-slate-500">Documento não encontrado.</p>
         </div>
       </div>
     );
@@ -569,6 +617,22 @@ export default function SignDocument() {
 
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_380px]">
             <section className="rounded-[32px] border border-white/80 bg-white/90 p-4 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.35)] backdrop-blur sm:p-6">
+              <div className="mb-6">
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  Confirme seu CPF para validade jurídica *
+                </label>
+                <input
+                  type="text"
+                  value={signerCpf}
+                  onChange={(e) => {
+                    setSignerCpf(e.target.value);
+                    setSubmissionError('');
+                  }}
+                  placeholder="000.000.000-00"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                  required
+                />
+              </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 {SIGN_TABS.map((tab) => {
                   const Icon = tab.icon;
@@ -779,7 +843,7 @@ export default function SignDocument() {
             <aside className="flex flex-col justify-between rounded-[32px] border border-white/80 bg-white/90 p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.35)] backdrop-blur lg:sticky lg:top-6">
               <div>
                 <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">SignatÃ¡rio</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Signatário</p>
                   <p className="mt-3 text-lg font-semibold text-slate-950">{data.signer_name}</p>
                   <p className="mt-1 text-sm text-slate-500">{data.signer_role || 'Assinatura digital'}</p>
                 </div>
@@ -792,7 +856,7 @@ export default function SignDocument() {
                 <button
                   type="button"
                   onClick={() => void handleConfirmSignature()}
-                  disabled={!canConfirm}
+                  disabled={!canConfirm || !signerCpf || signerCpf.length < 11 || isSigning}
                   className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 text-base font-bold text-white shadow-lg shadow-emerald-300/40 transition hover:bg-emerald-600 disabled:opacity-50 disabled:shadow-none"
                 >
                   {isSigning ? <Icons.Loader2 className="animate-spin" size={18} /> : 'Confirmar Assinatura'}
@@ -814,7 +878,7 @@ export default function SignDocument() {
                 <Icons.X size={24} />
               </button>
               <h3 className="mb-2 text-xl font-bold text-slate-900">Assinar no Celular</h3>
-              <p className="mb-6 text-sm text-slate-500">Aponte a cÃ¢mera do seu celular para o cÃ³digo abaixo.</p>
+              <p className="mb-6 text-sm text-slate-500">Aponte a câmera do seu celular para o código abaixo.</p>
               <img src={qrCodeUrl} alt="QR" className="mx-auto rounded-xl border border-slate-200 p-2 shadow-sm" />
             </div>
           </div>
@@ -890,9 +954,9 @@ export default function SignDocument() {
       <footer className="fixed inset-x-0 bottom-0 z-20 border-t border-white/70 bg-white/92 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div>
-            <p className="text-sm font-semibold text-slate-950">{data.companies?.name || 'TR ImÃ³veis'}</p>
+            <p className="text-sm font-semibold text-slate-950">{data.companies?.name || 'Imobiliária'}</p>
             <p className="mt-1 text-sm text-slate-500">
-              Revise o conteÃºdo e avance para a etapa de assinatura.
+              Revise o conteúdo e avance para a etapa de assinatura.
             </p>
           </div>
 
@@ -908,6 +972,4 @@ export default function SignDocument() {
     </div>
   );
 }
-
-
 

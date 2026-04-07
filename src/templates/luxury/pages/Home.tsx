@@ -79,6 +79,7 @@ function useFeaturedProperties(companyId: string | undefined) {
       .select('*')
       .eq('company_id', companyId)
       .in('status', ['Disponível', 'disponível', 'Ativo', 'ativo', 'available'])
+      .eq('has_intermediation_signed', true)
       .order('featured', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(3)
@@ -89,6 +90,7 @@ function useFeaturedProperties(companyId: string | undefined) {
             .select('*')
             .eq('company_id', companyId)
             .not('status', 'in', '("Vendido","Alugado")')
+            .eq('has_intermediation_signed', true)
             .order('created_at', { ascending: false })
             .limit(3)
             .then(({ data: fallback }) => {

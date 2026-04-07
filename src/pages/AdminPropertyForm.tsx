@@ -4,12 +4,15 @@ import heic2any from 'heic2any';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
 import PropertyPreviewModal from '../components/PropertyPreviewModal';
+import IntermediationContractModal from '../components/IntermediationContractModal';
+import SignatureManagerModal from '../components/SignatureManagerModal';
 import { useAuth } from '../contexts/AuthContext';
 import { PropertyType, type Company, type ListingType, type SiteData } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { addXp } from '../services/gamification';
 import { generatePropertyDescription } from '../services/ai';
 import { uploadCompanyAsset } from '../lib/storage';
+import { appendSignatureManifest, injectSignatureStamps } from '../utils/contractGenerator';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -17,7 +20,7 @@ import L from 'leaflet';
 const UFs = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
 const ORGAOS = ['SSP', 'Detran', 'Policia Federal', 'Cartorio Civil', 'OAB', 'CREA', 'CRM'];
 
-type WizardStep = 'basic' | 'details' | 'owner' | 'media' | 'seo';
+type WizardStep = 'basic' | 'details' | 'owner' | 'legal' | 'media' | 'seo';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -89,15 +92,18 @@ interface FormState {
   owner_spouse_rg: string;
   owner_spouse_rg_org: string;
   owner_spouse_rg_uf: string;
+  commission_percentage: number | '';
+  has_exclusivity: boolean;
 }
 
-const STEP_ORDER: WizardStep[] = ['basic', 'details', 'owner', 'media', 'seo'];
+const STEP_ORDER: WizardStep[] = ['basic', 'details', 'owner', 'media', 'seo', 'legal'];
 
 const STEP_META: Record<WizardStep, { label: string; icon: keyof typeof Icons }> = {
   basic: { label: 'Básico', icon: 'Home' },
   details: { label: 'Detalhes', icon: 'List' },
   owner: { label: 'Proprietário', icon: 'User' },
   media: { label: 'Multimídia', icon: 'Image' },
+  legal: { label: 'Jurídico', icon: 'Scale' },
   seo: { label: 'SEO', icon: 'Globe' },
 };
 
@@ -149,6 +155,8 @@ const defaultForm: FormState = {
   owner_spouse_rg: '',
   owner_spouse_rg_org: '',
   owner_spouse_rg_uf: '',
+  commission_percentage: 5,
+  has_exclusivity: true,
 };
 
 const createSlug = (value: string) =>
@@ -161,7 +169,7 @@ const createSlug = (value: string) =>
     .concat(`-${Math.floor(Math.random() * 10000)}`);
 
 type CondominiumRecord = NonNullable<SiteData['condominiums']>[number];
-type TenantRecord = Pick<Company, 'id' | 'site_data'>;
+type TenantRecord = Pick<Company, 'id' | 'site_data' | 'name' | 'admin_signature_url'>;
 
 const parseSiteData = (raw: unknown): SiteData => {
   if (!raw) return {};
@@ -274,6 +282,9 @@ const AdminPropertyForm: React.FC = () => {
   const [newCondoFeature, setNewCondoFeature] = useState('');
   const [newImageUrl, setNewImageUrl] = useState('');
   const [showPreview, setShowPreview] = useState(false);
+  const [showContractModal, setShowContractModal] = useState(false);
+  const [showSignatureManager, setShowSignatureManager] = useState(false);
+  const [existingContract, setExistingContract] = useState<{ id: string; status: string } | null>(null);
   const [originalAgentId, setOriginalAgentId] = useState<string | null>(null);
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
   const [tenant, setTenant] = useState<TenantRecord | null>(null);
@@ -319,7 +330,7 @@ const AdminPropertyForm: React.FC = () => {
     const fetchTenant = async () => {
       const { data, error } = await supabase
         .from('companies')
-        .select('id, site_data')
+        .select('id, site_data, name, admin_signature_url')
         .eq('id', user.company_id)
         .maybeSingle();
 
@@ -419,6 +430,8 @@ const AdminPropertyForm: React.FC = () => {
         owner_spouse_rg: data.owner_spouse_rg || '',
         owner_spouse_rg_org: data.owner_spouse_rg_org || '',
         owner_spouse_rg_uf: data.owner_spouse_rg_uf || '',
+        commission_percentage: data.commission_percentage ?? 5,
+        has_exclusivity: data.has_exclusivity ?? true,
       });
 
       setOriginalAgentId(data.agent_id);
@@ -428,6 +441,27 @@ const AdminPropertyForm: React.FC = () => {
         url,
       }));
       setImages(existingImages);
+
+      const { data: contractData } = await supabase
+        .from('contracts')
+        .select('id, status')
+        .eq('property_id', id)
+        .eq('contract_data->>document_type', 'intermediacao')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (contractData) {
+        const { data: signatures } = await supabase
+          .from('contract_signatures')
+          .select('status')
+          .eq('contract_id', contractData.id);
+
+        const isSigned = signatures?.some((sig: any) => sig.status === 'signed');
+        setExistingContract({ id: contractData.id, status: isSigned ? 'signed' : contractData.status });
+      } else {
+        setExistingContract(null);
+      }
     };
 
     loadProperty();
@@ -903,6 +937,8 @@ const AdminPropertyForm: React.FC = () => {
         owner_spouse_rg: formData.owner_spouse_rg || null,
         owner_spouse_rg_org: formData.owner_spouse_rg_org || null,
         owner_spouse_rg_uf: formData.owner_spouse_rg_uf || null,
+        commission_percentage: Number(formData.commission_percentage) || 0,
+        has_exclusivity: formData.has_exclusivity,
         images: images.map((item) => item.url),
         slug: isEditing ? undefined : createSlug(formData.title),
         agent_id: formData.agent_id || user?.id,
@@ -947,6 +983,105 @@ const AdminPropertyForm: React.FC = () => {
     }
   };
 
+  const handleViewSignedPdf = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!existingContract?.id) return;
+
+    try {
+      addToast('Gerando documento...', 'info');
+
+      const { data: contractData, error } = await supabase
+        .from('contracts')
+        .select('*')
+        .eq('id', existingContract.id)
+        .single();
+
+      if (error) throw error;
+      if (!contractData) throw new Error('Contrato não encontrado');
+
+      // Busca a imagem estática direto do banco com certeza absoluta
+      let adminUrl = '';
+      if (user?.company_id) {
+        const { data: companyInfo } = await supabase
+          .from('companies')
+          .select('admin_signature_url')
+          .eq('id', user.company_id)
+          .single();
+        if (companyInfo?.admin_signature_url) {
+          adminUrl = companyInfo.admin_signature_url;
+        }
+      }
+
+      // Busca as assinaturas separadamente
+      const { data: signatures } = await supabase
+        .from('contract_signatures')
+        .select('*')
+        .eq('contract_id', contractData.id);
+
+      let finalHtml = contractData.html_content || contractData.content || '';
+      const safeSignatures = signatures || [];
+
+      // SEMPRE roda o injetor para limpar as tags ou injetar a imagem estática
+      finalHtml = await injectSignatureStamps(
+        finalHtml,
+        safeSignatures,
+        adminUrl || tenant?.admin_signature_url || undefined
+      );
+
+      // O manifesto só roda se houver assinaturas digitais
+      if (safeSignatures.length > 0) {
+        finalHtml = appendSignatureManifest(
+          finalHtml,
+          {
+            name: tenant?.name || null,
+            admin_signature_url: adminUrl || tenant?.admin_signature_url || null,
+          },
+          safeSignatures
+        );
+      }
+
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Contrato - ${contractData.id}</title>
+              <style>
+                @page { margin: 20mm; }
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; background: #f1f5f9; }
+                .contract-container { max-width: 800px; margin: 0 auto; background: white; padding: 40px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                .signatures { display: flex; justify-content: space-around; flex-wrap: wrap; margin-top: 40px; }
+                .signature-line { text-align: center; margin-top: 20px; }
+                .no-print { text-align: center; margin-bottom: 20px; padding: 15px; background: #e2e8f0; border-radius: 8px; }
+                .print-btn { background: #0f172a; color: white; border: none; padding: 12px 24px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; }
+                .print-btn:hover { background: #1e293b; }
+                @media print {
+                  body { padding: 0; background: white; }
+                  .contract-container { box-shadow: none; padding: 0; max-width: 100%; }
+                  .no-print { display: none !important; }
+                }
+              </style>
+            </head>
+            <body>
+              <div class="no-print">
+                <button class="print-btn" onclick="window.print()">Imprimir / Salvar como PDF</button>
+                <p style="margin-top: 10px; font-size: 14px; color: #64748b;">Dica: Na janela de impressão, escolha "Salvar como PDF" como destino.</p>
+              </div>
+              <div class="contract-container">
+                ${finalHtml}
+              </div>
+            </body>
+          </html>
+        `);
+        printWindow.document.close();
+      }
+    } catch (error: any) {
+      console.error('Erro ao gerar PDF:', error);
+      addToast('Erro ao abrir o PDF do contrato.', 'error');
+    }
+  };
+
   const StepIcon = STEP_META[step].icon;
   const CurrentStepIcon = Icons[StepIcon];
 
@@ -974,7 +1109,7 @@ const AdminPropertyForm: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-3 md:p-4 mb-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
           {STEP_ORDER.map((item, index) => {
             const ActiveIcon = Icons[STEP_META[item].icon];
             const isActive = item === step;
@@ -1813,6 +1948,132 @@ const AdminPropertyForm: React.FC = () => {
             </div>
           )}
 
+          {step === 'legal' && (
+            <div className="space-y-6 animate-fade-in">
+              <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 mb-6">
+                <p className="text-sm text-indigo-800 font-medium flex items-center gap-2">
+                  <Icons.Scale size={16} className="text-indigo-500" />
+                  Estes dados serão usados para gerar o Contrato de Autorização de Intermediação.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label htmlFor="commission_percentage" className="block text-sm font-bold text-slate-600 mb-2">Comissão Acordada (%) *</label>
+                  <div className="relative">
+                    <input
+                      id="commission_percentage"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={formData.commission_percentage}
+                      onChange={(e) => handleInput('commission_percentage', e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                  </div>
+                </div>
+
+                <div className="flex items-end">
+                  <label className="w-full inline-flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={formData.has_exclusivity}
+                      onChange={(e) => handleInput('has_exclusivity', e.target.checked)}
+                      className="w-5 h-5 text-brand-600 rounded focus:ring-brand-500"
+                    />
+                    <span className="text-sm font-semibold text-slate-700">Contrato com Exclusividade de Venda/Locação</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="mt-8 pt-8 border-t border-slate-200">
+                <div className="flex flex-col items-center justify-center p-8 bg-slate-50 border-2 border-dashed border-slate-300 rounded-2xl text-center">
+                  <Icons.FileSignature size={48} className="text-slate-400 mb-4" />
+                  <h3 className="text-lg font-bold text-slate-800 mb-2">Contrato de Intermediação</h3>
+                  <p className="text-sm text-slate-500 max-w-md mb-6">
+                    Para gerar o contrato de autorização e enviá-lo para assinatura digital do proprietário, conclua o preenchimento e salve este imóvel.
+                  </p>
+                  {existingContract ? (
+                    <div className="flex flex-col items-center gap-3 w-full animate-fade-in">
+                      <div className={`px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 ${
+                        existingContract.status === 'signed'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {existingContract.status === 'signed' ? <Icons.CheckCircle size={18} /> : <Icons.Clock size={18} />}
+                        {existingContract.status === 'signed' ? 'Contrato Assinado' : 'Aguardando Assinatura'}
+                      </div>
+                      {existingContract.status === 'signed' ? (
+                        <div className="flex flex-wrap justify-center gap-3 mt-4">
+                          <button
+                            type="button"
+                            onClick={handleViewSignedPdf}
+                            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-lg flex items-center gap-2 transition-colors"
+                          >
+                            <Icons.Eye size={16} /> Visualizar Contrato Assinado
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm('Atenção: Gerar um novo contrato invalidará a assinatura atual e será necessário solicitar uma nova assinatura do proprietário. Deseja continuar?')) {
+                                setShowContractModal(true);
+                              }
+                            }}
+                            className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors flex items-center gap-2"
+                          >
+                            <Icons.RefreshCw size={16} /> Refazer Contrato
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap justify-center gap-3 mt-4">
+                          <button
+                            type="button"
+                            onClick={() => setShowSignatureManager(true)}
+                            className="px-6 py-3 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 transition-colors shadow-lg flex items-center gap-2"
+                          >
+                            <Icons.PenTool size={16} /> Solicitar Assinatura
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              navigate(`/admin/contratos/${existingContract.id}`);
+                            }}
+                            className="px-6 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors shadow-lg"
+                          >
+                            Ver Detalhes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowContractModal(true)}
+                            className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors"
+                          >
+                            Gerar Novo
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={!isEditing || !id}
+                      onClick={() => setShowContractModal(true)}
+                      className={`px-6 py-3 font-bold rounded-xl transition-colors ${
+                        !isEditing || !id
+                          ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                          : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-200'
+                      }`}
+                    >
+                      Gerar Contrato de Autorização
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {step === 'media' && (
             <div className="space-y-6 animate-fade-in">
               <div className="flex flex-col sm:flex-row items-center justify-between bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-4 rounded-xl gap-4">
@@ -2036,6 +2297,92 @@ const AdminPropertyForm: React.FC = () => {
           images: images.map((item) => item.url),
         }}
       />
+
+      <IntermediationContractModal
+        isOpen={showContractModal}
+        onClose={() => setShowContractModal(false)}
+        onSuccess={() => {
+          setShowContractModal(false);
+          if (id) {
+            supabase
+              .from('contracts')
+              .select('id, status')
+              .eq('property_id', id)
+              .eq('contract_data->>document_type', 'intermediacao')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+              .then(async ({ data }) => {
+                if (data) {
+                  const { data: signatures } = await supabase.from('contract_signatures').select('status').eq('contract_id', data.id);
+                  const isSigned = signatures?.some((sig: any) => sig.status === 'signed');
+                  setExistingContract({ id: data.id, status: isSigned ? 'signed' : data.status });
+                }
+              });
+          }
+        }}
+        propertyId={id || ''}
+        propertyData={{
+          title: formData.title,
+          listing_type: formData.listing_type,
+          price: formData.price,
+          address: formData.address,
+          neighborhood: formData.neighborhood,
+          city: formData.city,
+          state: formData.state,
+          zip_code: formData.zip_code,
+          owner_name: formData.owner_name,
+          owner_phone: formData.owner_phone,
+          owner_email: formData.owner_email,
+          owner_document: formData.owner_document,
+          owner_rg: formData.owner_rg,
+          owner_rg_org: formData.owner_rg_org,
+          owner_rg_uf: formData.owner_rg_uf,
+          owner_profession: formData.owner_profession,
+          owner_marital_status: formData.owner_marital_status,
+          owner_address: formData.owner_address,
+          owner_spouse_name: formData.owner_spouse_name,
+          owner_spouse_cpf: formData.owner_spouse_cpf,
+          owner_spouse_rg: formData.owner_spouse_rg,
+          owner_spouse_rg_org: formData.owner_spouse_rg_org,
+          owner_spouse_rg_uf: formData.owner_spouse_rg_uf,
+          commission_percentage: formData.commission_percentage,
+          has_exclusivity: formData.has_exclusivity,
+          agent_id: formData.agent_id,
+        }}
+      />
+
+      {showSignatureManager && existingContract && (
+        <SignatureManagerModal
+          contractId={existingContract.id}
+          companyId={user?.company_id || ''}
+          onClose={() => {
+            setShowSignatureManager(false);
+            if (id) {
+              supabase
+                .from('contracts')
+                .select('id, status')
+                .eq('property_id', id)
+                .eq('contract_data->>document_type', 'intermediacao')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+                .then(async ({ data }) => {
+                  if (data) {
+                    const { data: signatures } = await supabase.from('contract_signatures').select('status').eq('contract_id', data.id);
+                    const isSigned = signatures?.some((sig: any) => sig.status === 'signed');
+                    setExistingContract({ id: data.id, status: isSigned ? 'signed' : data.status });
+                  }
+                });
+            }
+          }}
+          initialSigner={{
+            name: formData.owner_name,
+            email: formData.owner_email,
+            role: 'Proprietário'
+          }}
+        />
+      )}
     </div>
   );
 };

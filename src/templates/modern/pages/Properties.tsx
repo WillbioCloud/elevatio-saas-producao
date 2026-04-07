@@ -72,6 +72,7 @@ const Properties: React.FC = () => {
           .from('properties')
           .select('*, profiles(name, phone, email)')
           .eq('company_id', tenant.id)
+          .eq('has_intermediation_signed', true)
           .abortSignal(controller.signal);
 
         if (currentCity) query = query.ilike('city', `%${currentCity}%`);

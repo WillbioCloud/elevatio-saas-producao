@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { TOOLTIPS } from '../constants/tooltips';
 import PropertyPreviewModal from '../components/PropertyPreviewModal';
+import SignatureManagerModal from '../components/SignatureManagerModal';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,13 +52,14 @@ const AdminProperties: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('Todos');
-  const [listingFilter, setListingFilter] = useState<'all' | 'sale' | 'rent' | 'sales' | 'rented' | 'archived'>('all');
+  const [listingFilter, setListingFilter] = useState<'all' | 'sale' | 'rent' | 'sales' | 'rented' | 'archived' | 'pending_legal'>('all');
   const [showOnlyMine, setShowOnlyMine] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightId = searchParams.get('highlight_id');
   const [previewProperty, setPreviewProperty] = useState<Property | null>(null);
   const [sales, setSales] = useState<Lead[]>([]);
   const [salesLoading, setSalesLoading] = useState(false);
+  const [signatureModalContract, setSignatureModalContract] = useState<{ contractId: string; companyId: string } | null>(null);
   const [editingProposalLead, setEditingProposalLead] = useState<Lead | null>(null);
   const [proposalForm, setProposalForm] = useState({
     commission_value: '',
@@ -208,6 +210,23 @@ const AdminProperties: React.FC = () => {
         }
       }
     });
+  };
+
+  const handleQuickSignature = async (propertyId: string, companyId: string) => {
+    const { data } = await supabase
+      .from('contracts')
+      .select('id')
+      .eq('property_id', propertyId)
+      .eq('contract_data->>document_type', 'intermediacao')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (data?.id) {
+      setSignatureModalContract({ contractId: data.id, companyId });
+    } else {
+      alert('Gere o contrato de intermediação na edição do imóvel primeiro.');
+    }
   };
 
   const handleReactivate = async (id: string) => {
@@ -421,19 +440,22 @@ const AdminProperties: React.FC = () => {
     const matchesSearch = title.includes(searchTerm) || neighborhood.includes(searchTerm);
     const matchesType = typeFilter === 'Todos' || p.type === typeFilter;
     const propertyListingType = getListingType(p.listing_type);
+    const hasSignedIntermediation = p.has_intermediation_signed === true;
     const matchesListingType =
       listingFilter === 'all' ||
       listingFilter === 'sales' ||
       listingFilter === 'rented' ||
       listingFilter === 'archived' ||
+      listingFilter === 'pending_legal' ||
       propertyListingType === listingFilter;
 
     if (showOnlyMine && p.agent_id !== user?.id) return false;
 
-    if (listingFilter === 'all' || listingFilter === 'sale' || listingFilter === 'rent') {
+    if (listingFilter === 'pending_legal') {
+      if (hasSignedIntermediation) return false;
+    } else if (listingFilter === 'all' || listingFilter === 'sale' || listingFilter === 'rent') {
       if (p.status === 'Vendido' || p.status === 'Alugado') return false;
     } else if (listingFilter === 'archived') {
-      // Agora os imóveis Alugados e Inativos também aparecem nos Arquivados
       if (p.status !== 'Vendido' && p.status !== 'Alugado' && p.status !== 'Inativo') return false;
     }
 
@@ -473,6 +495,7 @@ const AdminProperties: React.FC = () => {
     { key: 'all', label: 'Todos' },
     { key: 'sale', label: 'Venda' },
     { key: 'rent', label: 'Aluguel' },
+    { key: 'pending_legal', label: 'Pendentes (Jurídico)' },
     { key: 'sales', label: 'Vendas Realizadas' },
     { key: 'rented', label: 'Imóveis Alugados' },
     { key: 'archived', label: 'Arquivados' }
@@ -590,11 +613,11 @@ const AdminProperties: React.FC = () => {
               <table className="w-full text-left whitespace-nowrap">
                 <thead className="bg-slate-50/50 dark:bg-white/5 border-b border-slate-100 dark:border-white/5 text-slate-500 dark:text-slate-400 font-bold uppercase text-[11px] tracking-wider">
                   <tr>
-                    <th className="p-4">Cliente (Lead)</th>
-                    <th className="p-4">Imóvel Vendido</th>
-                    <th className="p-4">Valor Fechado</th>
-                    <th className="p-4">Data Fechamento</th>
-                    <th className="p-4 text-right">Ações</th>
+                    <th className="px-3 py-4">Cliente (Lead)</th>
+                    <th className="px-3 py-4">Imóvel Vendido</th>
+                    <th className="px-3 py-4">Valor Fechado</th>
+                    <th className="px-3 py-4">Data Fechamento</th>
+                    <th className="px-3 py-4 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 text-sm text-slate-600">
@@ -607,11 +630,11 @@ const AdminProperties: React.FC = () => {
                   ) : (
                     filteredSales.map((sale) => (
                       <tr key={sale.id} className="hover:bg-slate-50">
-                        <td className="p-4 font-semibold text-slate-800">{sale.name}</td>
-                        <td className="p-4">{(sale as any)?.property?.title || 'Imóvel não identificado'}</td>
-                        <td className="p-4 font-semibold text-emerald-700">{formatBRL(Number((sale as any)?.deal_value || 0))}</td>
-                        <td className="p-4">{(sale as any)?.contract_date ? new Date((sale as any).contract_date).toLocaleDateString('pt-BR') : new Date((sale as any).created_at || Date.now()).toLocaleDateString('pt-BR')}</td>
-                        <td className="p-4 text-right">
+                        <td className="px-3 py-4 font-semibold text-slate-800">{sale.name}</td>
+                        <td className="px-3 py-4">{(sale as any)?.property?.title || 'Imóvel não identificado'}</td>
+                        <td className="px-3 py-4 font-semibold text-emerald-700">{formatBRL(Number((sale as any)?.deal_value || 0))}</td>
+                        <td className="px-3 py-4">{(sale as any)?.contract_date ? new Date((sale as any).contract_date).toLocaleDateString('pt-BR') : new Date((sale as any).created_at || Date.now()).toLocaleDateString('pt-BR')}</td>
+                        <td className="px-3 py-4 text-right">
                           <button
                             type="button"
                             onClick={() => {
@@ -641,27 +664,28 @@ const AdminProperties: React.FC = () => {
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-visible">
           {/* Rolagem horizontal no mobile */}
-          <div className="overflow-x-auto overflow-y-visible pr-6">
+          <div className="overflow-x-auto overflow-y-visible">
             <table className="w-full text-left whitespace-nowrap">
               <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 font-bold uppercase text-xs">
                 <tr>
-                  <th className="p-4">Imóvel</th>
-                  <th className="p-4 text-center">Destaque</th>
-                  <th className="p-4">Preço</th>
-                  <th className="p-4">Bairro</th>
-                  <th className="p-4">Cidade</th>
+                  <th className="px-3 py-4">Imóvel</th>
+                  <th className="px-3 py-4 text-center">Destaque</th>
+                  <th className="px-3 py-4">Preço</th>
+                  <th className="px-3 py-4">Bairro</th>
+                  <th className="px-3 py-4">Cidade</th>
                   {/* AQUI: Coluna visível para TODOS */}
-                  <th className="p-4">
+                  <th className="px-3 py-4">
                     Responsável <InfoTooltip text="Quem captou este imóvel" />
                   </th>
-                  <th className="p-4 text-center">Preview</th>
-                  <th className="p-4 text-right">Ações</th>
+                  <th className="px-3 py-4">Jurídico</th>
+                  <th className="px-3 py-4 text-center">Preview</th>
+                  <th className="px-3 py-4 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50 text-sm text-slate-600">
                 {filteredProperties.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-12 text-center text-slate-400 italic">
+                    <td colSpan={9} className="p-12 text-center text-slate-400 italic">
                       Nenhum imóvel encontrado.
                     </td>
                   </tr>
@@ -671,6 +695,7 @@ const AdminProperties: React.FC = () => {
                     const isRent = listingType === 'rent';
                     const isUnavailable = isPropertyUnavailable(property);
                     const isSaleSold = listingType === 'sale' && isUnavailable;
+                    const hasSignedIntermediation = property.has_intermediation_signed === true;
                     const statusButtonLabel = isRent
                       ? isUnavailable
                         ? 'Reativar Imóvel / Disponibilizar'
@@ -695,7 +720,7 @@ const AdminProperties: React.FC = () => {
                           : 'hover:bg-slate-50'
                       }`}
                     >
-                      <td className="p-4">
+                      <td className="px-3 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-lg bg-slate-200 overflow-hidden shrink-0 border border-slate-100">
                             {property.images?.[0] ? (
@@ -714,6 +739,13 @@ const AdminProperties: React.FC = () => {
                               }`}>
                                 {isRent ? 'Aluguel' : 'Venda'}
                               </span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                                hasSignedIntermediation
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200'
+                              }`}>
+                                {hasSignedIntermediation ? '✓ Documentado' : '⚠ Sem Assinatura'}
+                              </span>
                             </div>
                             <div className="flex items-center gap-2 mt-1">
                               <span className="text-[9px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-bold uppercase border border-slate-200">
@@ -729,7 +761,7 @@ const AdminProperties: React.FC = () => {
                         </div>
                       </td>
                       
-                      <td className="p-4 text-center">
+                      <td className="px-3 py-4 text-center">
                         <button
                           type="button"
                           onClick={() => handleToggleFeatured(property)}
@@ -740,20 +772,20 @@ const AdminProperties: React.FC = () => {
                         </button>
                       </td>
 
-                      <td className="p-4 font-bold text-slate-700">
+                      <td className="px-3 py-4 font-bold text-slate-700">
                         {displayedPrice}
                       </td>
 
-                      <td className="p-4 text-slate-600">
+                      <td className="px-3 py-4 text-slate-600">
                         {property.location?.neighborhood || '-'}
                       </td>
 
-                      <td className="p-4 text-slate-600">
+                      <td className="px-3 py-4 text-slate-600">
                         {property.location?.city || '-'}
                       </td>
                       
                       {/* Coluna Responsável - Visível para TODOS */}
-                      <td className="p-4">
+                      <td className="px-3 py-4">
                         {property.agent ? (
                           <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 pr-3 rounded-full w-fit">
                             <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-[10px] font-bold">
@@ -773,7 +805,25 @@ const AdminProperties: React.FC = () => {
                         )}
                       </td>
 
-                      <td className="p-4 text-center">
+                      <td className="px-3 py-4">
+                        <div className="flex flex-col items-start gap-1">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                            hasSignedIntermediation ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                          }`}>
+                            {hasSignedIntermediation ? '✓ OK' : '⚠ Pendente'}
+                          </span>
+                          {!hasSignedIntermediation && (
+                            <button
+                              onClick={() => handleQuickSignature(property.id, property.company_id || user?.company_id || '')}
+                              className="text-[10px] font-bold text-brand-600 hover:text-brand-700 flex items-center gap-1"
+                            >
+                              <Icons.PenTool size={10} /> Assinar
+                            </button>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-4 text-center">
                         <button
                           type="button"
                           onClick={() => setPreviewProperty(property)}
@@ -784,7 +834,7 @@ const AdminProperties: React.FC = () => {
                         </button>
                       </td>
 
-                      <td className="p-4 text-right">
+                      <td className="px-3 py-4 text-right">
                         {(isAdmin || property.agent_id === user?.id) ? (
                           <div className="group flex justify-end gap-2 opacity-100 group-hover:opacity-100 transition-opacity">
                             {listingFilter !== 'archived' && (
@@ -1070,6 +1120,17 @@ const AdminProperties: React.FC = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {signatureModalContract && (
+        <SignatureManagerModal
+          contractId={signatureModalContract.contractId}
+          companyId={signatureModalContract.companyId}
+          onClose={() => {
+            setSignatureModalContract(null);
+            fetchProperties();
+          }}
+        />
+      )}
     </div>
   );
 };

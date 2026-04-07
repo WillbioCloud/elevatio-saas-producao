@@ -10,6 +10,7 @@ interface SignatureManagerModalProps {
   contractId: string;
   companyId: string;
   onClose: () => void;
+  initialSigner?: { name: string; email: string; role: string };
 }
 
 type SignatureStatus = 'pending' | 'signed' | 'rejected';
@@ -30,7 +31,7 @@ interface NewSignerState {
   role: string;
 }
 
-const ROLE_OPTIONS = ['Locador', 'Locatario', 'Fiador', 'Testemunha', 'Vendedor', 'Comprador'] as const;
+const ROLE_OPTIONS = ['Locador', 'Locatario', 'Fiador', 'Testemunha', 'Vendedor', 'Comprador', 'Proprietário'] as const;
 
 const INITIAL_SIGNER: NewSignerState = {
   name: '',
@@ -47,6 +48,7 @@ export default function SignatureManagerModal({
   contractId,
   companyId,
   onClose,
+  initialSigner,
 }: SignatureManagerModalProps) {
   const { addToast } = useToast();
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
@@ -62,19 +64,30 @@ export default function SignatureManagerModal({
         .eq('id', contractId)
         .single();
 
+      const existingSignatures = await fetchSignatures();
+      const hasInitialSigner =
+        Boolean(initialSigner?.name.trim()) || Boolean(initialSigner?.email.trim());
+
+      if (existingSignatures.length === 0 && hasInitialSigner && initialSigner) {
+        setNewSigner({
+          name: initialSigner.name,
+          email: initialSigner.email,
+          role: initialSigner.role || INITIAL_SIGNER.role,
+        });
+        return;
+      }
+
       if (contract?.lead) {
         setNewSigner({
           name: contract.lead.name || '',
           email: contract.lead.email || '',
-          role: contract.type === 'sale' ? 'Comprador' : 'Locatario'
+          role: contract.type === 'sale' ? 'Comprador' : 'Locatario',
         });
       }
-
-      await fetchSignatures();
     };
 
     void initModal();
-  }, [contractId]);
+  }, [contractId, initialSigner?.name, initialSigner?.email, initialSigner?.role]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -94,7 +107,7 @@ export default function SignatureManagerModal({
     };
   }, [onClose]);
 
-  const fetchSignatures = async () => {
+  const fetchSignatures = async (): Promise<SignatureRecord[]> => {
     setIsLoading(true);
 
     try {
@@ -108,10 +121,13 @@ export default function SignatureManagerModal({
         throw error;
       }
 
-      setSignatures((data as SignatureRecord[] | null) ?? []);
+      const nextSignatures = (data as SignatureRecord[] | null) ?? [];
+      setSignatures(nextSignatures);
+      return nextSignatures;
     } catch (error) {
       console.error('Erro ao buscar assinaturas:', error);
       addToast('Erro ao carregar assinaturas.', 'error');
+      return [];
     } finally {
       setIsLoading(false);
     }

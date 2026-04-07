@@ -165,6 +165,7 @@ export default function Properties() {
         )
         .eq('company_id', tenant.id)
         .eq('status', 'Disponível')
+        .eq('has_intermediation_signed', true)
         .order('featured', { ascending: false })
         .order('created_at', { ascending: false })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);

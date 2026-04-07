@@ -66,6 +66,7 @@ const Home: React.FC = () => {
           .eq('company_id', tenant.id)
           .neq('status', 'Vendido')
           .neq('status', 'Alugado')
+          .eq('has_intermediation_signed', true)
           .order('featured', { ascending: false })
           .order('created_at', { ascending: false });
 

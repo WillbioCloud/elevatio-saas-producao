@@ -210,6 +210,9 @@ export interface Property {
   property_registration?: string;
   property_registry_office?: string;
   property_municipal_registration?: string;
+  has_intermediation_signed?: boolean;
+  commission_percentage?: number;
+  has_exclusivity?: boolean;
   created_at?: string;
 
   // SEO

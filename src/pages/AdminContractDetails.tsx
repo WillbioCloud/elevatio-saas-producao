@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { appendSignatureManifest, injectSignatureStamps } from '../utils/contractGenerator';
 
 const AdminContractDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -140,6 +141,101 @@ const AdminContractDetails: React.FC = () => {
     setLoading(false);
   };
 
+  const handleViewPdf = async () => {
+    if (!contract?.id) return;
+
+    try {
+      addToast('Gerando documento...', 'info');
+
+      const { data: fullContract, error } = await supabase
+        .from('contracts')
+        .select('*')
+        .eq('id', contract.id)
+        .single();
+
+      if (error) throw error;
+      if (!fullContract) throw new Error('Contrato não encontrado.');
+
+      // Busca a imagem estática direto do banco com certeza absoluta
+      let adminUrl = '';
+      let companyName = '';
+      if (user?.company_id) {
+        const { data: companyInfo } = await supabase
+          .from('companies')
+          .select('name, admin_signature_url')
+          .eq('id', user.company_id)
+          .single();
+        if (companyInfo?.admin_signature_url) {
+          adminUrl = companyInfo.admin_signature_url;
+        }
+        if (companyInfo?.name) {
+          companyName = companyInfo.name;
+        }
+      }
+
+      // Busca as assinaturas separadamente
+      const { data: signatures } = await supabase
+        .from('contract_signatures')
+        .select('*')
+        .eq('contract_id', fullContract.id);
+
+      let finalHtml = fullContract.html_content || fullContract.content || '';
+      const safeSignatures = signatures || [];
+
+      // SEMPRE roda o injetor para limpar as tags ou injetar a imagem estática
+      finalHtml = await injectSignatureStamps(finalHtml, safeSignatures, adminUrl);
+
+      // O manifesto só roda se houver assinaturas digitais
+      if (safeSignatures.length > 0) {
+        finalHtml = appendSignatureManifest(
+          finalHtml,
+          {
+            name: companyName || null,
+            admin_signature_url: adminUrl || null,
+          },
+          safeSignatures
+        );
+      }
+
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Contrato - ${fullContract.id}</title>
+              <style>
+                @page { margin: 20mm; }
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; background: #f1f5f9; }
+                .contract-container { max-width: 800px; margin: 0 auto; background: white; padding: 40px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                .no-print { text-align: center; margin-bottom: 20px; padding: 15px; background: #e2e8f0; border-radius: 8px; }
+                .print-btn { background: #0f172a; color: white; border: none; padding: 12px 24px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; }
+                .print-btn:hover { background: #1e293b; }
+                @media print {
+                  body { padding: 0; background: white; }
+                  .contract-container { box-shadow: none; padding: 0; max-width: 100%; }
+                  .no-print { display: none !important; }
+                }
+              </style>
+            </head>
+            <body>
+              <div class="no-print">
+                <button class="print-btn" onclick="window.print()">Imprimir / Salvar como PDF</button>
+              </div>
+              <div class="contract-container">
+                ${finalHtml}
+              </div>
+            </body>
+          </html>
+        `);
+        printWindow.document.close();
+      }
+    } catch (error: any) {
+      console.error('Erro ao gerar PDF:', error);
+      addToast('Erro ao abrir o PDF.', 'error');
+    }
+  };
+
   useEffect(() => {
     if (id) fetchContractData();
   }, [id]);
@@ -260,6 +356,13 @@ const AdminContractDetails: React.FC = () => {
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Imóvel: {contract.property?.title}</p>
           </div>
         </div>
+        <button
+          onClick={handleViewPdf}
+          className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-700 text-white font-bold rounded-xl transition-colors shadow-sm whitespace-nowrap"
+        >
+          <Icons.FileText size={18} />
+          Ver Documento (PDF)
+        </button>
 
       </div>
 

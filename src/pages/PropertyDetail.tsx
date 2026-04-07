@@ -19,7 +19,7 @@ L.Icon.Default.mergeOptions({
 const PropertyDetail: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const { properties, loading } = useProperties();
+  const { properties, loading } = useProperties({ publicOnly: true });
   const [property, setProperty] = useState<Property | null>(null);
   
   // --- Estados do formulário de contato ---

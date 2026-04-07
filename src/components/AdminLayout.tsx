@@ -19,7 +19,7 @@ const AdminLayout: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isFunnelMenuOpen, setIsFunnelMenuOpen] = useState(false);
   const [isContractsMenuOpen, setIsContractsMenuOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => localStorage.getItem('trimoveis-sidebar') === 'true');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [contractPlanName, setContractPlanName] = useState(() => user?.company?.plan ?? '');
@@ -27,12 +27,6 @@ const AdminLayout: React.FC = () => {
   const role = user?.role ?? (user?.user_metadata as { role?: string } | undefined)?.role;
   const isAdmin = role === 'admin';
   const shouldShowWizard = !user?.company_id && role !== 'super_admin';
-
-  const toggleSidebar = () => {
-    const newState = !isSidebarCollapsed;
-    setIsSidebarCollapsed(newState);
-    localStorage.setItem('trimoveis-sidebar', String(newState));
-  };
 
   useRealtimeEvents();
   useInstallmentReminders();
@@ -195,6 +189,8 @@ const AdminLayout: React.FC = () => {
       {shouldShowWizard && <SetupWizardModal onComplete={handleRefresh} />}
       <ProductTour isSidebarCollapsed={isSidebarCollapsed} />
       <aside
+        onMouseEnter={() => setIsSidebarCollapsed(false)}
+        onMouseLeave={() => setIsSidebarCollapsed(true)}
         className={`hidden md:flex flex-col relative z-30 transition-all duration-300 shrink-0 bg-gradient-to-b from-[#0c1445] via-[#0f2460] to-[#0c1f55] border-none ${
           isSidebarCollapsed ? 'w-[76px]' : 'w-[260px]'
         }`}
@@ -205,13 +201,7 @@ const AdminLayout: React.FC = () => {
           isSidebarCollapsed ? 'justify-center' : 'justify-between'
         }`}>
           {isSidebarCollapsed ? (
-            <button
-              onClick={toggleSidebar}
-              className="hover:scale-105 transition-transform"
-              title="Expandir"
-            >
-              <Icons.Building size={36} />
-            </button>
+            <Icons.Building size={36} />
           ) : (
             <div className="flex items-center gap-3 overflow-hidden">
               <Icons.Building size={32} />
@@ -544,14 +534,6 @@ const AdminLayout: React.FC = () => {
               <Icons.Menu size={20} />
             </button>
             
-            <button
-              onClick={toggleSidebar}
-              className="hidden md:flex p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
-              title="Recolher / Expandir Menu"
-            >
-              <Icons.Menu size={18} />
-            </button>
-            
             <div className="md:hidden flex items-center gap-2">
               <Icons.Building size={24} />
               <span className="font-serif font-bold text-slate-800 dark:text-white">ElevatioVendas</span>
@@ -741,8 +723,10 @@ const AdminLayout: React.FC = () => {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-          <div className="max-w-7xl mx-auto pb-10">
+        {/* Padding reduzido para ganhar tela (p-3 md:p-5) */}
+        <div className="flex-1 overflow-y-auto p-3 md:p-5 custom-scrollbar">
+          {/* Largura dinâmica: se a sidebar fecha, o conteúdo expande ainda mais (1600px vs 1300px) */}
+          <div className={`w-full mx-auto pb-10 transition-all duration-300 ${isSidebarCollapsed ? 'max-w-[1600px]' : 'max-w-[1300px]'}`}>
             
             <Outlet key={refreshKey} />
           </div>

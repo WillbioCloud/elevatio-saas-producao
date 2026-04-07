@@ -1,6 +1,10 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Property } from '../types';
+
+interface UsePropertiesOptions {
+  publicOnly?: boolean;
+}
 
 type RawProperty = Omit<Property, 'location'> & {
   city?: string | null;
@@ -41,12 +45,11 @@ const normalizeProperty = (p: RawProperty): Property => ({
     : undefined,
 });
 
-export function useProperties() {
+export function useProperties(options: UsePropertiesOptions = {}) {
+  const { publicOnly = false } = options;
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Ref para controlar o canal de realtime
   const channelRef = useRef<any>(null);
   const hasLoadedOnceRef = useRef(false);
 
@@ -55,28 +58,26 @@ export function useProperties() {
 
     const fetchProperties = async () => {
       const shouldShowInitialLoading = !hasLoadedOnceRef.current;
-      // NÃO limpe setProperties([]) aqui. Mantenha os dados velhos na tela.
-      if (shouldShowInitialLoading && properties.length === 0) {
+
+      if (shouldShowInitialLoading) {
         setLoading(true);
       }
 
       try {
-        // Tenta buscar COM os dados do corretor (JOIN)
-        // Isso requer que a tabela 'profiles' tenha permissão de leitura pública (SELECT TO public)
-        const { data, error: joinError } = await supabase
-          .from('properties')
-          .select(`*, agent:profiles (name, email, phone)`)
-          .order('created_at', { ascending: false });
+        let query = supabase.from('properties').select('*, agent:profiles (name, email, phone)');
+
+        if (publicOnly) {
+          query = query.eq('status', 'active').eq('has_intermediation_signed', true);
+        }
+
+        const { data, error: joinError } = await query.order('created_at', { ascending: false });
 
         if (joinError) {
-          // Se der erro no JOIN (ex: permissão de profiles), lançamos erro para cair no catch
-          // e tentar a busca simples
           throw joinError;
         }
 
         if (isMounted && data) {
-          const mapped = data.map((p) => normalizeProperty(p as any));
-          setProperties(mapped);
+          setProperties(data.map((property) => normalizeProperty(property as any)));
           setError(null);
           hasLoadedOnceRef.current = true;
         }
@@ -85,20 +86,21 @@ export function useProperties() {
           return;
         }
 
-        // FALLBACK: Se falhar (provavelmente RLS em profiles), busca apenas os dados do imóvel
         console.warn('Busca com JOIN falhou, tentando busca simples...', err);
 
         try {
-          const { data: simpleData, error: simpleError } = await supabase
-            .from('properties')
-            .select('*')
-            .order('created_at', { ascending: false });
+          let simpleQuery = supabase.from('properties').select('*');
+
+          if (publicOnly) {
+            simpleQuery = simpleQuery.eq('status', 'active').eq('has_intermediation_signed', true);
+          }
+
+          const { data: simpleData, error: simpleError } = await simpleQuery.order('created_at', { ascending: false });
 
           if (simpleError) throw simpleError;
 
           if (isMounted && simpleData) {
-            const mapped = simpleData.map((p) => normalizeProperty({ ...p, agent: null } as any));
-            setProperties(mapped);
+            setProperties(simpleData.map((property) => normalizeProperty({ ...property, agent: null } as any)));
             setError(null);
             hasLoadedOnceRef.current = true;
           }
@@ -108,8 +110,8 @@ export function useProperties() {
           }
 
           if (isMounted) {
-            console.error('Erro fatal ao buscar imóveis:', simpleError);
-            setError('Não foi possível carregar os imóveis.');
+            console.error('Erro fatal ao buscar imoveis:', simpleError);
+            setError('Nao foi possivel carregar os imoveis.');
           }
         }
       } finally {
@@ -121,17 +123,11 @@ export function useProperties() {
 
     void fetchProperties();
 
-    // Configuração do Realtime
-    // Usamos um canal único para evitar duplicidade de conexões
     const channel = supabase
       .channel('public:properties_list')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'properties' },
-        () => {
-          void fetchProperties();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'properties' }, () => {
+        void fetchProperties();
+      })
       .subscribe();
 
     channelRef.current = channel;
@@ -142,7 +138,7 @@ export function useProperties() {
         supabase.removeChannel(channelRef.current);
       }
     };
-  }, []); // Array vazio = executa apenas na montagem
+  }, [publicOnly]);
 
   return { properties, loading, error };
 }

@@ -22,7 +22,7 @@ const Home: React.FC = () => {
   const [selectedCity, setSelectedCity] = useState('');
   const [selectedNeighborhood, setSelectedNeighborhood] = useState('');
   const [selectedType, setSelectedType] = useState('');
-  const { properties, loading } = useProperties();
+  const { properties, loading } = useProperties({ publicOnly: true });
 
   const cities = Array.from(new Set(properties.map((property) => property.location.city).filter(Boolean))).sort();
   const neighborhoods = Array.from(

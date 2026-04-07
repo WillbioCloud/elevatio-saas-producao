@@ -28,7 +28,7 @@ export default function SimilarProperties({
   listingType,
   city,
   neighborhood,
-  renderCard
+  renderCard,
 }: SimilarPropertiesProps) {
   const { tenant } = useTenant();
   const [properties, setProperties] = useState<any[]>([]);
@@ -44,49 +44,50 @@ export default function SimilarProperties({
           .select('*, profiles(name, phone, email)')
           .eq('company_id', tenant.id)
           .eq('listing_type', listingType)
-          .eq('status', 'Disponível') // Substituímos is_available por status
+          .eq('status', 'active')
+          .eq('has_intermediation_signed', true)
           .neq('id', currentPropertyId)
-          .limit(10); // Busca até 10 para ranquear por localidade no front
+          .limit(10);
 
         if (error) throw error;
 
         if (data && data.length > 0) {
-          // Ranqueamento: Prioriza mesmo bairro (peso 2) e mesma cidade (peso 1)
           const sorted = data.sort((a, b) => {
             let scoreA = 0;
             let scoreB = 0;
+
             if (city && a.city === city) scoreA += 1;
             if (city && b.city === city) scoreB += 1;
             if (neighborhood && a.neighborhood === neighborhood) scoreA += 2;
             if (neighborhood && b.neighborhood === neighborhood) scoreB += 2;
+
             return scoreB - scoreA;
           });
 
-          // Formata os 3 melhores para o padrão que os Cards esperam
-          const mapped = sorted.slice(0, 3).map(p => ({
-            ...p,
-            agent: Array.isArray(p.profiles) ? p.profiles[0] : p.profiles,
-            location: {
-              city: p.city || '',
-              neighborhood: p.neighborhood || '',
-              state: p.state || '',
-              address: p.address || '',
-              zip_code: p.zip_code || '',
-            },
-            features: parseStringArray(p.features),
-            images: parseStringArray(p.images),
-          }));
-
-          setProperties(mapped);
+          setProperties(
+            sorted.slice(0, 3).map((property) => ({
+              ...property,
+              agent: Array.isArray(property.profiles) ? property.profiles[0] : property.profiles,
+              location: {
+                city: property.city || '',
+                neighborhood: property.neighborhood || '',
+                state: property.state || '',
+                address: property.address || '',
+                zip_code: property.zip_code || '',
+              },
+              features: parseStringArray(property.features),
+              images: parseStringArray(property.images),
+            }))
+          );
         }
-      } catch (err) {
-        console.error('Erro ao buscar imóveis similares:', err);
+      } catch (error) {
+        console.error('Erro ao buscar imóveis similares:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchSimilar();
+    void fetchSimilar();
   }, [tenant?.id, currentPropertyId, listingType, city, neighborhood]);
 
   if (loading || properties.length === 0) return null;

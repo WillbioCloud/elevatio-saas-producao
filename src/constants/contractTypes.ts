@@ -4,7 +4,6 @@ export const SALE_DOCUMENTS = [
   { id: 'sale_standard', title: 'Contrato de Compra e Venda - PRAZO' },
   { id: 'sale_cash', title: 'Contrato de Compra e Venda - À VISTA' },
   { id: 'proposal_buy', title: 'Carta Proposta para Compra de Imóvel' },
-  { id: 'intermed_sale', title: 'Contrato de Intermediação para VENDA (Autorização)' },
   { id: 'permuta', title: 'Contrato de Permuta' },
 ];
 

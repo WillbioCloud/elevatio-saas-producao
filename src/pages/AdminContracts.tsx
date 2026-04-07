@@ -114,8 +114,11 @@ const AdminContracts: React.FC = () => {
           {}
         );
 
+        // O SEGREDO ESTÁ AQUI: Filtramos ANTES de definir o estado
+        const validContracts = contractsRes.data.filter(c => c.contract_data?.document_type !== 'intermediacao');
+
         setContracts(
-          contractsRes.data.map((contract) => ({
+          validContracts.map((contract) => ({
             ...contract,
             ...(signatureSummaryByContract[contract.id] ?? EMPTY_SIGNATURE_SUMMARY),
           }))
@@ -820,7 +823,7 @@ const AdminContracts: React.FC = () => {
         );
       }
 
-      const stampedHtml = injectSignatureStamps(processedHtml, signatures || [], {
+      const stampedHtml = await injectSignatureStamps(processedHtml, signatures || [], {
         locatario: liveContractData.tenant_document || liveContractData.locatario_cpf || '',
         cliente: liveContractData.tenant_document || liveContractData.buyer_document || liveContractData.locatario_cpf || '',
         comprador: liveContractData.buyer_document || liveContractData.comprador_cpf || '',
@@ -848,7 +851,7 @@ const AdminContracts: React.FC = () => {
           (typeof parsedSiteData?.cnpj === 'string' && parsedSiteData.cnpj) ||
           contract?.broker?.cpf_cnpj ||
           '',
-      });
+      }, companyForGenerator.admin_signature_url || undefined);
 
       const htmlFinal = ensurePrintableDocument(
         appendSignatureManifest(stampedHtml, companyForGenerator, signatures || [])

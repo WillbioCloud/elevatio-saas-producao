@@ -39,24 +39,71 @@ const humanizeSignatureKey = (value: string) =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ') || 'Signatario';
 
+const resolveSignatureRoleKey = (value: string) => {
+  const normalizedRole = normalizeSignatureKey(value);
+
+  if (
+    normalizedRole.includes('proprietario') ||
+    normalizedRole.includes('vendedor') ||
+    normalizedRole.includes('locador') ||
+    normalizedRole.includes('dono')
+  ) {
+    return 'proprietario';
+  }
+
+  if (
+    normalizedRole.includes('inquilino') ||
+    normalizedRole.includes('locatario') ||
+    normalizedRole.includes('comprador') ||
+    normalizedRole.includes('cliente')
+  ) {
+    return 'cliente';
+  }
+
+  if (
+    normalizedRole.includes('imobiliaria') ||
+    normalizedRole.includes('corretor') ||
+    normalizedRole.includes('administrador') ||
+    normalizedRole.includes('administradora') ||
+    normalizedRole.includes('admin')
+  ) {
+    return 'imobiliaria';
+  }
+
+  if (normalizedRole.includes('fiador')) {
+    return 'fiador';
+  }
+
+  if (normalizedRole.includes('testemunha')) {
+    return 'testemunha';
+  }
+
+  return normalizedRole;
+};
+
 const SIGNATURE_ROLE_ALIASES: Record<string, string[]> = {
+  inquilino: ['inquilino', 'locatario', 'cliente', 'comprador'],
   locatario: ['locatario', 'cliente'],
-  cliente: ['cliente', 'locatario', 'comprador'],
+  cliente: ['cliente', 'inquilino', 'locatario', 'comprador'],
   comprador: ['comprador', 'cliente'],
   vendedor: ['vendedor', 'proprietario', 'locador'],
-  proprietario: ['proprietario', 'vendedor', 'locador'],
+  proprietario: ['proprietario', 'vendedor', 'locador', 'dono'],
   locador: ['locador', 'proprietario', 'vendedor'],
+  dono: ['dono', 'proprietario', 'vendedor', 'locador'],
   fiador: ['fiador'],
   testemunha: ['testemunha'],
-  corretor: ['corretor', 'imobiliaria', 'administrador', 'administradora'],
-  imobiliaria: ['imobiliaria', 'corretor', 'administrador', 'administradora'],
-  administrador: ['administrador', 'administradora', 'imobiliaria', 'corretor'],
+  corretor: ['corretor', 'imobiliaria', 'administrador', 'administradora', 'admin'],
+  imobiliaria: ['imobiliaria', 'corretor', 'administrador', 'administradora', 'admin'],
+  administrador: ['administrador', 'administradora', 'imobiliaria', 'corretor', 'admin'],
   administradora: ['administradora', 'administrador', 'imobiliaria', 'corretor'],
+  admin: ['admin', 'administrador', 'administradora', 'imobiliaria', 'corretor'],
 };
 
 type SignatureStampEntry = {
   signer_name?: string | null;
   signer_role?: string | null;
+  signer_document?: string | null;
+  signer_ip?: string | null;
   ip_address?: string | null;
   signed_at?: string | null;
   signature_image?: string | null;
@@ -68,14 +115,14 @@ export const generateSignatureStampHtml = (
   signatureImage: string | null,
   name: string,
   role: string,
-  cpf: string = 'Nao informado',
+  cpf: string = 'Não informado',
   signedAt: string | null,
-  ip: string = 'IP Registrado'
+  ip: string = 'IP não registrado'
 ) => {
   const safeName = escapeSignatureStampHtml(name || 'Signatario');
   const safeRole = escapeSignatureStampHtml(role || 'Parte');
-  const safeCpf = escapeSignatureStampHtml(cpf || 'Nao informado');
-  const safeIp = escapeSignatureStampHtml(ip || 'IP Registrado');
+  const safeCpf = escapeSignatureStampHtml(cpf || 'Não informado');
+  const safeIp = escapeSignatureStampHtml(ip || 'IP não registrado');
 
   if (!signatureImage || !signedAt) {
     return `<div style="padding: 20px; border: 1px dashed #cbd5e1; border-radius: 8px; color: #64748b; text-align: center; font-size: 12px; font-family: sans-serif;">Aguardando assinatura digital de<br/><strong>${safeName}</strong> (${safeRole})</div>`;
@@ -87,18 +134,16 @@ export const generateSignatureStampHtml = (
     : signedAtDate.toLocaleString('pt-BR');
 
   return `
-    <div style="display: inline-flex; align-items: center; gap: 16px; border: 2px solid #e2e8f0; padding: 12px 16px; border-radius: 12px; page-break-inside: avoid; background-color: #f8fafc; font-family: sans-serif; max-width: 100%; min-width: 320px; box-sizing: border-box; margin: 10px 0;">
-      <div style="width: 120px; height: 80px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px;">
+    <div style="display: flex; align-items: center; justify-content: center; page-break-inside: avoid; margin: 0 auto; font-family: Arial, Helvetica, sans-serif; text-align: left; width: fit-content;">
+      <div style="width: 120px; height: 50px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px;">
         <img src="${signatureImage}" style="max-width: 100%; max-height: 100%; object-fit: contain; mix-blend-multiply;" alt="Assinatura" />
       </div>
-      <div style="font-size: 10px; color: #334155; line-height: 1.5;">
-        <span style="font-size: 11px; font-weight: bold; color: #0f172a; text-transform: uppercase;">Documento Assinado Digitalmente</span><br/>
-        <strong>Plataforma:</strong> Elevatio Vendas<br/>
-        <strong>Signatario:</strong> ${safeName}<br/>
-        <strong>Papel:</strong> ${safeRole}<br/>
-        <strong>CPF/CNPJ:</strong> ${safeCpf}<br/>
-        <strong>Data/Hora:</strong> ${dataFormatada} (UTC-03:00)<br/>
-        <strong>IP:</strong> ${safeIp}
+      
+      <div style="display: flex; flex-direction: column; justify-content: center; padding-left: 10px; line-height: 1.2;">
+        <span style="font-size: 9px; color: #111827; margin: 0;">${safeName}</span>
+        <span style="font-size: 9px; color: #4b5563; margin: 2px 0 0 0;">${safeRole}${safeCpf !== 'Não informado' ? ` | CPF: ${safeCpf}` : ''}</span>
+        <span style="font-size: 8px; color: #6b7280; margin: 2px 0 0 0;">Data: ${dataFormatada}</span>
+        <span style="font-size: 8px; color: #6b7280; margin: 2px 0 0 0;">IP: ${safeIp}</span>
       </div>
     </div>
   `;
@@ -111,47 +156,105 @@ const getSignatureCandidatesForPlaceholder = (
   const normalizedRole = normalizeSignatureKey(placeholderRole);
   const match = normalizedRole.match(/^(.*?)(?:_(\d+))?$/);
   const baseRole = match?.[1] || normalizedRole;
+  const resolvedBaseRole = resolveSignatureRoleKey(baseRole);
   const requestedIndex = match?.[2] ? Math.max(Number(match[2]) - 1, 0) : 0;
-  const aliasSet = new Set([baseRole, ...(SIGNATURE_ROLE_ALIASES[baseRole] || [])]);
+  const aliasSet = new Set([
+    baseRole,
+    resolvedBaseRole,
+    ...(SIGNATURE_ROLE_ALIASES[baseRole] || []),
+    ...(SIGNATURE_ROLE_ALIASES[resolvedBaseRole] || []),
+  ]);
   const matchingSignatures = signatures.filter((signature) =>
-    aliasSet.has(normalizeSignatureKey(signature.signer_role || ''))
+    aliasSet.has(normalizeSignatureKey(signature.signer_role || '')) ||
+    aliasSet.has(resolveSignatureRoleKey(signature.signer_role || ''))
   );
 
   return {
     baseRole,
+    resolvedBaseRole,
     requestedIndex,
     matchingSignatures,
   };
 };
 
-export const injectSignatureStamps = (
+export const injectSignatureStamps = async (
   html: string,
   signatures: SignatureStampEntry[] = [],
-  documents: SignatureStampDocumentMap = {}
+  documentsOrAdminSignatureUrl: SignatureStampDocumentMap | string = {},
+  adminSignatureUrl?: string
 ) => {
+  const documents =
+    typeof documentsOrAdminSignatureUrl === 'string' ? {} : documentsOrAdminSignatureUrl;
+  const resolvedAdminSignatureUrl =
+    typeof documentsOrAdminSignatureUrl === 'string'
+      ? documentsOrAdminSignatureUrl
+      : adminSignatureUrl;
+
   if (!/\{\{ASSINATURA_[^}]+\}\}/i.test(html)) {
     return html;
   }
 
-  return html.replace(/\{\{ASSINATURA_([^}]+)\}\}/gi, (_, placeholderRole: string) => {
-    const { baseRole, requestedIndex, matchingSignatures } = getSignatureCandidatesForPlaceholder(
+  let finalHtml = html.replace(/\{\{ASSINATURA_([^}]+)\}\}/gi, (fullMatch, placeholderRole: string) => {
+    const { baseRole, resolvedBaseRole, requestedIndex, matchingSignatures } = getSignatureCandidatesForPlaceholder(
       placeholderRole,
       signatures
     );
     const signature = matchingSignatures[requestedIndex] || matchingSignatures[0] || null;
-    const aliasFallback = (SIGNATURE_ROLE_ALIASES[baseRole] || [])[0] || '';
-    const documentValue = documents[baseRole] || documents[aliasFallback] || 'Nao informado';
+    if (!signature?.signature_image || !signature?.signed_at) {
+      // Preserva a tag da imobiliaria para o fallback estatico no passo final.
+      if (resolvedBaseRole === 'imobiliaria') {
+        return fullMatch;
+      }
+
+      return '';
+    }
+
+    const aliasFallback =
+      (SIGNATURE_ROLE_ALIASES[baseRole] || [])[0] ||
+      (SIGNATURE_ROLE_ALIASES[resolvedBaseRole] || [])[0] ||
+      '';
+    const documentValue =
+      signature?.signer_document ||
+      documents[baseRole] ||
+      documents[resolvedBaseRole] ||
+      documents[aliasFallback] ||
+      'Não informado';
     const fallbackLabel = humanizeSignatureKey(baseRole);
 
     return generateSignatureStampHtml(
       signature?.signature_image || null,
       signature?.signer_name || fallbackLabel,
       signature?.signer_role || fallbackLabel,
-      documentValue || 'Nao informado',
+      documentValue || 'Não informado',
       signature?.signed_at || null,
-      signature?.ip_address || 'IP Registrado'
+      signature?.signer_ip || signature?.ip_address || 'IP não registrado'
     );
   });
+
+  const remainingTags = [
+    '{{ASSINATURA_PROPRIETARIO}}',
+    '{{ASSINATURA_INQUILINO}}',
+    '{{ASSINATURA_COMPRADOR}}',
+    '{{ASSINATURA_IMOBILIARIA}}',
+    '{{ASSINATURA_FIADOR}}',
+    '{{ASSINATURA_TESTEMUNHA_1}}',
+    '{{ASSINATURA_TESTEMUNHA_2}}',
+  ];
+
+  remainingTags.forEach((tag) => {
+    if (finalHtml.includes(tag)) {
+      if (tag === '{{ASSINATURA_IMOBILIARIA}}' && resolvedAdminSignatureUrl) {
+        // Substituicao segura sem Regex
+        const staticImage = `<img src="${resolvedAdminSignatureUrl}" style="max-height: 55px; max-width: 180px; object-fit: contain; mix-blend-multiply;" alt="Assinatura Imobiliária" />`;
+        finalHtml = finalHtml.split(tag).join(staticImage);
+      } else {
+        // Limpa a tag com seguranca
+        finalHtml = finalHtml.split(tag).join('');
+      }
+    }
+  });
+
+  return finalHtml;
 };
 
 const parseCurrencyNumber = (value: unknown): number => {
@@ -289,10 +392,32 @@ const formatLongDatePtBr = (value: string | Date) => {
   }).format(date);
 };
 
-export const buildContractHtml = async (type: string, data: any, tenant: any, company_logo?: string, broker_name?: string, broker_document?: string, broker_creci?: string, company_name?: string, customTemplateContent?: string) => {
+const formatPercentagePtBr = (value: unknown, fallback = 0) => {
+  const parsed = parseCurrencyNumber(value);
+  const resolved = parsed > 0 ? parsed : fallback;
+
+  return new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: Number.isInteger(resolved) ? 0 : 1,
+    maximumFractionDigits: 2,
+  }).format(resolved);
+};
+
+export const buildContractHtml = async (
+  type: string,
+  data: any,
+  tenant: any,
+  companyLogo?: string,
+  brokerDisplayName: string = 'Imobiliária',
+  brokerDisplayDoc: string = '',
+  brokerDisplayCreci: string = '',
+  companyName: string = '',
+  customTemplateContent?: string
+) => {
+  const agencySignatureUrl = tenant?.admin_signature_url || '';
+
   // Converte a logo para Base64/PNG para evitar CORS e incompatibilidade de formato
   let logoSrc = tenant?.logo_url || '/img/Logo-contrato.png';
-  const logoToConvert = company_logo || tenant?.logo_url;
+  const logoToConvert = companyLogo || tenant?.logo_url;
   if (logoToConvert) {
     try {
       logoSrc = await fetchImageAsBase64PNG(logoToConvert);
@@ -492,11 +617,12 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
   const siteData = typeof tenant?.site_data === 'string' ? JSON.parse(tenant.site_data) : tenant?.site_data || {};
 
   // Lógica de Fallback Inteligente (Sede > Perfil Corretor > Tenant Base)
-  const brokerDisplayName = siteData.corporate_name || broker_name || tenant?.name || 'Corretor / Imobiliária';
-  const finalDocument = siteData.cnpj || broker_document;
-  const brokerDisplayDoc = finalDocument ? `CPF/CNPJ: ${finalDocument}` : 'CPF/CNPJ: Não informado';
-  const finalCreci = siteData.creci || broker_creci;
-  const brokerDisplayCreci = finalCreci ? `CRECI: ${finalCreci}` : '';
+  const resolvedBrokerDisplayName =
+    siteData.corporate_name || brokerDisplayName || tenant?.name || 'Corretor / Imobiliária';
+  const finalDocument = siteData.cnpj || brokerDisplayDoc;
+  const resolvedBrokerDisplayDoc = finalDocument ? `CPF/CNPJ: ${finalDocument}` : 'CPF/CNPJ: Não informado';
+  const finalCreci = siteData.creci || brokerDisplayCreci;
+  const resolvedBrokerDisplayCreci = finalCreci ? `CRECI: ${finalCreci}` : '';
 
   // Montagem do Endereço e Contatos da Sede
   let companyFullAddress = '__________________________________________________________________';
@@ -514,15 +640,20 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
     : '';
 
   // Bloco HTML reutilizável para a assinatura do intermediador
-  const brokerSignature = (label: string) => `
-        <div class="signature-block">
-          ${adminSignatureMarkup}
-          <div class="signature-line">
-            <strong>${brokerDisplayName}</strong><br/>
-            ${brokerDisplayDoc}${brokerDisplayCreci ? `<br/>${brokerDisplayCreci}` : ''}<br/>
-            ${label}
-          </div>
-        </div>`;
+  const brokerSignature = (roleLabel: string) => `
+    <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+      <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+        ${agencySignatureUrl
+          ? `<img src="${agencySignatureUrl}" style="max-height: 55px; max-width: 180px; object-fit: contain; mix-blend-multiply;" alt="Assinatura Imobiliária" />`
+          : '{{ASSINATURA_IMOBILIARIA}}'}
+      </div>
+      __________________________________________________<br/>
+      <strong style="font-size: 11px; color: #000;">${resolvedBrokerDisplayName}</strong><br/>
+      <span style="font-size: 11px; color: #000;">${resolvedBrokerDisplayDoc}</span><br/>
+      <span style="font-size: 11px; color: #000;">${resolvedBrokerDisplayCreci ? resolvedBrokerDisplayCreci : 'CRECI: ________________' }</span><br/>
+      <span style="font-size: 11px; color: #000;">${roleLabel}</span>
+    </div>
+  `;
 
   // Conteúdo dinâmico dependendo do tipo de contrato
   let contractContent = '';
@@ -539,7 +670,7 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
       .replace(/\{\{IMOBILIARIA_CNPJ\}\}/g, finalDocument || '____________________')
       .replace(/\{\{IMOBILIARIA_ENDERECO\}\}/g, companyFullAddress)
       .replace(/\{\{IMOBILIARIA_ASSINATURA\}\}/g, adminSignatureMarkup)
-      .replace(/\{\{CORRETOR_NOME\}\}/g, brokerDisplayName)
+      .replace(/\{\{CORRETOR_NOME\}\}/g, resolvedBrokerDisplayName)
       .replace(/\{\{CORRETOR_CPF\}\}/g, finalDocument || '____________________')
       .replace(/\{\{CORRETOR_CRECI\}\}/g, finalCreci || '____________________')
       // DADOS DO IMÓVEL
@@ -646,7 +777,7 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
       b) O saldo remanescente será pago conforme as condições de parcelamento ou financiamento aprovadas e combinadas entre as partes.</p>
       
       <h2>Cláusula 4ª – Honorários do corretor de imóveis</h2>
-      <p>1) O presente negócio foi intermediado pelo corretor de imóveis responsável pela empresa <strong>${val(company_name || tenant?.name, '______________________')}</strong>, regularmente inscrito no CRECI, que apresentou os dados rigorosamente certos, não omitindo nenhum detalhe de desabono à negociação de que teve conhecimento.</p>
+      <p>1) O presente negócio foi intermediado pelo corretor de imóveis responsável pela empresa <strong>${val(companyName || tenant?.name, '______________________')}</strong>, regularmente inscrito no CRECI, que apresentou os dados rigorosamente certos, não omitindo nenhum detalhe de desabono à negociação de que teve conhecimento.</p>
       
       <h2>Cláusula 5ª – Posse do imóvel</h2>
       <p>1) A posse do imóvel objeto deste contrato neste ato é transmitida pelo(s) vendedor(es) ao(s) comprador(es) com a entrega das chaves.</p>
@@ -706,7 +837,7 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
       
       <p><strong>FIADOR(ES):</strong> <strong>${val(data.guarantor_name, '_________________________________')}</strong>, CPF nº <strong>${val(data.guarantor_document, '_________________')}</strong>, Profissão: ${val(data.guarantor_profession)}, residente e domiciliado(a) em ________________________________________________.</p>
       
-      <p><strong>REPRESENTANTE DO LOCADOR / ADMINISTRADOR:</strong> <strong>${brokerDisplayName}</strong>, corretor(a) de imóveis, inscrito(a) no CPF nº ${brokerDisplayDoc.replace('CPF/CNPJ: ', '')}${brokerDisplayCreci ? ` e ${brokerDisplayCreci}` : ''}, atuando neste ato como administrador do imóvel e representante legal do locador.</p>
+      <p><strong>REPRESENTANTE DO LOCADOR / ADMINISTRADOR:</strong> <strong>${resolvedBrokerDisplayName}</strong>, corretor(a) de imóveis, inscrito(a) no CPF nº ${resolvedBrokerDisplayDoc.replace('CPF/CNPJ: ', '')}${resolvedBrokerDisplayCreci ? ` e ${resolvedBrokerDisplayCreci}` : ''}, atuando neste ato como administrador do imóvel e representante legal do locador.</p>
       
       <p><em>As partes acima identificadas têm, entre si, justo e acertado o presente Contrato de Locação Residencial com Fiador, que se regerá pelas cláusulas seguintes e pelas condições de preço, forma e termo de pagamento descritas no presente.</em></p>
       
@@ -780,7 +911,7 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
     contractContent = `
       <h1>PROPOSTA DE COMPRA DE IMÓVEL</h1>
       
-      <p>Por este instrumento particular, a pessoa qualificada na Cláusula 1ª resolve, por livre e espontânea vontade, propor à imobiliária/corretor <strong>${val(company_name || tenant?.name, '______________________')}</strong> a compra do imóvel descrito na Cláusula 2ª pelo preço e condições aqui estabelecidos:</p>
+      <p>Por este instrumento particular, a pessoa qualificada na Cláusula 1ª resolve, por livre e espontânea vontade, propor à imobiliária/corretor <strong>${val(companyName || tenant?.name, '______________________')}</strong> a compra do imóvel descrito na Cláusula 2ª pelo preço e condições aqui estabelecidos:</p>
       
       <h2>Cláusula 1ª - Identificação do proponente:</h2>
       <p>
@@ -863,14 +994,29 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
         </div>
       </div>
     `;
-  } else if (type === 'intermed_sale') {
+  } else if (type === 'intermed_sale' || type === 'intermediacao') {
+    // === MODELO: INTERMEDIAÇÃO DE VENDA ===
+    const isRentIntermediation =
+      data.listing_type === 'rent' ||
+      data.listingType === 'rent' ||
+      data.listing_mode === 'rent';
+
+    // Se o sistema tentar gerar uma intermediação de locação por aqui, redireciona para o modelo correto
+    if (isRentIntermediation) {
+      return buildContractHtml('intermed_rent', data, tenant, companyLogo, brokerDisplayName, brokerDisplayDoc, brokerDisplayCreci, companyName, customTemplateContent);
+    }
+
+    const exclusivityText = data.has_exclusivity === false
+      ? '2) Por se tratar de contrato sem exclusividade, o contratante poderá negociar o imóvel por outros meios, sem prejuízo da remuneração do contratado caso o negócio seja concluído com interessado por ele apresentado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.'
+      : '2) Durante a vigência da cláusula de exclusividade, a intermediação ficará atribuída ao contratado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.';
+
     contractContent = `
-      <h1>CONTRATO DE INTERMEDIAÇÃO PARA VENDA DE IMÓVEL</h1>
+      <h1>CONTRATO DE AUTORIZAÇÃO DE INTERMEDIAÇÃO PARA VENDA DE IMÓVEL</h1>
       
       <p>Por este instrumento particular, as partes qualificadas na Cláusula 1ª resolvem, por livre e espontânea vontade, firmar o presente contrato de intermediação para fins de venda de imóvel conforme os termos e condições estabelecidos nas cláusulas seguintes:</p>
       
       <h2>Cláusula 1ª - Identificação das partes</h2>
-      <p><strong>1) De um lado como contratante (Proprietário/Vendedor):</strong><br/>
+      <p><strong>1) De um lado como contratante (Proprietário):</strong><br/>
       a) Nome: <strong>${val(data.seller_name)}</strong>;<br/>
       b) CPF/CNPJ: <strong>${val(data.seller_document)}</strong>;<br/>
       c) Profissão: ${val(data.seller_profession)};<br/>
@@ -880,56 +1026,127 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
       </p>
       
       <p><strong>1.2) E de outro lado, como contratado, o corretor de imóveis:</strong><br/>
-      a) Nome: <strong>${brokerDisplayName}</strong>;<br/>
-      b) ${brokerDisplayDoc};<br/>
-      c) ${brokerDisplayCreci || 'Inscrição no CRECI: ________________'};<br/>
+      a) Nome: <strong>${resolvedBrokerDisplayName}</strong>;<br/>
+      b) ${resolvedBrokerDisplayDoc};<br/>
+      c) ${resolvedBrokerDisplayCreci || 'Inscrição no CRECI: ________________'};<br/>
       d) Endereço: ${companyFullAddress};<br/>
       e) Telefones: ${companyPhone};<br/>
       f) E-mail: ${companyEmail}.
       </p>
       
-      <h2>Cláusula 2ª – Objeto do contrato</h2>
+      <h2>Cláusula 2ª - Objeto do contrato</h2>
       <p>1) O presente contrato tem por finalidade a contratação dos serviços profissionais de intermediação, por parte do contratado, para fins de venda do imóvel de propriedade do contratante com as seguintes características:<br/>
       a) Localização: <strong>${val(data.property_address)}</strong>;<br/>
       b) Descrição do imóvel: <strong>${val(data.property_description)}</strong>.</p>
       
       <p>2) O(s) contratante(s) declara(m) que são proprietários e possuidores a justo título do imóvel acima descrito, que ele está livre e desembaraçado de qualquer ônus, gravame, ações reais, pessoais reipersecutórias, dívidas, hipotecas, impostos ou taxas em atraso, restrições e outros.</p>
       
-      <h2>Cláusula 3ª – Preço do imóvel e condições de pagamento</h2>
+      <h2>Cláusula 3ª - Preço do imóvel e condições de negociação</h2>
       <p>1) A transação objeto deste instrumento contratual deverá ser concretizada pelo valor de <strong>R$ ${val(data.total_value)}</strong>.<br/>
       2) Independentemente do preço, a contratada poderá apresentar qualquer proposta para estudo do(s) contratante(s).</p>
       
-      <h2>Cláusula 4ª – Honorários profissionais do corretor de imóveis</h2>
-      <p>1) Fica pactuado que, ocorrendo a venda do imóvel descrito na Cláusula 2ª, o contratante pagará ao contratado, a título de honorários de corretagem o percentual de <strong>5% (cinco por cento)</strong> a ser calculado sobre o valor total da venda.<br/>
+      <h2>Cláusula 4ª - Honorários profissionais do corretor de imóveis</h2>
+      <p>1) Fica pactuado que, ocorrendo a venda do imóvel descrito na Cláusula 2ª, o contratante pagará ao contratado, a título de honorários de corretagem, o percentual de <strong>${val(data.commission_percentage, '5')}%</strong> a ser calculado sobre o valor total da venda.<br/>
       2) O pagamento dos honorários de corretagem será feito no ato do recebimento do sinal, ou na assinatura do contrato de promessa de compra e venda, ou na escritura definitiva, o que ocorrer primeiro.<br/>
       3) O contratante se obriga a pagar os honorários mesmo se a venda se realizar após o vencimento do presente contrato, caso o comprador tenha sido apresentado pelo contratado durante a vigência deste instrumento, conforme art. 727 do Código Civil.</p>
       
-      <h2>Cláusula 5ª – Placas e Anúncios</h2>
+      <h2>Cláusula 5ª - Placas e anúncios</h2>
       <p>1) Fica o contratado autorizado a colocar placa de "VENDE", faixas, cartazes e outros meios de divulgação no imóvel objeto deste contrato, visando facilitar a sua comercialização.</p>
       
-      <h2>Cláusula 6ª – Prazo de Vigência e Exclusividade</h2>
-      <p>1) O presente contrato é assinado em caráter irrevogável, vincula herdeiros e sucessores do contratante e tem vigência de <strong>120 (cento e vinte) dias</strong> contados da sua assinatura.<br/>
-      2) O prazo poderá ser estendido caso as partes assinem o termo aditivo de prorrogação.</p>
+      <h2>Cláusula 6ª - Prazo de vigência e exclusividade</h2>
+      <p>1) O presente contrato é assinado em caráter irrevogável, vincula herdeiros e sucessores do contratante, possui <strong>${data.has_exclusivity ? 'CLÁUSULA DE EXCLUSIVIDADE' : 'NÃO EXCLUSIVIDADE'}</strong> para a intermediação, e tem vigência de <strong>120 (cento e vinte) dias</strong> contados da sua assinatura.<br/>
+      ${exclusivityText}</p>
       
-      <h2>Cláusula 7ª – Eleição do foro</h2>
-      <p>1) Todas as questões eventualmente oriundas do presente contrato, serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede na Rua 56, Qd CH Lt 07, Jardim Goiás, Goiânia - GO consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.</p>
+      <h2>Cláusula 7ª - Eleição do foro</h2>
+      <p>1) Todas as questões eventualmente oriundas do presente contrato serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede na Rua 56, Qd CH Lt 07, Jardim Goiás, Goiânia - GO consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.</p>
       
       <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
       
-      <div class="signatures">
-        <div class="signature-line">
-          <strong>${val(data.seller_name)}</strong><br/>
-          Contratante (Proprietário/Vendedor)
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 11px; color: #000;">${val(data.seller_name)}</strong><br/>
+          <span style="font-size: 11px; color: #000;">Contratante (Proprietário/Vendedor)</span>
         </div>
         ${brokerSignature('Contratado (Corretor)')}
-        <div class="signature-line">
-          <strong>Testemunha 1</strong><br/>
-          CPF:
+      </div>
+    `;
+  } else if (type === 'intermed_rent') {
+    // === MODELO: INTERMEDIAÇÃO DE LOCAÇÃO ===
+    const exclusivityText = data.has_exclusivity === false
+      ? '2) Por se tratar de contrato sem exclusividade, o contratante poderá negociar o imóvel por outros meios, sem prejuízo da remuneração do contratado caso o negócio seja concluído com interessado por ele apresentado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.'
+      : '2) Durante a vigência da cláusula de exclusividade, a intermediação ficará atribuída ao contratado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.';
+
+    // Na locação, a comissão geralmente é o 1º aluguel ou um percentual. O sistema salva o percentual.
+    const comissaoTexto = data.commission_percentage
+      ? `o percentual de <strong>${formatPercentagePtBr(data.commission_percentage, 100)}%</strong> sobre o valor do 1º (primeiro) aluguel integral`
+      : `o valor equivalente a <strong>01 (um) aluguel integral</strong>`;
+
+    contractContent = `
+      <h1>CONTRATO DE AUTORIZAÇÃO DE INTERMEDIAÇÃO PARA LOCAÇÃO DE IMÓVEL</h1>
+      
+      <p>Por este instrumento particular, as partes qualificadas na Cláusula 1ª resolvem, por livre e espontânea vontade, firmar o presente contrato de intermediação para fins de locação de imóvel conforme os termos e condições estabelecidos nas cláusulas seguintes:</p>
+      
+      <h2>Cláusula 1ª - Identificação das partes</h2>
+      <p><strong>1) De um lado como contratante (Locador):</strong><br/>
+      a) Nome: <strong>${val(data.seller_name)}</strong>;<br/>
+      b) CPF/CNPJ: <strong>${val(data.seller_document)}</strong>;<br/>
+      c) Profissão: ${val(data.seller_profession)};<br/>
+      d) Estado civil: ${val(data.seller_marital_status)};<br/>
+      e) Endereço: ${val(data.seller_address)};<br/>
+      f) Telefones: ${val(data.seller_phone)}.${spouseText(data.seller_spouse_name, data.seller_spouse_document, data.seller_spouse_rg || '', data.seller_spouse_profession)}
+      </p>
+      
+      <p><strong>1.2) E de outro lado, como contratado, a Administradora/Corretor:</strong><br/>
+      a) Nome: <strong>${resolvedBrokerDisplayName}</strong>;<br/>
+      b) ${resolvedBrokerDisplayDoc};<br/>
+      c) ${resolvedBrokerDisplayCreci || 'Inscrição no CRECI: ________________'};<br/>
+      d) Endereço: ${companyFullAddress};<br/>
+      e) Telefones: ${companyPhone};<br/>
+      f) E-mail: ${companyEmail}.
+      </p>
+      
+      <h2>Cláusula 2ª - Objeto do contrato</h2>
+      <p>1) O presente contrato tem por finalidade a contratação dos serviços profissionais de intermediação, por parte do contratado, para fins de locação do imóvel de propriedade do contratante com as seguintes características:<br/>
+      a) Localização: <strong>${val(data.property_address)}</strong>;<br/>
+      b) Descrição do imóvel: <strong>${val(data.property_description)}</strong>.</p>
+      
+      <p>2) O(s) contratante(s) declara(m) que são proprietários e possuidores a justo título do imóvel acima descrito, que ele está livre e desembaraçado para locação.</p>
+      
+      <h2>Cláusula 3ª - Preço do imóvel e condições</h2>
+      <p>1) O valor pretendido para a locação do imóvel objeto deste instrumento é de <strong>R$ ${val(data.total_value)}</strong> mensais.<br/>
+      2) Independentemente do valor pretendido, a contratada poderá apresentar propostas para estudo do(s) contratante(s).</p>
+      
+      <h2>Cláusula 4ª - Honorários profissionais</h2>
+      <p>1) Fica pactuado que, ocorrendo a locação do imóvel descrito na Cláusula 2ª, o contratante pagará ao contratado, a título de honorários de intermediação, ${comissaoTexto}.<br/>
+      2) O pagamento dos honorários ocorrerá no ato da formalização da locação e assinatura do contrato de locação, podendo o contratado reter tal valor do primeiro recebimento de aluguel.<br/>
+      3) Em caso de administração continuada, a taxa de administração mensal, se houver, será objeto de aditivo ou contrato de administração específico.</p>
+      
+      <h2>Cláusula 5ª - Placas e anúncios</h2>
+      <p>1) Fica o contratado autorizado a colocar placa de "ALUGA", faixas, cartazes e outros meios de divulgação no imóvel objeto deste contrato.</p>
+      
+      <h2>Cláusula 6ª - Prazo de vigência e exclusividade</h2>
+      <p>1) O presente contrato possui <strong>${data.has_exclusivity ? 'CLÁUSULA DE EXCLUSIVIDADE' : 'NÃO EXCLUSIVIDADE'}</strong> para a intermediação, e tem vigência de <strong>120 (cento e vinte) dias</strong> contados da sua assinatura.<br/>
+      ${exclusivityText}</p>
+      
+      <h2>Cláusula 7ª - Eleição do foro</h2>
+      <p>1) Todas as questões eventualmente oriundas do presente contrato serão resolvidas na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA).</p>
+      
+      <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
+      
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 11px; color: #000;">${val(data.seller_name)}</strong><br/>
+          <span style="font-size: 11px; color: #000;">Contratante (Locador)</span>
         </div>
-        <div class="signature-line">
-          <strong>Testemunha 2</strong><br/>
-          CPF:
-        </div>
+        ${brokerSignature('Administrador / Corretor')}
       </div>
     `;
   } else if (type === 'sale_cash') {
@@ -969,7 +1186,7 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
       <p>2) O referido valor é pago pelo(s) comprador(es) ao(s) vendedor(es) neste ato, <strong>À VISTA</strong> e em moeda corrente nacional (via transferência bancária TED/PIX), valendo o presente instrumento ou o respectivo comprovante de transferência bancária como recibo de quitação plena, rasa e geral, para não mais reclamar sobre o valor ora recebido.</p>
       
       <h2>Cláusula 4ª – Honorários do corretor de imóveis</h2>
-      <p>1) O presente negócio foi intermediado pelo corretor de imóveis responsável pela empresa <strong>${val(company_name || tenant?.name, '______________________')}</strong>, regularmente inscrito no CRECI, que apresentou os dados rigorosamente certos, não omitindo nenhum detalhe de desabono à negociação de que teve conhecimento.</p>
+      <p>1) O presente negócio foi intermediado pelo corretor de imóveis responsável pela empresa <strong>${val(companyName || tenant?.name, '______________________')}</strong>, regularmente inscrito no CRECI, que apresentou os dados rigorosamente certos, não omitindo nenhum detalhe de desabono à negociação de que teve conhecimento.</p>
       
       <h2>Cláusula 5ª – Posse do imóvel</h2>
       <p>1) A posse do imóvel objeto deste contrato neste ato é transmitida pelo(s) vendedor(es) ao(s) comprador(es) com a entrega das chaves.</p>
@@ -1063,7 +1280,7 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
       <p>1) Os imóveis descritos nos itens I e II da cláusula 2ª têm o preço, cada qual, de <strong>R$ ${val(data.total_value)}</strong>, sendo este o valor do negócio.</p>
       
       <h2>Cláusula 4ª – Honorários do corretor de imóveis</h2>
-      <p>1) O presente negócio foi intermediado pelo corretor de imóveis <strong>${brokerDisplayName}</strong>, que apresentou, ao oferecer o imóvel, dados rigorosamente certos, não omitiu detalhes que o depreciem, e informou às partes dos riscos e demais circunstâncias que pudessem influenciar o negócio.<br/>
+      <p>1) O presente negócio foi intermediado pelo corretor de imóveis <strong>${resolvedBrokerDisplayName}</strong>, que apresentou, ao oferecer o imóvel, dados rigorosamente certos, não omitiu detalhes que o depreciem, e informou às partes dos riscos e demais circunstâncias que pudessem influenciar o negócio.<br/>
       2) As partes permutantes declaram que previamente examinaram e verificaram as procurações, o título aquisitivo, a escritura e as certidões registrais do imóvel objeto do presente contrato e isentam o corretor de imóveis acerca da veracidade desses documentos.<br/>
       3) Pelos serviços de intermediação cada qual das partes permutantes pagará ao corretor de imóveis o importe de R$ __________________, no ato da assinatura do presente contrato.<br/>
       4) O arrependimento posterior de qualquer das partes permutantes não implica na devolução dos honorários profissionais.<br/>
@@ -1123,7 +1340,7 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
       
       <p><strong>LOCATÁRIO:</strong> <strong>${val(data.tenant_name)}</strong>, ${val(data.tenant_nationality, 'brasileiro(a)')}, ${val(data.tenant_marital_status)}, ${val(data.tenant_profession)}, portador(a) da cédula de identidade RG nº ${val(data.tenant_rg)} e CPF nº ${val(data.tenant_document)}${spouseText(data.tenant_spouse_name, data.tenant_spouse_document, data.tenant_spouse_rg, data.tenant_spouse_profession)}, residente e domiciliado(a) à ${val(data.tenant_address)}.</p>
       
-      <p><strong>REPRESENTANTE DO LOCADOR / ADMINISTRADOR:</strong> <strong>${brokerDisplayName}</strong>, corretor(a) de imóveis, inscrito(a) no CPF nº ${brokerDisplayDoc.replace('CPF/CNPJ: ', '')}${brokerDisplayCreci ? ` e ${brokerDisplayCreci}` : ''}, atuando neste ato como administrador do imóvel e representante legal do locador.</p>
+      <p><strong>REPRESENTANTE DO LOCADOR / ADMINISTRADOR:</strong> <strong>${resolvedBrokerDisplayName}</strong>, corretor(a) de imóveis, inscrito(a) no CPF nº ${resolvedBrokerDisplayDoc.replace('CPF/CNPJ: ', '')}${resolvedBrokerDisplayCreci ? ` e ${resolvedBrokerDisplayCreci}` : ''}, atuando neste ato como administrador do imóvel e representante legal do locador.</p>
       
       <p><em>As partes acima identificadas têm, entre si, justo e acertado o presente Contrato de Locação Residencial sem garantia locatícia, que se regerá pelas cláusulas seguintes e pelas condições de preço, forma e termo de pagamento descritas no presente.</em></p>
       
@@ -1408,7 +1625,7 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Contrato - ${val(company_name || tenant?.name)}</title>
+  <title>Contrato - ${val(companyName || tenant?.name)}</title>
   ${styles}
 </head>
 <body>
@@ -1422,7 +1639,7 @@ export const buildContractHtml = async (type: string, data: any, tenant: any, co
                 <img src="${logoSrc}" class="logo" alt="Logo" />
               </div>
               <div class="header-text">
-                <div style="font-size: 14px; font-weight: bold; text-transform: uppercase; margin-bottom: 2px; color: ${tenant?.site_data?.primaryColor || '#000'}">${val(company_name || tenant?.name, 'Imobiliária')}</div>
+                <div style="font-size: 14px; font-weight: bold; text-transform: uppercase; margin-bottom: 2px; color: ${tenant?.site_data?.primaryColor || '#000'}">${val(companyName || tenant?.name, 'Imobiliária')}</div>
                 <div style="font-size: 10px; color: #666;">Tel: ${val(tenant?.phone)} | Email: contato@${val(tenant?.subdomain)}.com.br</div>
               </div>
             </div>

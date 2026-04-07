@@ -35,6 +35,8 @@ const Properties: React.FC = () => {
         let query = supabase
           .from('properties')
           .select('*, profiles(name, phone, email)')
+          .eq('status', 'active')
+          .eq('has_intermediation_signed', true)
           .abortSignal(controller.signal);
 
         if (currentCity) query = query.ilike('city', `%${currentCity}%`);
