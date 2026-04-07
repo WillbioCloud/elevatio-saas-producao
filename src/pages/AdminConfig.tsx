@@ -1501,7 +1501,7 @@ const AdminConfig: React.FC = () => {
         return '';
       }
 
-      return signaturePadRef.current.getTrimmedCanvas().toDataURL('image/png');
+      return signaturePadRef.current.getCanvas().toDataURL('image/png');
     }
 
     if (signTab === 'type') {
@@ -4418,12 +4418,12 @@ const AdminConfig: React.FC = () => {
       {isSignModalOpen && (
         <>
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-            <div className="relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[32px] border border-white/70 bg-white/92 shadow-[0_40px_120px_-44px_rgba(15,23,42,0.42)] backdrop-blur dark:border-white/10 dark:bg-[#020617]/95">
-              <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-5 dark:border-slate-800 sm:px-8">
+            <div className="relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_40px_120px_-44px_rgba(15,23,42,0.42)] backdrop-blur">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-5 sm:px-8">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.26em] text-emerald-500">Assinatura Oficial</p>
-                  <h2 className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">Configure a rubrica da imobiliária</h2>
-                  <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+                  <h2 className="mt-2 text-2xl font-bold text-slate-900">Configure a rubrica da imobiliária</h2>
+                  <p className="mt-2 max-w-2xl text-sm text-slate-500">
                     Escolha como deseja criar a assinatura oficial do responsável legal. O resultado será anexado automaticamente aos contratos gerados pelo sistema.
                   </p>
                 </div>
@@ -4431,7 +4431,7 @@ const AdminConfig: React.FC = () => {
                 <button
                   type="button"
                   onClick={closeSignatureModal}
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
                 >
                   <Icons.X size={20} />
                 </button>
@@ -4439,7 +4439,7 @@ const AdminConfig: React.FC = () => {
 
               <div className="overflow-y-auto px-5 py-5 sm:px-8 sm:py-8">
                 <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_340px]">
-                  <section className="rounded-[30px] border border-white/80 bg-slate-50/85 p-4 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.38)] backdrop-blur dark:border-slate-800 dark:bg-slate-900/70 sm:p-6">
+                  <section className="rounded-[30px] border border-slate-200 bg-slate-50 p-4 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.38)] backdrop-blur sm:p-6">
                     <div className="grid gap-3 sm:grid-cols-3 mb-6">
                       {OFFICIAL_SIGNATURE_TABS.map((tab) => {
                         const Icon = tab.icon;
@@ -4453,7 +4453,7 @@ const AdminConfig: React.FC = () => {
                             className={`rounded-[20px] border py-3 px-4 transition-all flex items-center justify-center gap-3 ${
                               active
                                 ? 'border-slate-950 bg-slate-950 text-white shadow-lg'
-                                : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'
+                                : 'border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100'
                             }`}
                           >
                             <Icon size={18} />
@@ -4466,24 +4466,24 @@ const AdminConfig: React.FC = () => {
                     {signTab === 'draw' && (
                       <div className="mt-6 space-y-5">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <p className="text-sm font-semibold text-slate-950 dark:text-white">Desenhe a assinatura oficial abaixo</p>
+                          <p className="text-sm font-semibold text-slate-900">Desenhe a assinatura oficial abaixo</p>
                           <button
                             type="button"
                             onClick={clearDrawSignature}
-                            className="text-sm font-semibold text-slate-500 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                            className="text-sm font-semibold text-slate-500 transition hover:text-slate-900"
                           >
                             Limpar quadro
                           </button>
                         </div>
 
-                        <div className="overflow-hidden rounded-[28px] border border-slate-300 bg-white p-1 shadow-inner dark:border-slate-700 dark:bg-slate-950 sm:p-3">
-                          <div className="overflow-hidden rounded-[24px] border border-dashed border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950">
+                        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-slate-100 p-1 shadow-inner sm:p-3">
+                          <div className="overflow-hidden rounded-[24px] border border-dashed border-slate-300 bg-slate-50">
                             <SignaturePad
                               ref={signaturePadRef}
                               penColor="#0f172a"
                               onEnd={() => setHasDrawnSignature(!(signaturePadRef.current?.isEmpty() ?? true))}
                               canvasProps={{
-                                className: 'w-full h-[260px] bg-white rounded-[24px] touch-none cursor-crosshair sm:h-[340px] lg:h-[400px]',
+                                className: 'w-full h-[260px] bg-slate-50 rounded-[24px] touch-none cursor-crosshair sm:h-[340px] lg:h-[400px]',
                               }}
                             />
                           </div>
@@ -4493,7 +4493,7 @@ const AdminConfig: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setShowSignatureQrCode(true)}
-                            className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                            className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-200"
                           >
                             <Icons.QrCode size={16} />
                             Assinar pelo Celular (QR Code)
@@ -4512,7 +4512,7 @@ const AdminConfig: React.FC = () => {
                             setSignatureModalError('');
                           }}
                           placeholder="Digite o nome do responsável..."
-                          className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-900 outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-emerald-500 dark:focus:ring-emerald-500/10"
+                          className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-900 outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100"
                         />
 
                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -4526,11 +4526,11 @@ const AdminConfig: React.FC = () => {
                                 onClick={() => setSelectedFont(option.id)}
                                 className={`rounded-[20px] border p-2 transition-all ${
                                   active
-                                    ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-500/60 dark:bg-emerald-500/10'
-                                    : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:bg-slate-900'
+                                    ? 'border-emerald-300 bg-emerald-50'
+                                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
                                 }`}
                               >
-                                <div className={`flex min-h-[72px] items-center justify-center rounded-[14px] px-2 text-center text-3xl text-slate-900 dark:text-white ${option.className}`}>
+                                <div className={`flex min-h-[72px] items-center justify-center rounded-[14px] px-2 text-center text-3xl text-slate-900 ${option.className}`}>
                                   {typedName.trim() || 'Seu nome'}
                                 </div>
                               </button>
@@ -4544,8 +4544,8 @@ const AdminConfig: React.FC = () => {
                       <div className="mt-6 space-y-5">
                         {!imageToCrop && !uploadPreview && (
                           <div className="grid gap-3 sm:grid-cols-2">
-                            <button type="button" onClick={() => signatureUploadInputRef.current?.click()} className="flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-white text-sm font-bold text-slate-700 transition hover:bg-slate-50"><Icons.Image size={18} /> Buscar Arquivo</button>
-                            <button type="button" onClick={() => setIsSignatureCameraOpen(true)} className="flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-white text-sm font-bold text-slate-700 transition hover:bg-slate-50"><Icons.Camera size={18} /> Tirar Foto</button>
+                            <button type="button" onClick={() => signatureUploadInputRef.current?.click()} className="flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-slate-100 text-sm font-bold text-slate-900 transition hover:bg-slate-200"><Icons.Image size={18} /> Buscar Arquivo</button>
+                            <button type="button" onClick={() => setIsSignatureCameraOpen(true)} className="flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-200 bg-slate-100 text-sm font-bold text-slate-900 transition hover:bg-slate-200"><Icons.Camera size={18} /> Tirar Foto</button>
                           </div>
                         )}
                         <input
@@ -4558,8 +4558,8 @@ const AdminConfig: React.FC = () => {
                         
                         {imageToCrop && (
                           <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-                            <p className="text-sm font-semibold text-slate-950 mb-4 text-center">Recorte a sua assinatura</p>
-                            <div className="flex justify-center bg-white border border-dashed border-slate-300 p-2 rounded-xl overflow-hidden">
+                            <p className="text-sm font-semibold text-slate-900 mb-4 text-center">Recorte a sua assinatura</p>
+                            <div className="flex justify-center bg-slate-100 border border-dashed border-slate-300 p-2 rounded-xl overflow-hidden">
                               <ReactCrop crop={crop} onChange={(nextCrop) => setCrop(nextCrop)} className="max-h-[300px]">
                                 <img ref={cropImageRef} src={imageToCrop} alt="Recortar" className="max-h-[300px] w-auto object-contain" onLoad={(event) => {
                                   const { width, height } = event.currentTarget;
@@ -4568,7 +4568,7 @@ const AdminConfig: React.FC = () => {
                               </ReactCrop>
                             </div>
                             <div className="mt-4 flex gap-3">
-                              <button type="button" onClick={clearUploadPreview} className="flex-1 py-3 bg-slate-200 text-slate-700 font-bold rounded-xl text-sm">Cancelar</button>
+                              <button type="button" onClick={clearUploadPreview} className="flex-1 py-3 bg-slate-200 text-slate-900 font-bold rounded-xl text-sm">Cancelar</button>
                               <button type="button" onClick={getCroppedImage} className="flex-1 py-3 bg-emerald-500 text-white font-bold rounded-xl text-sm shadow-md">Confirmar Recorte</button>
                             </div>
                           </div>
@@ -4577,10 +4577,10 @@ const AdminConfig: React.FC = () => {
                         {uploadPreview && !imageToCrop && (
                           <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
                             <div className="flex items-center justify-between gap-3 mb-4">
-                              <p className="text-sm font-semibold text-slate-950">Prévia da imagem</p>
+                              <p className="text-sm font-semibold text-slate-900">Prévia da imagem</p>
                               <button type="button" onClick={clearUploadPreview} className="text-sm font-semibold text-rose-500 hover:text-rose-700">Remover</button>
                             </div>
-                            <div className="flex h-[180px] items-center justify-center rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
+                            <div className="flex h-[180px] items-center justify-center rounded-[20px] border border-slate-200 bg-slate-100 p-4 shadow-sm">
                               <img src={uploadPreview} alt="Enviada" className="max-h-full w-auto object-contain mix-blend-multiply" />
                             </div>
                           </div>
@@ -4589,36 +4589,36 @@ const AdminConfig: React.FC = () => {
                     ) : null}
                   </section>
 
-                  <aside className="flex flex-col justify-between rounded-[30px] border border-white/80 bg-white/92 p-6 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.35)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
+                  <aside className="flex flex-col justify-between rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.35)] backdrop-blur">
                     <div className="space-y-5">
-                      <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-900/70">
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                      <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                           Assinatura atual
                         </p>
-                        <div className="mt-4 flex min-h-[140px] items-center justify-center rounded-[20px] border border-dashed border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
+                        <div className="mt-4 flex min-h-[140px] items-center justify-center rounded-[20px] border border-dashed border-slate-300 bg-slate-100 p-4">
                           {adminSignatureUrl ? (
                             <img
                               src={adminSignatureUrl}
                               alt="Assinatura oficial atual"
-                              className="max-h-[96px] w-auto object-contain mix-blend-multiply dark:mix-blend-normal"
+                              className="max-h-[96px] w-auto object-contain mix-blend-multiply"
                             />
                           ) : (
                             <div className="text-center">
-                              <Icons.PenTool size={22} className="mx-auto mb-2 text-slate-300 dark:text-slate-600" />
-                              <p className="text-sm text-slate-400 dark:text-slate-500">Nenhuma assinatura salva</p>
+                              <Icons.PenTool size={22} className="mx-auto mb-2 text-slate-500" />
+                              <p className="text-sm text-slate-500">Nenhuma assinatura salva</p>
                             </div>
                           )}
                         </div>
                       </div>
 
-                      <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-900/70">
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                      <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                           Método selecionado
                         </p>
-                        <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">
+                        <p className="mt-3 text-lg font-semibold text-slate-900">
                           {signTab === 'draw' ? 'Desenho livre' : signTab === 'type' ? 'Assinatura digitada' : 'Imagem enviada'}
                         </p>
-                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                        <p className="mt-2 text-sm text-slate-500">
                           Revise a assinatura antes de confirmar. O arquivo salvo será usado como rubrica oficial da imobiliária.
                         </p>
                       </div>
@@ -4626,7 +4626,7 @@ const AdminConfig: React.FC = () => {
 
                     <div className="mt-6">
                       {signatureModalError ? (
-                        <div className="mb-4 rounded-[20px] bg-rose-50 p-4 text-sm font-semibold text-rose-600 dark:bg-rose-500/10 dark:text-rose-300">
+                        <div className="mb-4 rounded-[20px] bg-rose-50 p-4 text-sm font-semibold text-rose-600">
                           {signatureModalError}
                         </div>
                       ) : null}
@@ -4648,25 +4648,25 @@ const AdminConfig: React.FC = () => {
 
           {showSignatureQrCode ? (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/65 p-4 backdrop-blur-sm">
-              <div className="relative w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-2xl animate-in zoom-in-95 dark:bg-slate-950">
+              <div className="relative w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-2xl animate-in zoom-in-95">
                 <button
                   type="button"
                   onClick={() => setShowSignatureQrCode(false)}
-                  className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-200"
+                  className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-900"
                 >
                   <Icons.X size={24} />
                 </button>
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-emerald-600">
                   <Icons.Smartphone size={24} />
                 </div>
-                <h3 className="mt-5 text-xl font-bold text-slate-900 dark:text-white">Continue no celular</h3>
-                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                <h3 className="mt-5 text-xl font-bold text-slate-900">Continue no celular</h3>
+                <p className="mt-2 text-sm text-slate-500">
                   Abra esta tela no seu celular para desenhar ou enviar a assinatura oficial com mais conforto.
                 </p>
                 <img
                   src={signatureQrCodeUrl}
                   alt="QR Code para abrir no celular"
-                  className="mx-auto mt-6 rounded-2xl border border-slate-200 p-2 shadow-sm dark:border-slate-700"
+                  className="mx-auto mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-2 shadow-sm"
                 />
               </div>
             </div>
@@ -4685,7 +4685,7 @@ const AdminConfig: React.FC = () => {
                     <Icons.X size={20} />
                   </button>
                 </div>
-                <div className="flex flex-col gap-3 bg-white p-6 dark:bg-slate-950">
+                <div className="flex flex-col gap-3 bg-white p-6">
                   <button
                     type="button"
                     onClick={captureSignaturePhoto}
@@ -4700,7 +4700,7 @@ const AdminConfig: React.FC = () => {
                       setIsSignatureCameraOpen(false);
                       setShowSignatureQrCode(true);
                     }}
-                    className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-slate-100 font-bold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-slate-100 font-bold text-slate-900 transition hover:bg-slate-200"
                   >
                     <Icons.QrCode size={20} />
                     Continuar no Celular
