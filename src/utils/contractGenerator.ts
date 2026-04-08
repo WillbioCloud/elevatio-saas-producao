@@ -809,19 +809,33 @@ export const buildContractHtml = async (
       
       <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
       
-      <div class="signatures">
-        <div class="signature-line">
-          <strong>${val(data.buyer_name)}</strong><br/>
-          Comprador(a)
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_COMPRADOR}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Comprador(a)</span>
         </div>
-        <div class="signature-line">
-          <strong>${val(data.seller_name)}</strong><br/>
-          Vendedor(a)
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Vendedor(a)</span>
         </div>
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         ${brokerSignature('Intermediador')}
-        <div class="signature-line">
-          <strong>Testemunha</strong><br/>
-          CPF:
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_1}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF:</span>
         </div>
       </div>
     `;
@@ -883,27 +897,51 @@ export const buildContractHtml = async (
       
       <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
       
-      <div class="signatures">
-        <div class="signature-line">
-          <strong>${val(data.landlord_name)}</strong><br/>
-          Locador(a)
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.landlord_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Locador(a)</span>
         </div>
-        <div class="signature-line">
-          <strong>${val(data.tenant_name)}</strong><br/>
-          Locatário(a)
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_INQUILINO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.tenant_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Locatário(a)</span>
         </div>
-        <div class="signature-line">
-          <strong>${val(data.guarantor_name, '_________________________________')}</strong><br/>
-          Fiador(a) Principal
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_FIADOR}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.guarantor_name, '_________________________________')}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Fiador(a) Principal</span>
         </div>
         ${brokerSignature('Administrador do Imóvel')}
-        <div class="signature-line">
-          <strong>Testemunha 1</strong><br/>
-          CPF:
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_1}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF:</span>
         </div>
-        <div class="signature-line">
-          <strong>Testemunha 2</strong><br/>
-          CPF:
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_2}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF:</span>
         </div>
       </div>
     `;
@@ -961,19 +999,33 @@ export const buildContractHtml = async (
       <h2>Cláusula 7ª – Local e assinatura do proponente e do corretor de imóveis:</h2>
       <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
       
-      <div class="signatures">
-        <div class="signature-line">
-          <strong>${val(data.buyer_name)}</strong><br/>
-          Proponente (Comprador)
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_COMPRADOR}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Proponente (Comprador)</span>
         </div>
         ${brokerSignature('Corretor de Imóveis')}
-        <div class="signature-line">
-          <strong>Testemunha 1</strong><br/>
-          CPF:
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_1}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF:</span>
         </div>
-        <div class="signature-line">
-          <strong>Testemunha 2</strong><br/>
-          CPF:
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_2}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF:</span>
         </div>
       </div>
       
@@ -986,10 +1038,14 @@ export const buildContractHtml = async (
         
         <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
         
-        <div class="signatures">
-          <div class="signature-line">
-            <strong>${val(data.seller_name)}</strong><br/>
-            Proprietário (Vendedor)
+        <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+          <div class="signature-line" style="display: table-cell; width: 100%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+              {{ASSINATURA_PROPRIETARIO}}
+            </div>
+            _________________________________________________<br/>
+            <strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/>
+            <span style="font-size: 14px; color: #000;">Proprietário (Vendedor)</span>
           </div>
         </div>
       </div>
@@ -1151,77 +1207,87 @@ export const buildContractHtml = async (
     `;
   } else if (type === 'sale_cash') {
     contractContent = `
-      <h1>CONTRATO DE COMPRA E VENDA DE IMÓVEL À VISTA</h1>
+      <h2 style="text-align: center; font-size: 16px; margin-bottom: 30px; color: #1e293b;">
+        INSTRUMENTO PARTICULAR DE PROMESSA DE COMPRA E VENDA DE IMÓVEL (À VISTA)
+      </h2>
+
+      <p style="margin-bottom: 25px; line-height: 1.6; text-align: justify;">
+        <strong>Pelo presente instrumento particular, as partes abaixo qualificadas celebram entre si o presente Contrato de Promessa de Compra e Venda, mediante as cláusulas e condições seguintes:</strong>
+      </p>
+
+      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">I - DOS PROMITENTES VENDEDORES</h3>
+      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+        <strong>Vendedor(a):</strong> ${val(data.seller_name)}, ${val(data.seller_nationality, 'brasileiro(a)')}, ${val(data.seller_profession)}, estado civil: ${val(data.seller_marital_status)}, portador(a) do RG nº ${val(data.seller_rg)} e inscrito(a) no CPF sob o nº ${val(data.seller_cpf || data.seller_document || data.property?.owner_cpf || data.property?.owner_document)}, residente e domiciliado(a) na ${val(data.seller_address)}, ${val(data.seller_number)}, ${val(data.seller_neighborhood)}, ${val(data.seller_city)} - ${val(data.seller_state)}, CEP: ${val(data.seller_zipcode || data.seller_zip_code)}.
+        ${data.seller_spouse_name ? `<br/><strong>Cônjuge:</strong> ${val(data.seller_spouse_name)}, ${val(data.seller_spouse_nationality, 'brasileiro(a)')}, ${val(data.seller_spouse_profession)}, portador(a) do RG nº ${val(data.seller_spouse_rg)} e inscrito(a) no CPF sob o nº ${val(data.seller_spouse_cpf || data.seller_spouse_document)}.` : ''}
+      </p>
+
+      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">II - DOS PROMITENTES COMPRADORES</h3>
+      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+        <strong>Comprador(a):</strong> ${val(data.buyer_name)}, ${val(data.buyer_nationality, 'brasileiro(a)')}, ${val(data.buyer_profession)}, estado civil: ${val(data.buyer_marital_status)}, portador(a) do RG nº ${val(data.buyer_rg)} e inscrito(a) no CPF sob o nº ${val(data.buyer_cpf || data.buyer_document)}, residente e domiciliado(a) na ${val(data.buyer_address)}, ${val(data.buyer_number)}, ${val(data.buyer_neighborhood)}, ${val(data.buyer_city)} - ${val(data.buyer_state)}, CEP: ${val(data.buyer_zipcode || data.buyer_zip_code)}.
+        ${data.buyer_spouse_name ? `<br/><strong>Cônjuge:</strong> ${val(data.buyer_spouse_name)}, ${val(data.buyer_spouse_nationality, 'brasileiro(a)')}, ${val(data.buyer_spouse_profession)}, portador(a) do RG nº ${val(data.buyer_spouse_rg)} e inscrito(a) no CPF sob o nº ${val(data.buyer_spouse_cpf || data.buyer_spouse_document)}.` : ''}
+      </p>
+
+      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">III - DO IMÓVEL</h3>
+      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+        <strong>Cláusula 1ª:</strong> O objeto do presente contrato é um(a) <strong>${val(data.property_type || data.property?.property_type || data.property?.type)}</strong>, localizado(a) na ${val(data.property_address || data.property?.street || data.property?.address)}, ${val(data.property_number || data.property?.number)}, ${val(data.property_neighborhood || data.property?.neighborhood)}, na cidade de ${val(data.property_city || data.property?.city)} - ${val(data.property_state || data.property?.state)}, CEP: ${val(data.property_zipcode || data.property_zip_code || data.property?.zip_code)}.<br/>
+        <strong>Parágrafo Único:</strong> O imóvel encontra-se matriculado sob o nº <strong>${val(data.property_registration || data.property?.registration_number || data.property?.iptu_number)}</strong> no <strong>${val(data.property_registry || data.property_registry_office)}</strong> Cartório de Registro de Imóveis, livre e desembaraçado de quaisquer ônus, litígios ou dívidas.
+      </p>
+
+      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">IV - DO VALOR E FORMA DE PAGAMENTO</h3>
+      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+        <strong>Cláusula 2ª:</strong> O preço certo e ajustado para a presente venda e compra é de <strong>${val(data.transaction_value || data.sale_total_value || data.total_value)}</strong>, que será pago da seguinte forma:<br/>
+        <strong>Parágrafo Único - Pagamento à vista:</strong> O pagamento será realizado em moeda corrente nacional, em parcela única (à vista), através de transferência bancária (TED/PIX) ou cheque administrativo, no momento da assinatura da escritura pública de compra e venda ou conforme acordado entre as partes.
+      </p>
       
-      <p>Por este instrumento particular, as partes qualificadas na Cláusula 1ª resolvem, por livre e espontânea vontade, firmar o presente contrato de compra e venda do imóvel descrito na cláusula 2ª, conforme os termos, preço e condições estabelecidos nas cláusulas seguintes:</p>
-      
-      <h2>Cláusula 1ª - Identificação das partes</h2>
-      <p><strong>1) De um lado como comprador(es):</strong><br/>
-      a) Nome: <strong>${val(data.buyer_name)}</strong>;<br/>
-      b) CPF/CNPJ: <strong>${val(data.buyer_document)}</strong>;<br/>
-      c) Profissão: ${val(data.buyer_profession)};<br/>
-      d) Estado civil: ${val(data.buyer_marital_status)};<br/>
-      e) Endereço: ${val(data.buyer_address)};<br/>
-      f) Telefones: ${val(data.buyer_phone)};<br/>
-      g) E-mail: ${val(data.buyer_email)}.${spouseText(data.buyer_spouse_name, data.buyer_spouse_document, data.buyer_spouse_rg || '', data.buyer_spouse_profession)}</p>
-      
-      <p><strong>2) E de outro lado, como vendedor(es):</strong><br/>
-      a) Nome: <strong>${val(data.seller_name)}</strong>;<br/>
-      b) CPF/CNPJ: <strong>${val(data.seller_document)}</strong>;<br/>
-      c) Profissão: ${val(data.seller_profession)};<br/>
-      d) Estado civil: ${val(data.seller_marital_status)};<br/>
-      e) Endereço: ${val(data.seller_address)};<br/>
-      f) Telefones: ${val(data.seller_phone)}.${spouseText(data.seller_spouse_name, data.seller_spouse_document, data.seller_spouse_rg || '', data.seller_spouse_profession)}</p>
-      
-      <h2>Cláusula 2ª – Objeto do contrato</h2>
-      <p>1) O presente contrato tem por finalidade a compra e a venda "ad corpus" do imóvel descrito a seguir, de propriedade do(s) vendedor(es):<br/>
-      a) Endereço: <strong>${val(data.property_address)}</strong>;<br/>
-      b) Descrição do imóvel: <strong>${val(data.property_description)}</strong>.</p>
-      
-      <p>2) O(s) vendedor(es) declara(m) que são proprietários e possuidores a justo título do imóvel acima descrito, que ele está livre e desembaraçado de qualquer ônus, gravame, ações reais, pessoais reipersecutórias, dívidas, hipotecas, impostos ou taxas em atraso, restrições e outros.</p>
-      
-      <h2>Cláusula 3ª – Preço do imóvel e condições de pagamento (À VISTA)</h2>
-      <p>1) A transação objeto deste instrumento contratual tem preço total, certo e ajustado de <strong>R$ ${val(data.total_value)}</strong>.</p>
-      
-      <p>2) O referido valor é pago pelo(s) comprador(es) ao(s) vendedor(es) neste ato, <strong>À VISTA</strong> e em moeda corrente nacional (via transferência bancária TED/PIX), valendo o presente instrumento ou o respectivo comprovante de transferência bancária como recibo de quitação plena, rasa e geral, para não mais reclamar sobre o valor ora recebido.</p>
-      
-      <h2>Cláusula 4ª – Honorários do corretor de imóveis</h2>
-      <p>1) O presente negócio foi intermediado pelo corretor de imóveis responsável pela empresa <strong>${val(companyName || tenant?.name, '______________________')}</strong>, regularmente inscrito no CRECI, que apresentou os dados rigorosamente certos, não omitindo nenhum detalhe de desabono à negociação de que teve conhecimento.</p>
-      
-      <h2>Cláusula 5ª – Posse do imóvel</h2>
-      <p>1) A posse do imóvel objeto deste contrato neste ato é transmitida pelo(s) vendedor(es) ao(s) comprador(es) com a entrega das chaves.</p>
-      
-      <h2>Cláusula 6ª – Despesas, impostos e taxas</h2>
-      <p>1) Caberá ao(s) vendedor(es) o pagamento de todos os impostos, taxas, contribuições, despesas de condomínio, foros e outras despesas que incidam ou venham a incidir sobre o imóvel até a data da transmissão da posse.<br/>
-      2) Caberá ao(s) comprador(es) o pagamento das despesas com a lavratura da escritura, ITBI, laudêmios e o registro de imóveis.</p>
-      
-      <h2>Cláusula 7ª e 8ª – Documentação e Declarações</h2>
-      <p>1) O(s) vendedor(es) entregam, neste ato, todos os documentos e certidões exigidos por lei para a lavratura da escritura pública.<br/>
-      2) O(s) comprador(es) declara(m) ter vistoriado o imóvel, aceitando-o no estado de conservação em que se encontra.</p>
-      
-      <h2>Cláusula 9ª e 10ª – Cláusula Penal e Evicção</h2>
-      <p>1) A infração de qualquer cláusula deste contrato sujeitará a parte infratora a uma multa de 10% (dez por cento) sobre o valor total da negociação, em favor da parte inocente, independentemente de perdas e danos.<br/>
-      2) O(s) vendedor(es) responde(m), na forma da lei, pelos riscos de evicção de direitos.</p>
-      
-      <h2>Cláusula 11ª e 12ª – Irrevogabilidade, Sucessão e Foro</h2>
-      <p>1) O presente contrato é celebrado sob a condição expressa de irrevogabilidade e irretratabilidade, e vincula herdeiros e sucessores. As partes renunciam expressamente à faculdade de arrependimento prevista no art. 420 do Código Civil.<br/>
-      2) Todas as questões eventualmente oriundas do presente contrato, serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.</p>
-      
-      <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
-      
-      <div class="signatures">
-        <div class="signature-line">
-          <strong>${val(data.buyer_name)}</strong><br/>
-          Comprador(a)
+      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">V - DA POSSE E ESCRITURA</h3>
+      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+        <strong>Cláusula 3ª:</strong> A posse do imóvel será transferida aos COMPRADORES no momento da quitação integral do valor acordado e assinatura da Escritura Pública, devendo os VENDEDORES entregarem o imóvel livre de pessoas e coisas.<br/>
+        <strong>Cláusula 4ª:</strong> Todas as despesas inerentes à transferência de propriedade, incluindo ITBI, custas de cartório de notas e registro de imóveis, correrão por conta exclusiva dos COMPRADORES.
+      </p>
+
+      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">VI - DA INTERMEDIAÇÃO</h3>
+      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+        <strong>Cláusula 5ª:</strong> As partes declaram que a presente transação foi intermediada por <strong>${resolvedBrokerDisplayName}</strong>, ${resolvedBrokerDisplayDoc}, ${resolvedBrokerDisplayCreci || 'CRECI: ________________'}, fazendo jus aos honorários de corretagem pactuados em instrumento apartado.
+      </p>
+
+      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">VII - DO FORO</h3>
+      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+        <strong>Cláusula 6ª:</strong> As partes elegem o foro da Comarca de ${val(data.property_city || data.property?.city)} - ${val(data.property_state || data.property?.state)} para dirimir quaisquer dúvidas oriundas deste contrato, renunciando a qualquer outro por mais privilegiado que seja.
+      </p>
+
+      <p style="margin-top: 40px; margin-bottom: 30px; text-align: center; line-height: 1.6;">
+        Por estarem assim justos e contratados, firmam o presente em 02 (duas) vias de igual teor e forma, juntamente com as testemunhas abaixo.<br/>
+        ${val(data.property_city || data.property?.city)} - ${val(data.property_state || data.property?.state)}, ${formatLongDatePtBr(data.sale_date || new Date())}.
+      </p>
+
+      <div class="signatures" style="display: table; width: 100%; margin-top: 40px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Vendedor(a)</span>
         </div>
-        <div class="signature-line">
-          <strong>${val(data.seller_name)}</strong><br/>
-          Vendedor(a)
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_COMPRADOR}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Comprador(a)</span>
         </div>
+      </div>
+      
+      <div class="signatures" style="display: table; width: 100%; margin-top: 40px; page-break-inside: avoid; table-layout: fixed;">
         ${brokerSignature('Intermediador')}
-        <div class="signature-line">
-          <strong>Testemunha</strong><br/>
-          CPF:
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_1}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF:</span>
         </div>
       </div>
     `;
@@ -1310,23 +1376,43 @@ export const buildContractHtml = async (
       
       <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
       
-      <div class="signatures">
-        <div class="signature-line">
-          <strong>${val(data.seller_name)}</strong><br/>
-          Primeiro Permutante
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Primeiro Permutante</span>
         </div>
-        <div class="signature-line">
-          <strong>${val(data.buyer_name)}</strong><br/>
-          Segundo Permutante
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_COMPRADOR}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Segundo Permutante</span>
         </div>
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         ${brokerSignature('Intermediador')}
-        <div class="signature-line">
-          <strong>Testemunha 1</strong><br/>
-          CPF:
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_1}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF:</span>
         </div>
-        <div class="signature-line" style="grid-column: span 2;">
-          <strong>Testemunha 2</strong><br/>
-          CPF:
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 100%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_2}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF:</span>
         </div>
       </div>
     `;
@@ -1398,19 +1484,33 @@ export const buildContractHtml = async (
       
       <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
       
-      <div class="signatures">
-        <div class="signature-line">
-          <strong>${val(data.landlord_name)}</strong><br/>
-          Locador(a)
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.landlord_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Locador(a)</span>
         </div>
-        <div class="signature-line">
-          <strong>${val(data.tenant_name)}</strong><br/>
-          Locatário(a)
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_INQUILINO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.tenant_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Locatário(a)</span>
         </div>
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         ${brokerSignature('Administrador do Imóvel')}
-        <div class="signature-line">
-          <strong>Testemunha</strong><br/>
-          CPF:
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_1}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF:</span>
         </div>
       </div>
     `;
@@ -1493,27 +1593,51 @@ export const buildContractHtml = async (
       
       <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
       
-      <div class="signatures">
-        <div class="signature-line">
-          <strong>${val(data.landlord_name)}</strong><br/>
-          Locador(a)
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.landlord_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Locador(a)</span>
         </div>
-        <div class="signature-line">
-          <strong>${val(data.tenant_name)}</strong><br/>
-          Locatário(a)
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_INQUILINO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.tenant_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Locatário(a)</span>
         </div>
-        <div class="signature-line">
-          <strong>${val(data.guarantor_name, '_________________________________')}</strong><br/>
-          Fiador(a)
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_FIADOR}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.guarantor_name, '_________________________________')}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Fiador(a) Principal</span>
         </div>
         ${brokerSignature('Administrador do Imóvel')}
-        <div class="signature-line">
-          <strong>Testemunha 1</strong><br/>
-          CPF:
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_1}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF:</span>
         </div>
-        <div class="signature-line">
-          <strong>Testemunha 2</strong><br/>
-          CPF:
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_2}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF:</span>
         </div>
       </div>
     `;
@@ -1531,14 +1655,22 @@ export const buildContractHtml = async (
       
       <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
       
-      <div class="signatures" style="margin-top: 60px;">
-        <div class="signature-line">
-          <strong>${val(tenant?.name)} / Locador</strong><br/>
-          Recebedor das Chaves
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_IMOBILIARIA}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(tenant?.name)} / Locador</strong><br/>
+          <span style="font-size: 14px; color: #000;">Recebedor das Chaves</span>
         </div>
-        <div class="signature-line">
-          <strong>${val(data.tenant_name, data.buyer_name)}</strong><br/>
-          Locatário(a)
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_INQUILINO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.tenant_name, data.buyer_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Locatário(a)</span>
         </div>
       </div>
     `;
@@ -1568,14 +1700,22 @@ export const buildContractHtml = async (
       
       <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
       
-      <div class="signatures">
-        <div class="signature-line">
-          <strong>${val(data.seller_name, data.landlord_name)}</strong><br/>
-          Proprietário
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.seller_name, data.landlord_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Proprietário</span>
         </div>
-        <div class="signature-line">
-          <strong>${val(data.buyer_name, data.tenant_name)}</strong><br/>
-          Inquilino/Comprador
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_INQUILINO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name, data.tenant_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Inquilino/Comprador</span>
         </div>
       </div>
     `;
@@ -1602,14 +1742,22 @@ export const buildContractHtml = async (
       
       <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
       
-      <div class="signatures">
-        <div class="signature-line">
-          <strong>${val(data.buyer_name, data.tenant_name)}</strong><br/>
-          Assinatura do Cliente
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_COMPRADOR}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name, data.tenant_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Assinatura do Cliente</span>
         </div>
-        <div class="signature-line">
-          <strong>${val(tenant?.name)}</strong><br/>
-          Corretor Responsável
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_IMOBILIARIA}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(tenant?.name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Corretor Responsável</span>
         </div>
       </div>
     `;

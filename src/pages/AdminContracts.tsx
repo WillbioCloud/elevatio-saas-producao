@@ -7,7 +7,7 @@ import RentContractModal from '../components/RentContractModal';
 import SignatureManagerModal from '../components/SignatureManagerModal';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { appendSignatureManifest, buildContractHtml, injectSignatureStamps } from '../utils/contractGenerator';
+import { appendSignatureManifest, injectSignatureStamps } from '../utils/contractGenerator';
 
 interface ContractSignatureRow {
   contract_id: string | null;
@@ -414,467 +414,73 @@ const AdminContracts: React.FC = () => {
     setSignatureModalState({ contractId, companyId });
   };
 
-  const inferDocumentType = (contract: ContractWithSignatureState) => {
-    const storedTypeCandidates = [
-      contract?.document_type,
-      contract?.contract_data?.document_type,
-    ];
-
-    const storedType = storedTypeCandidates.find(
-      (value): value is string => typeof value === 'string' && value.trim().length > 0
-    );
-
-    if (storedType) {
-      return storedType;
-    }
-
-    if (contract.type === 'sale') {
-      if (contract.has_permutation) return 'permuta';
-      if (contract.sale_is_cash) return 'sale_cash';
-      return 'sale_standard';
-    }
-
-    if (contract.type === 'rent') {
-      const guaranteeType = String(contract.rent_guarantee_type || '').toLowerCase();
-      if (guaranteeType.includes('sem') || guaranteeType === 'none') {
-        return 'rent_noguarantee';
-      }
-
-      return 'rent_guarantor';
-    }
-
-    return '';
-  };
-
-  const ensurePrintableDocument = (html: string) => {
-    if (/<html[\s>]/i.test(html) || /<!doctype/i.test(html)) {
-      return html;
-    }
-
-    return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <title>Contrato Final</title>
-</head>
-<body style="margin: 0; background: #fff;">
-  ${html}
-</body>
-</html>`;
-  };
-
   const handleDownloadFinalPDF = async (contract: ContractWithSignatureState) => {
     setDownloadingContractId(contract.id);
 
     try {
-      const companyId = contract.company_id || user?.company_id;
-      if (!companyId) {
-        throw new Error('Empresa vinculada nao encontrada para este contrato.');
-      }
+      const { data: fullContract, error } = await supabase
+        .from('contracts')
+        .select('*')
+        .eq('id', contract.id)
+        .single();
 
-      const [{ data: signatures, error: signaturesError }, { data: companyData, error: companyError }] = await Promise.all([
-        supabase
-          .from('contract_signatures')
-          .select('*')
-          .eq('contract_id', contract.id)
-          .order('created_at', { ascending: true }),
-        supabase
+      if (error) throw error;
+
+      let adminUrl = '';
+      let companyName = '';
+
+      if (user?.company_id) {
+        const { data: companyInfo } = await supabase
           .from('companies')
-          .select('id, name, subdomain, site_data, admin_signature_url, phone')
-          .eq('id', companyId)
-          .maybeSingle(),
-      ]);
+          .select('name, admin_signature_url')
+          .eq('id', user.company_id)
+          .single();
 
-      if (signaturesError) throw signaturesError;
-      if (companyError) throw companyError;
-      if (!companyData) throw new Error('Dados da imobiliaria nao encontrados.');
-
-      let parsedSiteData: Record<string, unknown> | null = null;
-      if (typeof companyData.site_data === 'string') {
-        try {
-          parsedSiteData = JSON.parse(companyData.site_data) as Record<string, unknown>;
-        } catch {
-          parsedSiteData = null;
+        if (companyInfo?.admin_signature_url) {
+          adminUrl = companyInfo.admin_signature_url;
         }
-      } else if (companyData.site_data && typeof companyData.site_data === 'object') {
-        parsedSiteData = companyData.site_data as Record<string, unknown>;
+
+        if (companyInfo?.name) {
+          companyName = companyInfo.name;
+        }
       }
 
-      const companyForGenerator = {
-        ...companyData,
-        site_data: parsedSiteData,
-        logo_url: typeof parsedSiteData?.logo_url === 'string' ? parsedSiteData.logo_url : null,
-        phone:
-          companyData.phone ||
-          (typeof parsedSiteData?.contact_phone === 'string' ? parsedSiteData.contact_phone : null),
-      };
+      const { data: signatures } = await supabase
+        .from('contract_signatures')
+        .select('*')
+        .eq('contract_id', fullContract.id);
 
-      const propertyAddress =
-        contract.property_address ||
-        contract.property?.address ||
-        [
-          contract.property?.street,
-          contract.property?.number,
-          contract.property?.neighborhood,
-          contract.property?.city && contract.property?.state
-            ? `${contract.property.city} - ${contract.property.state}`
-            : contract.property?.city || contract.property?.state,
-        ]
-          .filter(Boolean)
-          .join(', ');
+      let finalHtml = fullContract.html_content || fullContract.content || '';
+      const safeSignatures = signatures || [];
 
-      const liveContractData = {
-        ...contract,
-        ...(contract.contract_data || {}),
-        lead: contract.lead,
-        property: contract.property,
-        broker: contract.broker,
-        locatario_nome: contract.lead?.name || contract.tenant_name || '',
-        locatario_cpf: contract.lead?.cpf || contract.tenant_document || '',
-        locatario_rg: contract.lead?.rg || contract.tenant_rg || '',
-        comprador_nome: contract.lead?.name || contract.buyer_name || '',
-        comprador_cpf: contract.lead?.cpf || contract.buyer_document || '',
-        vendedor_nome: contract.property?.owner_name || contract.seller_name || '',
-        vendedor_cpf: contract.property?.owner_cpf || contract.property?.owner_document || contract.seller_document || '',
-        imovel_titulo: contract.property?.title || '',
-        imovel_endereco: propertyAddress || '',
-        tenant_name:
-          contract.tenant_name ||
-          contract.contract_data?.tenant_name ||
-          contract.contract_data?.lessee_name ||
-          contract.lead?.name ||
-          '',
-        tenant_document:
-          contract.tenant_document ||
-          contract.contract_data?.tenant_document ||
-          contract.lead?.cpf ||
-          '',
-        tenant_rg: contract.tenant_rg || contract.contract_data?.tenant_rg || contract.lead?.rg || '',
-        tenant_profession:
-          contract.tenant_profession ||
-          contract.contract_data?.tenant_profession ||
-          contract.lead?.profissao ||
-          '',
-        tenant_marital_status:
-          contract.tenant_marital_status ||
-          contract.contract_data?.tenant_marital_status ||
-          contract.lead?.estado_civil ||
-          '',
-        tenant_address:
-          contract.tenant_address ||
-          contract.contract_data?.tenant_address ||
-          contract.lead?.endereco ||
-          '',
-        tenant_phone:
-          contract.tenant_phone ||
-          contract.contract_data?.tenant_phone ||
-          contract.lead?.phone ||
-          '',
-        tenant_email:
-          contract.tenant_email ||
-          contract.contract_data?.tenant_email ||
-          contract.lead?.email ||
-          '',
-        tenant_spouse_name:
-          contract.tenant_spouse_name ||
-          contract.contract_data?.tenant_spouse_name ||
-          contract.lead?.spouse_name ||
-          '',
-        tenant_spouse_document:
-          contract.tenant_spouse_document ||
-          contract.contract_data?.tenant_spouse_document ||
-          contract.lead?.spouse_cpf ||
-          '',
-        tenant_spouse_rg:
-          contract.tenant_spouse_rg ||
-          contract.contract_data?.tenant_spouse_rg ||
-          contract.lead?.spouse_rg ||
-          '',
-        buyer_name:
-          contract.buyer_name ||
-          contract.contract_data?.buyer_name ||
-          contract.lead?.name ||
-          '',
-        buyer_document:
-          contract.buyer_document ||
-          contract.contract_data?.buyer_document ||
-          contract.lead?.cpf ||
-          '',
-        buyer_rg: contract.buyer_rg || contract.contract_data?.buyer_rg || contract.lead?.rg || '',
-        buyer_profession:
-          contract.buyer_profession ||
-          contract.contract_data?.buyer_profession ||
-          contract.lead?.profissao ||
-          '',
-        buyer_marital_status:
-          contract.buyer_marital_status ||
-          contract.contract_data?.buyer_marital_status ||
-          contract.lead?.estado_civil ||
-          '',
-        buyer_address:
-          contract.buyer_address ||
-          contract.contract_data?.buyer_address ||
-          contract.lead?.endereco ||
-          '',
-        buyer_phone:
-          contract.buyer_phone ||
-          contract.contract_data?.buyer_phone ||
-          contract.lead?.phone ||
-          '',
-        buyer_email:
-          contract.buyer_email ||
-          contract.contract_data?.buyer_email ||
-          contract.lead?.email ||
-          '',
-        buyer_spouse_name:
-          contract.buyer_spouse_name ||
-          contract.contract_data?.buyer_spouse_name ||
-          contract.lead?.spouse_name ||
-          '',
-        buyer_spouse_document:
-          contract.buyer_spouse_document ||
-          contract.contract_data?.buyer_spouse_document ||
-          contract.lead?.spouse_cpf ||
-          '',
-        buyer_spouse_rg:
-          contract.buyer_spouse_rg ||
-          contract.contract_data?.buyer_spouse_rg ||
-          contract.lead?.spouse_rg ||
-          '',
-        seller_name:
-          contract.seller_name ||
-          contract.contract_data?.seller_name ||
-          contract.property?.owner_name ||
-          '',
-        seller_document:
-          contract.seller_document ||
-          contract.contract_data?.seller_document ||
-          contract.property?.owner_cpf ||
-          contract.property?.owner_document ||
-          '',
-        seller_rg:
-          contract.seller_rg ||
-          contract.contract_data?.seller_rg ||
-          contract.property?.owner_rg ||
-          '',
-        seller_profession:
-          contract.seller_profession ||
-          contract.contract_data?.seller_profession ||
-          contract.property?.owner_profession ||
-          '',
-        seller_marital_status:
-          contract.seller_marital_status ||
-          contract.contract_data?.seller_marital_status ||
-          contract.property?.owner_marital_status ||
-          '',
-        seller_address:
-          contract.seller_address ||
-          contract.contract_data?.seller_address ||
-          contract.property?.owner_address ||
-          '',
-        seller_phone:
-          contract.seller_phone ||
-          contract.contract_data?.seller_phone ||
-          contract.property?.owner_phone ||
-          '',
-        seller_email:
-          contract.seller_email ||
-          contract.contract_data?.seller_email ||
-          contract.property?.owner_email ||
-          '',
-        seller_spouse_name:
-          contract.seller_spouse_name ||
-          contract.contract_data?.seller_spouse_name ||
-          contract.property?.owner_spouse_name ||
-          '',
-        seller_spouse_document:
-          contract.seller_spouse_document ||
-          contract.contract_data?.seller_spouse_document ||
-          contract.property?.owner_spouse_cpf ||
-          '',
-        seller_spouse_rg:
-          contract.seller_spouse_rg ||
-          contract.contract_data?.seller_spouse_rg ||
-          contract.property?.owner_spouse_rg ||
-          '',
-        landlord_name:
-          contract.landlord_name ||
-          contract.contract_data?.landlord_name ||
-          contract.contract_data?.lessor_name ||
-          contract.seller_name ||
-          contract.property?.owner_name ||
-          '',
-        landlord_document:
-          contract.landlord_document ||
-          contract.contract_data?.landlord_document ||
-          contract.property?.owner_cpf ||
-          contract.property?.owner_document ||
-          '',
-        landlord_rg:
-          contract.landlord_rg ||
-          contract.contract_data?.landlord_rg ||
-          contract.property?.owner_rg ||
-          '',
-        landlord_profession:
-          contract.landlord_profession ||
-          contract.contract_data?.landlord_profession ||
-          contract.property?.owner_profession ||
-          '',
-        landlord_marital_status:
-          contract.landlord_marital_status ||
-          contract.contract_data?.landlord_marital_status ||
-          contract.property?.owner_marital_status ||
-          '',
-        landlord_address:
-          contract.landlord_address ||
-          contract.contract_data?.landlord_address ||
-          contract.property?.owner_address ||
-          '',
-        landlord_phone:
-          contract.landlord_phone ||
-          contract.contract_data?.landlord_phone ||
-          contract.property?.owner_phone ||
-          '',
-        landlord_email:
-          contract.landlord_email ||
-          contract.contract_data?.landlord_email ||
-          contract.property?.owner_email ||
-          '',
-        landlord_spouse_name:
-          contract.landlord_spouse_name ||
-          contract.contract_data?.landlord_spouse_name ||
-          contract.property?.owner_spouse_name ||
-          '',
-        landlord_spouse_document:
-          contract.landlord_spouse_document ||
-          contract.contract_data?.landlord_spouse_document ||
-          contract.property?.owner_spouse_cpf ||
-          '',
-        landlord_spouse_rg:
-          contract.landlord_spouse_rg ||
-          contract.contract_data?.landlord_spouse_rg ||
-          contract.property?.owner_spouse_rg ||
-          '',
-        property_address: propertyAddress || '',
-      };
+      finalHtml = await injectSignatureStamps(finalHtml, safeSignatures, adminUrl);
 
-      const templateCandidates = [
-        typeof contract?.contract_data?.template_content === 'string' ? contract.contract_data.template_content : '',
-        typeof contract?.content === 'string' ? contract.content : '',
-        typeof contract?.html_content === 'string' ? contract.html_content : '',
-      ];
-      const liveTemplate = templateCandidates.find(
-        (value) => typeof value === 'string' && value.trim().length > 0 && /\{\{[^}]+\}\}/.test(value)
-      );
-
-      let processedHtml = '';
-
-      if (liveTemplate) {
-        processedHtml = await buildContractHtml(
-          'custom_runtime',
-          liveContractData,
-          companyForGenerator,
-          contract?.broker?.company_logo || undefined,
-          contract?.broker?.name || undefined,
-          contract?.broker?.cpf_cnpj || undefined,
-          contract?.broker?.creci || undefined,
-          companyData.name || undefined,
-          liveTemplate
-        );
-      } else {
-        const documentType = inferDocumentType(contract);
-        if (!documentType) {
-          throw new Error('Nao foi possivel determinar o modelo deste contrato para gerar o PDF.');
-        }
-
-        let customTemplateContent: string | undefined;
-        if (documentType.startsWith('custom_')) {
-          const storedTemplateContent =
-            typeof contract?.contract_data?.template_content === 'string' &&
-            contract.contract_data.template_content.trim().length > 0
-              ? contract.contract_data.template_content
-              : null;
-
-          if (storedTemplateContent) {
-            customTemplateContent = storedTemplateContent;
-          } else {
-            const templateId = documentType.replace(/^custom_/, '');
-            const { data: templateData, error: templateError } = await supabase
-              .from('contract_templates')
-              .select('content')
-              .eq('id', templateId)
-              .maybeSingle();
-
-            if (templateError) throw templateError;
-            customTemplateContent = templateData?.content || undefined;
-          }
-        }
-
-        processedHtml = await buildContractHtml(
-          documentType,
-          liveContractData,
-          companyForGenerator,
-          contract?.broker?.company_logo || undefined,
-          contract?.broker?.name || undefined,
-          contract?.broker?.cpf_cnpj || undefined,
-          contract?.broker?.creci || undefined,
-          companyData.name || undefined,
-          customTemplateContent
+      if (safeSignatures.length > 0) {
+        finalHtml = appendSignatureManifest(
+          finalHtml,
+          {
+            name: companyName || null,
+            admin_signature_url: adminUrl || null,
+          },
+          safeSignatures
         );
       }
 
-      const stampedHtml = await injectSignatureStamps(processedHtml, signatures || [], {
-        locatario: liveContractData.tenant_document || liveContractData.locatario_cpf || '',
-        cliente: liveContractData.tenant_document || liveContractData.buyer_document || liveContractData.locatario_cpf || '',
-        comprador: liveContractData.buyer_document || liveContractData.comprador_cpf || '',
-        vendedor: liveContractData.seller_document || liveContractData.vendedor_cpf || '',
-        proprietario:
-          liveContractData.landlord_document ||
-          liveContractData.seller_document ||
-          liveContractData.vendedor_cpf ||
-          '',
-        locador:
-          liveContractData.landlord_document ||
-          liveContractData.seller_document ||
-          liveContractData.vendedor_cpf ||
-          '',
-        fiador:
-          (typeof liveContractData.guarantor_document === 'string' && liveContractData.guarantor_document) ||
-          '',
-        testemunha: '',
-        corretor: contract?.broker?.cpf_cnpj || '',
-        imobiliaria:
-          (typeof parsedSiteData?.cnpj === 'string' && parsedSiteData.cnpj) ||
-          contract?.broker?.cpf_cnpj ||
-          '',
-        administrador:
-          (typeof parsedSiteData?.cnpj === 'string' && parsedSiteData.cnpj) ||
-          contract?.broker?.cpf_cnpj ||
-          '',
-      }, companyForGenerator.admin_signature_url || undefined);
-
-      const htmlFinal = ensurePrintableDocument(
-        appendSignatureManifest(stampedHtml, companyForGenerator, signatures || [])
-      );
-
-      const printWindow = window.open('', '', 'width=900,height=700');
+      const printWindow = window.open('', '_blank');
       if (!printWindow) {
         throw new Error('Por favor, permita os pop-ups para gerar o PDF final.');
       }
 
-      printWindow.document.write(htmlFinal);
+      printWindow.document.write(finalHtml);
       printWindow.document.close();
-      window.setTimeout(() => {
+      setTimeout(() => {
         if (!printWindow.closed) {
-          printWindow.focus();
           printWindow.print();
-          printWindow.close();
         }
-      }, 600);
-    } catch (error) {
-      console.error('Erro ao gerar PDF Final:', error);
-      const message = error instanceof Error ? error.message : 'Ocorreu um erro ao gerar o documento.';
-      alert(message);
+      }, 500);
+    } catch (err) {
+      console.error('Erro ao gerar PDF:', err);
+      alert('Erro ao gerar PDF do contrato.');
     } finally {
       setDownloadingContractId(null);
     }
