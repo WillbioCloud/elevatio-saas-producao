@@ -1078,7 +1078,6 @@ export const buildContractHtml = async (
       </div>
     `;
   } else if (type === 'intermed_sale' || type === 'intermediacao') {
-    // === MODELO: INTERMEDIAÇÃO DE VENDA ===
     const isRentIntermediation =
       data.listing_type === 'rent' ||
       data.listingType === 'rent' ||
@@ -1089,74 +1088,223 @@ export const buildContractHtml = async (
       return buildContractHtml('intermed_rent', data, tenant, companyLogo, brokerDisplayName, brokerDisplayDoc, brokerDisplayCreci, companyName, customTemplateContent);
     }
 
-    const exclusivityText = data.has_exclusivity === false
-      ? '2) Por se tratar de contrato sem exclusividade, o contratante poderá negociar o imóvel por outros meios, sem prejuízo da remuneração do contratado caso o negócio seja concluído com interessado por ele apresentado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.'
-      : '2) Durante a vigência da cláusula de exclusividade, a intermediação ficará atribuída ao contratado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.';
+    if (type === 'intermediacao') {
+      // Detecta automaticamente se o contrato tem exclusividade
+      const isExclusive =
+        data.has_exclusivity === true ||
+        data.has_exclusivity === 'true' ||
+        data.has_exclusivity === 'Sim';
 
-    contractContent = `
-      <h1>CONTRATO DE AUTORIZAÇÃO DE INTERMEDIAÇÃO PARA VENDA DE IMÓVEL</h1>
-      
-      <p>Por este instrumento particular, as partes qualificadas na Cláusula 1ª resolvem, por livre e espontânea vontade, firmar o presente contrato de intermediação para fins de venda de imóvel conforme os termos e condições estabelecidos nas cláusulas seguintes:</p>
-      
-      <h2>Cláusula 1ª - Identificação das partes</h2>
-      <p><strong>1) De um lado como contratante (Proprietário):</strong><br/>
-      a) Nome: <strong>${val(data.seller_name)}</strong>;<br/>
-      b) CPF/CNPJ: <strong>${val(data.seller_document)}</strong>;<br/>
-      c) Profissão: ${val(data.seller_profession)};<br/>
-      d) Estado civil: ${val(data.seller_marital_status)};<br/>
-      e) Endereço: ${val(data.seller_address)};<br/>
-      f) Telefones: ${val(data.seller_phone)}.${spouseText(data.seller_spouse_name, data.seller_spouse_document, data.seller_spouse_rg || '', data.seller_spouse_profession)}
-      </p>
-      
-      <p><strong>1.2) E de outro lado, como contratado, o corretor de imóveis:</strong><br/>
-      a) Nome: <strong>${resolvedBrokerDisplayName}</strong>;<br/>
-      b) ${resolvedBrokerDisplayDoc};<br/>
-      c) ${resolvedBrokerDisplayCreci || 'Inscrição no CRECI: ________________'};<br/>
-      d) Endereço: ${companyFullAddress};<br/>
-      e) Telefones: ${companyPhone};<br/>
-      f) E-mail: ${companyEmail}.
-      </p>
-      
-      <h2>Cláusula 2ª - Objeto do contrato</h2>
-      <p>1) O presente contrato tem por finalidade a contratação dos serviços profissionais de intermediação, por parte do contratado, para fins de venda do imóvel de propriedade do contratante com as seguintes características:<br/>
-      a) Localização: <strong>${val(data.property_address)}</strong>;<br/>
-      b) Descrição do imóvel: <strong>${val(data.property_description)}</strong>.</p>
-      
-      <p>2) O(s) contratante(s) declara(m) que são proprietários e possuidores a justo título do imóvel acima descrito, que ele está livre e desembaraçado de qualquer ônus, gravame, ações reais, pessoais reipersecutórias, dívidas, hipotecas, impostos ou taxas em atraso, restrições e outros.</p>
-      
-      <h2>Cláusula 3ª - Preço do imóvel e condições de negociação</h2>
-      <p>1) A transação objeto deste instrumento contratual deverá ser concretizada pelo valor de <strong>R$ ${val(data.total_value)}</strong>.<br/>
-      2) Independentemente do preço, a contratada poderá apresentar qualquer proposta para estudo do(s) contratante(s).</p>
-      
-      <h2>Cláusula 4ª - Honorários profissionais do corretor de imóveis</h2>
-      <p>1) Fica pactuado que, ocorrendo a venda do imóvel descrito na Cláusula 2ª, o contratante pagará ao contratado, a título de honorários de corretagem, o percentual de <strong>${val(data.commission_percentage, '5')}%</strong> a ser calculado sobre o valor total da venda.<br/>
-      2) O pagamento dos honorários de corretagem será feito no ato do recebimento do sinal, ou na assinatura do contrato de promessa de compra e venda, ou na escritura definitiva, o que ocorrer primeiro.<br/>
-      3) O contratante se obriga a pagar os honorários mesmo se a venda se realizar após o vencimento do presente contrato, caso o comprador tenha sido apresentado pelo contratado durante a vigência deste instrumento, conforme art. 727 do Código Civil.</p>
-      
-      <h2>Cláusula 5ª - Placas e anúncios</h2>
-      <p>1) Fica o contratado autorizado a colocar placa de "VENDE", faixas, cartazes e outros meios de divulgação no imóvel objeto deste contrato, visando facilitar a sua comercialização.</p>
-      
-      <h2>Cláusula 6ª - Prazo de vigência e exclusividade</h2>
-      <p>1) O presente contrato é assinado em caráter irrevogável, vincula herdeiros e sucessores do contratante, possui <strong>${data.has_exclusivity ? 'CLÁUSULA DE EXCLUSIVIDADE' : 'NÃO EXCLUSIVIDADE'}</strong> para a intermediação, e tem vigência de <strong>120 (cento e vinte) dias</strong> contados da sua assinatura.<br/>
-      ${exclusivityText}</p>
-      
-      <h2>Cláusula 7ª - Eleição do foro</h2>
-      <p>1) Todas as questões eventualmente oriundas do presente contrato serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede na Rua 56, Qd CH Lt 07, Jardim Goiás, Goiânia - GO consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.</p>
-      
-      <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
-      
-      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
-        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_PROPRIETARIO}}
+      const joinFilled = (...parts: unknown[]) =>
+        parts
+          .map((part) => {
+            if (typeof part === 'string') return part.trim();
+            if (part === undefined || part === null) return '';
+            return String(part).trim();
+          })
+          .filter(Boolean)
+          .join(', ');
+
+      const ownerName = val(data.owner_name, data.seller_name, data.landlord_name, data.property?.owner_name);
+      const ownerNationality = val(data.owner_nationality, data.seller_nationality, 'brasileiro(a)');
+      const ownerProfession = val(data.owner_profession, data.seller_profession);
+      const ownerMaritalStatus = val(data.owner_marital_status, data.seller_marital_status);
+      const ownerRg = val(data.owner_rg, data.seller_rg);
+      const ownerCpf = val(
+        data.owner_cpf,
+        data.owner_document,
+        data.seller_cpf,
+        data.seller_document,
+        data.property?.owner_cpf,
+        data.property?.owner_document
+      );
+      const ownerAddress = val(
+        data.owner_address,
+        data.seller_address,
+        joinFilled(
+          data.owner_address || data.seller_address,
+          data.owner_number || data.seller_number,
+          data.owner_neighborhood || data.seller_neighborhood,
+          [data.owner_city || data.seller_city, data.owner_state || data.seller_state].filter(Boolean).join(' - ')
+        )
+      );
+      const propertyLocationLine = val(
+        data.property_address,
+        joinFilled(
+          data.property?.street,
+          data.property_number || data.property?.number,
+          data.property_neighborhood || data.property?.neighborhood,
+          [data.property_city || data.property?.city, data.property_state || data.property?.state].filter(Boolean).join(' - ')
+        ),
+        propertyAddress
+      );
+      const propertyRegistration = val(
+        data.property_registration,
+        data.property?.registration_number,
+        data.property?.iptu_number,
+        '__________________'
+      );
+      const transactionValue = val(
+        data.transaction_value,
+        data.property_price,
+        data.total_value,
+        data.sale_total_value,
+        data.property?.price
+      );
+      const brokerDocumentValue = finalDocument || brokerDisplayDoc || '______________________';
+      const brokerCreciValue = finalCreci || brokerDisplayCreci || '______________________';
+
+      contractContent = `
+        <h2 style="text-align: center; font-size: 16px; margin-bottom: 30px; color: #1e293b;">
+          CONTRATO DE INTERMEDIAÇÃO IMOBILIÁRIA ${isExclusive ? 'COM EXCLUSIVIDADE' : 'SEM EXCLUSIVIDADE'}
+        </h2>
+
+        <p style="margin-bottom: 25px; line-height: 1.6; text-align: justify;">
+          <strong>Por este instrumento particular, as partes qualificadas resolvem firmar o presente contrato de intermediação imobiliária, conforme as cláusulas seguintes:</strong>
+        </p>
+
+        <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">I - DO CONTRATANTE (PROPRIETÁRIO)</h3>
+        <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+          <strong>Nome:</strong> ${ownerName}<br/>
+          <strong>Nacionalidade / Profissão:</strong> ${ownerNationality} / ${ownerProfession}<br/>
+          <strong>Estado Civil:</strong> ${ownerMaritalStatus}<br/>
+          <strong>Documentos:</strong> RG nº ${ownerRg} | CPF/CNPJ nº ${ownerCpf}<br/>
+          <strong>Endereço:</strong> ${ownerAddress}
+        </p>
+
+        <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">II - DO CONTRATADO (CORRETOR/IMOBILIÁRIA)</h3>
+        <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+          <strong>Nome:</strong> ${resolvedBrokerDisplayName}<br/>
+          <strong>Documento:</strong> ${brokerDocumentValue}<br/>
+          <strong>CRECI:</strong> ${brokerCreciValue}
+        </p>
+
+        <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">III - DO IMÓVEL</h3>
+        <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+          <strong>Endereço:</strong> ${propertyLocationLine}<br/>
+          <strong>Matrícula:</strong> ${propertyRegistration}
+        </p>
+
+        <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">IV - DOS HONORÁRIOS E AUTORIZAÇÃO</h3>
+        <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+          <strong>Cláusula 1ª:</strong> O CONTRATANTE autoriza o CONTRATADO a promover a intermediação da venda do imóvel descrito acima, pelo valor de <strong>${transactionValue}</strong>.<br/>
+          <strong>Cláusula 2ª:</strong> Sendo concretizada a venda, o CONTRATANTE pagará ao CONTRATADO a título de honorários de corretagem o valor equivalente a <strong>${val(data.commission_percentage, '5')}%</strong> sobre o valor total da negociação.
+        </p>
+
+        <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">V - DA ${isExclusive ? 'EXCLUSIVIDADE' : 'NÃO EXCLUSIVIDADE'}</h3>
+        <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
+          ${isExclusive
+            ? `<strong>Cláusula 3ª:</strong> A presente autorização é concedida <strong>COM EXCLUSIVIDADE</strong>. O CONTRATANTE obriga-se a não tratar da venda diretamente ou por intermédio de outrem. O CONTRATADO fará jus à remuneração integral caso o negócio se realize durante o prazo de vigência deste contrato, inclusive se realizado diretamente pelo CONTRATANTE, nos exatos termos do Art. 726 do Código Civil Brasileiro.`
+            : `<strong>Cláusula 3ª:</strong> A presente autorização é concedida <strong>SEM EXCLUSIVIDADE</strong>. O CONTRATANTE reserva-se o direito de autorizar outros profissionais a intermediar o mesmo imóvel, bem como realizar a venda diretamente. A remuneração será devida ao CONTRATADO apenas se este for o responsável direto pela apresentação do comprador que vier a concretizar o negócio.`
+          }
+        </p>
+
+        <p style="margin-top: 40px; margin-bottom: 30px; text-align: center; line-height: 1.6;">
+          Por estarem assim justos e contratados, firmam o presente em 02 (duas) vias de igual teor e forma, juntamente com as testemunhas abaixo.<br/>
+          <strong>${cityLocation} - ${stateLocation}, ${dataFormatada}.</strong>
+        </p>
+
+        <div class="signatures" style="display: table; width: 100%; margin-top: 40px; page-break-inside: avoid; table-layout: fixed;">
+          <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+              {{ASSINATURA_PROPRIETARIO}}
+            </div>
+            _________________________________________________<br/>
+            <strong style="font-size: 14px; color: #000;">${ownerName}</strong><br/>
+            <span style="font-size: 14px; color: #000;">Contratante (Proprietário)</span>
           </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 11px; color: #000;">${val(data.seller_name)}</strong><br/>
-          <span style="font-size: 11px; color: #000;">Contratante (Proprietário/Vendedor)</span>
+          ${brokerSignature('Contratado (Corretor/Imobiliária)')}
         </div>
-        ${brokerSignature('Contratado (Corretor)')}
-      </div>
-    `;
+
+        <div class="signatures" style="display: table; width: 100%; margin-top: 40px; page-break-inside: avoid; table-layout: fixed;">
+          <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+              {{ASSINATURA_TESTEMUNHA_1}}
+            </div>
+            _________________________________________________<br/>
+            <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
+            <span style="font-size: 14px; color: #000;">CPF:</span>
+          </div>
+          <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+              {{ASSINATURA_TESTEMUNHA_2}}
+            </div>
+            _________________________________________________<br/>
+            <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
+            <span style="font-size: 14px; color: #000;">CPF:</span>
+          </div>
+        </div>
+      `;
+    } else {
+      const exclusivityText = data.has_exclusivity === false
+        ? '2) Por se tratar de contrato sem exclusividade, o contratante poderá negociar o imóvel por outros meios, sem prejuízo da remuneração do contratado caso o negócio seja concluído com interessado por ele apresentado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.'
+        : '2) Durante a vigência da cláusula de exclusividade, a intermediação ficará atribuída ao contratado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.';
+
+      contractContent = `
+        <h1>CONTRATO DE AUTORIZAÇÃO DE INTERMEDIAÇÃO PARA VENDA DE IMÓVEL</h1>
+        
+        <p>Por este instrumento particular, as partes qualificadas na Cláusula 1ª resolvem, por livre e espontânea vontade, firmar o presente contrato de intermediação para fins de venda de imóvel conforme os termos e condições estabelecidos nas cláusulas seguintes:</p>
+        
+        <h2>Cláusula 1ª - Identificação das partes</h2>
+        <p><strong>1) De um lado como contratante (Proprietário):</strong><br/>
+        a) Nome: <strong>${val(data.seller_name)}</strong>;<br/>
+        b) CPF/CNPJ: <strong>${val(data.seller_document)}</strong>;<br/>
+        c) Profissão: ${val(data.seller_profession)};<br/>
+        d) Estado civil: ${val(data.seller_marital_status)};<br/>
+        e) Endereço: ${val(data.seller_address)};<br/>
+        f) Telefones: ${val(data.seller_phone)}.${spouseText(data.seller_spouse_name, data.seller_spouse_document, data.seller_spouse_rg || '', data.seller_spouse_profession)}
+        </p>
+        
+        <p><strong>1.2) E de outro lado, como contratado, o corretor de imóveis:</strong><br/>
+        a) Nome: <strong>${resolvedBrokerDisplayName}</strong>;<br/>
+        b) ${resolvedBrokerDisplayDoc};<br/>
+        c) ${resolvedBrokerDisplayCreci || 'Inscrição no CRECI: ________________'};<br/>
+        d) Endereço: ${companyFullAddress};<br/>
+        e) Telefones: ${companyPhone};<br/>
+        f) E-mail: ${companyEmail}.
+        </p>
+        
+        <h2>Cláusula 2ª - Objeto do contrato</h2>
+        <p>1) O presente contrato tem por finalidade a contratação dos serviços profissionais de intermediação, por parte do contratado, para fins de venda do imóvel de propriedade do contratante com as seguintes características:<br/>
+        a) Localização: <strong>${val(data.property_address)}</strong>;<br/>
+        b) Descrição do imóvel: <strong>${val(data.property_description)}</strong>.</p>
+        
+        <p>2) O(s) contratante(s) declara(m) que são proprietários e possuidores a justo título do imóvel acima descrito, que ele está livre e desembaraçado de qualquer ônus, gravame, ações reais, pessoais reipersecutórias, dívidas, hipotecas, impostos ou taxas em atraso, restrições e outros.</p>
+        
+        <h2>Cláusula 3ª - Preço do imóvel e condições de negociação</h2>
+        <p>1) A transação objeto deste instrumento contratual deverá ser concretizada pelo valor de <strong>R$ ${val(data.total_value)}</strong>.<br/>
+        2) Independentemente do preço, a contratada poderá apresentar qualquer proposta para estudo do(s) contratante(s).</p>
+        
+        <h2>Cláusula 4ª - Honorários profissionais do corretor de imóveis</h2>
+        <p>1) Fica pactuado que, ocorrendo a venda do imóvel descrito na Cláusula 2ª, o contratante pagará ao contratado, a título de honorários de corretagem, o percentual de <strong>${val(data.commission_percentage, '5')}%</strong> a ser calculado sobre o valor total da venda.<br/>
+        2) O pagamento dos honorários de corretagem será feito no ato do recebimento do sinal, ou na assinatura do contrato de promessa de compra e venda, ou na escritura definitiva, o que ocorrer primeiro.<br/>
+        3) O contratante se obriga a pagar os honorários mesmo se a venda se realizar após o vencimento do presente contrato, caso o comprador tenha sido apresentado pelo contratado durante a vigência deste instrumento, conforme art. 727 do Código Civil.</p>
+        
+        <h2>Cláusula 5ª - Placas e anúncios</h2>
+        <p>1) Fica o contratado autorizado a colocar placa de "VENDE", faixas, cartazes e outros meios de divulgação no imóvel objeto deste contrato, visando facilitar a sua comercialização.</p>
+        
+        <h2>Cláusula 6ª - Prazo de vigência e exclusividade</h2>
+        <p>1) O presente contrato é assinado em caráter irrevogável, vincula herdeiros e sucessores do contratante, possui <strong>${data.has_exclusivity ? 'CLÁUSULA DE EXCLUSIVIDADE' : 'NÃO EXCLUSIVIDADE'}</strong> para a intermediação, e tem vigência de <strong>120 (cento e vinte) dias</strong> contados da sua assinatura.<br/>
+        ${exclusivityText}</p>
+        
+        <h2>Cláusula 7ª - Eleição do foro</h2>
+        <p>1) Todas as questões eventualmente oriundas do presente contrato serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede na Rua 56, Qd CH Lt 07, Jardim Goiás, Goiânia - GO consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.</p>
+        
+        <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
+        
+        <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+          <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+              {{ASSINATURA_PROPRIETARIO}}
+            </div>
+            _________________________________________________<br/>
+            <strong style="font-size: 11px; color: #000;">${val(data.seller_name)}</strong><br/>
+            <span style="font-size: 11px; color: #000;">Contratante (Proprietário/Vendedor)</span>
+          </div>
+          ${brokerSignature('Contratado (Corretor)')}
+        </div>
+      `;
+    }
   } else if (type === 'intermed_rent') {
     // === MODELO: INTERMEDIAÇÃO DE LOCAÇÃO ===
     const exclusivityText = data.has_exclusivity === false
