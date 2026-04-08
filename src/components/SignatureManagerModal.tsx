@@ -31,12 +31,12 @@ interface NewSignerState {
   role: string;
 }
 
-const ROLE_OPTIONS = ['Locador', 'Locatario', 'Fiador', 'Testemunha', 'Vendedor', 'Comprador', 'Proprietário'] as const;
+const ROLE_OPTIONS = ['Locador', 'Locatário', 'Fiador', 'Testemunha', 'Vendedor', 'Comprador', 'Proprietário', 'Imobiliária'] as const;
 
 const INITIAL_SIGNER: NewSignerState = {
   name: '',
   email: '',
-  role: 'Locatario',
+  role: 'Testemunha',
 };
 
 const formatSignedDate = (value: string | null) => {
@@ -48,68 +48,72 @@ export default function SignatureManagerModal({
   contractId,
   companyId,
   onClose,
-  initialSigner,
 }: SignatureManagerModalProps) {
   const { addToast } = useToast();
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
+  const [autoSigners, setAutoSigners] = useState<NewSignerState[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [isGeneratingBulk, setIsGeneratingBulk] = useState(false);
+  const [showManualAdd, setShowManualAdd] = useState(false);
   const [newSigner, setNewSigner] = useState<NewSignerState>(INITIAL_SIGNER);
 
   useEffect(() => {
     const initModal = async () => {
-      const { data: contract } = await supabase
-        .from('contracts')
-        .select('*, lead:leads!contracts_lead_id_fkey(*)')
-        .eq('id', contractId)
-        .single();
+      setIsLoading(true);
+      try {
+        const { data: contract } = await supabase
+          .from('contracts')
+          .select('*, lead:leads!contracts_lead_id_fkey(*)')
+          .eq('id', contractId)
+          .single();
 
-      const existingSignatures = await fetchSignatures();
-      const hasInitialSigner =
-        Boolean(initialSigner?.name.trim()) || Boolean(initialSigner?.email.trim());
+        const existingSignatures = await fetchSignatures();
 
-      if (existingSignatures.length === 0 && hasInitialSigner && initialSigner) {
-        setNewSigner({
-          name: initialSigner.name,
-          email: initialSigner.email,
-          role: initialSigner.role || INITIAL_SIGNER.role,
-        });
-        return;
-      }
+        // Extrai dados automaticamente do contrato
+        if (contract?.contract_data) {
+          const cData = contract.contract_data as any;
+          const detected: NewSignerState[] = [];
 
-      if (contract?.lead) {
-        setNewSigner({
-          name: contract.lead.name || '',
-          email: contract.lead.email || '',
-          role: contract.type === 'sale' ? 'Comprador' : 'Locatario',
-        });
+          const addIfValid = (name?: string, email?: string, role?: string) => {
+            if (name && email && role) {
+              // Verifica se já não existe uma assinatura gerada para este email e papel
+              const alreadyExists = existingSignatures.some(
+                (sig) => sig.signer_email.toLowerCase() === email.toLowerCase() && sig.signer_role === role
+              );
+              if (!alreadyExists) {
+                detected.push({ name, email, role });
+              }
+            }
+          };
+
+          // Mapeamento de Vendas
+          addIfValid(cData.seller_name, cData.seller_email, 'Vendedor');
+          addIfValid(cData.buyer_name, cData.buyer_email, 'Comprador');
+
+          // Mapeamento de Locação
+          addIfValid(cData.landlord_name, cData.landlord_email, 'Locador');
+          addIfValid(cData.tenant_name, cData.tenant_email, 'Locatário');
+          addIfValid(cData.guarantor_name, cData.guarantor_email, 'Fiador');
+
+          setAutoSigners(detected);
+
+          // Se não detectou nada e não tem assinaturas, abre o manual por padrão
+          if (detected.length === 0 && existingSignatures.length === 0) {
+            setShowManualAdd(true);
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao inicializar modal:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
     void initModal();
-  }, [contractId, initialSigner?.name, initialSigner?.email, initialSigner?.role]);
-
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleEscape);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', handleEscape);
-    };
-  }, [onClose]);
+  }, [contractId]);
 
   const fetchSignatures = async (): Promise<SignatureRecord[]> => {
-    setIsLoading(true);
-
     try {
       const { data, error } = await supabase
         .from('contract_signatures')
@@ -117,19 +121,41 @@ export default function SignatureManagerModal({
         .eq('contract_id', contractId)
         .order('created_at', { ascending: true });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       const nextSignatures = (data as SignatureRecord[] | null) ?? [];
       setSignatures(nextSignatures);
       return nextSignatures;
     } catch (error) {
       console.error('Erro ao buscar assinaturas:', error);
-      addToast('Erro ao carregar assinaturas.', 'error');
       return [];
+    }
+  };
+
+  const handleGenerateBulk = async () => {
+    setIsGeneratingBulk(true);
+    try {
+      const payloads = autoSigners.map(signer => ({
+        token: crypto.randomUUID(),
+        status: 'pending',
+        contract_id: contractId,
+        company_id: companyId,
+        signer_name: signer.name.trim(),
+        signer_email: signer.email.trim().toLowerCase(),
+        signer_role: signer.role,
+      }));
+
+      const { error } = await supabase.from('contract_signatures').insert(payloads);
+      if (error) throw error;
+
+      addToast(`${payloads.length} link(s) gerado(s) com sucesso!`, 'success');
+      setAutoSigners([]);
+      await fetchSignatures();
+    } catch (error) {
+      console.error('Erro ao gerar links em lote:', error);
+      addToast('Erro ao gerar links automáticos.', 'error');
     } finally {
-      setIsLoading(false);
+      setIsGeneratingBulk(false);
     }
   };
 
@@ -138,223 +164,225 @@ export default function SignatureManagerModal({
     setIsAdding(true);
 
     try {
-      const token = crypto.randomUUID();
+      const { error } = await supabase.from('contract_signatures').insert([{
+        token: crypto.randomUUID(),
+        status: 'pending',
+        contract_id: contractId,
+        company_id: companyId,
+        signer_name: newSigner.name.trim(),
+        signer_email: newSigner.email.trim().toLowerCase(),
+        signer_role: newSigner.role,
+      }]);
 
-      const { error } = await supabase.from('contract_signatures').insert([
-        {
-          token,
-          status: 'pending',
-          contract_id: contractId,
-          company_id: companyId,
-          signer_name: newSigner.name.trim(),
-          signer_email: newSigner.email.trim().toLowerCase(),
-          signer_role: newSigner.role,
-        },
-      ]);
-
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       setNewSigner(INITIAL_SIGNER);
+      setShowManualAdd(false);
       addToast('Link de assinatura gerado com sucesso!', 'success');
       await fetchSignatures();
     } catch (error) {
-      console.error('Erro ao adicionar signatario:', error);
-      addToast('Erro ao adicionar signatario.', 'error');
+      console.error('Erro ao adicionar signatário:', error);
+      addToast('Erro ao adicionar signatário.', 'error');
     } finally {
       setIsAdding(false);
     }
   };
 
   const copyToClipboard = async (token: string | null) => {
-    if (!token) {
-      addToast('Este signatario ainda nao possui um link valido.', 'error');
-      return;
-    }
-
+    if (!token) return;
     try {
       const link = `${window.location.origin}/assinar/${token}`;
       await navigator.clipboard.writeText(link);
       addToast('Link copiado! Cole no WhatsApp do cliente.', 'success');
     } catch (error) {
-      console.error('Erro ao copiar link:', error);
-      addToast('Nao foi possivel copiar o link.', 'error');
+      addToast('Não foi possível copiar o link.', 'error');
     }
   };
 
   return (
     <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 font-['DM_Sans'] antialiased">
-      <div
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
-      <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4">
+      <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-6 py-5">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-              Gerenciar Assinaturas
+            <h2 className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+              <Icons.PenTool className="text-brand-600" size={20} />
+              Gestão de Assinaturas
             </h2>
-            <p className="text-sm text-slate-500">
-              Acompanhe ou solicite novas assinaturas digitais.
+            <p className="text-sm text-slate-500 mt-1">
+              Gere e acompanhe os links de assinatura digital deste contrato.
             </p>
           </div>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="h-9 w-9 rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-          >
-            <Icons.X size={18} />
+          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700">
+            <Icons.X size={20} />
           </Button>
         </div>
 
-        <div className="custom-scrollbar flex-1 space-y-8 overflow-y-auto p-6">
-          <section className="space-y-3">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-900">
-              Status das Assinaturas
-            </h3>
+        <div className="custom-scrollbar flex-1 space-y-6 overflow-y-auto p-6">
 
-            {isLoading ? (
-              <div className="flex justify-center py-8">
-                <Icons.Loader2 className="animate-spin text-slate-300" size={24} />
-              </div>
-            ) : signatures.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 py-8 text-center">
-                <p className="text-sm text-slate-500">Nenhum signatario adicionado ainda.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {signatures.map((signature) => (
-                  <div
-                    key={signature.id}
-                    className="flex flex-col justify-between gap-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:flex-row sm:items-center"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-900">
-                          {signature.signer_name}
-                        </span>
-                        <Badge
-                          variant="secondary"
-                          className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] uppercase tracking-wider text-slate-600"
-                        >
-                          {signature.signer_role}
-                        </Badge>
-                      </div>
-                      <p className="mt-0.5 text-xs text-slate-500">{signature.signer_email}</p>
-                      {signature.status === 'signed' && signature.signed_at && (
-                        <p className="mt-1 text-[11px] text-slate-400">
-                          Assinado em {formatSignedDate(signature.signed_at)}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      {signature.status === 'signed' ? (
-                        <div className="flex items-center gap-1.5 rounded-md border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-emerald-600">
-                          <Icons.CheckCircle2 size={14} />
-                          <span className="text-xs font-semibold">Assinado</span>
-                        </div>
-                      ) : signature.status === 'rejected' ? (
-                        <div className="flex items-center gap-1.5 rounded-md border border-red-100 bg-red-50 px-2.5 py-1 text-red-600">
-                          <Icons.XCircle size={14} />
-                          <span className="text-xs font-semibold">Recusado</span>
-                        </div>
-                      ) : (
-                        <>
-                          <span className="rounded-md border border-amber-100 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-600">
-                            Pendente
-                          </span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-900"
-                            onClick={() => void copyToClipboard(signature.token)}
-                            title="Copiar Link"
-                          >
-                            <Icons.Link size={16} />
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <div className="w-full border-t border-slate-100" />
-
-          <form onSubmit={handleAddSigner} className="space-y-4">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-900">
-              Adicionar Signatario
-            </h3>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="sm:col-span-1">
-                <select
-                  value={newSigner.role}
-                  onChange={(event) =>
-                    setNewSigner((current) => ({ ...current, role: event.target.value }))
-                  }
-                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-                >
-                  {ROLE_OPTIONS.map((role) => (
-                    <option key={role} value={role}>
-                      {role}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="sm:col-span-2">
-                <Input
-                  type="text"
-                  required
-                  placeholder="Nome completo"
-                  value={newSigner.name}
-                  onChange={(event) =>
-                    setNewSigner((current) => ({ ...current, name: event.target.value }))
-                  }
-                />
-              </div>
-
-              <div className="sm:col-span-3">
-                <Input
-                  type="email"
-                  required
-                  placeholder="E-mail"
-                  value={newSigner.email}
-                  onChange={(event) =>
-                    setNewSigner((current) => ({ ...current, email: event.target.value }))
-                  }
-                />
-              </div>
+          {isLoading ? (
+            <div className="flex justify-center py-12">
+              <Icons.Loader2 className="animate-spin text-brand-500" size={32} />
             </div>
-
-            <Button
-              type="submit"
-              disabled={isAdding}
-              className="h-10 w-full gap-2 bg-slate-900 text-sm font-medium text-white shadow-sm hover:bg-slate-900/90"
-            >
-              {isAdding ? (
-                <>
-                  <Icons.Loader2 className="animate-spin" size={16} />
-                  Gerando link...
-                </>
-              ) : (
-                <>
-                  <Icons.Plus size={16} />
-                  Gerar Link de Assinatura
-                </>
+          ) : (
+            <>
+              {/* Secção 1: Signatários Detectados Automaticamente */}
+              {autoSigners.length > 0 && (
+                <section className="rounded-xl border border-blue-100 bg-blue-50/50 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-blue-900 flex items-center gap-2">
+                        <Icons.Sparkles size={16} className="text-blue-600" />
+                        Signatários Identificados
+                      </h3>
+                      <p className="text-xs text-blue-700/80 mt-1">
+                        Encontramos {autoSigners.length} pessoa(s) no seu contrato que ainda não possuem link.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={handleGenerateBulk}
+                      disabled={isGeneratingBulk}
+                      className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm shrink-0"
+                    >
+                      {isGeneratingBulk ? <Icons.Loader2 size={16} className="animate-spin mr-2" /> : <Icons.Link size={16} className="mr-2" />}
+                      Gerar {autoSigners.length} Link(s)
+                    </Button>
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {autoSigners.map((s, idx) => (
+                      <div key={idx} className="flex items-center gap-3 bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
+                        <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                          <Icons.User size={14} />
+                        </div>
+                        <div className="overflow-hidden">
+                          <p className="text-sm font-bold text-slate-900 truncate">{s.name}</p>
+                          <p className="text-xs text-slate-500 truncate">{s.role}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
               )}
-            </Button>
-          </form>
+
+              {/* Secção 2: Links Gerados */}
+              <section className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">
+                    Links Ativos ({signatures.length})
+                  </h3>
+                  {!showManualAdd && (
+                    <Button variant="outline" size="sm" onClick={() => setShowManualAdd(true)} className="text-xs h-8">
+                      <Icons.Plus size={14} className="mr-1.5" /> Adicionar Extra
+                    </Button>
+                  )}
+                </div>
+
+                {signatures.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-10 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 mb-3">
+                      <Icons.Link className="text-slate-400" size={24} />
+                    </div>
+                    <p className="text-sm font-medium text-slate-600">Nenhum link gerado ainda.</p>
+                    <p className="text-xs text-slate-400 mt-1">Os signatários aparecerão aqui.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {signatures.map((sig) => (
+                      <div key={sig.id} className="group flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 transition-colors sm:flex-row sm:items-center">
+                        <div className="flex gap-4 items-center">
+                          <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${sig.status === 'signed' ? 'bg-emerald-100 text-emerald-600' : sig.status === 'rejected' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+                            {sig.status === 'signed' ? <Icons.Check size={20} /> : sig.status === 'rejected' ? <Icons.X size={20} /> : <Icons.Clock size={20} />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-slate-900">{sig.signer_name}</span>
+                              <Badge variant="secondary" className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] uppercase font-bold text-slate-600 border border-slate-200">
+                                {sig.signer_role}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-0.5">{sig.signer_email}</p>
+                            {sig.status === 'signed' && sig.signed_at && (
+                              <p className="mt-1 text-[11px] font-medium text-emerald-600">
+                                Assinado em {formatSignedDate(sig.signed_at)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {sig.status === 'pending' && (
+                            <>
+                              <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">Aguardando</Badge>
+                              <Button variant="outline" size="sm" className="h-8 gap-2 ml-2 hover:bg-slate-50" onClick={() => void copyToClipboard(sig.token)}>
+                                <Icons.Copy size={14} /> Copiar Link
+                              </Button>
+                            </>
+                          )}
+                          {sig.status === 'signed' && <Badge className="bg-emerald-500 hover:bg-emerald-600">Concluído</Badge>}
+                          {sig.status === 'rejected' && <Badge variant="destructive">Recusado</Badge>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Secção 3: Adição Manual */}
+              {showManualAdd && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 mt-6 relative overflow-hidden">
+                  <Button variant="ghost" size="icon" onClick={() => setShowManualAdd(false)} className="absolute top-2 right-2 h-6 w-6 rounded-full text-slate-400">
+                    <Icons.X size={14} />
+                  </Button>
+                  <form onSubmit={handleAddSigner} className="space-y-4">
+                    <h3 className="text-sm font-bold text-slate-800">Adicionar Signatário Extra</h3>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div className="sm:col-span-1">
+                        <label className="text-xs font-bold text-slate-500 mb-1 block">Papel</label>
+                        <select
+                          value={newSigner.role}
+                          onChange={(e) => setNewSigner({ ...newSigner, role: e.target.value })}
+                          className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+                        >
+                          {ROLE_OPTIONS.map((role) => (
+                            <option key={role} value={role}>{role}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="text-xs font-bold text-slate-500 mb-1 block">Nome Completo</label>
+                        <Input
+                          required
+                          placeholder="Ex: João da Silva"
+                          value={newSigner.name}
+                          onChange={(e) => setNewSigner({ ...newSigner, name: e.target.value })}
+                          className="h-10 rounded-lg"
+                        />
+                      </div>
+                      <div className="sm:col-span-3">
+                        <label className="text-xs font-bold text-slate-500 mb-1 block">E-mail</label>
+                        <Input
+                          type="email"
+                          required
+                          placeholder="Ex: joao@email.com"
+                          value={newSigner.email}
+                          onChange={(e) => setNewSigner({ ...newSigner, email: e.target.value })}
+                          className="h-10 rounded-lg"
+                        />
+                      </div>
+                    </div>
+                    <div className="pt-2">
+                      <Button type="submit" disabled={isAdding} className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white">
+                        {isAdding ? <><Icons.Loader2 className="animate-spin mr-2" size={16} /> Gerando...</> : <><Icons.Plus className="mr-2" size={16} /> Gerar Link Extra</>}
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>

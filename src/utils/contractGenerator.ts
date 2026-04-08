@@ -415,6 +415,35 @@ export const buildContractHtml = async (
 ) => {
   const agencySignatureUrl = tenant?.admin_signature_url || '';
 
+  // Função auxiliar para evitar "undefined" e permitir múltiplos fallbacks
+  const val = (...values: any[]) => {
+    const fallback = '______________________';
+
+    for (const value of values) {
+      if (typeof value === 'string') {
+        if (value.trim() !== '') {
+          return value;
+        }
+        continue;
+      }
+
+      if (value !== undefined && value !== null && value !== '') {
+        return value;
+      }
+    }
+
+    return fallback;
+  };
+
+  // 1. Gera a data formatada em português
+  const dateObj = data.created_at ? new Date(data.created_at) : new Date();
+  const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const dataFormatada = `${dateObj.getDate()} de ${meses[dateObj.getMonth()]} de ${dateObj.getFullYear()}`;
+
+  // 2. Define o local da assinatura (Prioriza a cidade do Imóvel, fallback para a cidade da Imobiliária)
+  const cityLocation = val(data.property_city, data.property?.city, tenant?.city, 'Cidade');
+  const stateLocation = val(data.property_state, data.property?.state, tenant?.state, 'UF');
+
   // Converte a logo para Base64/PNG para evitar CORS e incompatibilidade de formato
   let logoSrc = tenant?.logo_url || '/img/Logo-contrato.png';
   const logoToConvert = companyLogo || tenant?.logo_url;
@@ -606,9 +635,6 @@ export const buildContractHtml = async (
     }
   });
 
-  // Função auxiliar para evitar "undefined"
-  const val = (value: any, fallback = '______________________') => value || fallback;
-  
   // Função auxiliar para imprimir dados do cônjuge
   const spouseText = (name: string, doc: string, rg: string, prof: string) => 
     name ? `, juntamente com seu cônjuge/companheiro(a): <strong>${name}</strong>, portador(a) do RG nº ${val(rg)} e CPF nº ${val(doc)}, Profissão: ${val(prof)}` : '';
@@ -805,9 +831,10 @@ export const buildContractHtml = async (
       <p>1) Todas as questões eventualmente oriundas do presente contrato, serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede na Rua 56, Qd CH Lt 07, Jardim Goiás, Goiânia - GO, consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.</p>
       
       <h2>Cláusula 14ª - Fechamento</h2>
-      <p>1) As partes contratantes, após terem tido prévio conhecimento do texto deste instrumento e compreendido o seu sentido e alcance, têm justo e acordado o presente contrato de compra e venda de imóvel descrito e caracterizado neste instrumento, assinando abaixo e rubricando as folhas deste que é composto de 03 (três) vias de igual teor, para um só efeito, juntamente com as 02 (duas) testemunhas julgadas idôneas e presentes, para que produza todos os seus legais efeitos.</p>
-      
-      <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
+      <p style="margin-top: 40px; margin-bottom: 30px; text-align: center; line-height: 1.6;">
+        Por estarem assim justos e contratados, firmam o presente em 02 (duas) vias de igual teor e forma, juntamente com as testemunhas abaixo.<br/>
+        <strong>${cityLocation} - ${stateLocation}, ${dataFormatada}.</strong>
+      </p>
       
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
@@ -1257,7 +1284,7 @@ export const buildContractHtml = async (
 
       <p style="margin-top: 40px; margin-bottom: 30px; text-align: center; line-height: 1.6;">
         Por estarem assim justos e contratados, firmam o presente em 02 (duas) vias de igual teor e forma, juntamente com as testemunhas abaixo.<br/>
-        ${val(data.property_city || data.property?.city)} - ${val(data.property_state || data.property?.state)}, ${formatLongDatePtBr(data.sale_date || new Date())}.
+        <strong>${cityLocation} - ${stateLocation}, ${dataFormatada}.</strong>
       </p>
 
       <div class="signatures" style="display: table; width: 100%; margin-top: 40px; page-break-inside: avoid; table-layout: fixed;">

@@ -1,20 +1,19 @@
-// Catálogo de Documentos CRECI - Modelos de Contratos (MVP Enxuto)
-
 export const SALE_DOCUMENTS = [
-  { id: 'sale_standard', title: 'Contrato de Compra e Venda - PRAZO' },
-  { id: 'sale_cash', title: 'Contrato de Compra e Venda - À VISTA' },
-  { id: 'proposal_buy', title: 'Carta Proposta para Compra de Imóvel' },
-  { id: 'permuta', title: 'Contrato de Permuta' },
+  { id: 'sale_cash', title: 'Compra e Venda (À Vista)' },
+  { id: 'sale_standard', title: 'Compra e Venda (A Prazo)' },
+  { id: 'permuta', title: 'Permuta de Imóveis' },
 ];
 
 export const RENT_DOCUMENTS = [
-  { id: 'rent_guarantor', title: 'Contrato de Locação Residencial COM Fiador' },
-  { id: 'rent_noguarantee', title: 'Contrato de Locação Residencial SEM Garantia' },
-  { id: 'rent_commercial', title: 'Contrato de Locação Comercial' },
-  { id: 'keys_receipt', title: 'Recibo de Chaves e Rescisão Provisória' },
+  { id: 'rent_guarantor', title: 'Locação com Fiador' },
+  { id: 'rent_noguarantee', title: 'Locação sem Garantia' },
+  { id: 'rent_commercial', title: 'Locação Comercial' },
 ];
 
 export const ADMIN_DOCUMENTS = [
+  { id: 'proposal_buy', title: 'Proposta de Compra' },
   { id: 'inspection', title: 'Auto de Vistoria' },
   { id: 'visit_control', title: 'Controle de Visitas' },
+  { id: 'keys_receipt', title: 'Recibo de Chaves' },
+  { id: 'intermediacao', title: 'Intermediação Imobiliária (Captação)' },
 ];
