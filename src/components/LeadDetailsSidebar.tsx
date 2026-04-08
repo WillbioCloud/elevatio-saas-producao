@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Lead, LeadMatch, LeadStatus, Task, TimelineEvent, Property } from '../types';
@@ -48,6 +48,7 @@ interface LeadDetailsSidebarProps {
   lead: Lead;
   kanbanConfig: Record<string, string[]>;
   onClose: () => void;
+  initialTab?: TabId;
   onStageChange?: (newFunnel: string, newStatus: string) => void;
   onStatusChange?: (status: LeadStatus | string) => void;
   onLeadUpdate?: (leadId: string, updates: Partial<Lead>) => void;
@@ -57,13 +58,15 @@ interface LeadDetailsSidebarProps {
 type TabId = 'timeline' | 'smart_match' | 'whatsapp' | 'history' | 'tasks' | 'info';
 type InfoTabId = 'profile' | 'smart_match';
 
-const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanConfig, onClose, onStageChange, onStatusChange, onLeadUpdate, onRequestTransfer }) => {
+const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanConfig, onClose, initialTab, onStageChange, onStatusChange, onLeadUpdate, onRequestTransfer }) => {
   const { user } = useAuth();
   const { addToast } = useToast();
   const Maps = useNavigate();
   const isAdmin = user?.role === 'admin';
-  const [activeTab, setActiveTab] = useState(() => {
-    return localStorage.getItem('lead_sidebar_last_tab') || 'timeline';
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    if (initialTab) return initialTab;
+    const storedTab = localStorage.getItem('lead_sidebar_last_tab');
+    return (storedTab as TabId) || 'timeline';
   });
   const [activeInfoTab, setActiveInfoTab] = useState<InfoTabId>('profile');
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -90,6 +93,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
   const [smartMatchMessage, setSmartMatchMessage] = useState('');
   const [hasStoredSmartMatches, setHasStoredSmartMatches] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
+  const sidebarRef = useRef<HTMLDivElement>(null);
 
   const FUNNELS = [
     { id: 'pre_atendimento', label: 'Pré-atend.', color: 'bg-slate-400' },
@@ -518,12 +522,34 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     localStorage.setItem('lead_sidebar_last_tab', activeTab);
   }, [activeTab]);
 
+  useEffect(() => {
+    if (!initialTab) return;
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-y-0 right-0 w-full md:w-[500px] bg-white shadow-2xl z-[60] transform transition-transform duration-300 ease-out flex flex-col border-l border-slate-100">
+    <div
+      ref={sidebarRef}
+      className="fixed inset-y-0 right-0 w-full md:w-[500px] bg-white shadow-2xl z-[60] transform transition-transform duration-300 ease-out flex flex-col border-l border-slate-100"
+    >
       
       {/* 1. HEADER FIXO (Mínimo) */}
       <div className="p-4 border-b border-slate-100 bg-white flex justify-between items-center shrink-0 z-20 shadow-sm">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-xl font-serif font-bold text-slate-800">{lead.name}</h2>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-xs text-slate-500 font-medium">{lead.phone}</span>

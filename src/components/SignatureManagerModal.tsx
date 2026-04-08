@@ -200,10 +200,11 @@ export default function SignatureManagerModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 font-['DM_Sans'] antialiased">
+    <div className="fixed inset-0 z-[99999] overflow-y-auto font-['DM_Sans'] antialiased">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
 
-      <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+      <div className="relative z-10 flex min-h-full items-start justify-center p-4 pt-16 sm:items-center sm:pt-4">
+        <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-6 py-5">
@@ -383,6 +384,7 @@ export default function SignatureManagerModal({
               )}
             </>
           )}
+        </div>
         </div>
       </div>
     </div>

@@ -17,6 +17,7 @@ import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle
 import { useProperties } from '../hooks/useProperties';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { generateZapXML } from '../utils/zapXmlGenerator';
+import { useSearchParams } from 'react-router-dom';
 
 interface Profile {
   id: string;
@@ -78,11 +79,19 @@ interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_sec
 
 type SitePartner = NonNullable<SiteData['partners']>[number];
 type OfficialSignatureTab = 'draw' | 'type' | 'upload';
+type ConfigTab = 'profile' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance';
+type SiteSubTab = 'templates' | 'identity' | 'hero' | 'about' | 'social';
 type TenantFinanceRecord = Pick<
   Company,
   'id' | 'name' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template' | 'admin_signature_url'
 > & {
   finance_config?: FinanceConfig | null;
+};
+
+const CONFIG_TABS: ConfigTab[] = ['profile', 'team', 'traffic', 'subscription', 'site', 'contracts', 'integrations', 'finance'];
+const SITE_SUBTABS: SiteSubTab[] = ['templates', 'identity', 'hero', 'about', 'social'];
+const LEGACY_CONFIG_TAB_ALIASES: Partial<Record<string, ConfigTab>> = {
+  assinatura: 'subscription',
 };
 
 const TYPED_CANVAS_WIDTH = 1200;
@@ -423,8 +432,22 @@ const AdminConfig: React.FC = () => {
   const isAdmin = user?.role === 'admin';
   const canManageOfficialSignature = user?.role === 'admin' || user?.role === 'super_admin';
   const adminCompanyId = user?.company_id ?? null;
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance'>('profile');
+  const tabParam = searchParams.get('tab');
+  const normalizedTabParam = tabParam ? LEGACY_CONFIG_TAB_ALIASES[tabParam] ?? tabParam : null;
+  const activeTab: ConfigTab =
+    normalizedTabParam && CONFIG_TABS.includes(normalizedTabParam as ConfigTab)
+      ? (normalizedTabParam as ConfigTab)
+      : 'profile';
+
+  const setActiveTab = (newTab: ConfigTab) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', newTab);
+      return next;
+    }, { replace: true });
+  };
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const { hasReachedLimit: teamLimitReached, limit: teamLimit, isUnlimited: teamUnlimited } = usePlanLimits(profiles.length, 'users');
   const [distRules, setDistRules] = useState<{ enabled: boolean; types: string[] }>({ enabled: false, types: [] });
@@ -720,7 +743,19 @@ const AdminConfig: React.FC = () => {
     };
   }, [isCheckoutModalOpen, tenant?.domain, siteDomain]);
 
-  const [siteSubTab, setSiteSubTab] = useState<'templates' | 'identity' | 'hero' | 'about' | 'social'>('templates');
+  const subTabParam = searchParams.get('sub');
+  const siteSubTab: SiteSubTab =
+    subTabParam && SITE_SUBTABS.includes(subTabParam as SiteSubTab)
+      ? (subTabParam as SiteSubTab)
+      : 'templates';
+
+  const setSiteSubTab = (newSubTab: SiteSubTab) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('sub', newSubTab);
+      return next;
+    }, { replace: true });
+  };
   const [siteData, setSiteData] = useState<SiteData & { hero_video_url?: string | null }>({
     logo_url: null,
     logo_alt_url: null,
@@ -2061,7 +2096,7 @@ const AdminConfig: React.FC = () => {
         ].filter(t => !t.adminOnly || isAdmin).map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
+            onClick={() => setActiveTab(tab.id as ConfigTab)}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all shrink-0 ${
               activeTab === tab.id 
                 ? 'bg-white dark:bg-brand-600 text-brand-600 dark:text-white shadow-md' 
@@ -3160,7 +3195,7 @@ const AdminConfig: React.FC = () => {
             ].map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setSiteSubTab(tab.id as any)}
+                onClick={() => setSiteSubTab(tab.id as SiteSubTab)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all shrink-0 ${
                   siteSubTab === tab.id 
                     ? 'bg-white dark:bg-brand-600 text-brand-600 dark:text-white shadow-md' 

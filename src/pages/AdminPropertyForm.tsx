@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import heic2any from 'heic2any';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
@@ -265,13 +265,26 @@ const SortableImageCard: React.FC<{
 const AdminPropertyForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { addToast } = useToast();
   const isEditing = Boolean(id);
   const [draftId] = useState(() => crypto.randomUUID());
   const activePropertyId = isEditing && id ? id : draftId;
 
-  const [step, setStep] = useState<WizardStep>('basic');
+  const stepParam = searchParams.get('step');
+  const step =
+    stepParam && STEP_ORDER.includes(stepParam as WizardStep)
+      ? (stepParam as WizardStep)
+      : 'basic';
+
+  const setStep = (newStep: WizardStep) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('step', newStep);
+      return next;
+    }, { replace: true });
+  };
   const [formData, setFormData] = useState<FormState>(defaultForm);
   const [images, setImages] = useState<ImageItem[]>([]);
   const [imagesToDelete, setImagesToDelete] = useState<string[]>([]);

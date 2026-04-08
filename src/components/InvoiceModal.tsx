@@ -62,8 +62,9 @@ export default function InvoiceModal({ isOpen, onClose, onSuccess }: InvoiceModa
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-start sm:items-center justify-center p-4 pt-16 sm:pt-4 overflow-y-auto animate-in fade-in">
-      <div className="bg-white dark:bg-dark-card rounded-3xl w-full max-w-md overflow-hidden shadow-xl">
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 overflow-y-auto animate-in fade-in">
+      <div className="relative flex min-h-full items-start justify-center p-4 pt-16 sm:items-center sm:pt-4">
+        <div className="bg-white dark:bg-dark-card rounded-3xl w-full max-w-md overflow-hidden shadow-xl">
         <div className="p-6 border-b border-slate-100 dark:border-dark-border flex items-center justify-between">
           <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
             <Icons.Plus size={20} className="text-brand-500" /> Nova Cobrança Avulsa
@@ -155,6 +156,7 @@ export default function InvoiceModal({ isOpen, onClose, onSuccess }: InvoiceModa
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

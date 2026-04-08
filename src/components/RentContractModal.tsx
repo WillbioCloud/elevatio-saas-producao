@@ -572,8 +572,9 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 pt-12 sm:pt-4 animate-fade-in">
-      <div className="bg-white/95 dark:bg-[#0a0f1c]/95 backdrop-blur-2xl rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-fade-in">
+      <div className="relative flex min-h-full items-start justify-center p-4 pt-16 sm:items-center sm:pt-4">
+        <div className="bg-white/95 dark:bg-[#0a0f1c]/95 backdrop-blur-2xl rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
 
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-indigo-50 shrink-0">
           <div>
@@ -983,6 +984,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
           </div>
         </div>
 
+        </div>
       </div>
     </div>
   );

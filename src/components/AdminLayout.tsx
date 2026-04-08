@@ -12,6 +12,16 @@ import BillingPortalModal from './BillingPortalModal';
 import ProductTour from './ProductTour';
 import SetupWizardModal from './SetupWizardModal';
 
+const getSmartNavigationBasePath = (pathname: string) => {
+  const segments = pathname.split('/').filter(Boolean);
+
+  if (segments.length >= 2 && segments[0] === 'admin') {
+    return `/${segments[0]}/${segments[1]}`;
+  }
+
+  return pathname;
+};
+
 const AdminLayout: React.FC = () => {
   const { user, signOut, refreshUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -31,6 +41,45 @@ const AdminLayout: React.FC = () => {
     const parsed = saved ? parseInt(saved, 10) : 0;
     return Number.isFinite(parsed) ? parsed : 0;
   });
+
+  const isSmartNavigationActive = (targetPath: string) => {
+    const normalizedTargetPath = getSmartNavigationBasePath(targetPath);
+
+    return location.pathname === normalizedTargetPath || location.pathname.startsWith(`${normalizedTargetPath}/`);
+  };
+
+  // --- SMART NAVIGATION MEMORY ---
+  // Salva a URL exata do módulo atual, incluindo abas e modais expostos nos search params.
+  useEffect(() => {
+    if (!user) return;
+
+    const basePath = getSmartNavigationBasePath(location.pathname);
+    const fullPath = location.pathname + location.search;
+
+    try {
+      sessionStorage.setItem(`last_visit_${basePath}`, fullPath);
+    } catch (error) {
+      console.warn('Nao foi possivel salvar a memoria de navegacao da sessao.', error);
+    }
+  }, [location.pathname, location.search, user]);
+
+  // Funcao para interceptar o clique no menu e restaurar a memoria ou resetar
+  const handleSmartNavigation = (e: React.MouseEvent<HTMLAnchorElement>, targetPath: string) => {
+    e.preventDefault();
+
+    // REGRA DE OURO (Reset vs Memória):
+    // Se o usuário já está dentro desta seção e clica no menu novamente, nós usamos isso como um botão "Home/Reset", limpando a URL.
+    if (location.pathname.startsWith(targetPath) && targetPath !== '/admin') {
+      sessionStorage.setItem(`last_visit_${targetPath}`, targetPath);
+      navigate(targetPath);
+    } else {
+      // Se ele está vindo de fora, tenta buscar a memória de onde ele parou (ex: modal aberto)
+      const savedPath = sessionStorage.getItem(`last_visit_${targetPath}`);
+      navigate(savedPath || targetPath);
+    }
+
+    setIsMobileMenuOpen(false);
+  };
 
   const role = user?.role ?? (user?.user_metadata as { role?: string } | undefined)?.role;
   const isAdmin = role === 'admin';
@@ -306,20 +355,21 @@ const AdminLayout: React.FC = () => {
         <nav className="flex-1 flex flex-col gap-1 py-6 px-3 overflow-y-auto custom-scrollbar overflow-x-hidden">
           {visibleMenuItems.map((item) => (
             <React.Fragment key={item.path}>
-              <NavLink
-                to={item.path}
+              <a
+                href={item.path}
+                onClick={(e) => handleSmartNavigation(e, item.path)}
                 id={item.path === '/admin/imoveis' ? 'tour-imoveis' : item.path === '/admin/config' ? 'tour-config' : undefined}
                 data-tour-anchor={item.path === '/admin/imoveis' || item.path === '/admin/config' ? 'true' : undefined}
-                className={({ isActive }) => `
+                className={`
                   ${getSidebarItemOrder(item.path)} flex items-center gap-3 py-3 rounded-xl transition-all duration-200 group ${item.path === '/admin/imoveis' ? 'tour-imoveis' : ''} ${item.path === '/admin/config' ? 'tour-config' : ''} ${
                     isSidebarCollapsed ? 'justify-center px-0' : 'px-4'
                   }
-                  ${isActive ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}
+                  ${isSmartNavigationActive(item.path) ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}
                 `}
               >
                 <item.icon size={20} className="group-hover:scale-110 transition-transform" />
                 {!isSidebarCollapsed && <span className="font-medium text-sm whitespace-nowrap">{item.label}</span>}
-              </NavLink>
+              </a>
 
               {item.path === '/admin/imoveis' && (
                 <div className="space-y-1 order-3">
@@ -330,8 +380,9 @@ const AdminLayout: React.FC = () => {
                         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
-                    <NavLink
-                      to="/admin/contratos?tab=geral"
+                    <a
+                      href="/admin/contratos"
+                      onClick={(e) => handleSmartNavigation(e, '/admin/contratos')}
                       className={`flex-1 flex items-center gap-3 py-2.5 font-medium text-sm ${
                         isSidebarCollapsed ? 'justify-center px-0' : 'px-4'
                       }`}
@@ -341,7 +392,7 @@ const AdminLayout: React.FC = () => {
                         className={location.pathname.includes('/admin/contratos') ? 'text-brand-600' : 'text-slate-400'}
                       />
                       {!isSidebarCollapsed && <span className="whitespace-nowrap">Contratos</span>}
-                    </NavLink>
+                    </a>
                     {!isSidebarCollapsed && (
                       <button
                         onClick={(e) => {
@@ -404,34 +455,33 @@ const AdminLayout: React.FC = () => {
               )}
 
               {item.path === '/admin/imoveis' && (
-                <NavLink
-                  to="/admin/financeiro"
-                  className={({ isActive }) => `
+                <a
+                  href="/admin/financeiro"
+                  onClick={(e) => handleSmartNavigation(e, '/admin/financeiro')}
+                  className={`
                     order-4 flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200 font-medium text-sm
                     ${isSidebarCollapsed ? 'justify-center px-0' : 'px-4'}
-                    ${isActive ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}
+                    ${isSmartNavigationActive('/admin/financeiro') ? 'bg-brand-600 text-white shadow-lg shadow-brand-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}
                   `}
                 >
                   <Icons.Wallet size={20} />
                   {!isSidebarCollapsed && <span className="whitespace-nowrap">Financeiro</span>}
-                </NavLink>
+                </a>
               )}
 
               {item.path === '/admin/imoveis' && (
-                <NavLink
-                  to="/admin/chaves"
-                  onClick={() => isMobileMenuOpen && setIsMobileMenuOpen(false)}
-                  className={({ isActive }) =>
-                    `order-8 flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${
-                      isActive
-                        ? 'bg-brand-500 text-white shadow-md'
-                        : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white'
-                    } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`
-                  }
+                <a
+                  href="/admin/chaves"
+                  onClick={(e) => handleSmartNavigation(e, '/admin/chaves')}
+                  className={`order-8 flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${
+                    isSmartNavigationActive('/admin/chaves')
+                      ? 'bg-brand-500 text-white shadow-md'
+                      : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white'
+                  } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`}
                 >
                   <Icons.Key size={20} />
                   <span className={`${isSidebarCollapsed ? 'hidden' : 'block'}`}>Chaves</span>
-                </NavLink>
+                </a>
               )}
             </React.Fragment>
           ))}
@@ -445,8 +495,9 @@ const AdminLayout: React.FC = () => {
                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
               }`}
             >
-              <NavLink
-                to="/admin/leads?funnel=geral"
+              <a
+                href="/admin/leads?funnel=geral"
+                onClick={(e) => handleSmartNavigation(e, '/admin/leads')}
                 data-tour-anchor="true"
                 className={`tour-kanban flex-1 flex items-center gap-3 py-2.5 font-medium text-sm ${
                   isSidebarCollapsed ? 'justify-center px-0' : 'px-4'
@@ -454,7 +505,7 @@ const AdminLayout: React.FC = () => {
               >
                 <Icons.Filter size={20} className={location.pathname.includes('/admin/leads') ? 'text-brand-600' : 'text-slate-400'} />
                 {!isSidebarCollapsed && <span className="whitespace-nowrap">Funil de Vendas</span>}
-              </NavLink>
+              </a>
               {!isSidebarCollapsed && (
                 <button
                   onClick={(e) => {
@@ -541,20 +592,18 @@ const AdminLayout: React.FC = () => {
             )}
           </div>
 
-          <NavLink
-            to="/admin/clientes"
-            onClick={() => isMobileMenuOpen && setIsMobileMenuOpen(false)}
-            className={({ isActive }) =>
-              `order-7 flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${
-                isActive
-                  ? 'bg-brand-500 text-white shadow-md'
-                  : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white'
-              } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`
-            }
+          <a
+            href="/admin/clientes"
+            onClick={(e) => handleSmartNavigation(e, '/admin/clientes')}
+            className={`order-7 flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${
+              isSmartNavigationActive('/admin/clientes')
+                ? 'bg-brand-500 text-white shadow-md'
+                : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white'
+            } ${isSidebarCollapsed ? 'justify-center px-0' : ''}`}
           >
             <Icons.Users size={20} />
             <span className={`${isSidebarCollapsed ? 'hidden' : 'block'}`}>Clientes</span>
-          </NavLink>
+          </a>
 
           {user?.role === 'super_admin' && (
             <NavLink
@@ -706,29 +755,29 @@ const AdminLayout: React.FC = () => {
             {/* 1. Itens Padrões */}
             {visibleMenuItems.map((item) => (
               <React.Fragment key={item.path}>
-                <NavLink
-                  to={item.path}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className={({ isActive }) => `
+                <a
+                  href={item.path}
+                  onClick={(e) => handleSmartNavigation(e, item.path)}
+                  className={`
                     ${getMobileItemOrder(item.path)} flex items-center gap-3 px-4 py-3 rounded-lg
-                    ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
+                    ${isSmartNavigationActive(item.path) ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
                   `}
                 >
                   <item.icon size={20} />
                   {item.label}
-                </NavLink>
+                </a>
                 {item.path === '/admin/imoveis' && (
-                  <NavLink
-                    to="/admin/chaves"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={({ isActive }) => `
+                  <a
+                    href="/admin/chaves"
+                    onClick={(e) => handleSmartNavigation(e, '/admin/chaves')}
+                    className={`
                       order-8 flex items-center gap-3 px-4 py-3 rounded-lg
-                      ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
+                      ${isSmartNavigationActive('/admin/chaves') ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
                     `}
                   >
                     <Icons.Key size={20} />
                     Chaves
-                  </NavLink>
+                  </a>
                 )}
               </React.Fragment>
             ))}
@@ -736,14 +785,14 @@ const AdminLayout: React.FC = () => {
             {/* 2. Menu Contratos (Mobile) */}
             <div className="space-y-1 order-3">
               <div className={`flex items-center justify-between rounded-lg ${location.pathname.includes('/admin/contratos') ? 'bg-brand-50' : 'hover:bg-slate-50'}`}>
-                <NavLink
-                  to="/admin/contratos?tab=geral"
-                  onClick={() => setIsMobileMenuOpen(false)}
+                <a
+                  href="/admin/contratos"
+                  onClick={(e) => handleSmartNavigation(e, '/admin/contratos')}
                   className={`flex-1 flex items-center gap-3 px-4 py-3 font-medium ${location.pathname.includes('/admin/contratos') ? 'text-brand-700 font-bold' : 'text-slate-600'}`}
                 >
                   <Icons.FileText size={20} />
                   Contratos
-                </NavLink>
+                </a>
                 <button onClick={() => setIsContractsMenuOpen(!isContractsMenuOpen)} className="p-3 text-slate-500">
                   <Icons.ChevronDown size={16} className={`transition-transform duration-200 ${isContractsMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -757,29 +806,29 @@ const AdminLayout: React.FC = () => {
               )}
             </div>
 
-            <NavLink
-              to="/admin/financeiro"
-              onClick={() => setIsMobileMenuOpen(false)}
-              className={({ isActive }) => `
+            <a
+              href="/admin/financeiro"
+              onClick={(e) => handleSmartNavigation(e, '/admin/financeiro')}
+              className={`
                 order-4 flex items-center gap-3 px-4 py-3 rounded-lg
-                ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
+                ${isSmartNavigationActive('/admin/financeiro') ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
               `}
             >
               <Icons.Wallet size={20} />
               Financeiro
-            </NavLink>
+            </a>
 
             {/* 3. Menu Funil de Vendas (Mobile) */}
             <div className="space-y-1 order-5">
               <div className={`flex items-center justify-between rounded-lg ${location.pathname.includes('/admin/leads') ? 'bg-brand-50' : 'hover:bg-slate-50'}`}>
-                <NavLink
-                  to="/admin/leads?funnel=geral"
-                  onClick={() => setIsMobileMenuOpen(false)}
+                <a
+                  href="/admin/leads?funnel=geral"
+                  onClick={(e) => handleSmartNavigation(e, '/admin/leads')}
                   className={`flex-1 flex items-center gap-3 px-4 py-3 font-medium ${location.pathname.includes('/admin/leads') ? 'text-brand-700 font-bold' : 'text-slate-600'}`}
                 >
                   <Icons.Filter size={20} />
                   Funil de Vendas
-                </NavLink>
+                </a>
                 <button onClick={() => setIsFunnelMenuOpen(!isFunnelMenuOpen)} className="p-3 text-slate-500">
                   <Icons.ChevronDown size={16} className={`transition-transform duration-200 ${isFunnelMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -795,17 +844,17 @@ const AdminLayout: React.FC = () => {
               )}
             </div>
 
-            <NavLink
-              to="/admin/clientes"
-              onClick={() => setIsMobileMenuOpen(false)}
-              className={({ isActive }) => `
+            <a
+              href="/admin/clientes"
+              onClick={(e) => handleSmartNavigation(e, '/admin/clientes')}
+              className={`
                 order-7 flex items-center gap-3 px-4 py-3 rounded-lg
-                ${isActive ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
+                ${isSmartNavigationActive('/admin/clientes') ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
               `}
             >
               <Icons.Users size={20} />
               Clientes
-            </NavLink>
+            </a>
 
             {user?.role === 'super_admin' && (
               <NavLink

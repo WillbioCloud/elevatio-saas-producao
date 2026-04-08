@@ -507,6 +507,7 @@ export const buildContractHtml = async (
       flex-direction: row;
       align-items: center;
       justify-content: space-between;
+      border-bottom: none;
     }
     
     .header-text {
@@ -651,7 +652,7 @@ export const buildContractHtml = async (
   const resolvedBrokerDisplayCreci = finalCreci ? `CRECI: ${finalCreci}` : '';
 
   // Montagem do Endereço e Contatos da Sede
-  let companyFullAddress = '__________________________________________________________________';
+  let companyFullAddress = '';
   if (siteData.address?.street) {
     companyFullAddress = `${siteData.address.street}, ${siteData.address.number || 's/n'}${siteData.address.neighborhood ? ' - ' + siteData.address.neighborhood : ''}, ${siteData.address.city || ''}/${siteData.address.state || ''}`;
   }

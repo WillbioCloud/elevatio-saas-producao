@@ -267,7 +267,9 @@ const AdminLeads: React.FC = () => {
   const { addToast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentFunnel = searchParams.get('funnel') || 'atendimento';
+  const currentFunnel = searchParams.get('funnel') || 'geral';
+  const openLeadId = searchParams.get('open');
+  const detailTabParam = searchParams.get('tab');
   const isAdmin = (user as any)?.role === 'admin';
 
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -280,7 +282,6 @@ const AdminLeads: React.FC = () => {
   });
   const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [closingLead, setClosingLead] = useState<Lead | null>(null);
   const [dealValue, setDealValue] = useState('');
   const [isCustomValue, setIsCustomValue] = useState(false);
@@ -502,7 +503,11 @@ const AdminLeads: React.FC = () => {
 
   useEffect(() => {
     if (!isAdmin && currentFunnel === 'pre_atendimento') {
-      setSearchParams({ funnel: 'atendimento' }, { replace: true });
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('funnel', 'atendimento');
+        return next;
+      }, { replace: true });
     }
   }, [currentFunnel, isAdmin, setSearchParams]);
 
@@ -545,6 +550,11 @@ const AdminLeads: React.FC = () => {
     fetchAvailableProperties();
   }, []);
 
+  const selectedLead = useMemo(() => {
+    if (!openLeadId) return null;
+    return leads.find((lead) => lead.id === openLeadId) || null;
+  }, [leads, openLeadId]);
+
   const handleToggleAdminsInRoulette = async (newValue: boolean) => {
     setUpdatingAdminToggle(true);
     setIncludeAdmins(newValue);
@@ -557,6 +567,24 @@ const AdminLeads: React.FC = () => {
       setUpdatingAdminToggle(false);
     }
   };
+
+  const openLeadDetails = (lead: Lead) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('open', lead.id);
+      return next;
+    }, { replace: true });
+  };
+
+  const closeLeadDetails = () => {
+    setSearchParams({}, { replace: true });
+  };
+
+  useEffect(() => {
+    if (openLeadId && !selectedLead && !loading) {
+      setSearchParams({}, { replace: true });
+    }
+  }, [loading, openLeadId, selectedLead, setSearchParams]);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
@@ -857,7 +885,7 @@ const AdminLeads: React.FC = () => {
                       lead={lead}
                       isAdmin={isAdmin}
                       isMasterView={isMasterView}
-                      onClick={() => setSelectedLead(lead)}
+                      onClick={() => openLeadDetails(lead)}
                     />
                   ))}
               </DroppableColumn>
@@ -874,10 +902,11 @@ const AdminLeads: React.FC = () => {
         <LeadDetailsSidebar
           lead={selectedLead}
           kanbanConfig={kanbanConfig}
-          onClose={() => setSelectedLead(null)}
+          initialTab={detailTabParam === 'activity' ? 'timeline' : undefined}
+          onClose={closeLeadDetails}
           onStageChange={async (newFunnel, newStatus) => {
             if (newStatus === LeadStatus.CLOSED || (newFunnel === 'venda_ganha' && newStatus.toLowerCase().includes('fechada'))) {
-              setSelectedLead(null);
+              closeLeadDetails();
               setClosingLead(selectedLead);
               const suggestedValue = Number((selectedLead as any)?.property?.price || 0);
               setSelectedSoldPropertyId('');
@@ -897,12 +926,9 @@ const AdminLeads: React.FC = () => {
             if (!error && user?.id && (newStatus === LeadStatus.VISIT || newStatus === LeadStatus.PROPOSAL)) {
               await addXp(user.id, 20);
             }
-
-            setSelectedLead({ ...(selectedLead as any), status: newStatus, funnel_step: newFunnel, stage_updated_at: now } as any);
           }}
           onLeadUpdate={(leadId, updates) => {
             setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, ...updates } : l)));
-            setSelectedLead((prev) => (prev && prev.id === leadId ? ({ ...prev, ...updates } as Lead) : prev));
           }}
           onRequestTransfer={(newFunnel, newStatus) => {
             if (isAdmin && selectedLead) {

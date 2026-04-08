@@ -161,7 +161,7 @@ export default function BillingPortalModal({
   const isContractActive = contract?.status === 'active';
 
   return createPortal(
-    <div className="fixed inset-0 z-[99999] flex w-screen h-screen items-start sm:items-center justify-center overflow-y-auto p-4 pt-16 sm:pt-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 w-screen h-screen z-[99999] animate-in fade-in duration-300">
       <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative flex h-full w-full flex-col overflow-hidden bg-slate-50 font-['DM_Sans'] lg:flex-row">

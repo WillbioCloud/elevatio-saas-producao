@@ -64,7 +64,7 @@ const PropertyPreviewModal: React.FC<PropertyPreviewModalProps> = ({ isOpen, onC
 
   // Renderiza via Portal direto no BODY para ignorar z-index do Sidebar
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-start sm:items-center justify-center overflow-y-auto p-4 pt-16 sm:p-6 sm:pt-4">
+    <div className="fixed inset-0 z-[9999] overflow-y-auto">
       
       {/* 1. Overlay Escuro (Fundo) */}
       <div 
@@ -73,7 +73,8 @@ const PropertyPreviewModal: React.FC<PropertyPreviewModalProps> = ({ isOpen, onC
       />
 
       {/* 2. O Card do Modal (Conteúdo) */}
-      <div className="relative w-full max-w-7xl h-full max-h-[90vh] bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-scale-in border border-slate-200">
+      <div className="relative z-10 flex min-h-full items-start justify-center p-4 pt-16 sm:items-center sm:p-6 sm:pt-4">
+        <div className="relative w-full max-w-7xl h-full max-h-[90vh] bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-scale-in border border-slate-200">
         
         {/* Header Fixo do Modal */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white z-20 shrink-0 shadow-sm">
@@ -277,6 +278,7 @@ const PropertyPreviewModal: React.FC<PropertyPreviewModalProps> = ({ isOpen, onC
            </button>
         </div>
 
+        </div>
       </div>
     </div>,
     document.body
