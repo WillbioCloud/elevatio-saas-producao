@@ -336,7 +336,7 @@ const IntermediationContractModal: React.FC<IntermediationContractModalProps> = 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+    <div className="fixed inset-0 z-[110] flex items-start sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 pt-16 sm:pt-4 overflow-y-auto animate-fade-in">
       <div className="w-full max-w-4xl max-h-[92vh] overflow-hidden rounded-3xl bg-white shadow-2xl border border-slate-200 flex flex-col">
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50 px-6 py-5">
           <div>

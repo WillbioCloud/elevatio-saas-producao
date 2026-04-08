@@ -64,7 +64,7 @@ const PropertyPreviewModal: React.FC<PropertyPreviewModalProps> = ({ isOpen, onC
 
   // Renderiza via Portal direto no BODY para ignorar z-index do Sidebar
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-[9999] flex items-start sm:items-center justify-center overflow-y-auto p-4 pt-16 sm:p-6 sm:pt-4">
       
       {/* 1. Overlay Escuro (Fundo) */}
       <div 

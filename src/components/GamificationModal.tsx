@@ -15,7 +15,7 @@ const GamificationModal: React.FC<Props> = ({ isOpen, onClose, xpPoints }) => {
   const { currentLevel, nextLevel, progress } = getLevelInfo(xpPoints);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center p-4 pt-16 sm:pt-4 overflow-y-auto bg-slate-900/50 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden relative p-8">
         <button onClick={onClose} className="absolute top-4 right-4 p-2 text-slate-400 hover:bg-slate-100 rounded-full">
           <Icons.X size={20} />

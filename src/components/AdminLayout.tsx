@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { CrmNotificationsMenu } from './CrmNotificationsMenu';
 import { useInstallmentReminders } from '../hooks/useInstallmentReminders';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
+import BillingPortalModal from './BillingPortalModal';
 import ProductTour from './ProductTour';
 import SetupWizardModal from './SetupWizardModal';
 
@@ -23,6 +24,13 @@ const AdminLayout: React.FC = () => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [contractPlanName, setContractPlanName] = useState(() => user?.company?.plan ?? '');
+  const [billingWarning, setBillingWarning] = useState<{ dueDate: string; daysLeft: number; isOverdue: boolean } | null>(null);
+  const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+  const [dismissedUntil, setDismissedUntil] = useState<number>(() => {
+    const saved = localStorage.getItem(`hideBillingWarning_${user?.company_id}`);
+    const parsed = saved ? parseInt(saved, 10) : 0;
+    return Number.isFinite(parsed) ? parsed : 0;
+  });
 
   const role = user?.role ?? (user?.user_metadata as { role?: string } | undefined)?.role;
   const isAdmin = role === 'admin';
@@ -98,6 +106,77 @@ const AdminLayout: React.FC = () => {
       isMounted = false;
     };
   }, [user?.company_id]);
+
+  useEffect(() => {
+    if (!user?.company_id) {
+      setDismissedUntil(0);
+      return;
+    }
+
+    const saved = localStorage.getItem(`hideBillingWarning_${user.company_id}`);
+    const parsed = saved ? parseInt(saved, 10) : 0;
+    setDismissedUntil(Number.isFinite(parsed) ? parsed : 0);
+  }, [user?.company_id]);
+
+  useEffect(() => {
+    if (!user?.company_id || role !== 'admin') return;
+
+    let isMounted = true;
+
+    const checkBilling = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('saas_payments')
+          .select('due_date, status')
+          .eq('company_id', user.company_id)
+          .in('status', ['PENDING', 'OVERDUE', 'pending', 'overdue'])
+          .order('due_date', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!isMounted) return;
+
+        if (data) {
+          const today = new Date();
+          const due = new Date(data.due_date);
+          const diffTime = due.getTime() - today.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          if (diffDays <= 5) {
+            setBillingWarning({
+              dueDate: data.due_date,
+              daysLeft: diffDays,
+              isOverdue: diffDays < 0 || data.status.toUpperCase() === 'OVERDUE',
+            });
+          } else {
+            setBillingWarning(null);
+          }
+        } else {
+          setBillingWarning(null);
+        }
+      } catch (err) {
+        console.error('Erro ao checar pagamentos do SaaS', err);
+      }
+    };
+
+    void checkBilling();
+
+    const interval = setInterval(() => {
+      void checkBilling();
+    }, 60 * 60 * 1000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [role, user?.company_id]);
+
+  const handleDismissBillingWarning = () => {
+    const hideUntil = Date.now() + 10800000;
+    localStorage.setItem(`hideBillingWarning_${user?.company_id}`, hideUntil.toString());
+    setDismissedUntil(hideUntil);
+  };
 
   const handleLogout = async () => {
     try {
@@ -546,6 +625,52 @@ const AdminLayout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            {isAdmin && billingWarning && Date.now() > dismissedUntil && (
+              <div className="relative group hidden md:block">
+                <button
+                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold border transition-colors ${
+                    billingWarning.isOverdue
+                      ? 'bg-red-50 text-red-600 border-red-200 cursor-default'
+                      : 'bg-amber-50 text-amber-600 border-amber-200 cursor-default'
+                  }`}
+                >
+                  <Icons.AlertCircle size={16} className={billingWarning.isOverdue ? 'animate-pulse' : ''} />
+                  {billingWarning.isOverdue ? 'Mensalidade Atrasada' : 'Mensalidade Vencendo'}
+                </button>
+
+                <div className="absolute right-0 mt-2 w-72 origin-top-right translate-y-2 rounded-2xl border border-slate-200 bg-white p-5 opacity-0 invisible shadow-2xl transition-all duration-300 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 z-50">
+                  <div className="absolute -top-2 right-6 h-4 w-4 rotate-45 border-l border-t border-slate-200 bg-white"></div>
+                  <h3 className="relative z-10 mb-2 flex items-center gap-2 font-bold text-slate-800">
+                    {billingWarning.isOverdue ? (
+                      <Icons.AlertTriangle size={18} className="text-red-500" />
+                    ) : (
+                      <Icons.Calendar size={18} className="text-amber-500" />
+                    )}
+                    {billingWarning.isOverdue ? 'Assinatura em Atraso' : 'Vencimento Próximo'}
+                  </h3>
+                  <p className="relative z-10 mb-5 text-xs leading-relaxed text-slate-500">
+                    {billingWarning.isOverdue
+                      ? `Sua mensalidade venceu dia ${new Date(billingWarning.dueDate).toLocaleDateString('pt-BR')}. Evite a suspensão do sistema regularizando sua situação agora.`
+                      : `Sua mensalidade vence dia ${new Date(billingWarning.dueDate).toLocaleDateString('pt-BR')} (em ${billingWarning.daysLeft === 0 ? 'hoje' : `${billingWarning.daysLeft} dias`}). Pague antes do vencimento para evitar interrupções.`}
+                  </p>
+                  <div className="relative z-10 flex flex-col gap-2">
+                    <button
+                      onClick={() => setIsBillingModalOpen(true)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-slate-800"
+                    >
+                      <Icons.CreditCard size={14} /> Ver Fatura e Pagar
+                    </button>
+                    <button
+                      onClick={handleDismissBillingWarning}
+                      className="w-full rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50"
+                    >
+                      Já regularizei
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <button
               onClick={handleRefresh}
               disabled={isRefreshing}
@@ -731,6 +856,19 @@ const AdminLayout: React.FC = () => {
             <Outlet key={refreshKey} />
           </div>
         </div>
+        {isBillingModalOpen && (
+          <BillingPortalModal
+            isOpen={isBillingModalOpen}
+            onClose={() => setIsBillingModalOpen(false)}
+            company={{
+              id: user?.company_id,
+              name: user?.company?.name,
+            }}
+            contract={{
+              plan_name: contractPlanName || user?.company?.plan || null,
+            }}
+          />
+        )}
       </main>
     </div>
   );
