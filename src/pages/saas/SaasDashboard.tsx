@@ -7,7 +7,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   BarChart,
   Bar,
@@ -17,7 +17,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { Skeleton } from '../../../components/ui/skeleton';
 
 export default function SaasDashboard() {
   const [, setClients] = useState<any[]>([]);
@@ -66,7 +67,6 @@ export default function SaasDashboard() {
   });
 
   const totalMRR = useMemo(() => {
-    // Agora o MRR é simplesmente a soma da coluna 'price' de todos os contratos ativos
     return contractsList.reduce((acc, contract) => {
       if (contract.status === 'active') {
         return acc + (Number(contract.price) || 0);
@@ -177,11 +177,12 @@ export default function SaasDashboard() {
 
   if (isLoading) {
     return (
-      <div className="space-y-8 animate-in fade-in duration-500">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Dashboard SaaS</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Carregando métricas da empresa...</p>
+      <div className="space-y-8 animate-in fade-in duration-500 p-6 max-w-7xl mx-auto">
+        <div><Skeleton className="h-8 w-64 mb-2" /><Skeleton className="h-4 w-80" /></div>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {[1,2,3,4].map(i => <Skeleton key={i} className="h-32 rounded-2xl" />)}
         </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2"><Skeleton className="h-96 rounded-2xl" /><Skeleton className="h-96 rounded-2xl" /></div>
       </div>
     );
   }
@@ -189,21 +190,21 @@ export default function SaasDashboard() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 p-6 max-w-7xl mx-auto">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Visão Geral</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Acompanhe a saúde financeira e o crescimento do seu SaaS.</p>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">Visão Geral</h2>
+        <p className="text-sm text-muted-foreground mt-1">Acompanhe a saúde financeira e o crescimento do seu SaaS.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
-          <Card key={stat.name} className="bg-white dark:bg-dark-card border-slate-200 dark:border-dark-border shadow-sm transition-all hover:shadow-md">
+          <Card key={stat.name} className="border-border/50 shadow-sm transition-all hover:shadow-md">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-slate-500 dark:text-slate-400">{stat.name}</CardTitle>
-              <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-md">
-                <stat.icon className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+              <CardTitle className="text-sm font-medium text-muted-foreground">{stat.name}</CardTitle>
+              <div className="p-2 bg-muted/30 rounded-md">
+                <stat.icon className="h-4 w-4 text-primary" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-slate-900 dark:text-slate-50">{stat.value}</div>
+              <div className="text-2xl font-bold text-foreground">{stat.value}</div>
               <p className="flex items-center text-xs mt-2">
                 {stat.changeType === 'positive' ? (
                   <span className="flex items-center text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-1.5 py-0.5 rounded-md font-medium">
@@ -216,9 +217,9 @@ export default function SaasDashboard() {
                     {stat.change}
                   </span>
                 ) : (
-                  <span className="text-slate-400 font-medium">{stat.change}</span>
+                  <span className="text-muted-foreground font-medium">{stat.change}</span>
                 )}
-                <span className="ml-2 text-slate-500 dark:text-slate-400 truncate">{stat.description}</span>
+                <span className="ml-2 text-muted-foreground truncate">{stat.description}</span>
               </p>
             </CardContent>
           </Card>
@@ -226,46 +227,46 @@ export default function SaasDashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card className="bg-white dark:bg-dark-card border-slate-200 dark:border-dark-border shadow-sm">
+        <Card className="border-border/50 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-slate-900 dark:text-slate-50">Distribuição de Planos Ativos</CardTitle>
-            <CardDescription className="text-slate-500 dark:text-slate-400">Quais planos trazem mais receita e volume de clientes.</CardDescription>
+            <CardTitle className="text-lg font-semibold">Distribuição de Planos Ativos</CardTitle>
+            <CardDescription className="text-muted-foreground">Quais planos trazem mais receita e volume de clientes.</CardDescription>
           </CardHeader>
           <CardContent className="pl-0">
             <div className="h-[320px] w-full mt-4">
               {planData.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-slate-500">
+                <div className="h-full flex items-center justify-center text-muted-foreground">
                   Nenhum contrato ativo para gerar gráfico.
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={planData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.2} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.5} />
                     <XAxis
                       dataKey="name"
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fill: '#64748b', fontSize: 12 }}
+                      tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                       dy={10}
                     />
                     <YAxis
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fill: '#64748b', fontSize: 12 }}
+                      tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                       allowDecimals={false}
                     />
                     <Tooltip
-                      cursor={{ fill: '#334155', opacity: 0.1 }}
+                      cursor={{ fill: 'hsl(var(--muted))', opacity: 0.1 }}
                       contentStyle={{
-                        backgroundColor: '#1e293b',
-                        borderColor: '#334155',
-                        color: '#f8fafc',
+                        backgroundColor: 'hsl(var(--popover))',
+                        borderColor: 'hsl(var(--border))',
+                        color: 'hsl(var(--popover-foreground))',
                         borderRadius: '8px'
                       }}
-                      itemStyle={{ color: '#818cf8' }}
+                      itemStyle={{ color: 'hsl(var(--primary))' }}
                       formatter={(value: number) => [value, 'Clientes']}
                     />
-                    <Bar dataKey="users" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
+                    <Bar dataKey="users" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={40} />
                   </BarChart>
                 </ResponsiveContainer>
               )}

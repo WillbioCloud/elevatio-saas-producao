@@ -2,6 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icons } from '../../components/Icons';
 import { supabase } from '../../lib/supabase';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '../../../components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 interface Template {
   id: string;
@@ -12,12 +21,16 @@ interface Template {
   exclusive_company_id: string | null;
 }
 
+interface Company {
+  id: string;
+  name: string;
+  subdomain: string;
+}
+
 export default function SaasTemplates() {
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [companies, setCompanies] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // Estados da Gaveta de Edição
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
@@ -40,7 +53,6 @@ export default function SaasTemplates() {
         .from('saas_templates')
         .select('*')
         .order('created_at', { ascending: true });
-
       if (error) throw error;
       setTemplates(data || []);
     } catch (err) {
@@ -56,7 +68,6 @@ export default function SaasTemplates() {
         .from('companies')
         .select('id, name, subdomain')
         .order('name', { ascending: true });
-
       if (error) throw error;
       setCompanies(data || []);
     } catch (err) {
@@ -68,13 +79,11 @@ export default function SaasTemplates() {
     if (template.status === 'exclusive') return;
     const newStatus = template.status === 'active' ? 'construction' : 'active';
     setTemplates(prev => prev.map(t => t.id === template.id ? { ...t, status: newStatus } : t));
-
     try {
       const { error } = await supabase
         .from('saas_templates')
         .update({ status: newStatus })
         .eq('id', template.id);
-
       if (error) throw error;
     } catch (err) {
       fetchTemplates();
@@ -85,11 +94,8 @@ export default function SaasTemplates() {
     e.preventDefault();
     if (!editingTemplate) return;
     setIsSaving(true);
-
     try {
-      // Se não for exclusivo, garante que o ID da empresa vinculada fique nulo
       const finalCompanyId = editingTemplate.status === 'exclusive' ? editingTemplate.exclusive_company_id : null;
-
       const { error } = await supabase
         .from('saas_templates')
         .update({
@@ -99,9 +105,7 @@ export default function SaasTemplates() {
           exclusive_company_id: finalCompanyId
         })
         .eq('id', editingTemplate.id);
-
       if (error) throw error;
-      
       await fetchTemplates();
       setEditingTemplate(null);
     } catch (error: any) {
@@ -115,285 +119,269 @@ export default function SaasTemplates() {
   const handleCreateTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-
     try {
-      // Sanitiza o slug: minusculas, sem espacos, sem caracteres especiais
       const cleanSlug = newTemplate.slug
         .toLowerCase()
         .trim()
         .replace(/\s+/g, '-')
         .replace(/[^\w-]+/g, '');
-
       const { error } = await supabase
         .from('saas_templates')
         .insert([{
           ...newTemplate,
           slug: cleanSlug
         }]);
-
       if (error) throw error;
-
       await fetchTemplates();
       setIsCreateDrawerOpen(false);
       setNewTemplate({ name: '', slug: '', description: '', status: 'construction' });
     } catch (error: any) {
       console.error('Erro ao criar template:', error);
-      alert('Erro ao criar template. Verifique se o slug ja nao existe.');
+      alert('Erro ao criar template. Verifique se o slug já não existe.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  return (
-    <div className="font-['DM_Sans'] animate-in fade-in duration-300">
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-black text-slate-800 dark:text-white">Templates de Sites</h1>
-          <p className="mt-1 text-slate-500">Controle a disponibilidade dos temas no Wizard e no Painel dos clientes.</p>
+  if (isLoading && templates.length === 0) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1,2,3].map(i => <Skeleton key={i} className="h-80 rounded-2xl" />)}
         </div>
-        <button 
-          onClick={() => setIsCreateDrawerOpen(true)}
-          className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-brand-500 transition-colors"
-        >
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-6 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-black text-foreground">Templates de Sites</h1>
+          <p className="mt-1 text-muted-foreground">Controle a disponibilidade dos temas no Wizard e no Painel dos clientes.</p>
+        </div>
+        <Button onClick={() => setIsCreateDrawerOpen(true)} className="gap-2 shadow-sm">
           <Icons.Plus size={16} /> Novo Template
-        </button>
+        </Button>
       </div>
 
-      {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-[24px] border border-slate-200">
-          <Icons.Loader2 className="w-10 h-10 text-[#1a56db] animate-spin mb-4" />
-          <p className="font-bold text-slate-700">Carregando catálogo...</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {templates.map((template) => (
-            <div key={template.id} className="relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm overflow-hidden flex flex-col group">
-              
-              <div className="absolute top-5 right-5 z-10">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {templates.map((template) => (
+          <Card key={template.id} className="relative border-border/50 shadow-sm overflow-hidden flex flex-col group">
+            <CardHeader className="pb-3">
+              <div className="absolute top-5 right-5">
                 {template.status === 'active' && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700 shadow-sm">
+                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 gap-1">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Disponível
-                  </span>
+                  </Badge>
                 )}
                 {template.status === 'construction' && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-700 shadow-sm">
+                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 gap-1">
                     <Icons.Wrench size={10} /> Em Construção
-                  </span>
+                  </Badge>
                 )}
                 {template.status === 'exclusive' && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 px-2.5 py-1 text-[10px] font-bold text-purple-700 shadow-sm">
+                  <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 gap-1">
                     <Icons.Lock size={10} /> Exclusivo
-                  </span>
+                  </Badge>
                 )}
               </div>
-
-              <div className="h-40 w-full rounded-xl bg-slate-100 mb-4 flex items-center justify-center border border-slate-200 group-hover:border-brand-200 transition-colors">
-                <Icons.LayoutTemplate size={40} className="text-slate-300 group-hover:text-brand-300 transition-colors" />
+              <div className="h-40 w-full rounded-xl bg-muted/50 flex items-center justify-center border border-border group-hover:border-primary/30 transition-colors">
+                <Icons.LayoutTemplate size={40} className="text-muted-foreground group-hover:text-primary transition-colors" />
               </div>
-
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-lg font-black text-slate-800">{template.name}</h3>
-                  <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">/{template.slug}</span>
-                </div>
-                <p className="text-sm text-slate-500 mb-6">{template.description}</p>
+            </CardHeader>
+            <CardContent className="flex-1 flex flex-col">
+              <div className="flex items-center gap-2 mb-1">
+                <CardTitle className="text-lg font-black">{template.name}</CardTitle>
+                <span className="text-[10px] font-mono font-bold text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">/{template.slug}</span>
               </div>
-
-              <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                <button 
+              <CardDescription className="text-sm mb-6 flex-1">{template.description}</CardDescription>
+              <div className="pt-4 border-t border-border/50 flex items-center justify-between">
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => toggleTemplateStatus(template)}
                   disabled={template.status === 'exclusive'}
-                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-                    template.status === 'active' 
-                      ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' 
-                      : template.status === 'construction'
-                      ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                      : 'bg-slate-50 text-slate-400 cursor-not-allowed'
-                  }`}
-                >
-                  {template.status === 'active' ? (
-                    <><Icons.EyeOff size={14} /> Ocultar</>
-                  ) : template.status === 'construction' ? (
-                    <><Icons.Eye size={14} /> Liberar</>
-                  ) : (
-                    <><Icons.Lock size={14} /> VIP</>
+                  className={cn(
+                    "gap-1.5 text-xs font-bold",
+                    template.status === 'active' && "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 dark:bg-amber-950/30",
+                    template.status === 'construction' && "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30",
+                    template.status === 'exclusive' && "bg-muted text-muted-foreground cursor-not-allowed"
                   )}
-                </button>
-
-                {/* BOTÃO QUE ABRE A GAVETA DE EDIÇÃO */}
-                <button 
-                  onClick={() => setEditingTemplate(template)}
-                  className="text-slate-400 hover:text-brand-600 transition-colors p-2 rounded-lg hover:bg-brand-50"
                 >
+                  {template.status === 'active' ? <><Icons.EyeOff size={14} /> Ocultar</> : template.status === 'construction' ? <><Icons.Eye size={14} /> Liberar</> : <><Icons.Lock size={14} /> VIP</>}
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => setEditingTemplate(template)} className="text-muted-foreground hover:text-primary">
                   <Icons.Settings size={18} />
-                </button>
+                </Button>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
-      {/* GAVETA DE CONFIGURAÇÃO (PORTAL) */}
+      {/* Drawer de Criação */}
       {isCreateDrawerOpen && createPortal(
-        <div className="fixed inset-0 z-[99999] flex justify-end font-['DM_Sans']">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !isSaving && setIsCreateDrawerOpen(false)} />
-          <div className="relative w-full max-w-md h-screen bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50">
-              <h2 className="text-lg font-black text-slate-800">Novo Template</h2>
-              <button onClick={() => setIsCreateDrawerOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><Icons.X size={20} /></button>
+        <div className="fixed inset-0 z-[99999] flex justify-end">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => !isSaving && setIsCreateDrawerOpen(false)} />
+          <div className="relative w-full max-w-md h-screen bg-card shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between p-6 border-b border-border bg-muted/20">
+              <h2 className="text-lg font-black">Novo Template</h2>
+              <Button variant="ghost" size="icon" onClick={() => setIsCreateDrawerOpen(false)} className="text-muted-foreground">
+                <Icons.X size={20} />
+              </Button>
             </div>
             <form onSubmit={handleCreateTemplate} className="flex-1 p-6 space-y-6 flex flex-col">
               <div className="space-y-4 flex-1">
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Nome do Template</label>
-                  <input type="text" required value={newTemplate.name} onChange={e => setNewTemplate({...newTemplate, name: e.target.value})} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold" placeholder="Ex: Moderno V2" />
+                  <Label className="text-xs font-bold uppercase">Nome do Template</Label>
+                  <Input
+                    required
+                    value={newTemplate.name}
+                    onChange={e => setNewTemplate({ ...newTemplate, name: e.target.value })}
+                    placeholder="Ex: Moderno V2"
+                    className="mt-1"
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Slug (Identificador no cÃ³digo)</label>
-                  <input type="text" required value={newTemplate.slug} onChange={e => setNewTemplate({...newTemplate, slug: e.target.value})} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-mono" placeholder="ex: moderno-v2" />
+                  <Label className="text-xs font-bold uppercase">Slug (Identificador no código)</Label>
+                  <Input
+                    required
+                    value={newTemplate.slug}
+                    onChange={e => setNewTemplate({ ...newTemplate, slug: e.target.value })}
+                    placeholder="ex: moderno-v2"
+                    className="mt-1 font-mono"
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-500 mb-2">DescriÃ§Ã£o</label>
-                  <textarea required value={newTemplate.description} onChange={e => setNewTemplate({...newTemplate, description: e.target.value})} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm h-24 resize-none" placeholder="Descreva as caracterÃ­sticas..." />
+                  <Label className="text-xs font-bold uppercase">Descrição</Label>
+                  <Textarea
+                    required
+                    value={newTemplate.description}
+                    onChange={e => setNewTemplate({ ...newTemplate, description: e.target.value })}
+                    placeholder="Descreva as características..."
+                    className="mt-1 h-24 resize-none"
+                  />
                 </div>
               </div>
-              <button type="submit" disabled={isSaving} className="w-full flex items-center justify-center gap-2 rounded-xl bg-brand-600 py-4 text-sm font-bold text-white shadow-md hover:bg-brand-700 disabled:opacity-70">
-                {isSaving ? <Icons.Loader2 className="animate-spin" size={18} /> : <Icons.Save size={18} />} Salvar Template no CatÃ¡logo
-              </button>
+              <Button type="submit" disabled={isSaving} className="w-full gap-2">
+                {isSaving ? <Icons.Loader2 className="animate-spin" size={18} /> : <Icons.Save size={18} />}
+                Salvar Template no Catálogo
+              </Button>
             </form>
           </div>
         </div>,
         document.body
       )}
 
+      {/* Drawer de Edição */}
       {editingTemplate && createPortal(
-        <div className="fixed inset-0 z-[99999] flex justify-end font-['DM_Sans']">
-          <div 
-            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" 
-            onClick={() => !isSaving && setEditingTemplate(null)} 
-          />
-
-          <div className="relative w-full max-w-md h-screen bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50">
+        <div className="fixed inset-0 z-[99999] flex justify-end">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => !isSaving && setEditingTemplate(null)} />
+          <div className="relative w-full max-w-md h-screen bg-card shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between p-6 border-b border-border bg-muted/20">
               <div>
-                <h2 className="text-lg font-black text-slate-800">Configurar Template</h2>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">/{editingTemplate.slug}</p>
+                <h2 className="text-lg font-black">Configurar Template</h2>
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mt-1">/{editingTemplate.slug}</p>
               </div>
-              <button 
-                onClick={() => setEditingTemplate(null)} 
-                disabled={isSaving}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-full disabled:opacity-50"
-              >
+              <Button variant="ghost" size="icon" onClick={() => setEditingTemplate(null)} disabled={isSaving} className="text-muted-foreground">
                 <Icons.X size={20} />
-              </button>
+              </Button>
             </div>
-
             <form onSubmit={handleSaveTemplate} className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6 flex flex-col">
-              
               <div className="space-y-4 flex-1">
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Nome Comercial</label>
-                  <input 
-                    type="text" 
+                  <Label className="text-xs font-bold uppercase tracking-wider">Nome Comercial</Label>
+                  <Input
                     value={editingTemplate.name}
                     onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10"
                     required
+                    className="mt-1"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Descrição Curta</label>
-                  <textarea 
+                  <Label className="text-xs font-bold uppercase tracking-wider">Descrição Curta</Label>
+                  <Textarea
                     value={editingTemplate.description}
                     onChange={(e) => setEditingTemplate({ ...editingTemplate, description: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10 resize-none h-24"
                     required
+                    className="mt-1 h-24 resize-none"
                   />
                 </div>
-
-                <div className="pt-4 border-t border-slate-100">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Disponibilidade</label>
-                  
+                <div className="pt-4 border-t border-border">
+                  <Label className="text-xs font-bold uppercase tracking-wider mb-3 block">Disponibilidade</Label>
                   <div className="grid grid-cols-1 gap-3">
-                    <label className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${editingTemplate.status === 'active' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                    <label className={cn("flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all", editingTemplate.status === 'active' ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30" : "border-border hover:bg-muted/30")}>
                       <div className="flex items-center gap-3">
-                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${editingTemplate.status === 'active' ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300'}`}>
+                        <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", editingTemplate.status === 'active' ? "border-emerald-500 bg-emerald-500" : "border-muted-foreground")}>
                           {editingTemplate.status === 'active' && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                         </div>
                         <div>
-                          <p className={`text-sm font-bold ${editingTemplate.status === 'active' ? 'text-emerald-800' : 'text-slate-700'}`}>Público / Ativo</p>
-                          <p className="text-xs text-slate-500">Visível no Wizard para todos.</p>
+                          <p className={cn("text-sm font-bold", editingTemplate.status === 'active' ? "text-emerald-800 dark:text-emerald-400" : "text-foreground")}>Público / Ativo</p>
+                          <p className="text-xs text-muted-foreground">Visível no Wizard para todos.</p>
                         </div>
                       </div>
                       <input type="radio" name="status" value="active" className="hidden" onChange={() => setEditingTemplate({ ...editingTemplate, status: 'active' })} checked={editingTemplate.status === 'active'} />
                     </label>
-
-                    <label className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${editingTemplate.status === 'construction' ? 'border-amber-500 bg-amber-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                    <label className={cn("flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all", editingTemplate.status === 'construction' ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30" : "border-border hover:bg-muted/30")}>
                       <div className="flex items-center gap-3">
-                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${editingTemplate.status === 'construction' ? 'border-amber-500 bg-amber-500' : 'border-slate-300'}`}>
+                        <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", editingTemplate.status === 'construction' ? "border-amber-500 bg-amber-500" : "border-muted-foreground")}>
                           {editingTemplate.status === 'construction' && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                         </div>
                         <div>
-                          <p className={`text-sm font-bold ${editingTemplate.status === 'construction' ? 'text-amber-800' : 'text-slate-700'}`}>Em Construção</p>
-                          <p className="text-xs text-slate-500">Oculto temporariamente.</p>
+                          <p className={cn("text-sm font-bold", editingTemplate.status === 'construction' ? "text-amber-800 dark:text-amber-400" : "text-foreground")}>Em Construção</p>
+                          <p className="text-xs text-muted-foreground">Oculto temporariamente.</p>
                         </div>
                       </div>
                       <input type="radio" name="status" value="construction" className="hidden" onChange={() => setEditingTemplate({ ...editingTemplate, status: 'construction' })} checked={editingTemplate.status === 'construction'} />
                     </label>
-
-                    <label className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${editingTemplate.status === 'exclusive' ? 'border-purple-500 bg-purple-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                    <label className={cn("flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all", editingTemplate.status === 'exclusive' ? "border-purple-500 bg-purple-50 dark:bg-purple-950/30" : "border-border hover:bg-muted/30")}>
                       <div className="flex items-center gap-3">
-                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${editingTemplate.status === 'exclusive' ? 'border-purple-500 bg-purple-500' : 'border-slate-300'}`}>
+                        <div className={cn("w-4 h-4 rounded-full border flex items-center justify-center", editingTemplate.status === 'exclusive' ? "border-purple-500 bg-purple-500" : "border-muted-foreground")}>
                           {editingTemplate.status === 'exclusive' && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                         </div>
                         <div>
-                          <p className={`text-sm font-bold ${editingTemplate.status === 'exclusive' ? 'text-purple-800' : 'text-slate-700'}`}>Exclusivo VIP</p>
-                          <p className="text-xs text-slate-500">Apenas uma imobiliária pode usar.</p>
+                          <p className={cn("text-sm font-bold", editingTemplate.status === 'exclusive' ? "text-purple-800 dark:text-purple-400" : "text-foreground")}>Exclusivo VIP</p>
+                          <p className="text-xs text-muted-foreground">Apenas uma imobiliária pode usar.</p>
                         </div>
                       </div>
                       <input type="radio" name="status" value="exclusive" className="hidden" onChange={() => setEditingTemplate({ ...editingTemplate, status: 'exclusive' })} checked={editingTemplate.status === 'exclusive'} />
                     </label>
                   </div>
                 </div>
-
                 {editingTemplate.status === 'exclusive' && (
-                  <div className="pt-4 border-t border-slate-100 animate-in fade-in slide-in-from-top-2">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-purple-600 mb-2">Vincular à Imobiliária</label>
-                    <select 
+                  <div className="pt-4 border-t border-border animate-in fade-in slide-in-from-top-2">
+                    <Label className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 mb-2 block">Vincular à Imobiliária</Label>
+                    <Select
                       value={editingTemplate.exclusive_company_id || ''}
-                      onChange={(e) => setEditingTemplate({ ...editingTemplate, exclusive_company_id: e.target.value })}
-                      className="w-full rounded-xl border border-purple-200 bg-purple-50 px-4 py-3 text-sm font-bold text-purple-900 focus:border-purple-500 focus:outline-none focus:ring-4 focus:ring-purple-500/10"
-                      required
+                      onValueChange={(v) => setEditingTemplate({ ...editingTemplate, exclusive_company_id: v })}
                     >
-                      <option value="" disabled>Selecione o Cliente VIP...</option>
-                      {companies.map(company => (
-                        <option key={company.id} value={company.id}>
-                          {company.name} ({company.subdomain})
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800">
+                        <SelectValue placeholder="Selecione o Cliente VIP..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {companies.map(company => (
+                          <SelectItem key={company.id} value={company.id}>
+                            {company.name} ({company.subdomain})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </div>
-
-              <div className="pt-4 border-t border-slate-200">
-                <button 
-                  type="submit"
-                  disabled={isSaving}
-                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-slate-900 py-4 text-sm font-bold text-white shadow-md hover:bg-slate-800 transition-all hover:shadow-lg disabled:opacity-70"
-                >
+              <div className="pt-4 border-t border-border">
+                <Button type="submit" disabled={isSaving} className="w-full gap-2">
                   {isSaving ? <Icons.Loader2 className="animate-spin" size={18} /> : <Icons.Save size={18} />}
                   Salvar Configurações
-                </button>
+                </Button>
               </div>
-
             </form>
           </div>
         </div>,
         document.body
       )}
-
     </div>
   );
 }

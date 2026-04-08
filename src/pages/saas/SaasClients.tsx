@@ -1,20 +1,18 @@
 import React, { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
-import {
-  Search,
-  Filter,
-  Plus,
-  X,
-  ChevronDown,
-  Download
-} from "lucide-react"
+import { Search, Filter, Plus, X, ChevronDown, Download } from "lucide-react"
 import { Icons } from "../../components/Icons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Card } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Skeleton } from "../../../components/ui/skeleton"
+import { cn } from "@/lib/utils"
 import { supabase } from '@/lib/supabase'
 import { PLANS } from '../../config/plans'
 
@@ -49,15 +47,10 @@ export default function Clients() {
   const [discountValue, setDiscountValue] = useState<number>(0)
   const [discountType, setDiscountType] = useState<'fixed' | 'percentage'>('fixed')
   const [isSavingDiscount, setIsSavingDiscount] = useState(false)
-
-  // Estados para o Modal de Nova Empresa
   const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false)
   const [newCompany, setNewCompany] = useState({ name: "", plan: "business" })
   const [isCreating, setIsCreating] = useState(false)
-  const [, setIsDeleting] = useState(false)
-  const [, setIsUpdatingStatus] = useState(false)
 
-  // Busca as empresas no banco de dados
   const fetchCompanies = async () => {
     setLoading(true)
     try {
@@ -67,7 +60,6 @@ export default function Clients() {
         .order('created_at', { ascending: false })
 
       if (error) throw error
-
       setClients((data || []) as ClientCompany[])
     } catch (err) {
       console.error('Erro ao buscar empresas:', err)
@@ -76,128 +68,72 @@ export default function Clients() {
     }
   }
 
-  useEffect(() => {
-    fetchCompanies()
-  }, [])
+  useEffect(() => { fetchCompanies() }, [])
 
-  // Cria uma nova empresa e gera o subdomínio
   const handleCreateCompany = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newCompany.name.trim()) return
-
     setIsCreating(true)
-
-    // Gera o subdomínio limpo (ex: "TR Imóveis" -> "tr-imoveis")
     const generatedSlug = newCompany.name
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
-
-    const { error } = await supabase.from("companies").insert([
-      {
-        name: newCompany.name,
-        subdomain: generatedSlug,
-        plan: newCompany.plan,
-        active: true
-      }
-    ])
-
-    if (error) {
-      alert("Erro ao criar empresa: " + error.message)
-    } else {
+    const { error } = await supabase.from("companies").insert([{
+      name: newCompany.name,
+      subdomain: generatedSlug,
+      plan: newCompany.plan,
+      active: true
+    }])
+    if (error) alert("Erro ao criar empresa: " + error.message)
+    else {
       setIsNewClientModalOpen(false)
       setNewCompany({ name: "", plan: "business" })
-      fetchCompanies() // Recarrega a lista
+      fetchCompanies()
     }
     setIsCreating(false)
   }
 
   const handleDeleteClient = async (id: string) => {
     if (!window.confirm("ATENÇÃO: Tem certeza que deseja excluir esta imobiliária? TODOS os dados e acessos de login da equipe serão apagados permanentemente (Ação irreversível).")) return
-    setIsDeleting(true)
     try {
-      // Chama a Edge Function que tem privilégios de Service Role para apagar os Logins (Auth)
-      const { data, error } = await supabase.functions.invoke('delete-tenant', {
-        body: { company_id: id }
-      });
-
-      if (error) throw new Error(error.message || "Erro na Edge Function");
-      if (data?.error) throw new Error(data.error);
-
+      const { data, error } = await supabase.functions.invoke('delete-tenant', { body: { company_id: id } })
+      if (error) throw new Error(error.message)
+      if (data?.error) throw new Error(data.error)
       setClients(clients.filter(c => c.id !== id))
       setSelectedClient(null)
-      alert("Imobiliária e equipe excluídos com sucesso. Nenhum dado restou no sistema.")
+      alert("Imobiliária e equipe excluídos com sucesso.")
     } catch (error: any) {
-      console.error('Erro ao deletar:', error);
+      console.error('Erro ao deletar:', error)
       alert("Erro ao excluir imobiliária: " + error.message)
     } finally {
-      setIsDeleting(false)
       setOpenDropdownId(null)
     }
   }
 
-  // Função para Suspender/Ativar
   const handleToggleStatus = async (client: ClientCompany) => {
-    setIsUpdatingStatus(true)
-    const { error } = await supabase
-      .from("companies")
-      .update({ active: !client.active })
-      .eq("id", client.id)
-    setIsUpdatingStatus(false)
-
-    if (error) {
-      alert("Erro ao atualizar status: " + error.message)
-    } else {
-      setSelectedClient({ ...client, active: !client.active })
-      fetchCompanies()
-    }
+    const { error } = await supabase.from("companies").update({ active: !client.active }).eq("id", client.id)
+    if (error) alert("Erro ao atualizar status: " + error.message)
+    else { setSelectedClient({ ...client, active: !client.active }); fetchCompanies() }
   }
 
-  const filteredClients = clients.filter((client) => {
+  const filteredClients = clients.filter(client => {
     const term = searchTerm.toLowerCase()
-    return (
-      client.name?.toLowerCase().includes(term) ||
-      client.subdomain?.toLowerCase().includes(term) ||
-      client.email?.toLowerCase().includes(term)
-    )
+    return client.name?.toLowerCase().includes(term) || client.subdomain?.toLowerCase().includes(term) || client.email?.toLowerCase().includes(term)
   })
 
-  const hasPendingDomain = (client: ClientCompany | null | undefined) =>
-    Boolean(
-      client?.active && (
-        (client?.domain && client?.domain_status === 'pending') ||
-        (client?.domain_secondary && client?.domain_secondary_status === 'pending')
-      )
-    )
-
+  const hasPendingDomain = (client: ClientCompany | null | undefined) => Boolean(client?.active && ((client?.domain && client?.domain_status === 'pending') || (client?.domain_secondary && client?.domain_secondary_status === 'pending')))
   const pendingDomainsCount = clients?.filter(hasPendingDomain).length || 0
   const firstPendingDomainClient = clients?.find(hasPendingDomain) || null
 
-  const accessHost = selectedClient?.domain_status === 'active' && selectedClient.domain
-    ? selectedClient.domain
-    : selectedClient?.domain_secondary_status === 'active' && selectedClient.domain_secondary
-      ? selectedClient.domain_secondary
-      : selectedClient?.subdomain
-        ? `${selectedClient.subdomain}.elevatiovendas.com.br`
-        : null
-
+  const accessHost = selectedClient?.domain_status === 'active' && selectedClient.domain ? selectedClient.domain : selectedClient?.domain_secondary_status === 'active' && selectedClient.domain_secondary ? selectedClient.domain_secondary : selectedClient?.subdomain ? `${selectedClient.subdomain}.elevatiovendas.com.br` : null
   const accessUrl = accessHost ? `https://${accessHost}` : null
 
   const getDomainStatusClasses = (status: DomainStatus) => {
-    if (status === 'active') {
-      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-    }
-
-    if (status === 'error' || status === 'expired') {
-      return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-    }
-
-    if (status === 'idle') {
-      return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-    }
-
+    if (status === 'active') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+    if (status === 'error' || status === 'expired') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+    if (status === 'idle') return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
     return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 animate-pulse'
   }
 
@@ -211,290 +147,263 @@ export default function Clients() {
 
   const getFinancialStatus = (status: string | null, isActive: boolean) => {
     if (!isActive) return { label: 'Bloqueado', dot: 'bg-red-500', badge: 'bg-red-100 text-red-700 border-red-200' }
-    
     switch (status) {
-      case 'active':
-        return { label: 'Pago (Ativo)', dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
-      case 'trial':
-        return { label: 'Em Teste (Trial)', dot: 'bg-blue-500', badge: 'bg-blue-100 text-blue-700 border-blue-200' }
-      case 'past_due':
-        return { label: 'Atrasado', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700 border-amber-200' }
-      case 'canceled':
-        return { label: 'Cancelado', dot: 'bg-slate-500', badge: 'bg-slate-100 text-slate-700 border-slate-200' }
-      default:
-        return { label: 'Aguardando Pagamento', dot: 'bg-slate-400', badge: 'bg-slate-100 text-slate-600 border-slate-200' }
+      case 'active': return { label: 'Pago (Ativo)', dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
+      case 'trial': return { label: 'Em Teste (Trial)', dot: 'bg-blue-500', badge: 'bg-blue-100 text-blue-700 border-blue-200' }
+      case 'past_due': return { label: 'Atrasado', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700 border-amber-200' }
+      case 'canceled': return { label: 'Cancelado', dot: 'bg-slate-500', badge: 'bg-slate-100 text-slate-700 border-slate-200' }
+      default: return { label: 'Aguardando Pagamento', dot: 'bg-slate-400', badge: 'bg-slate-100 text-slate-600 border-slate-200' }
     }
   }
 
+  if (loading && clients.length === 0) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-96 w-full rounded-2xl" />
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-6 relative p-6 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Clientes</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Faça a gestão das imobiliárias que utilizam a plataforma.</p>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground">Clientes</h2>
+          <p className="text-sm text-muted-foreground mt-1">Faça a gestão das imobiliárias que utilizam a plataforma.</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 h-9">
-            <Download className="mr-2 h-4 w-4 text-slate-400 dark:text-slate-500" />
+          <Button variant="outline" className="gap-2">
+            <Download className="h-4 w-4" />
             Exportar
           </Button>
-          <Button onClick={() => setIsNewClientModalOpen(true)} className="bg-brand-600 hover:bg-brand-700">
-            <Plus className="mr-2 h-4 w-4" />
+          <Button onClick={() => setIsNewClientModalOpen(true)} className="gap-2">
+            <Plus className="h-4 w-4" />
             Nova Empresa
           </Button>
         </div>
       </div>
 
       {pendingDomainsCount > 0 && (
-        <div className="mb-8 flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/30 dark:bg-amber-900/10">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">
-              <Icons.Globe size={24} />
+        <Card className="border-amber-200 bg-amber-50 dark:border-amber-900/30 dark:bg-amber-900/10">
+          <CardContent className="p-5 flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">
+                <Icons.Globe size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-amber-800 dark:text-amber-500">Ação Necessária: Domínios Pendentes</h3>
+                <p className="text-sm font-medium text-amber-700 dark:text-amber-400/80">
+                  Você tem {pendingDomainsCount} domínio(s) de cliente(s) pagante(s) aguardando o registro ou apontamento DNS.
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-black text-amber-800 dark:text-amber-500">Ação Necessária: Domínios Pendentes</h3>
-              <p className="text-sm font-medium text-amber-700 dark:text-amber-400/80">
-                Você tem {pendingDomainsCount} domínio(s) de cliente(s) pagante(s) aguardando o registro ou apontamento DNS.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => firstPendingDomainClient && setSelectedClient(firstPendingDomainClient)}
-            className="whitespace-nowrap rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-white shadow-md transition-colors hover:bg-amber-600"
-          >
-            Resolver Agora
-          </button>
-        </div>
+            <Button 
+              variant="default" 
+              onClick={() => firstPendingDomainClient && setSelectedClient(firstPendingDomainClient)}
+              className="bg-amber-500 hover:bg-amber-600 text-white shadow-sm"
+            >
+              Resolver Agora
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
-      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800/50 flex flex-col sm:flex-row gap-4 items-center justify-between bg-white dark:bg-slate-900">
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <Button variant="outline" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium h-9">
-              Status: Todos
-              <ChevronDown className="ml-2 h-4 w-4 text-slate-400 dark:text-slate-500" />
-            </Button>
-            <Button variant="outline" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium h-9">
-              Plano: Todos
-              <ChevronDown className="ml-2 h-4 w-4 text-slate-400 dark:text-slate-500" />
-            </Button>
-          </div>
-
+      <Card className="border-border/50 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-border/50 flex flex-col sm:flex-row gap-4 items-center justify-between">
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Pesquisar clientes..."
-                className="pl-9 bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 h-9 text-sm dark:text-white"
+                className="pl-9"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <Button variant="outline" className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 h-9 px-3">
-              <Filter className="mr-2 h-4 w-4 text-slate-400 dark:text-slate-500" />
+          </div>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <Button variant="outline" className="gap-2">
+              <Filter className="h-4 w-4" />
               Filtros
             </Button>
           </div>
         </div>
-        <Table className="border-t border-slate-100 dark:border-slate-800">
-          <TableHeader>
-            <TableRow className="bg-slate-50 dark:bg-slate-950 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-slate-100 dark:border-slate-800">
-              <TableHead className="font-medium text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">Imobiliária</TableHead>
-              <TableHead className="font-medium text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">Plano</TableHead>
-              <TableHead className="font-medium text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">Status do Plano</TableHead>
-              <TableHead className="font-medium text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">Estado</TableHead>
-              <TableHead className="font-medium text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">Data de Adesão</TableHead>
-              <TableHead className="w-12"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-10 text-slate-500 dark:text-slate-400">
-                  Carregando empresas...
-                </TableCell>
+
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30">
+                <TableHead className="text-xs uppercase tracking-wider font-medium">Imobiliária</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider font-medium">Plano</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider font-medium">Status do Plano</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider font-medium">Estado</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider font-medium">Data de Adesão</TableHead>
+                <TableHead className="w-12"></TableHead>
               </TableRow>
-            ) : filteredClients.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-10 text-slate-500 dark:text-slate-400">
-                  Nenhuma empresa cadastrada.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredClients.map((client) => (
-                <TableRow
-                  key={client.id}
-                  className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-slate-100 dark:border-slate-800"
-                  onClick={() => setSelectedClient(client)}
-                >
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-9 w-9 border border-slate-200 dark:border-slate-700">
-                        <AvatarFallback className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium">
-                          {client.name?.substring(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium text-slate-900 dark:text-slate-50">{client.name}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {client.subdomain ? `${client.subdomain}.elevatiovendas.com.br` : "Subdomínio pendente"}
-                        </p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200">
-                      {client.plan}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {(() => {
-                      const status = getFinancialStatus(client.plan_status, client.active)
-                      return (
-                        <Badge variant="outline" className={`${status.badge} font-bold`}>
-                          {status.label}
-                        </Badge>
-                      )
-                    })()}
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={client.active ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200" : "bg-red-50 text-red-700 hover:bg-red-100 border-red-200"}>
-                      {client.active ? "Ativo" : "Inativo"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-slate-500 dark:text-slate-400">
-                    {new Date(client.created_at).toLocaleDateString("pt-BR")}
-                  </TableCell>
-                  <TableCell className="relative">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDiscountModal({ isOpen: true, company: client })
-                          setDiscountValue(client.manual_discount_value || 0)
-                          setDiscountType(client.manual_discount_type || 'fixed')
-                        }}
-                        className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
-                        title="Aplicar Desconto Manual"
-                      >
-                        <Icons.BadgeDollarSign size={18} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenDropdownId(openDropdownId === client.id ? null : client.id);
-                        }}
-                        className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                      >
-                        <Icons.MoreHorizontal size={20} />
-                      </button>
-                    </div>
-                    {openDropdownId === client.id && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setOpenDropdownId(null)}></div>
-                        <div className="absolute right-8 top-10 w-48 bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border rounded-xl shadow-lg z-20 py-1 overflow-hidden animate-fade-in">
-                          <button
-                            onClick={() => {
-                              setOpenDropdownId(null);
-                              handleToggleStatus(client);
-                            }}
-                            className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-2"
-                          >
-                            {client.active ? (
-                              <Icons.Lock size={16} className="text-amber-500" />
-                            ) : (
-                              <Icons.Unlock size={16} className="text-emerald-500" />
-                            )}
-                            {client.active ? 'Bloquear Acesso' : 'Desbloquear'}
-                          </button>
-                          <button
-                            onClick={() => {
-                              setOpenDropdownId(null);
-                              handleDeleteClient(client.id);
-                            }}
-                            className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400 flex items-center gap-2"
-                          >
-                            <Icons.Trash2 size={16} />
-                            Excluir Empresa
-                          </button>
-                        </div>
-                      </>
-                    )}
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                    Carregando empresas...
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : filteredClients.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                    Nenhuma empresa cadastrada.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredClients.map((client) => (
+                  <TableRow
+                    key={client.id}
+                    className="cursor-pointer hover:bg-muted/30 transition-colors"
+                    onClick={() => setSelectedClient(client)}
+                  >
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-9 w-9 border border-border">
+                          <AvatarFallback className="bg-muted text-foreground font-medium">
+                            {client.name?.substring(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium">{client.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {client.subdomain ? `${client.subdomain}.elevatiovendas.com.br` : "Subdomínio pendente"}
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{client.plan}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const status = getFinancialStatus(client.plan_status, client.active)
+                        return <Badge variant="outline" className={status.badge}>{status.label}</Badge>
+                      })()}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={client.active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}>
+                        {client.active ? "Ativo" : "Inativo"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {new Date(client.created_at).toLocaleDateString("pt-BR")}
+                    </TableCell>
+                    <TableCell className="relative">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDiscountModal({ isOpen: true, company: client })
+                            setDiscountValue(client.manual_discount_value || 0)
+                            setDiscountType(client.manual_discount_type || 'fixed')
+                          }}
+                          className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                          title="Aplicar Desconto Manual"
+                        >
+                          <Icons.BadgeDollarSign size={18} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setOpenDropdownId(openDropdownId === client.id ? null : client.id)
+                          }}
+                          className="p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <Icons.MoreHorizontal size={20} />
+                        </button>
+                      </div>
+                      {openDropdownId === client.id && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setOpenDropdownId(null)} />
+                          <div className="absolute right-8 top-10 w-48 bg-popover border border-border rounded-xl shadow-lg z-20 py-1 animate-fade-in">
+                            <button
+                              onClick={() => {
+                                setOpenDropdownId(null)
+                                handleToggleStatus(client)
+                              }}
+                              className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-muted flex items-center gap-2"
+                            >
+                              {client.active ? (
+                                <><Icons.Lock size={16} className="text-amber-500" /> Bloquear Acesso</>
+                              ) : (
+                                <><Icons.Unlock size={16} className="text-emerald-500" /> Desbloquear</>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setOpenDropdownId(null)
+                                handleDeleteClient(client.id)
+                              }}
+                              className="w-full text-left px-4 py-2 text-sm font-medium hover:bg-destructive/10 text-destructive flex items-center gap-2"
+                            >
+                              <Icons.Trash2 size={16} /> Excluir Empresa
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
 
-        <div className="flex items-center justify-between p-4 border-t border-slate-100 dark:border-slate-800/50 bg-white dark:bg-slate-900">
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Mostrando <span className="font-medium text-slate-900 dark:text-slate-50">{loading ? 0 : filteredClients.length === 0 ? 0 : 1}</span> a <span className="font-medium text-slate-900 dark:text-slate-50">{filteredClients.length}</span> de <span className="font-medium text-slate-900 dark:text-slate-50">{clients.length}</span> resultados
+        <div className="flex items-center justify-between p-4 border-t border-border/50 bg-muted/10">
+          <p className="text-sm text-muted-foreground">
+            Mostrando <span className="font-medium text-foreground">{filteredClients.length}</span> de{" "}
+            <span className="font-medium text-foreground">{clients.length}</span> resultados
           </p>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="text-slate-500 dark:text-slate-400 font-medium h-8 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
-              Anterior
-            </Button>
-            <Button variant="outline" size="sm" className="text-slate-900 dark:text-slate-50 font-medium h-8 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
-              Próxima
-            </Button>
+            <Button variant="outline" size="sm" disabled>Anterior</Button>
+            <Button variant="outline" size="sm" disabled>Próxima</Button>
           </div>
         </div>
       </Card>
 
-      {/* SIDEBAR DE DETALHES DO CLIENTE (PORTAL) */}
+      {/* Sidebar de Detalhes do Cliente */}
       {selectedClient && createPortal(
-        <div className="fixed inset-0 z-[99999] flex justify-end font-['DM_Sans']">
-          {/* Backdrop Escuro (Fundo Blur) */}
-          <div
-            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300"
-            onClick={() => setSelectedClient(null)}
-          />
-
-          {/* Sidebar / Painel Lateral */}
-          <div className="relative w-full max-w-md h-screen bg-white dark:bg-slate-900 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-            {/* Header do Sidebar */}
-            <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+        <div className="fixed inset-0 z-[99999] flex justify-end">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setSelectedClient(null)} />
+          <div className="relative w-full max-w-md h-screen bg-card shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between p-6 border-b border-border bg-muted/20">
               <div>
-                <h2 className="text-lg font-black text-slate-800 dark:text-white">Ficha da Imobiliária</h2>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">
+                <h2 className="text-lg font-black">Ficha da Imobiliária</h2>
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mt-1">
                   Cliente desde {new Date(selectedClient.created_at).toLocaleDateString("pt-BR")}
                 </p>
               </div>
-              <button
-                onClick={() => setSelectedClient(null)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 dark:hover:bg-slate-700 rounded-full transition-colors"
-              >
+              <button onClick={() => setSelectedClient(null)} className="p-2 text-muted-foreground hover:text-foreground rounded-full">
                 <Icons.X size={20} />
               </button>
             </div>
-
-            {/* Corpo do Sidebar */}
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
-              {/* Informações Principais */}
               <div>
                 <div className="flex items-center gap-4 mb-6">
-                  <div className="w-16 h-16 rounded-2xl bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center border border-brand-200 dark:border-brand-800">
-                    <Icons.Building2 size={32} className="text-brand-600 dark:text-brand-400" />
+                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20">
+                    <Icons.Building2 size={32} className="text-primary" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-800 dark:text-white">{selectedClient.name}</h3>
-                    <p className="text-sm text-slate-500 flex items-center gap-2 mt-1">
+                    <h3 className="text-xl font-black">{selectedClient.name}</h3>
+                    <p className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
                       <Icons.Mail size={14} /> {selectedClient.email || "Sem e-mail"}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Métricas Financeiras, Status e Domínios */}
               <div>
-                <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Assinatura & Domínio</h4>
+                <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">Assinatura & Domínio</h4>
                 <div className="grid grid-cols-2 gap-3">
-                  {/* Status do Plano */}
-                  <div className="col-span-2 flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                  <div className="col-span-2 flex items-center justify-between rounded-2xl border border-border bg-muted/30 p-4">
                     <div>
-                      <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Status Financeiro</p>
+                      <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Status Financeiro</p>
                       <div className="flex items-center gap-2">
                         {(() => {
                           const status = getFinancialStatus(selectedClient.plan_status, selectedClient.active)
@@ -504,60 +413,49 @@ export default function Clients() {
                                 {status.label === 'Pago (Ativo)' && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>}
                                 <span className={`relative inline-flex h-3 w-3 rounded-full ${status.dot}`}></span>
                               </span>
-                              <p className="text-sm font-black text-slate-700 dark:text-slate-200">
-                                {status.label}
-                              </p>
+                              <p className="text-sm font-black">{status.label}</p>
                             </>
                           )
                         })()}
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Plano Atual</p>
-                      <p className="text-lg font-black text-[#1a56db] dark:text-brand-400">{selectedClient.plan || 'N/A'}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Plano Atual</p>
+                      <p className="text-lg font-black text-primary">{selectedClient.plan || 'N/A'}</p>
                     </div>
                   </div>
 
-                  <div className="col-span-2 rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                  <div className="col-span-2 rounded-2xl border border-border bg-muted/30 p-4">
                     <div className="mb-4 flex items-center justify-between">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ambiente Web</p>
-                      <Icons.Globe size={14} className="text-slate-400" />
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Ambiente Web</p>
+                      <Icons.Globe size={14} className="text-muted-foreground" />
                     </div>
-
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                      <div className="flex items-center justify-between rounded-xl border border-border bg-card p-3 shadow-sm">
                         <div>
-                          <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                            {selectedClient.subdomain ? `${selectedClient.subdomain}.elevatiovendas.com.br` : 'Pendente'}
-                          </p>
-                          <p className="text-[10px] font-bold text-slate-400">Subdomínio Gratuito</p>
+                          <p className="text-sm font-bold">{selectedClient.subdomain ? `${selectedClient.subdomain}.elevatiovendas.com.br` : 'Pendente'}</p>
+                          <p className="text-[10px] font-bold text-muted-foreground">Subdomínio Gratuito</p>
                         </div>
                         <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                           Operacional
                         </span>
                       </div>
-
                       {selectedClient.domain && (
-                        <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="flex items-center justify-between rounded-xl border border-border bg-card p-3 shadow-sm">
                           <div>
-                            <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                              {selectedClient.domain}
-                            </p>
-                            <p className="text-[10px] font-bold text-slate-400">Domínio Principal</p>
+                            <p className="text-sm font-bold">{selectedClient.domain}</p>
+                            <p className="text-[10px] font-bold text-muted-foreground">Domínio Principal</p>
                           </div>
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${getDomainStatusClasses(selectedClient.domain_status)}`}>
                             {getDomainStatusLabel(selectedClient.domain_status)}
                           </span>
                         </div>
                       )}
-
                       {selectedClient.domain_secondary && (
-                        <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="flex items-center justify-between rounded-xl border border-border bg-card p-3 shadow-sm">
                           <div>
-                            <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                              {selectedClient.domain_secondary}
-                            </p>
-                            <p className="text-[10px] font-bold text-slate-400">Domínio Secundário</p>
+                            <p className="text-sm font-bold">{selectedClient.domain_secondary}</p>
+                            <p className="text-[10px] font-bold text-muted-foreground">Domínio Secundário</p>
                           </div>
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${getDomainStatusClasses(selectedClient.domain_secondary_status)}`}>
                             {getDomainStatusLabel(selectedClient.domain_secondary_status)}
@@ -569,42 +467,38 @@ export default function Clients() {
                 </div>
               </div>
 
-              {/* Informações Cadastrais */}
               <div>
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Dados Cadastrais</h4>
+                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Dados Cadastrais</h4>
                 <div className="space-y-3">
-                  <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <div className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center">
-                      <Icons.FileText size={16} className="text-slate-500" />
+                  <div className="flex items-center gap-3 bg-card p-3 rounded-xl border border-border">
+                    <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center">
+                      <Icons.FileText size={16} className="text-muted-foreground" />
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase">Documento (CPF/CNPJ)</p>
-                      <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{selectedClient.document || "Não informado"}</p>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase">Documento (CPF/CNPJ)</p>
+                      <p className="text-sm font-bold">{selectedClient.document || "Não informado"}</p>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <div className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center">
-                      <Icons.Phone size={16} className="text-slate-500" />
+                  <div className="flex items-center gap-3 bg-card p-3 rounded-xl border border-border">
+                    <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center">
+                      <Icons.Phone size={16} className="text-muted-foreground" />
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase">Telefone / WhatsApp</p>
-                      <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{selectedClient.phone || "Não informado"}</p>
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase">Telefone / WhatsApp</p>
+                      <p className="text-sm font-bold">{selectedClient.phone || "Não informado"}</p>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-
-            {/* Footer de Ações do Sidebar */}
-            <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-              <button
-                onClick={() => accessUrl && window.open(accessUrl, "_blank", "noopener,noreferrer")}
-                disabled={!accessUrl}
-                className="w-full py-3 bg-slate-900 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-colors shadow-md flex items-center justify-center gap-2"
+            <div className="p-6 border-t border-border bg-muted/20">
+              <Button 
+                onClick={() => accessUrl && window.open(accessUrl, "_blank")} 
+                disabled={!accessUrl} 
+                className="w-full gap-2"
               >
-                <Icons.ExternalLink size={18} /> Acessar Painel do Cliente
-              </button>
+                {accessUrl ? <><Icons.ExternalLink size={18} /> Acessar Painel do Cliente</> : "Site não disponível"}
+              </Button>
             </div>
           </div>
         </div>,
@@ -612,169 +506,145 @@ export default function Clients() {
       )}
 
       {/* Modal Nova Empresa */}
-      {isNewClientModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800/50 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Adicionar Nova Empresa</h3>
-              <button onClick={() => setIsNewClientModalOpen(false)} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-300"><X size={20} /></button>
+      <Dialog open={isNewClientModalOpen} onOpenChange={setIsNewClientModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Adicionar Nova Empresa</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateCompany} className="space-y-4">
+            <div>
+              <Label>Nome da Imobiliária</Label>
+              <Input
+                placeholder="Ex: TR Imóveis"
+                value={newCompany.name}
+                onChange={(e) => setNewCompany({ ...newCompany, name: e.target.value })}
+                required
+              />
             </div>
-            <form onSubmit={handleCreateCompany} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Nome da Imobiliária</label>
-                <Input
-                  placeholder="Ex: TR Imóveis"
-                  value={newCompany.name}
-                  onChange={(e) => setNewCompany({ ...newCompany, name: e.target.value })}
-                  className="bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-                  required
-                />
-                {newCompany.name && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    Subdomínio gerado: <strong className="text-brand-600">{newCompany.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}</strong>.elevatiovendas.com.br
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">Plano Inicial</label>
-                <select
-                  className="flex h-10 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-white ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 dark:placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  value={newCompany.plan}
-                  onChange={(e) => setNewCompany({ ...newCompany, plan: e.target.value })}
-                >
-                  <option value="starter">Starter</option>
-                  <option value="basic">Basic</option>
-                  <option value="profissional">Profissional</option>
-                  <option value="business">Business</option>
-                  <option value="premium">Premium</option>
-                  <option value="elite">Elite</option>
-                </select>
-              </div>
-              <div className="pt-4 flex gap-3">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setIsNewClientModalOpen(false)}>Cancelar</Button>
-                <Button type="submit" className="flex-1 bg-brand-600 hover:bg-brand-700" disabled={isCreating}>
-                  {isCreating ? "Criando..." : "Criar Empresa"}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <div>
+              <Label>Plano Inicial</Label>
+              <Select value={newCompany.plan} onValueChange={(v) => setNewCompany({ ...newCompany, plan: v })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="starter">Starter</SelectItem>
+                  <SelectItem value="basic">Basic</SelectItem>
+                  <SelectItem value="profissional">Profissional</SelectItem>
+                  <SelectItem value="business">Business</SelectItem>
+                  <SelectItem value="premium">Premium</SelectItem>
+                  <SelectItem value="elite">Elite</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsNewClientModalOpen(false)}>Cancelar</Button>
+              <Button type="submit" disabled={isCreating}>{isCreating ? "Criando..." : "Criar Empresa"}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de Desconto Manual */}
-      {discountModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-md p-6 shadow-xl">
-            <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Desconto / Agrado</h3>
-            <p className="text-sm text-slate-500 mb-6">Aplicar desconto recorrente para <strong>{discountModal.company?.name}</strong></p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tipo de Desconto</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" checked={discountType === 'fixed'} onChange={() => setDiscountType('fixed')} className="text-brand-600" />
-                    <span className="text-sm">Valor Fixo (R$)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" checked={discountType === 'percentage'} onChange={() => setDiscountType('percentage')} className="text-brand-600" />
-                    <span className="text-sm">Porcentagem (%)</span>
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Valor do Desconto</label>
-                <input
-                  type="number"
-                  value={discountValue}
-                  onChange={(e) => setDiscountValue(Number(e.target.value) || 0)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2"
-                  placeholder="Ex: 50"
-                />
+      <Dialog open={discountModal.isOpen} onOpenChange={(open) => !open && setDiscountModal({ isOpen: false, company: null })}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Desconto / Agrado</DialogTitle>
+            <DialogDescription>
+              Aplicar desconto recorrente para <strong>{discountModal.company?.name}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Tipo de Desconto</Label>
+              <div className="flex gap-4 mt-2">
+                <label className="flex items-center gap-2">
+                  <input type="radio" checked={discountType === 'fixed'} onChange={() => setDiscountType('fixed')} className="text-primary" />
+                  Valor Fixo (R$)
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" checked={discountType === 'percentage'} onChange={() => setDiscountType('percentage')} className="text-primary" />
+                  Porcentagem (%)
+                </label>
               </div>
             </div>
-
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700 mb-6">
-              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Resumo da Mensalidade</h4>
-              
+            <div>
+              <Label>Valor do Desconto</Label>
+              <Input
+                type="number"
+                value={discountValue}
+                onChange={(e) => setDiscountValue(Number(e.target.value) || 0)}
+                placeholder="Ex: 50"
+              />
+            </div>
+            <div className="bg-muted/30 p-4 rounded-xl border border-border">
+              <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Resumo da Mensalidade</h4>
               {(() => {
                 const plan = PLANS.find(p => p.id === discountModal.company?.plan) || PLANS[0]
                 const basePrice = plan.price
-                const discount = discountType === 'fixed' 
-                  ? discountValue 
-                  : (basePrice * (discountValue / 100))
+                const discount = discountType === 'fixed' ? discountValue : (basePrice * (discountValue / 100))
                 const finalPrice = Math.max(0, basePrice - discount)
-
                 return (
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">Valor Base ({plan.name}):</span>
+                      <span>Valor Base ({plan.name}):</span>
                       <span className="font-medium">R$ {basePrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between text-sm text-red-500">
                       <span>Desconto Manual:</span>
                       <span>- R$ {discount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                     </div>
-                    <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-600 flex justify-between font-bold text-slate-900 dark:text-white">
+                    <div className="pt-2 mt-2 border-t border-border flex justify-between font-bold">
                       <span>Mensalidade Final:</span>
-                      <span className="text-brand-600">R$ {finalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      <span className="text-primary">R$ {finalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
                 )
               })()}
             </div>
-
-            <div className="mt-8 flex justify-end gap-3">
-              <button onClick={() => setDiscountModal({ isOpen: false, company: null })} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
-              <button
-                onClick={async () => {
-                  if (!discountModal.company) return
-
-                  setIsSavingDiscount(true)
-                  const plan = PLANS.find(p => p.id === discountModal.company.plan) || PLANS[0]
-                  const basePrice = plan.price
-                  const finalPrice = discountType === 'percentage'
-                    ? basePrice - (basePrice * (discountValue / 100))
-                    : Math.max(0, basePrice - discountValue)
-
-                  const { error: companyError } = await supabase.from('companies').update({
-                    manual_discount_value: discountValue,
-                    manual_discount_type: discountType
-                  }).eq('id', discountModal.company.id)
-
-                  if (companyError) {
-                    alert('Erro ao salvar desconto: ' + companyError.message)
-                    setIsSavingDiscount(false)
-                    return
-                  }
-
-                  const { error: contractError } = await supabase.from('saas_contracts').update({
-                    price: finalPrice,
-                    discount_value: discountValue,
-                    discount_type: discountType
-                  }).eq('company_id', discountModal.company.id)
-
-                  if (contractError) {
-                    alert('Erro ao sincronizar contrato: ' + contractError.message)
-                    setIsSavingDiscount(false)
-                    return
-                  }
-
-                  setClients(prev => prev.map(c => c.id === discountModal.company.id ? { ...c, manual_discount_value: discountValue, manual_discount_type: discountType } : c))
-                  setSelectedClient(prev => prev?.id === discountModal.company.id ? { ...prev, manual_discount_value: discountValue, manual_discount_type: discountType } : prev)
-                  setIsSavingDiscount(false)
-                  setDiscountModal({ isOpen: false, company: null })
-                }}
-                disabled={isSavingDiscount}
-                className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-lg flex items-center gap-2"
-              >
-                {isSavingDiscount ? <Icons.Loader2 className="animate-spin" size={16} /> : <Icons.Check size={16} />} Salvar Agrado
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiscountModal({ isOpen: false, company: null })}>Cancelar</Button>
+            <Button 
+              onClick={async () => {
+                if (!discountModal.company) return
+                setIsSavingDiscount(true)
+                const plan = PLANS.find(p => p.id === discountModal.company.plan) || PLANS[0]
+                const basePrice = plan.price
+                const finalPrice = discountType === 'percentage' ? basePrice - (basePrice * (discountValue / 100)) : Math.max(0, basePrice - discountValue)
+                const { error: companyError } = await supabase.from('companies').update({
+                  manual_discount_value: discountValue,
+                  manual_discount_type: discountType
+                }).eq('id', discountModal.company.id)
+                if (companyError) {
+                  alert('Erro ao salvar desconto: ' + companyError.message)
+                  setIsSavingDiscount(false)
+                  return
+                }
+                const { error: contractError } = await supabase.from('saas_contracts').update({
+                  price: finalPrice,
+                  discount_value: discountValue,
+                  discount_type: discountType
+                }).eq('company_id', discountModal.company.id)
+                if (contractError) {
+                  alert('Erro ao sincronizar contrato: ' + contractError.message)
+                  setIsSavingDiscount(false)
+                  return
+                }
+                setClients(prev => prev.map(c => c.id === discountModal.company.id ? { ...c, manual_discount_value: discountValue, manual_discount_type: discountType } : c))
+                setSelectedClient(prev => prev?.id === discountModal.company.id ? { ...prev, manual_discount_value: discountValue, manual_discount_type: discountType } : prev)
+                setIsSavingDiscount(false)
+                setDiscountModal({ isOpen: false, company: null })
+              }}
+              disabled={isSavingDiscount}
+              className="gap-2"
+            >
+              {isSavingDiscount ? <Icons.Loader2 className="animate-spin" size={16} /> : <Icons.Check size={16} />}
+              Salvar Agrado
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

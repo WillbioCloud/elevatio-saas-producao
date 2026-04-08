@@ -201,12 +201,12 @@ const AdminLayout: React.FC = () => {
           isSidebarCollapsed ? 'justify-center' : 'justify-between'
         }`}>
           {isSidebarCollapsed ? (
-            <Icons.Building size={36} />
+            <img src="/logo/logo.png" alt="Elevatio Vendas Logo" className="h-8 w-auto object-contain drop-shadow-sm" />
           ) : (
             <div className="flex items-center gap-3 overflow-hidden">
-              <Icons.Building size={32} />
+              <img src="/logo/logo.png" alt="Elevatio Vendas Logo" className="h-8 w-auto object-contain drop-shadow-sm" />
               <div className="flex flex-col animate-in fade-in">
-                <span className="font-bold text-white text-lg leading-tight tracking-tight font-serif">
+                <span className="font-serif font-bold text-lg leading-tight tracking-tight text-white">
                   Elevatio<span className="text-sky-400">Vendas</span>
                 </span>
                 <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">CRM Platform</span>
@@ -535,8 +535,8 @@ const AdminLayout: React.FC = () => {
             </button>
             
             <div className="md:hidden flex items-center gap-2">
-              <Icons.Building size={24} />
-              <span className="font-serif font-bold text-slate-800 dark:text-white">ElevatioVendas</span>
+              <img src="/logo/logo.png" alt="Elevatio Vendas" className="h-7 w-auto object-contain" />
+              <span className="font-serif font-bold text-slate-800 dark:text-white">Elevatio Vendas</span>
             </div>
             
             <div className="hidden md:block">

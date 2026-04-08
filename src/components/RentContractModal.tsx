@@ -205,7 +205,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         property_registration: selectedPropertyData?.property_registration || '',
         property_registry_office: selectedPropertyData?.property_registry_office || '',
         property_municipal_registration: selectedPropertyData?.property_municipal_registration || '',
-        rent_value: formData.rent_value,
+        rent_value: String(totalMonthlyValue),
         due_day: formData.due_day || '5',
         lease_duration: String(months),
         start_date: formData.start_date ? new Date(formData.start_date).toLocaleDateString('pt-BR') : '___/___/_____',
@@ -418,7 +418,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         property_registration: selectedPropForSave?.property_registration || '',
         property_registry_office: selectedPropForSave?.property_registry_office || '',
         property_municipal_registration: selectedPropForSave?.property_municipal_registration || '',
-        rent_value: formData.rent_value,
+        rent_value: String(totalMonthlyValue),
         due_day: formData.due_day || '5',
         lease_duration: String(months),
         start_date: formData.start_date ? new Date(formData.start_date).toLocaleDateString('pt-BR') : '___/___/_____',
@@ -572,7 +572,7 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-4 pt-12 sm:pt-4 animate-fade-in">
       <div className="bg-white/95 dark:bg-[#0a0f1c]/95 backdrop-blur-2xl rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
 
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-indigo-50 shrink-0">

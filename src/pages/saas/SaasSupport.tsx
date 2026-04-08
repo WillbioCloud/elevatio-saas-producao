@@ -119,7 +119,6 @@ export default function Support() {
         const orderedMessages = [...(ticket.saas_ticket_messages ?? [])].sort(
           (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         )
-
         return {
           id: ticket.id,
           clientName: ticket.companies?.name ?? "Imobiliária",
@@ -137,7 +136,6 @@ export default function Support() {
           }))
         }
       })
-
       setTickets(mappedTickets)
       setSelectedTicketId((currentSelected) => {
         if (currentSelected && mappedTickets.some((ticket) => ticket.id === currentSelected)) {
@@ -146,7 +144,6 @@ export default function Support() {
         return mappedTickets[0]?.id ?? null
       })
     }
-
     setIsLoading(false)
   }
 
@@ -169,19 +166,16 @@ export default function Support() {
     const matchesSearch = ticket.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       ticket.subject.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === "Todos" || ticket.status === statusFilter
-
     return matchesSearch && matchesStatus
   })
 
   const handleSendReply = async () => {
     if (!replyText.trim() || !selectedTicketId) return
-
     const { error } = await supabase.from("saas_ticket_messages").insert({
       ticket_id: selectedTicketId,
       sender_type: "admin",
       message: replyText.trim()
     })
-
     if (!error) {
       setReplyText("")
       await fetchTickets()
@@ -190,42 +184,48 @@ export default function Support() {
 
   const handleResolveTicket = async () => {
     if (!selectedTicketId) return
-
     const { error } = await supabase
       .from("saas_tickets")
       .update({ status: "Resolvido" })
       .eq("id", selectedTicketId)
+    if (!error) await fetchTickets()
+  }
 
-    if (!error) {
-      await fetchTickets()
-    }
+  if (isLoading && tickets.length === 0) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 w-48 bg-muted rounded"></div>
+          <div className="h-96 bg-muted rounded-xl"></div>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
+    <div className="h-[calc(100vh-8rem)] flex flex-col p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-50">Help Desk</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Gerencie os pedidos de suporte das imobiliárias.</p>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">Help Desk</h2>
+        <p className="text-sm text-muted-foreground mt-1">Gerencie os pedidos de suporte das imobiliárias.</p>
       </div>
 
-      <div className="flex-1 flex overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm">
-
+      <div className="flex-1 flex overflow-hidden bg-card border border-border/50 rounded-xl shadow-sm">
         {/* Left Column: Ticket List */}
-        <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950">
+        <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-border bg-muted/10">
           {/* List Header & Filters */}
-          <div className="p-4 border-b border-slate-200 dark:border-slate-700 space-y-3 bg-white dark:bg-slate-900">
+          <div className="p-4 border-b border-border space-y-3 bg-card">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Procurar tickets..."
-                className="pl-9 bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 h-9 text-sm dark:text-white"
+                className="pl-9"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
             <div className="relative">
               <select
-                className="w-full h-9 pl-3 pr-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-200 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full h-9 pl-3 pr-8 rounded-md border border-input bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
@@ -234,46 +234,41 @@ export default function Support() {
                 <option value="Pendente">Pendente</option>
                 <option value="Resolvido">Resolvido</option>
               </select>
-              <Filter className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-slate-500 pointer-events-none" />
+              <Filter className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
             </div>
           </div>
 
           {/* Ticket Items */}
           <div className="flex-1 overflow-y-auto">
-            {isLoading ? (
-              <div className="p-8 text-center text-slate-500 dark:text-slate-400 flex flex-col items-center">
-                <MessageSquare className="h-8 w-8 mb-2 opacity-20" />
-                <p className="text-sm">Carregando tickets...</p>
-              </div>
-            ) : filteredTickets.length > 0 ? (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
+            {filteredTickets.length > 0 ? (
+              <div className="divide-y divide-border">
                 {filteredTickets.map((ticket) => (
                   <button
                     key={ticket.id}
                     onClick={() => setSelectedTicketId(ticket.id)}
                     className={cn(
-                      "w-full text-left p-4 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:bg-slate-800/80",
+                      "w-full text-left p-4 transition-colors hover:bg-muted/30",
                       selectedTicketId === ticket.id
-                        ? "bg-indigo-50/50 dark:bg-indigo-500/10 border-l-2 border-l-indigo-500"
+                        ? "bg-primary/5 border-l-2 border-l-primary"
                         : "border-l-2 border-l-transparent"
                     )}
                   >
                     <div className="flex justify-between items-start mb-1">
-                      <span className="font-semibold text-sm text-slate-900 dark:text-slate-50 truncate pr-2">
+                      <span className="font-semibold text-sm truncate pr-2">
                         {ticket.clientName}
                       </span>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 whitespace-nowrap flex items-center gap-1">
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap flex items-center gap-1">
                         <Clock className="h-3 w-3" />
                         {ticket.timeElapsed}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 truncate mb-3">
+                    <p className="text-xs text-muted-foreground truncate mb-3">
                       {ticket.subject}
                     </p>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <StatusIcon status={ticket.status} />
-                        <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{ticket.status}</span>
+                        <span className="text-xs font-medium text-muted-foreground">{ticket.status}</span>
                       </div>
                       <PriorityBadge priority={ticket.priority} />
                     </div>
@@ -281,7 +276,7 @@ export default function Support() {
                 ))}
               </div>
             ) : (
-              <div className="p-8 text-center text-slate-500 dark:text-slate-400 flex flex-col items-center">
+              <div className="p-8 text-center text-muted-foreground flex flex-col items-center">
                 <MessageSquare className="h-8 w-8 mb-2 opacity-20" />
                 <p className="text-sm">Nenhum ticket encontrado.</p>
               </div>
@@ -291,44 +286,43 @@ export default function Support() {
 
         {/* Right Column: Ticket View / Chat */}
         {selectedTicket ? (
-          <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900">
+          <div className="flex-1 flex flex-col min-w-0 bg-card">
             {/* Chat Header */}
-            <div className="h-16 px-6 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900">
+            <div className="h-16 px-6 border-b border-border flex items-center justify-between shrink-0 bg-card">
               <div className="flex items-center gap-3 min-w-0">
-                <Avatar className="h-9 w-9 border border-slate-200 dark:border-slate-700">
-                  <AvatarFallback className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 font-medium">
+                <Avatar className="h-9 w-9 border border-border">
+                  <AvatarFallback className="bg-primary/10 text-primary font-medium">
                     {selectedTicket.clientName.substring(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-50 truncate flex items-center gap-2">
+                  <h3 className="text-sm font-bold truncate flex items-center gap-2">
                     {selectedTicket.clientName}
-                    <span className="text-xs font-normal text-slate-500 dark:text-slate-400">({selectedTicket.id})</span>
+                    <span className="text-xs font-normal text-muted-foreground">({selectedTicket.id})</span>
                   </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{selectedTicket.subject}</p>
+                  <p className="text-xs text-muted-foreground truncate">{selectedTicket.subject}</p>
                 </div>
               </div>
-
               <div className="flex items-center gap-2 shrink-0 ml-4">
                 {selectedTicket.status !== "Resolvido" && (
                   <Button
                     variant="outline"
                     size="sm"
-                    className="hidden sm:flex h-8 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20"
                     onClick={handleResolveTicket}
+                    className="hidden sm:flex h-8 bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800"
                   >
                     <CheckCircle2 className="h-4 w-4 mr-1.5" />
                     Marcar como Resolvido
                   </Button>
                 )}
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-300 dark:hover:text-slate-300">
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </div>
             </div>
 
             {/* Chat Messages */}
-            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-950">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-muted/10">
               {selectedTicket.messages.map((msg) => {
                 const isAdmin = msg.sender === "admin"
                 return (
@@ -336,30 +330,26 @@ export default function Support() {
                     <div className={cn("flex max-w-[80%] gap-3", isAdmin ? "flex-row-reverse" : "flex-row")}>
                       <Avatar className="h-8 w-8 shrink-0 mt-1">
                         {isAdmin ? (
-                          <>
-                            <AvatarImage src="https://picsum.photos/seed/admin/200/200" referrerPolicy="no-referrer" />
-                            <AvatarFallback>AD</AvatarFallback>
-                          </>
+                          <AvatarFallback className="bg-primary text-primary-foreground text-xs">AD</AvatarFallback>
                         ) : (
-                          <AvatarFallback className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs">
+                          <AvatarFallback className="bg-muted text-muted-foreground text-xs">
                             {selectedTicket.clientName.substring(0, 2).toUpperCase()}
                           </AvatarFallback>
                         )}
                       </Avatar>
-
                       <div className={cn("flex flex-col", isAdmin ? "items-end" : "items-start")}>
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-slate-700 dark:text-slate-200">
+                          <span className="text-xs font-medium text-foreground">
                             {isAdmin ? "Você (Suporte)" : selectedTicket.clientName}
                           </span>
-                          <span className="text-[10px] text-slate-400 dark:text-slate-500">{msg.timestamp}</span>
+                          <span className="text-[10px] text-muted-foreground">{msg.timestamp}</span>
                         </div>
                         <div
                           className={cn(
                             "px-4 py-2.5 rounded-2xl text-sm shadow-sm",
                             isAdmin
-                              ? "bg-indigo-600 text-white rounded-tr-sm"
-                              : "bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-100 dark:border-slate-800/50 rounded-tl-sm"
+                              ? "bg-primary text-primary-foreground rounded-tr-sm"
+                              : "bg-card text-foreground border border-border rounded-tl-sm"
                           )}
                         >
                           {msg.text}
@@ -372,19 +362,19 @@ export default function Support() {
             </div>
 
             {/* Chat Input Footer */}
-            <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700">
+            <div className="p-4 bg-card border-t border-border">
               {selectedTicket.status === "Resolvido" ? (
-                <div className="text-center p-3 bg-slate-50 dark:bg-slate-950 rounded-lg border border-slate-100 dark:border-slate-800/50 text-sm text-slate-500 dark:text-slate-400">
+                <div className="text-center p-3 bg-muted/20 rounded-lg border border-border text-sm text-muted-foreground">
                   Este ticket foi marcado como resolvido. Não é possível enviar novas mensagens.
                 </div>
               ) : (
                 <div className="flex items-end gap-2">
-                  <Button variant="ghost" size="icon" className="shrink-0 h-10 w-10 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:text-slate-300 dark:hover:text-slate-300">
+                  <Button variant="ghost" size="icon" className="shrink-0 h-10 w-10 text-muted-foreground">
                     <Paperclip className="h-5 w-5" />
                   </Button>
                   <Textarea
                     placeholder="Escreva a sua resposta..."
-                    className="min-h-[40px] max-h-32 resize-none bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 dark:text-white py-3"
+                    className="min-h-[40px] max-h-32 resize-none py-3"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                     onKeyDown={(e) => {
@@ -395,7 +385,7 @@ export default function Support() {
                     }}
                   />
                   <Button
-                    className="shrink-0 h-10 w-10 p-0 bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 rounded-full"
+                    className="shrink-0 h-10 w-10 p-0 rounded-full"
                     onClick={handleSendReply}
                     disabled={!replyText.trim()}
                   >
@@ -406,7 +396,7 @@ export default function Support() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-400 dark:text-slate-500">
+          <div className="flex-1 flex flex-col items-center justify-center bg-muted/10 text-muted-foreground">
             <MessageSquare className="h-12 w-12 mb-4 opacity-20" />
             <p>Selecione um ticket para visualizar a conversa.</p>
           </div>

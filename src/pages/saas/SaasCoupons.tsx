@@ -9,8 +9,13 @@ import {
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '../../../components/ui/skeleton'
 import { supabase } from '@/lib/supabase'
 
 type CouponType = 'percentage' | 'fixed' | 'free_month'
@@ -47,26 +52,22 @@ export default function SaasCoupons() {
 
   const fetchCoupons = async () => {
     setLoading(true)
-
     const { data, error } = await supabase
       .from('saas_coupons')
       .select('*')
       .eq('active', true)
       .order('created_at', { ascending: false })
-
     if (error) {
       console.error('Erro ao buscar cupons:', error)
       setCoupons([])
       setLoading(false)
       return
     }
-
     const normalizedCoupons = ((data || []) as Array<Record<string, any>>).map((coupon) => ({
       ...coupon,
       type: (coupon.discount_type ?? coupon.type) as CouponType,
       value: Number(coupon.discount_value ?? coupon.value ?? 0),
     }))
-
     setCoupons(normalizedCoupons as Coupon[])
     setLoading(false)
   }
@@ -75,20 +76,14 @@ export default function SaasCoupons() {
     fetchCoupons()
   }, [])
 
-  const resetForm = () => {
-    setForm(initialForm)
-  }
+  const resetForm = () => setForm(initialForm)
 
   const getTypeLabel = (type: CouponType) => {
     switch (type) {
-      case 'percentage':
-        return 'Porcentagem'
-      case 'fixed':
-        return 'Valor Fixo'
-      case 'free_month':
-        return 'Mensalidade Grátis'
-      default:
-        return type
+      case 'percentage': return 'Porcentagem'
+      case 'fixed': return 'Valor Fixo'
+      case 'free_month': return 'Mensalidade Grátis'
+      default: return type
     }
   }
 
@@ -103,9 +98,7 @@ export default function SaasCoupons() {
       alert('Informe um código para o cupom.')
       return
     }
-
     setIsSaving(true)
-
     const payload = {
       code: form.code.trim().toUpperCase(),
       discount_type: form.type,
@@ -114,91 +107,87 @@ export default function SaasCoupons() {
       used_count: 0,
       active: true,
     }
-
     let { error } = await supabase
       .from('saas_coupons')
       .insert([{ ...payload, max_uses: Number(form.maxUses || 0) }])
-
     if (error && /max_uses/i.test(error.message || '')) {
       const fallbackInsert = await supabase
         .from('saas_coupons')
         .insert([{ ...payload, usage_limit: Number(form.maxUses || 0) }])
-
       error = fallbackInsert.error
     }
-
     if (error) {
       alert('Erro ao criar cupom: ' + error.message)
       setIsSaving(false)
       return
     }
-
     await fetchCoupons()
     setIsSaving(false)
     setIsModalOpen(false)
     resetForm()
   }
 
+  if (loading) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-96 w-full rounded-2xl" />
+      </div>
+    )
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6 animate-fade-in">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Tag className="text-brand-500" />
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <Tag className="text-primary" />
             Gestão de Cupons
           </h1>
-          <p className="text-slate-500 dark:text-slate-400">
+          <p className="text-muted-foreground">
             Crie cupons promocionais para campanhas, agrados estratégicos e onboarding comercial.
           </p>
         </div>
-
-        <Button onClick={() => setIsModalOpen(true)} className="bg-brand-600 hover:bg-brand-700">
-          <Plus className="mr-2 h-4 w-4" />
+        <Button onClick={() => setIsModalOpen(true)} className="gap-2 shadow-sm">
+          <Plus className="h-4 w-4" />
           Novo Cupom
         </Button>
       </div>
 
-      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+      <Card className="border-border/50 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="bg-slate-50 dark:bg-slate-950 hover:bg-slate-50 dark:hover:bg-slate-950 border-slate-100 dark:border-slate-800">
-                <TableHead className="text-xs uppercase tracking-wider text-slate-500">Código</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-slate-500">Tipo</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-slate-500">Valor</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-slate-500">Duração</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-slate-500">Uso</TableHead>
+              <TableRow className="bg-muted/30">
+                <TableHead className="text-xs uppercase tracking-wider font-medium">Código</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider font-medium">Tipo</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider font-medium">Valor</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider font-medium">Duração</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider font-medium">Uso</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? (
+              {coupons.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-slate-500">
-                    <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-brand-500" />
-                    Carregando cupons...
-                  </TableCell>
-                </TableRow>
-              ) : coupons.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-slate-500">
+                  <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
                     Nenhum cupom ativo cadastrado.
                   </TableCell>
                 </TableRow>
               ) : (
                 coupons.map((coupon) => (
-                  <TableRow key={coupon.id} className="border-slate-100 dark:border-slate-800">
-                    <TableCell className="font-bold text-slate-900 dark:text-white">{coupon.code}</TableCell>
+                  <TableRow key={coupon.id} className="hover:bg-muted/30 transition-colors">
+                    <TableCell className="font-bold text-foreground">{coupon.code}</TableCell>
                     <TableCell>
-                      <span className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                      <span className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold bg-muted text-muted-foreground">
                         {coupon.type === 'percentage' && <Percent className="h-3.5 w-3.5" />}
                         {coupon.type === 'fixed' && <BadgeDollarSign className="h-3.5 w-3.5" />}
                         {coupon.type === 'free_month' && <Gift className="h-3.5 w-3.5" />}
                         {getTypeLabel(coupon.type)}
                       </span>
                     </TableCell>
-                    <TableCell className="text-slate-600 dark:text-slate-300">{getValueLabel(coupon)}</TableCell>
-                    <TableCell className="text-slate-600 dark:text-slate-300">{coupon.duration_months} mês(es)</TableCell>
-                    <TableCell className="text-slate-600 dark:text-slate-300">
+                    <TableCell className="text-foreground">{getValueLabel(coupon)}</TableCell>
+                    <TableCell className="text-foreground">{coupon.duration_months} mês(es)</TableCell>
+                    <TableCell className="text-foreground">
                       {coupon.used_count || 0}/{coupon.max_uses ?? coupon.usage_limit ?? 0}
                     </TableCell>
                   </TableRow>
@@ -209,119 +198,92 @@ export default function SaasCoupons() {
         </div>
       </Card>
 
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white dark:bg-slate-900 shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Novo Cupom</h3>
-                <p className="text-sm text-slate-500">Configure um desconto promocional para uso controlado.</p>
-              </div>
-              <button
-                onClick={() => {
-                  setIsModalOpen(false)
-                  resetForm()
-                }}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
+      {/* Modal de criação de cupom */}
+      <Dialog open={isModalOpen} onOpenChange={(open) => !open && setIsModalOpen(false)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Novo Cupom</DialogTitle>
+            <p className="text-sm text-muted-foreground">Configure um desconto promocional para uso controlado.</p>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="code">Código do Cupom</Label>
+              <Input
+                id="code"
+                value={form.code}
+                onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value }))}
+                placeholder="Ex: BEMVINDO50"
+                className="uppercase"
+              />
             </div>
-
-            <div className="p-6">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Código do Cupom</label>
-                  <input
-                    type="text"
-                    value={form.code}
-                    onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value }))}
-                    placeholder="Ex: BEMVINDO50"
-                    className="w-full px-4 py-2 rounded-lg border border-slate-200 uppercase outline-none focus:border-brand-500"
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="type">Tipo de Desconto</Label>
+                <Select value={form.type} onValueChange={(v) => setForm((prev) => ({ ...prev, type: v as CouponType }))}>
+                  <SelectTrigger id="type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="percentage">Porcentagem (%)</SelectItem>
+                    <SelectItem value="fixed">Valor Fixo (R$)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="value">Valor do Desconto</Label>
+                <div className="relative">
+                  <Input
+                    id="value"
+                    type="number"
+                    value={form.value}
+                    onChange={(e) => setForm((prev) => ({ ...prev, value: Number(e.target.value) }))}
+                    placeholder="Ex: 20"
+                    className="pr-10"
                   />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tipo de Desconto</label>
-                    <select
-                      value={form.type}
-                      onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value as CouponType }))}
-                      className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none"
-                    >
-                      <option value="percentage">Porcentagem (%)</option>
-                      <option value="fixed">Valor Fixo (R$)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                      Valor do Desconto
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        value={form.value}
-                        onChange={(e) => setForm((prev) => ({ ...prev, value: Number(e.target.value) }))}
-                        className="w-full pl-4 pr-10 py-2 rounded-lg border border-slate-200 outline-none"
-                        placeholder="Ex: 20"
-                      />
-                      <span className="absolute right-3 top-2.5 text-slate-400 font-bold text-sm">
-                        {form.type === 'percentage' ? '%' : 'R$'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Duração (Meses)</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        value={form.durationMonths}
-                        onChange={(e) => setForm((prev) => ({ ...prev, durationMonths: Number(e.target.value) }))}
-                        className="w-full pl-4 pr-16 py-2 rounded-lg border border-slate-200 outline-none"
-                        placeholder="Ex: 3"
-                      />
-                      <span className="absolute right-3 top-2.5 text-slate-400 text-xs">Meses</span>
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-1">Tempo de validade na assinatura.</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Cupons Disponíveis</label>
-                    <input
-                      type="number"
-                      value={form.maxUses}
-                      onChange={(e) => setForm((prev) => ({ ...prev, maxUses: Number(e.target.value) }))}
-                      className="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none"
-                      placeholder="Ex: 100"
-                    />
-                    <p className="text-[10px] text-slate-500 mt-1">Quantas vezes pode ser resgatado.</p>
-                  </div>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-bold">
+                    {form.type === 'percentage' ? '%' : 'R$'}
+                  </span>
                 </div>
               </div>
             </div>
-
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setIsModalOpen(false)
-                  resetForm()
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button onClick={handleCreateCoupon} disabled={isSaving} className="bg-brand-600 hover:bg-brand-700">
-                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                Criar Cupom
-              </Button>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="durationMonths">Duração (Meses)</Label>
+                <div className="relative">
+                  <Input
+                    id="durationMonths"
+                    type="number"
+                    value={form.durationMonths}
+                    onChange={(e) => setForm((prev) => ({ ...prev, durationMonths: Number(e.target.value) }))}
+                    placeholder="Ex: 3"
+                    className="pr-16"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">Meses</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground">Tempo de validade na assinatura.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="maxUses">Cupons Disponíveis</Label>
+                <Input
+                  id="maxUses"
+                  type="number"
+                  value={form.maxUses}
+                  onChange={(e) => setForm((prev) => ({ ...prev, maxUses: Number(e.target.value) }))}
+                  placeholder="Ex: 100"
+                />
+                <p className="text-[10px] text-muted-foreground">Quantas vezes pode ser resgatado.</p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsModalOpen(false); resetForm() }}>Cancelar</Button>
+            <Button onClick={handleCreateCoupon} disabled={isSaving} className="gap-2">
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Criar Cupom
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
