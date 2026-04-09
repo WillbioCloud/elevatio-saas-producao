@@ -266,7 +266,7 @@ const AdminPropertyForm: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { addToast } = useToast();
   const isEditing = Boolean(id);
   const [draftId] = useState(() => crypto.randomUUID());
@@ -389,7 +389,7 @@ const AdminPropertyForm: React.FC = () => {
         return;
       }
 
-      if (user && user.role !== 'admin' && data.agent_id !== user.id) {
+      if (user && !isAdmin && data.agent_id !== user.id) {
         addToast('Sem permissão para editar este imóvel.', 'error');
         navigate('/admin/imoveis', { replace: true });
         return;
@@ -478,7 +478,7 @@ const AdminPropertyForm: React.FC = () => {
     };
 
     loadProperty();
-  }, [id, isEditing, user?.id, user?.role, addToast, navigate]);
+  }, [id, isEditing, user?.id, isAdmin, addToast, navigate]);
 
   useEffect(() => {
     const fetchAgents = async () => {
@@ -486,10 +486,10 @@ const AdminPropertyForm: React.FC = () => {
       if (data) setAgents(data);
     };
 
-    if (user?.role === 'admin') {
+    if (isAdmin) {
       fetchAgents();
     }
-  }, [user?.role]);
+  }, [isAdmin]);
 
   const handleInput = (name: keyof FormState, value: string | number | boolean) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -961,7 +961,7 @@ const AdminPropertyForm: React.FC = () => {
         const { error } = await supabase.from('properties').update(basePayload).eq('id', id);
         if (error) throw error;
 
-        if (user?.role === 'admin' && originalAgentId && originalAgentId !== user.id) {
+        if (isAdmin && originalAgentId && originalAgentId !== user.id) {
           await supabase.from('notifications').insert([
             {
               user_id: originalAgentId,
@@ -1787,7 +1787,7 @@ const AdminPropertyForm: React.FC = () => {
                 />
               </div>
 
-              {user?.role === 'admin' && (
+              {isAdmin && (
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-2">Corretor Responsável (Captador)</label>
                   <select

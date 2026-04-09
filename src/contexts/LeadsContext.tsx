@@ -20,7 +20,7 @@ interface LeadsContextType {
 export const LeadsContext = createContext<LeadsContextType | undefined>(undefined);
 
 export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -49,7 +49,7 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       `)
       .order('created_at', { ascending: false });
 
-    if (user.role !== 'admin') {
+    if (!isAdmin) {
       query = query.eq('assigned_to', user.id);
     }
 
@@ -72,7 +72,7 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (shouldShowInitialLoading) {
       setLoading(false);
     }
-  }, [user?.id, user?.role]);
+  }, [isAdmin, leads.length, user?.id]);
 
   const updateLeadStatus = useCallback(async (leadId: string, status: LeadStatus) => {
     let previousLead: Lead | undefined;

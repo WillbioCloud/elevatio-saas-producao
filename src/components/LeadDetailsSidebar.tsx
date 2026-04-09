@@ -59,10 +59,9 @@ type TabId = 'timeline' | 'smart_match' | 'whatsapp' | 'history' | 'tasks' | 'in
 type InfoTabId = 'profile' | 'smart_match';
 
 const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanConfig, onClose, initialTab, onStageChange, onStatusChange, onLeadUpdate, onRequestTransfer }) => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { addToast } = useToast();
   const Maps = useNavigate();
-  const isAdmin = user?.role === 'admin';
   const [activeTab, setActiveTab] = useState<TabId>(() => {
     if (initialTab) return initialTab;
     const storedTab = localStorage.getItem('lead_sidebar_last_tab');
@@ -304,12 +303,12 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
       await supabase.from('leads').update({ updated_at: now }).eq('id', lead.id);
       onLeadUpdate?.(lead.id, { updated_at: now });
 
-      // Notifica o dono se quem comentou foi admin
+      // Notifica o responsável se a gestão comentou no lead
       if (isAdmin && (lead as any).assigned_to && (lead as any).assigned_to !== user?.id) {
         await supabase.from('notifications').insert([{
           user_id: (lead as any).assigned_to,
           title: 'Nova Nota no Lead',
-          message: `O admin adicionou uma nota no lead ${lead.name}`,
+          message: `A gestão adicionou uma nota no lead ${lead.name}`,
           type: 'system',
           read: false,
           company_id: user.company_id,
@@ -361,7 +360,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
         .from('profiles')
         .select('id, name, active')
         .eq('active', true)
-        .in('role', ['corretor', 'admin'])
+        .in('role', ['corretor', 'admin', 'owner'])
         .order('name', { ascending: true });
 
       if (data) setAgents(data as Array<{ id: string; name: string; active: boolean }>);
@@ -579,7 +578,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
               <div className="absolute left-4 right-4 top-4 h-[2px] bg-slate-200 -z-10" />
               {FUNNELS.map((funnel, index) => {
                 const isActive = selectedFunnel === funnel.id;
-                if (funnel.id === 'pre_atendimento' && user?.role !== 'admin') return null;
+                if (funnel.id === 'pre_atendimento' && !isAdmin) return null;
 
                 return (
                   <div 

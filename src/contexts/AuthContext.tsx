@@ -3,15 +3,25 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import type {
+  AppUserRole,
+  CompanyPermissions,
+  CompanySettings,
+} from '../types';
+import { DEFAULT_COMPANY_PERMISSIONS } from '../types';
 
 type CompanyProfile = {
   name: string;
   plan: string;
+  document?: string | null;
+  logo_url?: string | null;
+  admin_signature_url?: string | null;
   use_asaas?: boolean;
   default_commission?: number;
   broker_commission?: number;
@@ -22,7 +32,7 @@ type CompanyProfile = {
 
 type ProfileData = {
   id?: string;
-  role?: string;
+  role?: AppUserRole;
   name?: string;
   phone?: string;
   avatar_url?: string;
@@ -37,7 +47,7 @@ type ProfileData = {
 export type UserWithRole = User & {
   name?: string;
   phone?: string;
-  role?: string;
+  role?: AppUserRole;
   avatar_url?: string;
   level?: number;
   xp_points?: number;
@@ -51,6 +61,11 @@ interface AuthContextType {
   session: Session | null;
   user: UserWithRole | null;
   loading: boolean;
+  isOwner: boolean;
+  isAdmin: boolean;
+  isManager: boolean;
+  isAtendente: boolean;
+  hasPermission: (permissionName: string) => boolean;
   signIn: (email: string, password: string) => Promise<{ error: unknown }>;
   signUp: (
     name: string,
@@ -70,17 +85,53 @@ const toNumber = (value: unknown, fallback: number): number => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const normalizeUserRole = (role: unknown): AppUserRole => {
+  switch (role) {
+    case 'owner':
+    case 'manager':
+    case 'admin':
+    case 'atendente':
+    case 'corretor':
+    case 'super_admin':
+      return role;
+    default:
+      return 'corretor';
+  }
+};
+
+const normalizeCompanyPermissions = (permissions: unknown): CompanyPermissions => {
+  const source =
+    permissions && typeof permissions === 'object'
+      ? (permissions as Partial<CompanyPermissions>)
+      : {};
+
+  return {
+    brokers_can_create_properties:
+      source.brokers_can_create_properties ?? DEFAULT_COMPANY_PERMISSIONS.brokers_can_create_properties,
+    brokers_can_edit_properties:
+      source.brokers_can_edit_properties ?? DEFAULT_COMPANY_PERMISSIONS.brokers_can_edit_properties,
+    atendentes_can_assign_leads:
+      source.atendentes_can_assign_leads ?? DEFAULT_COMPANY_PERMISSIONS.atendentes_can_assign_leads,
+  };
+};
+
+const COMPANY_PROFILE_SELECT =
+  'name, plan, document, logo_url, admin_signature_url, use_asaas, default_commission, broker_commission, payment_api_key, manual_discount_value, manual_discount_type';
+
 const buildFallbackUser = (supabaseUser: User): UserWithRole => {
   const metadata = (supabaseUser.user_metadata as Record<string, unknown> | undefined) ?? {};
   return {
     ...supabaseUser,
-    name: (metadata.name as string | undefined) ?? 'Usuário',
-    role: (metadata.role as string | undefined) ?? 'corretor',
+    name:
+      (metadata.name as string | undefined) ??
+      (metadata.full_name as string | undefined) ??
+      'Usuário',
+    role: normalizeUserRole(metadata.role),
     avatar_url: (metadata.avatar_url as string | undefined) ?? undefined,
     level: toNumber(metadata.level, 1),
     xp_points: toNumber(metadata.xp_points ?? metadata.xp, 0),
     active: true,
-    company_id: undefined,
+    company_id: typeof metadata.company_id === 'string' ? metadata.company_id : undefined,
     company: undefined,
     profile: null,
   };
@@ -90,8 +141,12 @@ const mergeUserWithProfile = (supabaseUser: User, profile: ProfileData | null): 
   if (!profile) return buildFallbackUser(supabaseUser);
   return {
     ...supabaseUser,
-    role: profile.role ?? 'corretor',
-    name: profile.name ?? (supabaseUser.user_metadata?.name as string | undefined) ?? 'Usuário',
+    role: normalizeUserRole(profile.role),
+    name:
+      profile.name ??
+      (supabaseUser.user_metadata?.name as string | undefined) ??
+      (supabaseUser.user_metadata?.full_name as string | undefined) ??
+      'Usuário',
     phone: profile.phone,
     avatar_url: profile.avatar_url,
     level: toNumber(profile.level, 1),
@@ -117,6 +172,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<UserWithRole | null>(null);
   const [loading, setLoading] = useState(true);
+  const [companyPermissions, setCompanyPermissions] = useState<CompanyPermissions>({
+    ...DEFAULT_COMPANY_PERMISSIONS,
+  });
   
   // Refs para controle de montagem e estado atual (evita dependências circulares)
   const isMounted = useRef(true);
@@ -132,24 +190,169 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     currentSessionRef.current = session;
   }, [session]);
 
+  // --- PERMISSOES GLOBAIS ---
+  // isAdmin: Pode ver o CRM todo (Dono, Gerente, Admin e Super Admin do SaaS)
+  const isAdmin = useMemo(
+    () => ['owner', 'admin', 'manager', 'super_admin'].includes(user?.role ?? ''),
+    [user?.role]
+  );
+
+  // isOwner: Poderes administrativos e financeiros (Dono e Super Admin)
+  const isOwner = useMemo(
+    () => ['owner', 'super_admin'].includes(user?.role ?? ''),
+    [user?.role]
+  );
+
+  // isManager: Gestao operacional (Gerentes, Admins e Donos)
+  const isManager = useMemo(
+    () => ['manager', 'admin', 'owner', 'super_admin'].includes(user?.role ?? ''),
+    [user?.role]
+  );
+
+  const isAtendente = user?.role === 'atendente';
+
+  const hasPermission = useCallback(
+    (permissionName: string) => {
+      if (isOwner) return true; // Dono sempre pode tudo
+      const permissions = companyPermissions ?? DEFAULT_COMPANY_PERMISSIONS;
+      return !!permissions[permissionName as keyof CompanyPermissions];
+    },
+    [companyPermissions, isOwner]
+  );
+
+  useEffect(() => {
+    if (!user?.company_id) {
+      setCompanyPermissions({ ...DEFAULT_COMPANY_PERMISSIONS });
+      return;
+    }
+
+    let isCancelled = false;
+
+    const loadCompanyPermissions = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('settings')
+          .select('permissions')
+          .eq('company_id', user.company_id)
+          .maybeSingle();
+
+        if (error) {
+          if (!isAbortError(error)) {
+            console.warn('Falha ao carregar permissÃµes da empresa:', error.message);
+          }
+          if (!isCancelled) {
+            setCompanyPermissions({ ...DEFAULT_COMPANY_PERMISSIONS });
+          }
+          return;
+        }
+
+        if (!isCancelled) {
+          const settingsData = data as Pick<CompanySettings, 'permissions'> | null;
+          setCompanyPermissions(normalizeCompanyPermissions(settingsData?.permissions));
+        }
+      } catch (error) {
+        if (!isAbortError(error)) {
+          console.warn('Falha ao carregar permissÃµes da empresa:', error);
+        }
+        if (!isCancelled) {
+          setCompanyPermissions({ ...DEFAULT_COMPANY_PERMISSIONS });
+        }
+      }
+    };
+
+    void loadCompanyPermissions();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [user?.company_id]);
+
+  useEffect(() => {
+    const handlePermissionsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        companyId?: string;
+        permissions?: CompanyPermissions;
+      }>).detail;
+
+      if (detail?.companyId !== user?.company_id || !detail.permissions) return;
+      setCompanyPermissions(normalizeCompanyPermissions(detail.permissions));
+    };
+
+    window.addEventListener('company-permissions-updated', handlePermissionsUpdated);
+    return () => {
+      window.removeEventListener('company-permissions-updated', handlePermissionsUpdated);
+    };
+  }, [user?.company_id]);
+
   // Busca dados do perfil
   const fetchProfileData = useCallback(async (currentSession: Session): Promise<UserWithRole> => {
     if (!currentSession.user) return buildFallbackUser(currentSession.user);
-    
+
+    const currentAuthUser = currentSession.user;
+
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*, company:companies(name, plan, use_asaas, default_commission, broker_commission, payment_api_key, manual_discount_value, manual_discount_type)')
-        .eq('id', currentSession.user.id)
+        .select(`*, company:companies(${COMPANY_PROFILE_SELECT})`)
+        .eq('id', currentAuthUser.id)
         .maybeSingle();
 
-      if (error) {
-        return buildFallbackUser(currentSession.user);
+      if (!error && data) {
+        return mergeUserWithProfile(currentAuthUser, (data as ProfileData | null) ?? null);
       }
 
-      return mergeUserWithProfile(currentSession.user, (data as ProfileData | null) ?? null);
-    } catch {
-      return buildFallbackUser(currentSession.user);
+      if (error && !isAbortError(error)) {
+        console.warn('Falha ao carregar perfil completo. Tentando fallback simples...', error.message);
+      }
+    } catch (error) {
+      if (!isAbortError(error)) {
+        console.warn('Falha ao carregar perfil com empresa vinculada. Tentando fallback simples...', error);
+      }
+    }
+
+    try {
+      const { data: rawProfile, error: rawProfileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', currentAuthUser.id)
+        .maybeSingle();
+
+      if (rawProfileError) {
+        throw rawProfileError;
+      }
+
+      const normalizedProfile = (rawProfile as ProfileData | null) ?? null;
+      if (!normalizedProfile) {
+        return buildFallbackUser(currentAuthUser);
+      }
+
+      let company: CompanyProfile | undefined;
+
+      if (normalizedProfile.company_id) {
+        const { data: companyData, error: companyError } = await supabase
+          .from('companies')
+          .select(COMPANY_PROFILE_SELECT)
+          .eq('id', normalizedProfile.company_id)
+          .maybeSingle();
+
+        if (companyError) {
+          if (!isAbortError(companyError)) {
+            console.warn('Falha ao carregar dados da empresa no fallback do perfil:', companyError.message);
+          }
+        } else if (companyData) {
+          company = companyData as CompanyProfile;
+        }
+      }
+
+      return mergeUserWithProfile(currentAuthUser, {
+        ...normalizedProfile,
+        company,
+      });
+    } catch (error) {
+      if (!isAbortError(error)) {
+        console.warn('Falha ao carregar perfil no fallback simples. Usando metadata local.', error);
+      }
+      return buildFallbackUser(currentAuthUser);
     }
   }, []);
 
@@ -308,13 +511,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (!error && authData?.user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*, company:companies(name, plan, use_asaas, default_commission, broker_commission, payment_api_key, manual_discount_value, manual_discount_type)')
-        .eq('id', authData.user.id)
-        .single();
-
-      const signedUser = mergeUserWithProfile(authData.user, (profile as ProfileData | null) ?? null);
+      const signedUser = authData.session
+        ? await fetchProfileData(authData.session)
+        : buildFallbackUser(authData.user);
       setUser(signedUser);
     }
 
@@ -339,6 +538,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         options: {
           data: {
             name: name.trim(),
+            role: 'owner', // Todo novo cadastro via Landing Page nasce como Dono
             ...metaData,
           },
         },
@@ -362,7 +562,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, loading, signIn, signUp, signOut, refreshUser }}>
+    <AuthContext.Provider
+      value={{
+        session,
+        user,
+        loading,
+        isOwner,
+        isAdmin,
+        isManager,
+        isAtendente,
+        hasPermission,
+        signIn,
+        signUp,
+        signOut,
+        refreshUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

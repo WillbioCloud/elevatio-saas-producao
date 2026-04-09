@@ -92,10 +92,12 @@ const IntermediationContractModal: React.FC<IntermediationContractModalProps> = 
   const [brokers, setBrokers] = useState<BrokerOption[]>([]);
   const [brokerProfile, setBrokerProfile] = useState<{
     name: string;
-    company_logo: string;
     cpf_cnpj: string;
     creci: string;
-    companies?: { name?: string | null } | null;
+    company?: {
+      name?: string | null;
+      logo_url?: string | null;
+    } | null;
   } | null>(null);
 
   const [formState, setFormState] = useState({
@@ -164,7 +166,7 @@ const IntermediationContractModal: React.FC<IntermediationContractModalProps> = 
         supabase.from('profiles').select('id, name, cpf_cnpj, creci').eq('active', true),
         supabase
           .from('profiles')
-          .select('name, company_logo, cpf_cnpj, creci, companies(name)')
+          .select('name, cpf_cnpj, creci, company:companies(name, logo_url)')
           .eq('id', user?.id)
           .maybeSingle(),
       ]);
@@ -255,11 +257,11 @@ const IntermediationContractModal: React.FC<IntermediationContractModalProps> = 
         'intermediacao',
         contractDataObj,
         tenant,
-        brokerProfile?.company_logo,
+        brokerProfile?.company?.logo_url ?? undefined,
         selectedBroker?.name || brokerProfile?.name,
         selectedBroker?.cpf_cnpj || brokerProfile?.cpf_cnpj,
         selectedBroker?.creci || brokerProfile?.creci,
-        brokerProfile?.companies?.name || undefined
+        brokerProfile?.company?.name || undefined
       );
     } catch (error) {
       console.error('Erro ao gerar pré-visualização do contrato:', error);
@@ -281,11 +283,11 @@ const IntermediationContractModal: React.FC<IntermediationContractModalProps> = 
         'intermediacao',
         contractDataObj,
         tenant,
-        brokerProfile?.company_logo,
+        brokerProfile?.company?.logo_url ?? undefined,
         selectedBroker?.name || brokerProfile?.name,
         selectedBroker?.cpf_cnpj || brokerProfile?.cpf_cnpj,
         selectedBroker?.creci || brokerProfile?.creci,
-        brokerProfile?.companies?.name || undefined
+        brokerProfile?.company?.name || undefined
       );
 
       const payload: Record<string, unknown> = {

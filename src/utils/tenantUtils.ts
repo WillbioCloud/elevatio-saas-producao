@@ -14,10 +14,10 @@ export const getTenantName = (tenant: Company | null | undefined): string =>
 
 // A MÁGICA: Procura na raiz E no site_data para garantir que pega a logo do AdminSiteBuilder
 export const getTenantLogo = (tenant: Company | null | undefined): string =>
-  tenant?.logo_url || getSiteData(tenant).logo_url || '/logo-placeholder.png';
+  getSiteData(tenant).logo_url || tenant?.logo_url || '/logo-placeholder.png';
 
 export const getTenantLogoWhite = (tenant: Company | null | undefined): string =>
-  tenant?.logo_white_url || getSiteData(tenant).logo_white_url || getTenantLogo(tenant);
+  getSiteData(tenant).logo_white_url || tenant?.logo_white_url || getTenantLogo(tenant);
 
 export const getTenantEmail = (tenant: Company | null | undefined): string =>
   tenant?.email || getSiteData(tenant).contact?.email || '';

@@ -70,7 +70,7 @@ const Login: React.FC = () => {
       } else {
         if (!name) throw new Error('Por favor, informe seu nome.');
 
-        const { error } = await signUp(name, email.trim(), password);
+        const { error } = await signUp(name, email.trim(), password, { role: 'owner' });
         if (error) throw error;
 
         const currentUser = (await supabase.auth.getUser()).data.user;

@@ -17,10 +17,12 @@ export type Company = {
   name: string;
   subdomain: string | null;
   domain: string | null;
+  document?: string | null;
   template?: string | null;
   template_id?: string | null;
   logo_url?: string | null;
   logo_white_url?: string | null;
+  admin_signature_url?: string | null;
   plan?: string | null;
   active?: boolean | null;
   phone?: string | null;
@@ -130,7 +132,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         let query = supabase
           .from('companies')
           .select(
-            'id, name, subdomain, domain, template, plan, active, site_data, finance_config, use_asaas, default_commission, broker_commission, payment_api_key'
+            'id, name, subdomain, domain, document, template, logo_url, admin_signature_url, plan, active, site_data, finance_config, use_asaas, default_commission, broker_commission, payment_api_key'
           );
 
         if (hostData.customDomain) {
@@ -199,11 +201,25 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                       : typeof (parsedSiteData?.contact as { address?: unknown } | undefined)?.address === 'string'
                         ? (parsedSiteData?.contact as { address: string }).address
                         : null,
+                  document:
+                    typeof data.document === 'string'
+                      ? data.document
+                      : typeof parsedSiteData?.cnpj === 'string'
+                        ? parsedSiteData.cnpj
+                        : null,
                   logo_url:
-                    typeof parsedSiteData?.logo_url === 'string' ? parsedSiteData.logo_url : null,
+                    typeof data.logo_url === 'string'
+                      ? data.logo_url
+                      : typeof parsedSiteData?.logo_url === 'string'
+                        ? parsedSiteData.logo_url
+                        : null,
                   logo_white_url:
                     typeof parsedSiteData?.logo_white_url === 'string'
                       ? parsedSiteData.logo_white_url
+                      : null,
+                  admin_signature_url:
+                    typeof data.admin_signature_url === 'string'
+                      ? data.admin_signature_url
                       : null,
                   template: normalizedTemplate,
                   template_id: siteDataTemplateId ?? normalizedTemplate,

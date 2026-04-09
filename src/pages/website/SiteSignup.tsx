@@ -87,7 +87,7 @@ export default function SiteSignup() {
       const { data, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
-        options: { data: { full_name: formData.fullName, company_name: '' } },
+        options: { data: { full_name: formData.fullName, company_name: '', role: 'owner' } },
       });
 
       if (authError) throw new Error(`Erro ao criar conta: ${authError.message}`);

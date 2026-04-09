@@ -1,4 +1,5 @@
 ﻿import React, { useState, useMemo } from 'react';
+import { Navigate } from 'react-router-dom';
 import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useInvoices } from '../hooks/useInvoices';
@@ -180,13 +181,18 @@ export default function AdminFinance() {
   };
 
   // Usamos user?.company_id pois é 100% garantido no painel admin
-  const { invoices, loading } = useInvoices(user?.company_id);
+  const { invoices, loading } = useInvoices(user?.role === 'owner' ? user?.company_id : undefined);
 
   React.useEffect(() => {
     let isMounted = true;
 
     const fetchLimitAndCount = async () => {
       if (!user) return;
+
+      if (user.role !== 'owner') {
+        if (isMounted) setLoadingPlanLimit(false);
+        return;
+      }
 
       if (isSuperAdmin) {
         if (isMounted) {
@@ -318,6 +324,10 @@ export default function AdminFinance() {
   const selectedTenantInvoices = selectedTenantGroup
     ? filteredInvoices.filter(i => i.client_name === selectedTenantGroup)
     : [];
+
+  if (user?.role !== 'owner') {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
 
   const fmt = (val: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);

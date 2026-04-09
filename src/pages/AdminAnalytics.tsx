@@ -27,12 +27,13 @@ const AdminAnalytics: React.FC = () => {
   const [allVisits, setAllVisits] = useState<any[]>([]);
   const [allProperties, setAllProperties] = useState<any[]>([]);
 
-  if (user?.role !== 'admin') {
-    return <Navigate to="/admin/dashboard" replace />;
-  }
-
   useEffect(() => {
     const fetchAnalytics = async () => {
+      if (user?.role !== 'owner') {
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       try {
         const { data: profiles } = await supabase
@@ -46,7 +47,7 @@ const AdminAnalytics: React.FC = () => {
 
         if (profiles && leads) {
           const activity = profiles
-            .filter((p) => p.role !== 'admin')
+            .filter((p) => p.role !== 'owner')
             .map((profile) => {
               const agentLeads = leads.filter((l) => l.assigned_to === profile.id);
               const lastLead = agentLeads[0];
@@ -93,9 +94,10 @@ const AdminAnalytics: React.FC = () => {
     };
 
     fetchAnalytics();
-  }, []);
+  }, [user?.role]);
 
   useEffect(() => {
+    if (user?.role !== 'owner') return;
     if (!allVisits.length || !allProperties.length) return;
 
     const now = new Date();
@@ -174,6 +176,10 @@ const AdminAnalytics: React.FC = () => {
   }, {} as ChartConfig);
 
   const totalSessions = topInterests.reduce((acc, curr) => acc + curr.count, 0);
+
+  if (user?.role !== 'owner') {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">

@@ -86,6 +86,34 @@ export interface FinanceConfig {
   broker_commission?: number;
 }
 
+export type UserRole = 'owner' | 'manager' | 'admin' | 'atendente' | 'corretor';
+export type AppUserRole = UserRole | 'super_admin';
+
+export interface CompanyPermissions {
+  brokers_can_create_properties: boolean;
+  brokers_can_edit_properties: boolean;
+  atendentes_can_assign_leads: boolean;
+}
+
+export const DEFAULT_COMPANY_PERMISSIONS: CompanyPermissions = {
+  brokers_can_create_properties: false,
+  brokers_can_edit_properties: false,
+  atendentes_can_assign_leads: true,
+};
+
+export interface CompanySettings {
+  id: string;
+  company_id: string;
+  route_to_central?: boolean;
+  central_whatsapp?: string | null;
+  central_user_id?: string | null;
+  kanban_config?: unknown;
+  include_admins_in_roulette?: boolean;
+  permissions: CompanyPermissions;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -94,6 +122,7 @@ export interface Company {
   domain_secondary?: string | null;
   domain_type?: 'new' | 'existing' | null;
   domain_status?: 'pending' | 'active' | 'expired' | null;
+  document?: string | null;
   slug?: string;
   plan: string;
   template?: string;
@@ -337,7 +366,7 @@ export interface Profile {
   name: string;
   email: string;
   active: boolean;
-  role?: string;
+  role?: AppUserRole;
   phone?: string;
 
   // Gamificação do corretor

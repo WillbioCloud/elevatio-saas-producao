@@ -263,14 +263,13 @@ const DraggableCardWrapper = ({
 // === PÁGINA PRINCIPAL ===
 
 const AdminLeads: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentFunnel = searchParams.get('funnel') || 'geral';
   const openLeadId = searchParams.get('open');
   const detailTabParam = searchParams.get('tab');
-  const isAdmin = (user as any)?.role === 'admin';
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [kanbanConfig, setKanbanConfig] = useState<Record<string, string[]>>({
@@ -354,7 +353,7 @@ const AdminLeads: React.FC = () => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const rolesToInclude = withAdmins ? ['corretor', 'admin'] : ['corretor'];
+      const rolesToInclude = withAdmins ? ['corretor', 'admin', 'owner'] : ['corretor'];
       const { data: brokers } = await supabase.from('profiles').select('id, name').eq('active', true).in('role', rolesToInclude);
 
       const { data: leadsToday } = await supabase

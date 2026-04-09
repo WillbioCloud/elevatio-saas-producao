@@ -12,8 +12,16 @@ import GamificationModal from '../components/GamificationModal';
 import FidelityTermsModal from '../components/FidelityTermsModal';
 import BillingPortalModal from '../components/BillingPortalModal';
 import { uploadCompanyAsset } from '../lib/storage';
-import { type Company as BaseCompany, type FinanceConfig, type SiteData } from '../types';
-import { CheckCircle2, ChevronDown, ChevronUp, Copy, Loader2, Upload, X, XCircle, ImageOff, Check, AlertTriangle } from 'lucide-react';
+import {
+  DEFAULT_COMPANY_PERMISSIONS,
+  type AppUserRole,
+  type Company as BaseCompany,
+  type CompanyPermissions,
+  type CompanySettings,
+  type FinanceConfig,
+  type SiteData,
+} from '../types';
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, Headphones, ImageOff, Loader2, Upload, X, XCircle } from 'lucide-react';
 import { useProperties } from '../hooks/useProperties';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { generateZapXML } from '../utils/zapXmlGenerator';
@@ -25,7 +33,7 @@ interface Profile {
   email: string;
   phone?: string;
   company_id?: string;
-  role: 'admin' | 'corretor';
+  role: AppUserRole;
   avatar_url?: string;
   level?: number;
   xp?: number;
@@ -79,20 +87,111 @@ interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_sec
 
 type SitePartner = NonNullable<SiteData['partners']>[number];
 type OfficialSignatureTab = 'draw' | 'type' | 'upload';
-type ConfigTab = 'profile' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance';
+type ConfigTab = 'profile' | 'company' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance' | 'permissions';
 type SiteSubTab = 'templates' | 'identity' | 'hero' | 'about' | 'social';
+type PermissionKey = keyof CompanyPermissions;
 type TenantFinanceRecord = Pick<
   Company,
-  'id' | 'name' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template' | 'admin_signature_url'
+  'id' | 'name' | 'document' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template' | 'logo_url' | 'admin_signature_url'
 > & {
   finance_config?: FinanceConfig | null;
 };
 
-const CONFIG_TABS: ConfigTab[] = ['profile', 'team', 'traffic', 'subscription', 'site', 'contracts', 'integrations', 'finance'];
+const CONFIG_TABS: ConfigTab[] = ['profile', 'company', 'team', 'traffic', 'subscription', 'site', 'contracts', 'integrations', 'finance', 'permissions'];
+const OWNER_ONLY_CONFIG_TABS: ConfigTab[] = ['company', 'subscription', 'finance', 'permissions'];
 const SITE_SUBTABS: SiteSubTab[] = ['templates', 'identity', 'hero', 'about', 'social'];
 const LEGACY_CONFIG_TAB_ALIASES: Partial<Record<string, ConfigTab>> = {
   assinatura: 'subscription',
+  empresa: 'company',
 };
+
+const normalizeProfileRole = (role: unknown): AppUserRole => {
+  switch (role) {
+    case 'owner':
+    case 'manager':
+    case 'admin':
+    case 'atendente':
+    case 'corretor':
+    case 'super_admin':
+      return role;
+    default:
+      return 'corretor';
+  }
+};
+
+const getRoleLabel = (role?: AppUserRole | null) => {
+  switch (role) {
+    case 'owner':
+      return 'Dono da Imobiliária';
+    case 'manager':
+      return 'Gerente de Vendas';
+    case 'admin':
+      return 'Administrador';
+    case 'atendente':
+      return 'Atendente (SDR)';
+    case 'super_admin':
+      return 'Super Admin';
+    case 'corretor':
+    default:
+      return 'Corretor';
+  }
+};
+
+const getRoleBadgeClassName = (role?: AppUserRole | null) => {
+  switch (role) {
+    case 'owner':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'manager':
+      return 'border-sky-200 bg-sky-50 text-sky-700';
+    case 'admin':
+      return 'border-purple-200 bg-purple-100 text-purple-700';
+    case 'atendente':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'super_admin':
+      return 'border-slate-300 bg-slate-100 text-slate-700';
+    case 'corretor':
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-600';
+  }
+};
+
+const PERMISSION_SECTIONS: Array<{
+  title: string;
+  icon: React.ComponentType<{ className?: string; size?: number }>;
+  items: Array<{
+    key: PermissionKey;
+    title: string;
+    description: string;
+  }>;
+}> = [
+  {
+    title: 'Permissões de Corretores',
+    icon: Icons.Users,
+    items: [
+      {
+        key: 'brokers_can_create_properties',
+        title: 'Criar Novos Imóveis',
+        description: 'Permite que o corretor cadastre imóveis diretamente no sistema.',
+      },
+      {
+        key: 'brokers_can_edit_properties',
+        title: 'Editar Próprios Imóveis',
+        description: 'Permite que o corretor edite fotos e dados dos imóveis que ele mesmo cadastrou.',
+      },
+    ],
+  },
+  {
+    title: 'Permissões de Atendentes (SDR)',
+    icon: Headphones,
+    items: [
+      {
+        key: 'atendentes_can_assign_leads',
+        title: 'Distribuir Leads',
+        description: 'Permite que atendentes atribuam leads recebidos para outros corretores.',
+      },
+    ],
+  },
+];
 
 const TYPED_CANVAS_WIDTH = 1200;
 const TYPED_CANVAS_HEIGHT = 360;
@@ -426,11 +525,12 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
 };
 
 const AdminConfig: React.FC = () => {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, isOwner } = useAuth();
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const isAdmin = user?.role === 'admin';
-  const canManageOfficialSignature = user?.role === 'admin' || user?.role === 'super_admin';
+  const isAdmin = user?.role === 'admin' || isOwner;
+  const canManageOfficialSignature = user?.role === 'owner';
+  const canManagePermissions = isAdmin;
   const adminCompanyId = user?.company_id ?? null;
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -448,12 +548,30 @@ const AdminConfig: React.FC = () => {
       return next;
     }, { replace: true });
   };
+
+  useEffect(() => {
+    if (OWNER_ONLY_CONFIG_TABS.includes(activeTab) && user?.role !== 'owner') {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', 'profile');
+        return next;
+      }, { replace: true });
+    }
+  }, [activeTab, user?.role, setSearchParams]);
+
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const { hasReachedLimit: teamLimitReached, limit: teamLimit, isUnlimited: teamUnlimited } = usePlanLimits(profiles.length, 'users');
   const [distRules, setDistRules] = useState<{ enabled: boolean; types: string[] }>({ enabled: false, types: [] });
-  const [profileForm, setProfileForm] = useState({ name: '', phone: '', email: '', company_logo: '', cpf_cnpj: '', creci: '' });
+  const [profileForm, setProfileForm] = useState({ name: '', phone: '', email: '', creci: '' });
+  const [companyForm, setCompanyForm] = useState({
+    name: user?.company?.name || '',
+    cnpj: '',
+    contract_logo: '',
+    signature_image: '',
+  });
   const [passwordForm, setPasswordForm] = useState({ password: '', confirmPassword: '' });
   const [savingProfile, setSavingProfile] = useState(false);
+  const [savingCompany, setSavingCompany] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
@@ -472,6 +590,11 @@ const AdminConfig: React.FC = () => {
   const [signatureModalError, setSignatureModalError] = useState('');
   const [isXpModalOpen, setIsXpModalOpen] = useState(false);
   const [siteSettings, setSiteSettings] = useState({ route_to_central: true, central_whatsapp: '', central_user_id: '' });
+  const [companyPermissions, setCompanyPermissions] = useState<CompanyPermissions>({
+    ...DEFAULT_COMPANY_PERMISSIONS,
+  });
+  const [loadingPermissions, setLoadingPermissions] = useState(false);
+  const [savingPermissionKey, setSavingPermissionKey] = useState<PermissionKey | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem('trimoveis-sound') !== 'disabled');
   const [contract, setContract] = useState<Contract | null>(null);
@@ -796,6 +919,35 @@ const AdminConfig: React.FC = () => {
     }
   };
 
+  const fetchCompanyPermissions = async () => {
+    if (!user?.company_id) {
+      setCompanyPermissions({ ...DEFAULT_COMPANY_PERMISSIONS });
+      return;
+    }
+
+    setLoadingPermissions(true);
+    try {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('permissions')
+        .eq('company_id', user.company_id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const settingsData = data as Pick<CompanySettings, 'permissions'> | null;
+      setCompanyPermissions({
+        ...DEFAULT_COMPANY_PERMISSIONS,
+        ...(settingsData?.permissions ?? {}),
+      });
+    } catch (error) {
+      console.error('Erro ao carregar permissões da empresa:', error);
+      setCompanyPermissions({ ...DEFAULT_COMPANY_PERMISSIONS });
+    } finally {
+      setLoadingPermissions(false);
+    }
+  };
+
   const fetchPlans = async () => {
     try {
       const { data } = await supabase.from('saas_plans').select('*').order('price', { ascending: true });
@@ -855,6 +1007,8 @@ const AdminConfig: React.FC = () => {
       .select(`
         id,
         name,
+        document,
+        logo_url,
         admin_signature_url,
         subdomain,
         domain,
@@ -896,6 +1050,8 @@ const AdminConfig: React.FC = () => {
       setTenant({
         id: data.id,
         name: data.name || '',
+        document: data.document || null,
+        logo_url: data.logo_url || null,
         admin_signature_url: data.admin_signature_url ?? null,
         subdomain: data.subdomain || null,
         domain: data.domain || null,
@@ -912,6 +1068,12 @@ const AdminConfig: React.FC = () => {
         broker_commission: data.broker_commission ?? parsedFinanceConfig?.broker_commission ?? undefined,
         manual_discount_value: data.manual_discount_value ?? null,
         manual_discount_type: data.manual_discount_type ?? null,
+      });
+      setCompanyForm({
+        name: data.name || '',
+        cnpj: data.document || '',
+        contract_logo: data.logo_url || '',
+        signature_image: data.admin_signature_url || '',
       });
       
       if (data.site_data) {
@@ -996,6 +1158,7 @@ const AdminConfig: React.FC = () => {
     if (isAdmin) {
       fetchProfiles();
       fetchSettings();
+      fetchCompanyPermissions();
       fetchContract();
       fetchCompanyData();
       fetchPlans();
@@ -1023,6 +1186,7 @@ const AdminConfig: React.FC = () => {
 
       const nextSignatureUrl = data?.admin_signature_url || null;
       setAdminSignatureUrl(nextSignatureUrl);
+      setCompanyForm((prev) => ({ ...prev, signature_image: nextSignatureUrl || '' }));
       setTenant((prev) => (prev ? { ...prev, admin_signature_url: nextSignatureUrl } : prev));
     } catch (error) {
       console.error('Erro ao buscar assinatura admin:', error);
@@ -1030,13 +1194,13 @@ const AdminConfig: React.FC = () => {
   };
 
   useEffect(() => {
-    if (activeTab === 'profile' && canManageOfficialSignature && adminCompanyId) {
+    if (activeTab === 'company' && canManageOfficialSignature && adminCompanyId) {
       void fetchAdminSignature();
     }
   }, [activeTab, canManageOfficialSignature, adminCompanyId]);
 
   useEffect(() => {
-    if (activeTab === 'profile') return;
+    if (activeTab === 'company') return;
 
     setIsSignModalOpen(false);
     setShowSignatureQrCode(false);
@@ -1125,7 +1289,7 @@ const AdminConfig: React.FC = () => {
         // Vai diretamente ao banco de dados buscar a "verdade absoluta" do utilizador
         const { data } = await supabase
           .from('profiles')
-          .select('name, phone, company_logo, cpf_cnpj, creci')
+          .select('name, phone, creci')
           .eq('id', user.id)
           .single();
 
@@ -1134,8 +1298,6 @@ const AdminConfig: React.FC = () => {
             name: data.name || user.name || '',
             phone: data.phone || user.phone || '',
             email: user.email || '',
-            company_logo: data.company_logo || '',
-            cpf_cnpj: data.cpf_cnpj || '',
             creci: data.creci || '',
           });
         }
@@ -1162,7 +1324,7 @@ const AdminConfig: React.FC = () => {
     if (data) {
       const normalizedProfiles = (data as Partial<Profile>[]).map((profile) => ({
         ...profile,
-        role: profile.role === 'admin' ? 'admin' : 'corretor',
+        role: normalizeProfileRole(profile.role),
       })) as Profile[];
       setProfiles(normalizedProfiles);
       const myProfile = normalizedProfiles.find((p) => p.id === user?.id);
@@ -1180,6 +1342,16 @@ const AdminConfig: React.FC = () => {
 
     if (!targetProfile || targetProfile.company_id !== user.company_id) {
       alert('Você só pode alterar usuários da sua própria empresa.');
+      return false;
+    }
+
+    if (targetProfile.role === 'super_admin') {
+      alert('Este usuário é protegido pelo sistema.');
+      return false;
+    }
+
+    if (targetProfile.role === 'owner' && user.role !== 'owner' && user.role !== 'super_admin') {
+      alert('Apenas o dono da imobiliária pode gerenciar esse perfil.');
       return false;
     }
 
@@ -1215,7 +1387,7 @@ const AdminConfig: React.FC = () => {
 
     try {
       await navigator.clipboard.writeText(link);
-      addToast(`Link de convite para ${role === 'admin' ? 'Admin' : 'Corretor'} copiado!`, 'success');
+      addToast(`Link de convite para ${role === 'owner' ? 'Owner' : role === 'admin' ? 'Admin' : 'Corretor'} copiado!`, 'success');
     } catch (clipboardError) {
       console.error('Erro ao copiar link de convite:', clipboardError);
       addToast('Não foi possível copiar o link de convite.', 'error');
@@ -1226,10 +1398,6 @@ const AdminConfig: React.FC = () => {
     if (!canManageTeamMember(id)) return;
 
     const updates: Partial<Profile> = { active };
-
-    if (active) {
-      updates.role = 'corretor';
-    }
 
     await supabase.from('profiles').update(updates).eq('id', id);
     await fetchProfiles();
@@ -1254,6 +1422,11 @@ const AdminConfig: React.FC = () => {
 
     if (id === user.id) {
       alert('Você não pode alterar o próprio cargo.');
+      return;
+    }
+
+    if (currentRole !== 'admin' && currentRole !== 'corretor') {
+      alert('Perfis da nova hierarquia devem ser gerenciados pela política RBAC.');
       return;
     }
 
@@ -1295,8 +1468,6 @@ const AdminConfig: React.FC = () => {
       .update({
         name: profileForm.name,
         phone: profileForm.phone,
-        company_logo: profileForm.company_logo,
-        cpf_cnpj: profileForm.cpf_cnpj,
         creci: profileForm.creci,
         updated_at: new Date().toISOString(),
       })
@@ -1359,23 +1530,81 @@ const AdminConfig: React.FC = () => {
     }
   };
 
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0 || !user?.id) return;
+  const handleSaveCompany = async () => {
+    if (!user?.company_id) {
+      addToast('Empresa não encontrada para salvar os dados.', 'error');
+      return;
+    }
+
+    if (!companyForm.name.trim()) {
+      addToast('Informe o nome da imobiliária antes de salvar.', 'error');
+      return;
+    }
+
+    setSavingCompany(true);
+
+    try {
+      const payload = {
+        name: companyForm.name.trim(),
+        document: companyForm.cnpj.trim() || null,
+        logo_url: companyForm.contract_logo || null,
+        admin_signature_url: companyForm.signature_image || null,
+      };
+
+      const { error } = await supabase
+        .from('companies')
+        .update(payload)
+        .eq('id', user.company_id);
+
+      if (error) throw error;
+
+      setCompanyForm((prev) => ({
+        ...prev,
+        name: payload.name,
+        cnpj: payload.document || '',
+        contract_logo: payload.logo_url || '',
+        signature_image: payload.admin_signature_url || '',
+      }));
+      setTenant((prev) => (prev ? { ...prev, ...payload } : prev));
+      await refreshUser();
+      addToast('Dados da empresa atualizados com sucesso!', 'success');
+    } catch (error: any) {
+      console.error('Erro ao salvar empresa:', error);
+      addToast(error.message || 'Erro ao atualizar dados da empresa.', 'error');
+    } finally {
+      setSavingCompany(false);
+    }
+  };
+
+  const handleCompanyLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !user?.company_id) return;
     const file = e.target.files[0];
     setIsUploadingLogo(true);
     try {
-      const compressedBlob = await compressAvatar(file, 500);
-      const fileName = `logo_${user.id}_${Date.now()}.webp`;
-      const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, compressedBlob, {
-        upsert: true,
-        contentType: 'image/webp',
+      let processedFile: File | Blob = file;
+      if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
+        const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
+        processedFile = Array.isArray(converted) ? converted[0] : converted;
+      }
+
+      const compressedBlob = await compressAvatar(processedFile, 700);
+      const uploadFile = new File([compressedBlob], `company-logo-${Date.now()}.webp`, {
+        type: 'image/webp',
       });
-      if (uploadError) throw uploadError;
-      const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
-      setProfileForm(prev => ({ ...prev, company_logo: data.publicUrl }));
-      addToast('Logo processada! Não esqueça de clicar em "Salvar Perfil".', 'success');
+
+      const publicUrl = await uploadCompanyAsset(uploadFile, user.company_id, 'logo');
+      const { error } = await supabase
+        .from('companies')
+        .update({ logo_url: publicUrl })
+        .eq('id', user.company_id);
+
+      if (error) throw error;
+
+      setCompanyForm((prev) => ({ ...prev, contract_logo: publicUrl }));
+      setTenant((prev) => (prev ? { ...prev, logo_url: publicUrl } : prev));
+      addToast('Logo da empresa atualizada com sucesso!', 'success');
     } catch (error: any) {
-      console.error('Erro no upload da logo:', error);
+      console.error('Erro no upload da logo da empresa:', error);
       addToast('Erro ao carregar a logo: ' + error.message, 'error');
     } finally {
       setIsUploadingLogo(false);
@@ -1589,6 +1818,7 @@ const AdminConfig: React.FC = () => {
       if (updateError) throw updateError;
 
       setAdminSignatureUrl(publicUrl);
+      setCompanyForm((prev) => ({ ...prev, signature_image: publicUrl }));
       setTenant((prev) => (prev ? { ...prev, admin_signature_url: publicUrl } : prev));
       addToast('Assinatura oficial salva com sucesso!', 'success');
       closeSignatureModal();
@@ -1609,6 +1839,74 @@ const AdminConfig: React.FC = () => {
     await supabase.auth.updateUser({ password: passwordForm.password });
     setPasswordForm({ password: '', confirmPassword: '' });
     setSavingPassword(false);
+  };
+
+  const saveCompanyPermissions = async (
+    nextPermissions: CompanyPermissions,
+    permissionKey: PermissionKey
+  ) => {
+    if (!user?.company_id) {
+      addToast('Empresa não encontrada para salvar as permissões.', 'error');
+      return;
+    }
+
+    const previousPermissions = companyPermissions;
+    setCompanyPermissions(nextPermissions);
+    setSavingPermissionKey(permissionKey);
+
+    try {
+      const { data: currentSettings, error: fetchError } = await supabase
+        .from('settings')
+        .select('id')
+        .eq('company_id', user.company_id)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      if (currentSettings?.id) {
+        const { error: updateError } = await supabase
+          .from('settings')
+          .update({ permissions: nextPermissions })
+          .eq('id', currentSettings.id);
+
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from('settings')
+          .insert({
+            company_id: user.company_id,
+            permissions: nextPermissions,
+          });
+
+        if (insertError) throw insertError;
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('company-permissions-updated', {
+          detail: {
+            companyId: user.company_id,
+            permissions: nextPermissions,
+          },
+        })
+      );
+
+      addToast('Permissão atualizada com sucesso.', 'success');
+    } catch (error) {
+      console.error('Erro ao salvar permissões da empresa:', error);
+      setCompanyPermissions(previousPermissions);
+      addToast('Não foi possível salvar essa permissão.', 'error');
+    } finally {
+      setSavingPermissionKey(null);
+    }
+  };
+
+  const handleTogglePermission = async (permissionKey: PermissionKey) => {
+    const nextPermissions: CompanyPermissions = {
+      ...companyPermissions,
+      [permissionKey]: !companyPermissions[permissionKey],
+    };
+
+    await saveCompanyPermissions(nextPermissions, permissionKey);
   };
 
   const handleSaveTrafficSettings = async (e: React.FormEvent) => {
@@ -2012,11 +2310,7 @@ const AdminConfig: React.FC = () => {
   const progressCurrent = currentXP % progressMax;
   const pointsToNext = progressMax - progressCurrent;
 
-  const roleLabel = useMemo(() => {
-    if (user?.role === 'admin') return 'Administrador';
-    if (!user?.role) return 'Corretor';
-    return `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)}`;
-  }, [user?.role]);
+  const roleLabel = useMemo(() => getRoleLabel(user?.role), [user?.role]);
 
   const pendingProfiles = useMemo(() => profiles.filter((profile) => !profile.active), [profiles]);
   const activeProfiles = useMemo(() => profiles.filter((profile) => profile.active), [profiles]);
@@ -2079,21 +2373,27 @@ const AdminConfig: React.FC = () => {
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-serif font-bold text-slate-800 dark:text-white">Configurações</h1>
-        <p className="text-sm text-gray-500 dark:text-slate-400">Gerencie seu perfil, segurança e equipe.</p>
+        <p className="text-sm text-gray-500 dark:text-slate-400">Gerencie seu perfil, empresa, segurança e equipe.</p>
       </div>
 
       {/* Abas Principais de Configuração (Design Premium) */}
       <div className="flex overflow-x-auto ev-main-scroll gap-2 p-1.5 bg-slate-200/50 dark:bg-[#0a0f1c]/50 backdrop-blur-md rounded-2xl w-fit border border-slate-300/50 dark:border-white/5 shadow-inner">
         {[
           { id: 'profile', label: 'Perfil', icon: Icons.User },
+          { id: 'company', label: 'Minha Empresa', icon: Icons.Building2, ownerOnly: true },
           { id: 'team', label: 'Equipe', icon: Icons.Users, adminOnly: true },
           { id: 'traffic', label: 'Tráfego', icon: Icons.Globe, adminOnly: true },
-          { id: 'subscription', label: 'Assinatura', icon: Icons.CreditCard, adminOnly: true },
+          { id: 'subscription', label: 'Assinatura', icon: Icons.CreditCard, ownerOnly: true },
           { id: 'site', label: 'Meu Site', icon: Icons.Layout, adminOnly: true },
           { id: 'contracts', label: 'Modelos de Contrato', icon: Icons.FileSignature, adminOnly: true },
           { id: 'integrations', label: 'Integrações', icon: Icons.Share2, adminOnly: true },
-          { id: 'finance', label: 'Financeiro / API', icon: Icons.DollarSign, adminOnly: true },
-        ].filter(t => !t.adminOnly || isAdmin).map(tab => (
+          { id: 'finance', label: 'Financeiro / API', icon: Icons.DollarSign, ownerOnly: true },
+          { id: 'permissions', label: 'Permissões', icon: Icons.Shield, ownerOnly: true },
+        ].filter(tab => {
+          if (tab.ownerOnly) return user?.role === 'owner';
+          if (tab.id === 'permissions') return canManagePermissions;
+          return !tab.adminOnly || isAdmin;
+        }).map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as ConfigTab)}
@@ -2107,6 +2407,138 @@ const AdminConfig: React.FC = () => {
           </button>
         ))}
       </div>
+
+      {activeTab === 'company' && user?.role === 'owner' && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="border-b border-slate-200 pb-5 dark:border-slate-800">
+            <h2 className="flex items-center gap-2 text-xl font-black text-slate-800 dark:text-white">
+              <Icons.Building2 className="text-brand-600" />
+              Dados da Empresa
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Gerencie a identidade jurídica e a assinatura oficial usadas em contratos e faturamento.
+            </p>
+          </div>
+
+          <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-dark-card">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Nome da Imobiliária
+                </label>
+                <input
+                  type="text"
+                  value={companyForm.name}
+                  onChange={(e) => setCompanyForm((prev) => ({ ...prev, name: e.target.value }))}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  placeholder="Sua Imobiliária"
+                />
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Este nome será usado como identificação oficial da empresa.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                  CNPJ
+                </label>
+                <input
+                  type="text"
+                  value={companyForm.cnpj}
+                  onChange={(e) => setCompanyForm((prev) => ({ ...prev, cnpj: e.target.value }))}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  placeholder="00.000.000/0001-00"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 border-t border-slate-100 pt-4 dark:border-slate-800 md:grid-cols-2">
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Logomarca para Contratos
+                  </label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Recomendado PNG com fundo transparente para cabeçalhos de contratos e recibos.
+                  </p>
+                </div>
+
+                <div className="flex min-h-[180px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-4 text-center dark:border-slate-700 dark:bg-slate-900/60">
+                  {companyForm.contract_logo ? (
+                    <img
+                      src={companyForm.contract_logo}
+                      alt="Logo da empresa"
+                      className="mb-4 max-h-20 w-auto object-contain"
+                    />
+                  ) : (
+                    <Icons.Building2 className="mb-4 text-slate-300 dark:text-slate-600" size={36} />
+                  )}
+
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-brand-700 transition hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-950 dark:text-brand-300 dark:hover:bg-slate-900">
+                    {isUploadingLogo ? (
+                      <Icons.Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Icons.Upload size={16} />
+                    )}
+                    {companyForm.contract_logo ? 'Trocar Imagem' : 'Enviar Imagem'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={isUploadingLogo}
+                      onChange={handleCompanyLogoUpload}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Assinatura Oficial
+                  </label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    A rubrica do responsável legal será aplicada automaticamente nos contratos gerados.
+                  </p>
+                </div>
+
+                <div className="flex min-h-[180px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-4 text-center dark:border-slate-700 dark:bg-slate-900/60">
+                  {companyForm.signature_image ? (
+                    <img
+                      src={companyForm.signature_image}
+                      alt="Assinatura oficial"
+                      className="mb-4 max-h-20 w-auto object-contain mix-blend-multiply dark:mix-blend-normal"
+                    />
+                  ) : (
+                    <Icons.PenTool className="mb-4 text-slate-300 dark:text-slate-600" size={36} />
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={openSignatureModal}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-brand-700 transition hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-950 dark:text-brand-300 dark:hover:bg-slate-900"
+                  >
+                    <Icons.PenTool size={16} />
+                    {companyForm.signature_image ? 'Alterar Assinatura' : 'Cadastrar Assinatura'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <button
+                type="button"
+                onClick={handleSaveCompany}
+                disabled={savingCompany}
+                className="flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 font-bold text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
+              >
+                {savingCompany ? <Icons.Loader2 className="animate-spin" size={18} /> : <Icons.Save size={18} />}
+                Salvar Dados da Empresa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'profile' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -2139,36 +2571,6 @@ const AdminConfig: React.FC = () => {
               </div>
             </div>
 
-            {/* UPLOAD DA LOGO DA IMOBILIÁRIA (CONTRATOS) */}
-            <div className="pt-6 pb-2 border-t border-b border-gray-100 dark:border-slate-800 mb-6">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-                <Icons.Image size={18} className="text-brand-500" />
-                Logo para Contratos e Recibos
-              </h3>
-              <div className="flex items-center gap-6">
-                <div className="w-32 h-16 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center bg-slate-50 dark:bg-white/5 overflow-hidden relative group">
-                  {profileForm.company_logo ? (
-                    <img src={profileForm.company_logo} alt="Logo" className="w-full h-full object-contain p-2" />
-                  ) : (
-                    <Icons.Building size={24} className="text-slate-400" />
-                  )}
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <label className="cursor-pointer p-2">
-                      {isUploadingLogo ? (
-                        <Icons.Loader2 size={20} className="text-white animate-spin" />
-                      ) : (
-                        <Icons.Upload size={20} className="text-white" />
-                      )}
-                      <input type="file" accept="image/*" className="hidden" disabled={isUploadingLogo} onChange={handleLogoUpload} />
-                    </label>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-[200px]">
-                  Aparecerá no cabeçalho dos contratos PDF. Recomendado PNG com fundo transparente. Lembre-se de clicar em "Salvar Perfil".
-                </p>
-              </div>
-            </div>
-
             <form onSubmit={handleSaveProfile} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nome Completo</label>
@@ -2197,17 +2599,6 @@ const AdminConfig: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">CPF / CNPJ da Empresa</label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-slate-600 dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-brand-500"
-                  value={profileForm.cpf_cnpj}
-                  onChange={e => setProfileForm(prev => ({ ...prev, cpf_cnpj: e.target.value }))}
-                  placeholder="000.000.000-00"
-                />
-              </div>
-
-              <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">CRECI (Opcional)</label>
                 <input
                   type="text"
@@ -2227,56 +2618,6 @@ const AdminConfig: React.FC = () => {
                   disabled
                 />
               </div>
-
-              {canManageOfficialSignature && adminCompanyId && (
-                <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5 shadow-sm dark:border-slate-800 dark:from-slate-900/80 dark:to-slate-950/60">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">
-                        Assinatura Oficial
-                      </p>
-                      <h3 className="mt-2 text-lg font-bold text-slate-900 dark:text-white">
-                        Rubrica automática da imobiliária
-                      </h3>
-                      <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
-                        Configure a assinatura do responsável legal para que ela seja aplicada automaticamente nos contratos gerados pelo sistema.
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={openSignatureModal}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-slate-300 transition hover:bg-slate-800 dark:bg-brand-600 dark:hover:bg-brand-500 dark:shadow-brand-950/30"
-                    >
-                      <Icons.PenTool size={18} />
-                      Configurar Assinatura Oficial
-                    </button>
-                  </div>
-
-                  <div className="mt-5 rounded-2xl border border-slate-200 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-950/60">
-                    <p className="mb-3 text-xs font-bold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
-                      Assinatura Atual
-                    </p>
-
-                    <div className="flex min-h-[130px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/70">
-                      {adminSignatureUrl ? (
-                        <img
-                          src={adminSignatureUrl}
-                          alt="Assinatura oficial atual"
-                          className="max-h-[96px] w-auto object-contain mix-blend-multiply dark:mix-blend-normal"
-                        />
-                      ) : (
-                        <div className="text-center">
-                          <Icons.PenTool size={24} className="mx-auto mb-2 text-slate-300 dark:text-slate-600" />
-                          <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
-                            Nenhuma assinatura oficial cadastrada.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
 
               <button
                 type="submit"
@@ -2463,6 +2804,9 @@ const AdminConfig: React.FC = () => {
                       )}
                     </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">{profile.email}</p>
+                    <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getRoleBadgeClassName(profile.role)}`}>
+                      {getRoleLabel(profile.role)}
+                    </span>
                     {!getPresenceStatus(profile.last_seen).isOnline && (
                       <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
                         <Icons.Clock size={10} /> {getPresenceStatus(profile.last_seen).text}
@@ -2495,6 +2839,9 @@ const AdminConfig: React.FC = () => {
                       )}
                     </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">{profile.email}</p>
+                    <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getRoleBadgeClassName(profile.role)}`}>
+                      {getRoleLabel(profile.role)}
+                    </span>
                     {!getPresenceStatus(profile.last_seen).isOnline && (
                       <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
                         <Icons.Clock size={10} /> {getPresenceStatus(profile.last_seen).text}
@@ -2504,18 +2851,22 @@ const AdminConfig: React.FC = () => {
                   <div className="flex items-center gap-2 flex-wrap justify-end">
                     {profile.role === 'admin' ? (
                       <button
-                        onClick={() => toggleRole(profile.id, profile.role ?? 'user')}
+                        onClick={() => toggleRole(profile.id, profile.role)}
                         className="px-3 py-1.5 text-xs font-bold rounded-lg bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200"
                       >
                         ADMIN
                       </button>
-                    ) : (
+                    ) : profile.role === 'corretor' ? (
                       <button
-                        onClick={() => toggleRole(profile.id, profile.role ?? 'user')}
+                        onClick={() => toggleRole(profile.id, profile.role)}
                         className="px-3 py-1.5 text-xs font-bold rounded-lg border border-purple-200 text-purple-700 hover:bg-purple-50"
                       >
                         Tornar Admin
                       </button>
+                    ) : (
+                      <span className={`px-3 py-1.5 text-xs font-bold rounded-lg border ${getRoleBadgeClassName(profile.role)}`}>
+                        {getRoleLabel(profile.role)}
+                      </span>
                     )}
                     <button onClick={() => updateProfileStatus(profile.id, false)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200">Pausar</button>
                     <button onClick={() => deleteUser(profile.id)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-100 text-red-700 hover:bg-red-200">Excluir</button>
@@ -2524,6 +2875,95 @@ const AdminConfig: React.FC = () => {
               ))}
               {activeProfiles.length === 0 && <p className="p-5 text-sm text-gray-400">Sem usuários ativos.</p>}
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'permissions' && user?.role === 'owner' && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="border-b border-slate-200 pb-5">
+            <h2 className="flex items-center gap-2 text-xl font-black text-slate-800 dark:text-white">
+              <Icons.ShieldCheck className="text-brand-600" /> Controle de Permissões
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Defina o que cada cargo pode fazer dentro do sistema.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-dark-card">
+            <div className="mb-6 rounded-2xl border border-brand-100 bg-brand-50/70 p-4 dark:border-brand-900/40 dark:bg-brand-900/10">
+              <p className="text-sm font-bold text-slate-800 dark:text-white">
+                Donos, gerentes e administradores operacionais sempre mantêm acesso total.
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Os toggles abaixo controlam apenas as permissões dinâmicas de corretores e atendentes.
+              </p>
+            </div>
+
+            {loadingPermissions ? (
+              <div className="flex items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 px-4 py-12 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                <Loader2 size={18} className="animate-spin text-brand-600" />
+                Carregando permissões da empresa...
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {PERMISSION_SECTIONS.map((section) => {
+                  const SectionIcon = section.icon;
+
+                  return (
+                    <div key={section.title}>
+                      <h3 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-400">
+                        <SectionIcon size={16} /> {section.title}
+                      </h3>
+
+                      <div className="space-y-4">
+                        {section.items.map((permission) => {
+                          const isEnabled = companyPermissions[permission.key];
+                          const isSaving = savingPermissionKey === permission.key;
+
+                          return (
+                            <div
+                              key={permission.key}
+                              className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40"
+                            >
+                              <div>
+                                <p className="font-bold text-slate-800 dark:text-white">
+                                  {permission.title}
+                                </p>
+                                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                  {permission.description}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                {isSaving ? (
+                                  <Loader2 size={16} className="animate-spin text-brand-600" />
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => void handleTogglePermission(permission.key)}
+                                  disabled={Boolean(savingPermissionKey)}
+                                  aria-pressed={isEnabled}
+                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all ${
+                                    isEnabled ? 'bg-brand-600' : 'bg-slate-200 dark:bg-slate-700'
+                                  } ${savingPermissionKey ? 'cursor-not-allowed opacity-70' : ''}`}
+                                >
+                                  <span
+                                    className={`inline-block h-4 w-4 rounded-full bg-white transition ${
+                                      isEnabled ? 'translate-x-6' : 'translate-x-1'
+                                    }`}
+                                  />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2578,8 +3018,12 @@ const AdminConfig: React.FC = () => {
                         className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500 bg-white"
                       >
                         <option value="">Ninguém (Fica na fila geral)</option>
-                        {profiles.filter(p => p.role === 'admin').map(admin => (
-                          <option key={admin.id} value={admin.id}>{admin.name} (Admin)</option>
+                        {profiles
+                          .filter((profile) =>
+                            ['owner', 'manager', 'admin'].includes(profile.role)
+                          )
+                          .map(admin => (
+                          <option key={admin.id} value={admin.id}>{admin.name} ({getRoleLabel(admin.role)})</option>
                         ))}
                       </select>
                     </div>
@@ -2632,7 +3076,7 @@ const AdminConfig: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'subscription' && isAdmin && (
+      {activeTab === 'subscription' && user?.role === 'owner' && (
         <div className="space-y-8 animate-fade-in">
           {/* Cabeçalho da Assinatura */}
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -3074,9 +3518,9 @@ const AdminConfig: React.FC = () => {
           setAcceptFidelity(true);
           setAcceptedFidelityTerms(true);
         }}
-        companyName={user?.user_metadata?.company_name || profileForm.name || 'Empresa não informada'}
+        companyName={companyForm.name || user?.company?.name || user?.user_metadata?.company_name || 'Empresa não informada'}
         ownerName={user?.user_metadata?.full_name || user?.name || 'Responsável não informado'}
-        document={profileForm.cpf_cnpj || 'Documento não informado'}
+        document={companyForm.cnpj || user?.company?.document || 'Documento não informado'}
       />
 
       {/* Modal de Cancelamento */}
@@ -3558,19 +4002,25 @@ const AdminConfig: React.FC = () => {
 
                   <div className="flex-1 space-y-3">
                     <p className="text-sm text-slate-500 dark:text-slate-400">
-                      A assinatura oficial agora é centralizada na aba <span className="font-bold text-slate-700 dark:text-slate-200">Perfil</span>, com modal completo para desenhar, digitar ou enviar a rubrica.
+                      A assinatura oficial agora é centralizada na aba <span className="font-bold text-slate-700 dark:text-slate-200">Minha Empresa</span>, com fluxo completo para desenhar, digitar ou enviar a rubrica.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('profile');
-                        openSignatureModal();
-                      }}
-                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
-                    >
-                      <Icons.PenTool size={16} />
-                      Gerenciar no Perfil
-                    </button>
+                    {user?.role === 'owner' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('company');
+                          openSignatureModal();
+                        }}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                      >
+                        <Icons.PenTool size={16} />
+                        Gerenciar em Minha Empresa
+                      </button>
+                    ) : (
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        Apenas o dono da imobiliária pode alterar essa assinatura.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -4251,7 +4701,7 @@ const AdminConfig: React.FC = () => {
       )}
 
       {/* ABA FINANCEIRO */}
-      {activeTab === 'finance' && isAdmin && (
+      {activeTab === 'finance' && user?.role === 'owner' && (
         <div className="space-y-6">
           
           {/* Chave Mestra: Pix Nativo vs Asaas */}

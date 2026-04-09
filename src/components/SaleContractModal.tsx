@@ -32,7 +32,15 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
   const [properties, setProperties] = useState<Property[]>([]);
   const [brokers, setBrokers] = useState<any[]>([]);
   const [documentType, setDocumentType] = useState('sale_standard');
-  const [brokerProfile, setBrokerProfile] = useState<{name: string, company_logo: string, cpf_cnpj: string, creci: string} | null>(null);
+  const [brokerProfile, setBrokerProfile] = useState<{
+    name: string;
+    cpf_cnpj: string;
+    creci: string;
+    company?: {
+      name?: string | null;
+      logo_url?: string | null;
+    } | null;
+  } | null>(null);
   const [customTemplates, setCustomTemplates] = useState<any[]>([]);
 
   // Variáveis Mágicas: O formulário adapta-se com base no tipo de contrato!
@@ -151,7 +159,11 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     const fetchProfileData = async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (authUser) {
-        const { data } = await supabase.from('profiles').select('name, company_logo, cpf_cnpj, creci, companies(name)').eq('id', authUser.id).single();
+        const { data } = await supabase
+          .from('profiles')
+          .select('name, cpf_cnpj, creci, company:companies(name, logo_url)')
+          .eq('id', authUser.id)
+          .single();
         if (data) setBrokerProfile(data as any);
       }
     };
@@ -363,7 +375,17 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         bank_account: '',
       };
       const selectedTemplate = customTemplates.find(t => `custom_${t.id}` === documentType);
-      await generateContract(documentType, contractDataObj, tenant, brokerProfile?.company_logo, brokerProfile?.name, brokerProfile?.cpf_cnpj, brokerProfile?.creci, (brokerProfile as any)?.companies?.name, selectedTemplate?.content);
+      await generateContract(
+        documentType,
+        contractDataObj,
+        tenant,
+        brokerProfile?.company?.logo_url ?? undefined,
+        brokerProfile?.name,
+        brokerProfile?.cpf_cnpj,
+        brokerProfile?.creci,
+        brokerProfile?.company?.name ?? undefined,
+        selectedTemplate?.content
+      );
     } catch (error) {
       console.error('Erro ao gerar PDF:', error);
       addNotification({ title: 'Erro ao gerar documento PDF', message: '', type: 'property' });
@@ -442,11 +464,11 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         rawTemplate.trim().length > 0 && !documentType.startsWith('custom_') ? 'custom_runtime' : documentType,
         contractHtmlData,
         tenant,
-        brokerProfile?.company_logo,
+        brokerProfile?.company?.logo_url ?? undefined,
         brokerProfile?.name,
         brokerProfile?.cpf_cnpj,
         brokerProfile?.creci,
-        (brokerProfile as any)?.companies?.name,
+        brokerProfile?.company?.name ?? undefined,
         rawTemplate || undefined
       );
       const payload = {

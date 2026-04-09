@@ -9,7 +9,7 @@ import { appendSignatureManifest, injectSignatureStamps } from '../utils/contrac
 const AdminContractDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { addToast } = useToast();
   
   const [contract, setContract] = useState<any>(null);
@@ -100,7 +100,7 @@ const AdminContractDetails: React.FC = () => {
       .eq('id', id);
     
     // Multi-Tenant: Filtra por company_id se não for admin
-    if (user?.role !== 'admin' && user?.company_id) {
+    if (!isAdmin && user?.company_id) {
       contractQuery = contractQuery.eq('company_id', user.company_id);
     }
     
@@ -119,7 +119,7 @@ const AdminContractDetails: React.FC = () => {
       .eq('contract_id', id)
       .order('due_date', { ascending: true });
     
-    if (user?.role !== 'admin' && user?.company_id) {
+    if (!isAdmin && user?.company_id) {
       installmentsQuery = installmentsQuery.eq('company_id', user.company_id);
     }
 
@@ -132,7 +132,7 @@ const AdminContractDetails: React.FC = () => {
       .select('id')
       .eq('contract_id', id);
       
-    if (user?.role !== 'admin' && user?.company_id) {
+    if (!isAdmin && user?.company_id) {
       invoicesQuery = invoicesQuery.eq('company_id', user.company_id);
     }
 

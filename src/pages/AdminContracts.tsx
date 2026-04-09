@@ -33,7 +33,7 @@ const EMPTY_SIGNATURE_SUMMARY: ContractSignatureSummary = {
 const AdminContracts: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const currentTab = searchParams.get('tab') || 'geral';
   const isSuperAdmin = user?.role === 'super_admin';
   const directUserPlan = typeof (user as { plan?: string } | null)?.plan === 'string'
@@ -566,7 +566,7 @@ const AdminContracts: React.FC = () => {
   };
 
   const renderApproveAction = (contract: ContractWithSignatureState) => {
-    if (contract.status !== 'pending' || user?.role !== 'admin') {
+    if (contract.status !== 'pending' || !isAdmin) {
       return null;
     }
 
@@ -900,7 +900,7 @@ const AdminContracts: React.FC = () => {
                             {renderFinalPdfButton(contract)}
                             {renderApproveAction(contract)}
 
-                            {user?.role === 'admin' && (
+                            {isAdmin && (
                               <>
                                 <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
                                 <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
@@ -984,7 +984,7 @@ const AdminContracts: React.FC = () => {
                                 {renderFinalPdfButton(contract)}
                                 {renderApproveAction(contract)}
 
-                                {user?.role === 'admin' && (
+                                {isAdmin && (
                                   <>
                                     <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
                                     <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>

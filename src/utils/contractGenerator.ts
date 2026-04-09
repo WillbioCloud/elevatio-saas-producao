@@ -646,7 +646,7 @@ export const buildContractHtml = async (
   // Lógica de Fallback Inteligente (Sede > Perfil Corretor > Tenant Base)
   const resolvedBrokerDisplayName =
     siteData.corporate_name || brokerDisplayName || tenant?.name || 'Corretor / Imobiliária';
-  const finalDocument = siteData.cnpj || brokerDisplayDoc;
+  const finalDocument = siteData.cnpj || tenant?.document || brokerDisplayDoc;
   const resolvedBrokerDisplayDoc = finalDocument ? `CPF/CNPJ: ${finalDocument}` : 'CPF/CNPJ: Não informado';
   const finalCreci = siteData.creci || brokerDisplayCreci;
   const resolvedBrokerDisplayCreci = finalCreci ? `CRECI: ${finalCreci}` : '';
@@ -2088,12 +2088,12 @@ export const appendSignatureManifest = (
   return originalHtml + manifestHtml;
 };
 
-export const generateContract = async (type: string, data: any, tenant: any, company_logo?: string, broker_name?: string, broker_document?: string, broker_creci?: string, company_name?: string, customTemplateContent?: string) => {
+export const generateContract = async (type: string, data: any, tenant: any, companyLogo?: string, broker_name?: string, broker_document?: string, broker_creci?: string, company_name?: string, customTemplateContent?: string) => {
   const html = await buildContractHtml(
     type,
     data,
     tenant,
-    company_logo,
+    companyLogo,
     broker_name,
     broker_document,
     broker_creci,

@@ -24,10 +24,10 @@ export const getTenantName = (tenant: Company | null | undefined): string =>
   tenant?.name || 'Imobiliária';
 
 export const getTenantLogo = (tenant: Company | null | undefined): string =>
-  tenant?.logo_url || '/logo-placeholder.png';
+  getSiteData(tenant).logo_url || tenant?.logo_url || '/logo-placeholder.png';
 
 export const getTenantLogoWhite = (tenant: Company | null | undefined): string =>
-  tenant?.logo_white_url || tenant?.logo_url || '/logo-placeholder.png';
+  getSiteData(tenant).logo_white_url || tenant?.logo_white_url || getTenantLogo(tenant);
 
 export const getTenantEmail = (tenant: Company | null | undefined): string =>
   tenant?.email ||

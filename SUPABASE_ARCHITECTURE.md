@@ -156,7 +156,6 @@ interface SiteData {
 | `active` | `boolean` ✅ | Default: `false` |
 | `phone` | `text` | Telefone |
 | `avatar_url` | `text` | URL do avatar |
-| `company_logo` | `text` | URL do logo da empresa (cache no perfil) |
 | `cpf_cnpj` | `text` | CPF/CNPJ do corretor |
 | `creci` | `text` | Número do CRECI |
 | `xp` | `integer` | Pontos XP. Default: `0` |

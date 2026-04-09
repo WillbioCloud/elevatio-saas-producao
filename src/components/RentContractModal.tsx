@@ -31,7 +31,15 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
   const [properties, setProperties] = useState<Property[]>([]);
   const [brokers, setBrokers] = useState<any[]>([]);
   
-  const [brokerProfile, setBrokerProfile] = useState<{name: string, company_logo: string, cpf_cnpj: string, creci: string} | null>(null);
+  const [brokerProfile, setBrokerProfile] = useState<{
+    name: string;
+    cpf_cnpj: string;
+    creci: string;
+    company?: {
+      name?: string | null;
+      logo_url?: string | null;
+    } | null;
+  } | null>(null);
   const [customTemplates, setCustomTemplates] = useState<any[]>([]);
 
   const [documentType, setDocumentType] = useState('');
@@ -221,7 +229,17 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
       const brokerDoc = (selectedBroker as any)?.cpf_cnpj || brokerProfile?.cpf_cnpj;
       const brokerCreci = (selectedBroker as any)?.creci || brokerProfile?.creci;
 
-      await generateContract(documentType, contractDataObj, tenant, brokerProfile?.company_logo, brokerName, brokerDoc, brokerCreci, (brokerProfile as any)?.companies?.name, customTemplates.find(t => `custom_${t.id}` === documentType)?.content);
+      await generateContract(
+        documentType,
+        contractDataObj,
+        tenant,
+        brokerProfile?.company?.logo_url ?? undefined,
+        brokerName,
+        brokerDoc,
+        brokerCreci,
+        brokerProfile?.company?.name ?? undefined,
+        customTemplates.find(t => `custom_${t.id}` === documentType)?.content
+      );
     } catch (error) {
       console.error('Erro ao gerar PDF:', error);
       addNotification({ title: 'Erro ao gerar documento PDF', message: '', type: 'property' });
@@ -238,7 +256,11 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
       const fetchProfileData = async () => {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (authUser) {
-          const { data } = await supabase.from('profiles').select('name, company_logo, cpf_cnpj, creci, companies(name)').eq('id', authUser.id).single();
+          const { data } = await supabase
+            .from('profiles')
+            .select('name, cpf_cnpj, creci, company:companies(name, logo_url)')
+            .eq('id', authUser.id)
+            .single();
           if (data) setBrokerProfile(data as any);
         }
       };
@@ -442,11 +464,11 @@ const RentContractModal: React.FC<RentContractModalProps> = ({ isOpen, onClose, 
         rawTemplate.trim().length > 0 && !documentType.startsWith('custom_') ? 'custom_runtime' : documentType,
         contractHtmlData,
         tenant,
-        brokerProfile?.company_logo,
+        brokerProfile?.company?.logo_url ?? undefined,
         brokerName,
         brokerDoc,
         brokerCreci,
-        (brokerProfile as any)?.companies?.name,
+        brokerProfile?.company?.name ?? undefined,
         rawTemplate || undefined
       );
 

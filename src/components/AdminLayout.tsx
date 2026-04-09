@@ -82,14 +82,16 @@ const AdminLayout: React.FC = () => {
   };
 
   const role = user?.role ?? (user?.user_metadata as { role?: string } | undefined)?.role;
-  const isAdmin = role === 'admin';
+  const isOwner = role === 'owner';
+  const isAdmin = role === 'admin' || role === 'owner';
   const shouldShowWizard = !user?.company_id && role !== 'super_admin';
 
   useRealtimeEvents();
   useInstallmentReminders();
 
   const roleLabel = useMemo(() => {
-    if (role === 'admin') return 'Administrador';
+    if (role === 'owner') return 'Dono da Imobiliária';
+    if (role === 'admin') return 'Gerente / Admin';
     if (!role) return 'Corretor';
     return `${role.charAt(0).toUpperCase()}${role.slice(1)}`;
   }, [role]);
@@ -168,7 +170,7 @@ const AdminLayout: React.FC = () => {
   }, [user?.company_id]);
 
   useEffect(() => {
-    if (!user?.company_id || role !== 'admin') return;
+    if (!user?.company_id || role !== 'owner') return;
 
     let isMounted = true;
 
@@ -283,12 +285,13 @@ const AdminLayout: React.FC = () => {
     { label: 'Dashboard', path: '/admin/dashboard', icon: Icons.Dashboard },
     { label: 'Imóveis', path: '/admin/imoveis', icon: Icons.Building },
     { label: 'Tarefas', path: '/admin/tarefas', icon: Icons.Calendar },
-    { label: 'Relatórios', path: '/admin/analytics', icon: Icons.PieChart, adminOnly: true },
+    { label: 'Relatórios', path: '/admin/analytics', icon: Icons.PieChart, ownerOnly: true },
     { label: 'Leaderboard', path: '/admin/leaderboard', icon: Icons.Trophy },
     { label: 'Configurações', path: '/admin/config', icon: Icons.Settings },
   ];
   const normalizedPlanName = (contractPlanName || user?.company?.plan || '').trim().toUpperCase();
   const visibleMenuItems = menuItems
+    .filter((item) => !item.ownerOnly || isOwner)
     .filter((item) => !item.adminOnly || isAdmin)
     .filter((item) => item.path !== '/admin/leaderboard' || !['STARTER', 'BASIC'].includes(normalizedPlanName));
 
@@ -454,7 +457,7 @@ const AdminLayout: React.FC = () => {
                 </div>
               )}
 
-              {item.path === '/admin/imoveis' && (
+              {item.path === '/admin/imoveis' && isOwner && (
                 <a
                   href="/admin/financeiro"
                   onClick={(e) => handleSmartNavigation(e, '/admin/financeiro')}
@@ -632,7 +635,7 @@ const AdminLayout: React.FC = () => {
               <div className="flex-1 min-w-0 animate-in fade-in duration-300">
                 <p className="text-sm font-bold text-white truncate">{user?.name || user?.email || 'Usuário'}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <div className={`w-1.5 h-1.5 rounded-full ${user?.role === 'admin' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                  <div className={`w-1.5 h-1.5 rounded-full ${user?.role === 'owner' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
                   <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold truncate">{roleLabel}</p>
                 </div>
               </div>
@@ -674,7 +677,7 @@ const AdminLayout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            {isAdmin && billingWarning && Date.now() > dismissedUntil && (
+            {isOwner && billingWarning && Date.now() > dismissedUntil && (
               <div className="relative group hidden md:block">
                 <button
                   className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold border transition-colors ${
@@ -806,17 +809,19 @@ const AdminLayout: React.FC = () => {
               )}
             </div>
 
-            <a
-              href="/admin/financeiro"
-              onClick={(e) => handleSmartNavigation(e, '/admin/financeiro')}
-              className={`
-                order-4 flex items-center gap-3 px-4 py-3 rounded-lg
-                ${isSmartNavigationActive('/admin/financeiro') ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
-              `}
-            >
-              <Icons.Wallet size={20} />
-              Financeiro
-            </a>
+            {isOwner && (
+              <a
+                href="/admin/financeiro"
+                onClick={(e) => handleSmartNavigation(e, '/admin/financeiro')}
+                className={`
+                  order-4 flex items-center gap-3 px-4 py-3 rounded-lg
+                  ${isSmartNavigationActive('/admin/financeiro') ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
+                `}
+              >
+                <Icons.Wallet size={20} />
+                Financeiro
+              </a>
+            )}
 
             {/* 3. Menu Funil de Vendas (Mobile) */}
             <div className="space-y-1 order-5">

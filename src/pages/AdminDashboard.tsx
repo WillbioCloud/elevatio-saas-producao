@@ -122,7 +122,7 @@ const getRecentActivityTime = (createdAt: string) => {
 };
 
 const AdminDashboard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
   const planConfig = getPlanConfig(user?.company?.plan);
   const canAccessFinance = planConfig.features.contractsAndFinance;
@@ -136,7 +136,6 @@ const AdminDashboard: React.FC = () => {
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
   const [userGamification, setUserGamification] = useState({ xp: 0, level: 1, rank: 0 });
 
-  const isAdmin = user?.role === 'admin';
   const currentYear = new Date().getFullYear();
 
   // Estados do Admin (Caixa e Top Corretor)

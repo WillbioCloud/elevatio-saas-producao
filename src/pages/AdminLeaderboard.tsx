@@ -610,15 +610,15 @@ export default function AdminLeaderboard() {
                 <div className="absolute top-6 right-8 text-8xl font-black opacity-10">{rank}</div>
 
                 {agent.avatar ? (
-                  <img src={agent.avatar} alt={agent.name} className={cn("mb-6 rounded-full border-4 object-cover shadow-2xl", isFirst ? "h-44 w-44" : "h-36 w-36", agent.role === 'admin' ? "border-brand-500" : "border-slate-700")} />
+                  <img src={agent.avatar} alt={agent.name} className={cn("mb-6 rounded-full border-4 object-cover shadow-2xl", isFirst ? "h-44 w-44" : "h-36 w-36", agent.role === 'admin' || agent.role === 'owner' ? "border-brand-500" : "border-slate-700")} />
                 ) : (
-                  <div className={cn("mb-6 flex items-center justify-center rounded-full border-4 font-black text-white shadow-2xl", isFirst ? "h-44 w-44 text-5xl" : "h-36 w-36 text-4xl", agent.role === 'admin' ? "border-brand-500" : "border-slate-700")} style={{ backgroundColor: agent.color }}>
+                  <div className={cn("mb-6 flex items-center justify-center rounded-full border-4 font-black text-white shadow-2xl", isFirst ? "h-44 w-44 text-5xl" : "h-36 w-36 text-4xl", agent.role === 'admin' || agent.role === 'owner' ? "border-brand-500" : "border-slate-700")} style={{ backgroundColor: agent.color }}>
                     {agent.initials}
                   </div>
                 )}
 
                 <h3 className={cn("flex items-center gap-2 font-black text-white", isFirst ? "text-4xl" : "text-3xl")}>
-                  {agent.name.split(' ')[0]} {agent.role === 'admin' && <Icons.Shield size={24} className="text-brand-500" />}
+                  {agent.name.split(' ')[0]} {(agent.role === 'admin' || agent.role === 'owner') && <Icons.Shield size={24} className="text-brand-500" />}
                 </h3>
                 <p className="mt-2 text-xl font-bold" style={{ color: agent.color }}>NÍVEL {agent.level}</p>
 
@@ -648,7 +648,7 @@ export default function AdminLeaderboard() {
                       </div>
                     )}
                     <div>
-                      <h4 className="flex items-center gap-2 text-2xl font-bold text-white">{agent.name} {agent.role === 'admin' && <Icons.Shield size={16} className="text-brand-500" />}</h4>
+                      <h4 className="flex items-center gap-2 text-2xl font-bold text-white">{agent.name} {(agent.role === 'admin' || agent.role === 'owner') && <Icons.Shield size={16} className="text-brand-500" />}</h4>
                       <p className="font-semibold" style={{ color: agent.color }}>Nível {agent.level}</p>
                     </div>
                   </div>
@@ -771,7 +771,7 @@ export default function AdminLeaderboard() {
                     <div className="flex items-center gap-3 md:col-span-4">
                       <img src={agent.avatar} alt={agent.name} className="h-11 w-11 rounded-full object-cover shadow-sm" />
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1.5"><p className="truncate text-sm font-semibold text-slate-800 dark:text-white">{agent.name}</p>{agent.role === 'admin' && <Icons.Shield size={12} className="text-brand-500" />}</div>
+                        <div className="flex items-center gap-1.5"><p className="truncate text-sm font-semibold text-slate-800 dark:text-white">{agent.name}</p>{(agent.role === 'admin' || agent.role === 'owner') && <Icons.Shield size={12} className="text-brand-500" />}</div>
                         <p className="truncate text-xs text-slate-400">{agent.levelTitle}</p>
                       </div>
                     </div>

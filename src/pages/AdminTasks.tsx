@@ -40,7 +40,7 @@ const parseDueDate = (value: string) => {
 
 export default function AdminTasks() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { addToast } = useToast();
 
   const [tasks, setTasks] = useState<TaskWithLead[]>([]);
@@ -150,7 +150,7 @@ export default function AdminTasks() {
         .eq('completed', false)
         .order('due_date', { ascending: true });
 
-      if (user.role !== 'admin') {
+      if (!isAdmin) {
         query = query.eq('user_id', user.id);
       }
 
@@ -166,7 +166,7 @@ export default function AdminTasks() {
     } finally {
       setLoading(false);
     }
-  }, [addToast, generateAIInsights, user?.company_id, user?.id, user?.role]);
+  }, [addToast, generateAIInsights, isAdmin, user?.company_id, user?.id]);
 
   useEffect(() => {
     void fetchTasks();

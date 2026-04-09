@@ -212,6 +212,7 @@ const Login: React.FC = () => {
             data: {
               full_name: name.trim(),
               company_name: companyName.trim(),
+              role: 'owner',
             },
           },
         });

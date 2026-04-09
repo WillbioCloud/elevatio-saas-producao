@@ -211,12 +211,12 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       if (companyError) throw new Error('Erro ao criar imobiliaria: ' + companyError.message);
 
       if (newCompany) {
-        // Vincula o perfil do usuario logado (Admin) a nova imobiliaria
+        // Vincula o perfil do usuario logado (Owner) a nova imobiliaria
         const { error: profileError } = await supabase
           .from('profiles')
           .update({
             company_id: newCompany.id,
-            role: 'admin',
+            role: 'owner',
             active: true,
             phone: formData.phone,
           })

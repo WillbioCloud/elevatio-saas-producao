@@ -45,8 +45,7 @@ const InfoTooltip = ({ text }: { text: string }) => (
 
 const AdminProperties: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { user, isAdmin } = useAuth();
 
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);

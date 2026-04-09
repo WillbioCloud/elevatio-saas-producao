@@ -207,7 +207,7 @@ export default function InviteSignup() {
           <p className="text-slate-500 mt-2">
             Você foi convidado para ser{' '}
             <strong className="text-brand-600">
-              {companyInfo.role === 'admin' ? 'Administrador' : 'Corretor'}
+              {companyInfo.role === 'owner' ? 'Dono da Imobiliária' : companyInfo.role === 'admin' ? 'Administrador' : 'Corretor'}
             </strong>{' '}
             na imobiliária{' '}
             <strong className="text-slate-800 dark:text-slate-200">{companyInfo.name}</strong>.
