@@ -26,6 +26,7 @@ import { useProperties } from '../hooks/useProperties';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { generateZapXML } from '../utils/zapXmlGenerator';
 import { useSearchParams } from 'react-router-dom';
+import { getLevelInfo } from '../services/gamification';
 
 interface Profile {
   id: string;
@@ -37,6 +38,7 @@ interface Profile {
   avatar_url?: string;
   level?: number;
   xp?: number;
+  xp_points?: number;
   active: boolean;
   distribution_rules?: { enabled: boolean; types: string[] };
   last_seen?: string;
@@ -560,6 +562,8 @@ const AdminConfig: React.FC = () => {
   }, [activeTab, user?.role, setSearchParams]);
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [selectedTeamMember, setSelectedTeamMember] = useState<Profile | null>(null);
+  const [updatingMemberRole, setUpdatingMemberRole] = useState(false);
   const { hasReachedLimit: teamLimitReached, limit: teamLimit, isUnlimited: teamUnlimited } = usePlanLimits(profiles.length, 'users');
   const [distRules, setDistRules] = useState<{ enabled: boolean; types: string[] }>({ enabled: false, types: [] });
   const [profileForm, setProfileForm] = useState({ name: '', phone: '', email: '', creci: '' });
@@ -1403,45 +1407,53 @@ const AdminConfig: React.FC = () => {
     await fetchProfiles();
   };
 
-  const formatPhone = (value) => {
-  if (!value) return ""
-  
-  // Remove tudo o que não for dígito
-  const phoneNumber = value.replace(/\D/g, "")
-  
-  // Aplica a formatação progressivamente
-  if (phoneNumber.length <= 2) return phoneNumber.replace(/^(\d{0,2})/, "($1")
-  if (phoneNumber.length <= 7) return phoneNumber.replace(/^(\d{2})(\d{0,5})/, "($1) $2")
-  
-  return phoneNumber.replace(/^(\d{2})(\d{5})(\d{0,4}).*/, "($1) $2-$3")
-}
+  const handleUpdateMemberRole = async (memberId: string, newRole: Profile['role']) => {
+    if (!user?.id || !canManageTeamMember(memberId)) return;
 
+    const currentMember = profiles.find((member) => member.id === memberId);
+    if (!currentMember) return;
 
-  const toggleRole = async (id: string, currentRole: Profile['role']) => {
-    if (!user?.id || !canManageTeamMember(id)) return;
-
-    if (id === user.id) {
-      alert('Você não pode alterar o próprio cargo.');
+    if (memberId === user.id) {
+      addToast('Você não pode alterar seu próprio cargo por aqui.', 'error');
       return;
     }
 
-    if (currentRole !== 'admin' && currentRole !== 'corretor') {
-      alert('Perfis da nova hierarquia devem ser gerenciados pela política RBAC.');
+    if (currentMember.role === newRole) {
+      setSelectedTeamMember(null);
       return;
     }
 
-    const newRole: Profile['role'] = currentRole === 'admin' ? 'corretor' : 'admin';
-    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', id);
-
-    if (error) {
-      console.error('Erro ao atualizar cargo:', error);
-      alert(`Não foi possível atualizar o cargo: ${error.message}`);
+    if (newRole === 'owner' && user.role !== 'owner' && user.role !== 'super_admin') {
+      addToast('Apenas o dono da imobiliária pode promover alguém para owner.', 'error');
       return;
     }
 
-    await fetchProfiles();
+    setUpdatingMemberRole(true);
+    try {
+      const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', memberId);
+      if (error) throw error;
+
+      setProfiles((prev) => prev.map((member) => (member.id === memberId ? { ...member, role: newRole } : member)));
+      addToast('Cargo atualizado com sucesso!', 'success');
+      setSelectedTeamMember(null);
+    } catch (err) {
+      console.error('Erro ao atualizar o cargo do membro:', err);
+      addToast('Erro ao atualizar o cargo.', 'error');
+    } finally {
+      setUpdatingMemberRole(false);
+    }
   };
 
+  const formatPhone = (value: string) => {
+    if (!value) return '';
+
+    const phoneNumber = value.replace(/\D/g, '');
+
+    if (phoneNumber.length <= 2) return phoneNumber.replace(/^(\d{0,2})/, '($1');
+    if (phoneNumber.length <= 7) return phoneNumber.replace(/^(\d{2})(\d{0,5})/, '($1) $2');
+
+    return phoneNumber.replace(/^(\d{2})(\d{5})(\d{0,4}).*/, '($1) $2-$3');
+  };
   const deleteUser = async (id: string) => {
     if (!canManageTeamMember(id)) return;
 
@@ -1943,7 +1955,7 @@ const AdminConfig: React.FC = () => {
 
     setIsGeneratingCheckout(true);
     try {
-      console.log("🚀 Buscando link de pagamento...");
+      console.log('Buscando link de pagamento...');
 
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-asaas-payment-link`, {
@@ -1958,18 +1970,18 @@ const AdminConfig: React.FC = () => {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data?.error || 'Link nÃ£o retornado pelo Asaas.');
+        throw new Error(data?.error || 'Link não retornado pelo Asaas.');
       }
 
       if (!data?.checkoutUrl) {
         throw new Error(data?.error || 'Link não retornado pelo Asaas.');
       }
 
-      console.log("✅ Link encontrado! Redirecionando...");
+      console.log('Link encontrado! Redirecionando...');
       window.location.href = data.checkoutUrl;
 
     } catch (error: any) {
-      console.error("🔥 ERRO FATAL:", error);
+      console.error('Erro fatal ao buscar link de pagamento:', error);
       alert('Erro ao buscar pagamento: ' + (error.message || error));
     } finally {
       setIsGeneratingCheckout(false);
@@ -2304,16 +2316,24 @@ const AdminConfig: React.FC = () => {
     }
   };
 
-  const currentLevel = Math.max(1, Number(user?.level ?? 1));
   const currentXP = Math.max(0, Number(user?.xp_points ?? 0));
-  const progressMax = 100;
-  const progressCurrent = currentXP % progressMax;
-  const pointsToNext = progressMax - progressCurrent;
+  const { currentLevel: currentLeague, nextLevel: nextLeague, progress: currentLeagueProgress } = getLevelInfo(currentXP);
 
   const roleLabel = useMemo(() => getRoleLabel(user?.role), [user?.role]);
 
   const pendingProfiles = useMemo(() => profiles.filter((profile) => !profile.active), [profiles]);
   const activeProfiles = useMemo(() => profiles.filter((profile) => profile.active), [profiles]);
+  const pointsToNextLeague = nextLeague ? Math.max(nextLeague.minXp - currentXP, 0) : 0;
+  const canAssignOwnerRole = user?.role === 'owner' || user?.role === 'super_admin';
+  const isSelectedTeamMemberProtected =
+    selectedTeamMember?.role === 'super_admin' ||
+    (selectedTeamMember?.role === 'owner' && !canAssignOwnerRole);
+  const isMemberOnline = selectedTeamMember?.last_seen
+    ? new Date().getTime() - new Date(selectedTeamMember.last_seen).getTime() < 5 * 60000
+    : false;
+  const memberLevelInfo = selectedTeamMember
+    ? getLevelInfo(Number(selectedTeamMember.xp_points || 0))
+    : null;
 
   const rawPlan = contract?.plan_name || contract?.plan || contract?.companies?.plan || '';
   const activePlanId = rawPlan.toLowerCase();
@@ -2322,7 +2342,7 @@ const AdminConfig: React.FC = () => {
   );
   const currentPlanDetails = currentPlanIndex !== -1 ? plans[currentPlanIndex] : null;
   const getPlanHighlights = (plan: any) => [
-    ...(billingCycle === 'yearly' && plan?.has_free_domain ? ['🎁 Domínio Grátis (1º ano)'] : []),
+    ...(billingCycle === 'yearly' && plan?.has_free_domain ? ['Domínio Grátis (1º ano)'] : []),
     ...(plan?.max_contracts > 0 ? [`Até ${plan.max_contracts} contratos ativos`] : []),
     ...(Array.isArray(plan?.features) ? plan.features : []),
   ];
@@ -2335,8 +2355,8 @@ const AdminConfig: React.FC = () => {
   };
   const usageItems = currentPlanDetails
     ? [
-        { label: 'Usuarios', used: usageStats.users, max: Number(currentPlanDetails.max_users ?? 0) },
-        { label: 'Imoveis', used: usageStats.properties, max: Number(currentPlanDetails.max_properties ?? 0) },
+        { label: 'Usuários', used: usageStats.users, max: Number(currentPlanDetails.max_users ?? 0) },
+        { label: 'Imóveis', used: usageStats.properties, max: Number(currentPlanDetails.max_properties ?? 0) },
         { label: 'Contratos', used: usageStats.activeContracts, max: Number(currentPlanDetails.max_contracts ?? 0) },
       ]
     : [];
@@ -2702,26 +2722,63 @@ const AdminConfig: React.FC = () => {
           </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsXpModalOpen(true)}
-            className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-6 rounded-2xl border border-slate-700 h-fit text-left cursor-pointer hover:shadow-md transition-all"
-          >
-            <p className="text-xs uppercase tracking-widest text-brand-300">Gamificação</p>
-            <h3 className="text-xl font-bold mt-2">Seu Nível: {currentLevel}</h3>
-            <p className="text-sm text-slate-300 mt-1">XP Total: {currentXP}</p>
+          <div className="space-y-6">
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 p-6 text-white shadow-lg">
+              <div className="absolute right-0 top-0 p-4 opacity-10">
+                <Icons.Award size={120} />
+              </div>
+              <div className="relative z-10">
+                <div className="mb-2 flex items-center gap-3">
+                  <Icons.Trophy className="text-yellow-400" size={24} />
+                  <h3 className="text-xl font-black">Minhas Conquistas</h3>
+                </div>
+                <p className="mb-6 text-sm text-slate-400">Acompanhe sua evolução e suba de liga fechando negócios.</p>
 
-            <div className="mt-6">
-              <div className="flex justify-between text-xs text-slate-300 mb-1">
-                <span>Progresso para o próximo nível</span>
-                <span>{progressCurrent}/{progressMax}</span>
+                <div className="mb-4 rounded-xl bg-white/10 p-4 backdrop-blur-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="mb-1 text-xs font-bold uppercase tracking-wider text-slate-300">Liga Atual</p>
+                      <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-black shadow-sm ${currentLeague.bg} ${currentLeague.color}`}>
+                        <Icons.Award size={14} />
+                        {currentLeague.title}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="mb-1 text-xs font-bold uppercase tracking-wider text-slate-300">XP Acumulado</p>
+                      <p className="text-2xl font-black text-white">
+                        {currentXP} <span className="text-sm font-medium text-slate-400">XP</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {nextLeague ? (
+                    <div className="mt-4">
+                      <div className="mb-2 flex justify-between text-xs font-bold uppercase tracking-wider text-slate-300">
+                        <span>Próxima liga</span>
+                        <span>{nextLeague.title}</span>
+                      </div>
+                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                        <div className="h-full rounded-full bg-brand-400 transition-all duration-700" style={{ width: `${currentLeagueProgress}%` }} />
+                      </div>
+                      <p className="mt-2 text-xs text-slate-400">Faltam {pointsToNextLeague} XP para chegar em {nextLeague.title}.</p>
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-xl border border-brand-400/20 bg-brand-500/10 p-3 text-sm font-bold text-brand-100">
+                      Liga máxima alcançada.
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsXpModalOpen(true)}
+                  className="rounded-lg bg-brand-500 px-5 py-2 font-bold text-white shadow-md transition-colors hover:bg-brand-400"
+                >
+                  Ver Detalhes
+                </button>
               </div>
-              <div className="w-full h-3 rounded-full bg-slate-700 overflow-hidden">
-                <div className="h-full bg-brand-500 rounded-full transition-all" style={{ width: `${(progressCurrent / progressMax) * 100}%` }} />
-              </div>
-              <p className="text-xs text-slate-300 mt-2">Faltam {pointsToNext} pontos para o próximo nível.</p>
             </div>
-          </button>
+          </div>
         </div>
       )}
 
@@ -2792,30 +2849,38 @@ const AdminConfig: React.FC = () => {
                 <h3 className="font-bold text-slate-800 dark:text-white">Pendentes ({pendingProfiles.length})</h3>
               </div>
               {pendingProfiles.map((profile) => (
-                <div key={profile.id} className="p-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800 last:border-0">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-slate-800 dark:text-white">{profile.name || 'Sem nome'}</p>
-                      {getPresenceStatus(profile.last_seen).isOnline && (
-                        <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                          Online
+                <div key={profile.id} className="border-b border-gray-100 p-4 last:border-0 dark:border-slate-800">
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTeamMember(profile)}
+                      className="-m-2 flex flex-1 cursor-pointer rounded-2xl p-2 text-left ring-brand-500 transition-all hover:ring-2 focus:outline-none focus-visible:ring-2"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-slate-800 dark:text-white">{profile.name || 'Sem nome'}</p>
+                          {getPresenceStatus(profile.last_seen).isOnline && (
+                            <span className="flex items-center gap-1 rounded-full border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-600">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              Online
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{profile.email}</p>
+                        <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getRoleBadgeClassName(profile.role)}`}>
+                          {getRoleLabel(profile.role)}
                         </span>
-                      )}
+                        {!getPresenceStatus(profile.last_seen).isOnline && (
+                          <p className="mt-1 flex items-center gap-1 text-[10px] text-slate-400">
+                            <Icons.Clock size={10} /> {getPresenceStatus(profile.last_seen).text}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button onClick={() => updateProfileStatus(profile.id, true)} className="rounded-lg bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-200">Aprovar</button>
+                      <button onClick={() => deleteUser(profile.id)} className="rounded-lg bg-red-100 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-200">Rejeitar</button>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{profile.email}</p>
-                    <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getRoleBadgeClassName(profile.role)}`}>
-                      {getRoleLabel(profile.role)}
-                    </span>
-                    {!getPresenceStatus(profile.last_seen).isOnline && (
-                      <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-                        <Icons.Clock size={10} /> {getPresenceStatus(profile.last_seen).text}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => updateProfileStatus(profile.id, true)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200">Aprovar</button>
-                    <button onClick={() => deleteUser(profile.id)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-100 text-red-700 hover:bg-red-200">Rejeitar</button>
                   </div>
                 </div>
               ))}
@@ -2827,49 +2892,38 @@ const AdminConfig: React.FC = () => {
                 <h3 className="font-bold text-slate-800 dark:text-white">Ativos ({activeProfiles.length})</h3>
               </div>
               {activeProfiles.map((profile) => (
-                <div key={profile.id} className="p-4 flex items-center justify-between border-b border-gray-100 dark:border-slate-800 last:border-0">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-slate-800 dark:text-white">{profile.name || 'Sem nome'}</p>
-                      {getPresenceStatus(profile.last_seen).isOnline && (
-                        <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                          Online
+                <div key={profile.id} className="border-b border-gray-100 p-4 last:border-0 dark:border-slate-800">
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTeamMember(profile)}
+                      className="-m-2 flex flex-1 cursor-pointer rounded-2xl p-2 text-left ring-brand-500 transition-all hover:ring-2 focus:outline-none focus-visible:ring-2"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-slate-800 dark:text-white">{profile.name || 'Sem nome'}</p>
+                          {getPresenceStatus(profile.last_seen).isOnline && (
+                            <span className="flex items-center gap-1 rounded-full border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-600">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              Online
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{profile.email}</p>
+                        <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getRoleBadgeClassName(profile.role)}`}>
+                          {getRoleLabel(profile.role)}
                         </span>
-                      )}
+                        {!getPresenceStatus(profile.last_seen).isOnline && (
+                          <p className="mt-1 flex items-center gap-1 text-[10px] text-slate-400">
+                            <Icons.Clock size={10} /> {getPresenceStatus(profile.last_seen).text}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      <button onClick={() => updateProfileStatus(profile.id, false)} className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-200">Pausar</button>
+                      <button onClick={() => deleteUser(profile.id)} className="rounded-lg bg-red-100 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-200">Excluir</button>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{profile.email}</p>
-                    <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getRoleBadgeClassName(profile.role)}`}>
-                      {getRoleLabel(profile.role)}
-                    </span>
-                    {!getPresenceStatus(profile.last_seen).isOnline && (
-                      <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
-                        <Icons.Clock size={10} /> {getPresenceStatus(profile.last_seen).text}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap justify-end">
-                    {profile.role === 'admin' ? (
-                      <button
-                        onClick={() => toggleRole(profile.id, profile.role)}
-                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200"
-                      >
-                        ADMIN
-                      </button>
-                    ) : profile.role === 'corretor' ? (
-                      <button
-                        onClick={() => toggleRole(profile.id, profile.role)}
-                        className="px-3 py-1.5 text-xs font-bold rounded-lg border border-purple-200 text-purple-700 hover:bg-purple-50"
-                      >
-                        Tornar Admin
-                      </button>
-                    ) : (
-                      <span className={`px-3 py-1.5 text-xs font-bold rounded-lg border ${getRoleBadgeClassName(profile.role)}`}>
-                        {getRoleLabel(profile.role)}
-                      </span>
-                    )}
-                    <button onClick={() => updateProfileStatus(profile.id, false)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200">Pausar</button>
-                    <button onClick={() => deleteUser(profile.id)} className="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-100 text-red-700 hover:bg-red-200">Excluir</button>
                   </div>
                 </div>
               ))}
@@ -3385,7 +3439,7 @@ const AdminConfig: React.FC = () => {
                 ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {plans.map((plan) => {
-                    // SÓ esconde se for o mesmo plano E o mesmo ciclo que ele já paga
+                    // Só esconde se for o mesmo plano e o mesmo ciclo que ele já paga
                     const planId = String(plan.id || plan.name || '').toLowerCase();
                     const isYearly = billingCycle === 'yearly';
                     const isCurrentPlan =
@@ -3504,6 +3558,110 @@ const AdminConfig: React.FC = () => {
         </div>
       )}
 
+      {/* MODAL VERTICAL DE EDIÇÃO DE MEMBRO DA EQUIPE (Figma Inspired) */}
+      {selectedTeamMember && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in overflow-y-auto">
+
+          {/* Main Wrapper (Gradient Background) */}
+          <div className="w-full max-w-[409px] bg-gradient-to-b from-[#DFE3FF] to-[#E7EEF9] dark:from-slate-800 dark:to-slate-900 rounded-[40px] shadow-2xl relative p-4 flex flex-col gap-4 my-8">
+
+            <button
+              onClick={() => setSelectedTeamMember(null)}
+              className="absolute top-6 right-6 z-20 bg-white/50 hover:bg-white dark:bg-slate-800/50 dark:hover:bg-slate-700 p-2 rounded-full transition-colors text-slate-700 dark:text-slate-200 shadow-sm"
+            >
+              <Icons.X size={20} />
+            </button>
+
+            {/* BLOCK 1: Perfil e Cargo (F5F5F5) */}
+            <div className="bg-[#F5F5F5] dark:bg-slate-800 rounded-[30px] p-6 pt-10 flex flex-col items-center text-center shadow-sm relative mt-2">
+              <div className="relative">
+                <img
+                  src={selectedTeamMember.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedTeamMember.name)}&background=C89B9B&color=fff&size=240`}
+                  alt="Avatar"
+                  className="w-[120px] h-[120px] rounded-full object-cover shadow-md border-4 border-white dark:border-slate-700"
+                />
+                <div className={`absolute bottom-2 right-2 w-6 h-6 rounded-full border-4 border-[#F5F5F5] dark:border-slate-800 ${isMemberOnline ? 'bg-[#84E078]' : 'bg-slate-400'}`}></div>
+              </div>
+
+              <h3 className="text-[18px] font-bold text-slate-900 dark:text-white mt-4 tracking-tight">{selectedTeamMember.name}</h3>
+              <p className="text-[13px] text-slate-500 dark:text-slate-400 mt-0.5">{selectedTeamMember.email}</p>
+
+              <div className="flex items-center gap-2 bg-[#CFD9F3] dark:bg-indigo-900/30 text-indigo-900 dark:text-indigo-300 px-3 py-1.5 rounded-lg mt-3">
+                <div className={`w-2 h-2 rounded-full ${isMemberOnline ? 'bg-[#84E078] animate-pulse' : 'bg-slate-400'}`}></div>
+                <span className="text-[13px] font-semibold">{isMemberOnline ? 'Online agora' : 'Offline'}</span>
+              </div>
+
+              {!isMemberOnline && selectedTeamMember.last_seen && (
+                <p className="text-[10px] text-slate-400 mt-2 font-medium">
+                  Visto: {new Date(selectedTeamMember.last_seen).toLocaleString('pt-BR')}
+                </p>
+              )}
+
+              <div className="w-full mt-6 text-left border-t border-slate-200 dark:border-slate-700 pt-5">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest ml-1 mb-2 block">Nível de Acesso (Cargo)</label>
+                <select
+                  value={selectedTeamMember.role || 'corretor'}
+                  onChange={(e) => handleUpdateMemberRole(selectedTeamMember.id, e.target.value as Profile['role'])}
+                  disabled={updatingMemberRole || selectedTeamMember.id === user?.id || isSelectedTeamMemberProtected}
+                  className="w-full rounded-2xl border-0 bg-[#D9D9D9]/40 dark:bg-slate-900 px-4 py-3.5 text-sm font-bold text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-[#4759CD] transition-all disabled:opacity-50 appearance-none cursor-pointer"
+                >
+                  {selectedTeamMember.role === 'super_admin' && (
+                    <option value="super_admin">Super Admin (protegido)</option>
+                  )}
+                  <option value="corretor">Corretor de Imóveis</option>
+                  <option value="atendente">Atendente / SDR</option>
+                  <option value="manager">Gerente de Vendas</option>
+                  <option value="admin">Administrador Operacional</option>
+                  <option value="owner" disabled={!canAssignOwnerRole}>Dono (Acesso Total)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* BLOCK 2: Gamificação (Gradient Dark Blue) */}
+            <div className="bg-gradient-to-r from-[#4759CD] to-[#A9B2E8] rounded-[30px] p-6 text-white shadow-md flex items-center justify-between relative overflow-hidden">
+              <div className="absolute right-[-20px] top-[-20px] opacity-20">
+                <Icons.Trophy size={140} />
+              </div>
+              <div className="relative z-10">
+                <p className="text-[11px] uppercase tracking-widest font-bold text-indigo-100 opacity-90 mb-1">Status de Gamificação</p>
+                <h4 className="text-2xl font-black">{memberLevelInfo?.currentLevel.title || 'Iniciante'}</h4>
+                <p className="text-sm text-indigo-50 font-medium mt-1">
+                  Nível {memberLevelInfo?.currentLevel.level || 1} • {selectedTeamMember.xp_points || 0} XP
+                </p>
+              </div>
+              <div className="relative z-10 w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30 shadow-inner">
+                <Icons.Award size={24} className="text-white" />
+              </div>
+            </div>
+
+            {/* BLOCK 3: CRM Stats (White) */}
+            <div className="bg-white dark:bg-slate-800 rounded-[30px] p-6 shadow-sm">
+              <p className="text-[11px] uppercase tracking-widest font-bold text-slate-400 mb-4">Métricas de CRM (Este Mês)</p>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-3 text-center border border-blue-100 dark:border-blue-800/50">
+                  <div className="flex justify-center mb-1"><Icons.MessageCircle size={16} className="text-blue-500" /></div>
+                  <p className="text-xl font-black text-blue-700 dark:text-blue-400">12</p>
+                  <p className="text-[10px] font-bold text-blue-500 uppercase mt-1">Em Fila</p>
+                </div>
+
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl p-3 text-center border border-emerald-100 dark:border-emerald-800/50">
+                  <div className="flex justify-center mb-1"><Icons.Trophy size={16} className="text-emerald-500" /></div>
+                  <p className="text-xl font-black text-emerald-700 dark:text-emerald-400">4</p>
+                  <p className="text-[10px] font-bold text-emerald-500 uppercase mt-1">Ganhos</p>
+                </div>
+
+                <div className="bg-rose-50 dark:bg-rose-900/20 rounded-2xl p-3 text-center border border-rose-100 dark:border-rose-800/50">
+                  <div className="flex justify-center mb-1"><Icons.XCircle size={16} className="text-rose-400" /></div>
+                  <p className="text-xl font-black text-rose-700 dark:text-rose-400">2</p>
+                  <p className="text-[10px] font-bold text-rose-400 uppercase mt-1">Perdidos</p>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
       <GamificationModal
         isOpen={isXpModalOpen}
         onClose={() => setIsXpModalOpen(false)}
@@ -4824,7 +4982,7 @@ const AdminConfig: React.FC = () => {
                     <div>
                       <p className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-1">API Key Configurada</p>
                       <p className="text-sm text-slate-800 dark:text-slate-300 font-mono">
-                        {tenant?.payment_api_key ? '••••••••••••••••' + tenant.payment_api_key.slice(-4) : 'Nenhuma chave configurada'}
+                        {tenant?.payment_api_key ? '****************' + tenant.payment_api_key.slice(-4) : 'Nenhuma chave configurada'}
                       </p>
                     </div>
                     <button 
@@ -5281,7 +5439,7 @@ const AdminConfig: React.FC = () => {
                       <span className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md shadow-sm">{selectedPlanForCheckout.max_properties} imóveis</span>
                       {isPrimaryFree && (
                         <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded-md shadow-sm font-medium">
-                          🎁 Domínio Grátis (1º Ano)
+                          Domínio Grátis (1º ano)
                         </span>
                       )}
                     </div>
