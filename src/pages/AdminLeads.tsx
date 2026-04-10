@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Lead, LeadStatus, Property } from '../types';
 import { Icons } from '../components/Icons';
@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { TOOLTIPS } from '../constants/tooltips';
 import Loading from '../components/Loading';
-import { addXp } from '../services/gamification';
+import { addGamificationEvent, ACTIONS, calculateDealPoints } from '../services/gamification';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertDialog,
@@ -263,7 +263,7 @@ const DraggableCardWrapper = ({
 // === PÁGINA PRINCIPAL ===
 
 const AdminLeads: React.FC = () => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, refreshUser } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -451,13 +451,18 @@ const AdminLeads: React.FC = () => {
       const propertiesMap = new Map();
 
       if (propIds.length > 0) {
-        const { data: propsData } = await supabase.from('properties').select('id, title, price, agent_id, profiles(name)').in('id', propIds);
+        const { data: propsData } = await supabase
+          .from('properties')
+          .select('id, title, price, agent_id, strategic_weight, listing_type, profiles(name)')
+          .in('id', propIds);
         (propsData || []).forEach((p: any) => {
           propertiesMap.set(p.id, {
             id: p.id,
             title: p.title,
             price: p.price,
             agent_id: p.agent_id,
+            strategic_weight: p.strategic_weight,
+            listing_type: p.listing_type,
             agent: Array.isArray(p.profiles) ? p.profiles[0] : p.profiles
           });
         });
@@ -554,6 +559,10 @@ const AdminLeads: React.FC = () => {
     return leads.find((lead) => lead.id === openLeadId) || null;
   }, [leads, openLeadId]);
 
+  const refreshLeadData = useCallback((leadId: string, updates: Partial<Lead>) => {
+    setLeads((prev) => prev.map((lead) => (lead.id === leadId ? { ...lead, ...updates } : lead)));
+  }, []);
+
   const handleToggleAdminsInRoulette = async (newValue: boolean) => {
     setUpdatingAdminToggle(true);
     setIncludeAdmins(newValue);
@@ -575,15 +584,20 @@ const AdminLeads: React.FC = () => {
     }, { replace: true });
   };
 
-  const closeLeadDetails = () => {
-    setSearchParams({}, { replace: true });
-  };
+  const handleCloseSidebar = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('open');
+      next.delete('tab');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   useEffect(() => {
     if (openLeadId && !selectedLead && !loading) {
-      setSearchParams({}, { replace: true });
+      handleCloseSidebar();
     }
-  }, [loading, openLeadId, selectedLead, setSearchParams]);
+  }, [handleCloseSidebar, loading, openLeadId, selectedLead]);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
@@ -643,8 +657,27 @@ const AdminLeads: React.FC = () => {
         ]);
       }
 
-      if (!error && user?.id && (targetStatus === LeadStatus.VISIT || targetStatus === LeadStatus.PROPOSAL)) {
-        await addXp(user.id, 20);
+      // --- NOVO MOTOR DE GAMIFICAÇÃO NO KANBAN ---
+      if (!error && user?.id) {
+        const lowerStatus = targetStatus.toLowerCase();
+        try {
+          let awardedPoints = false;
+          if (lowerStatus.includes('visita')) {
+            await addGamificationEvent(user.id, ACTIONS.VISITA_REALIZADA.id, ACTIONS.VISITA_REALIZADA.points, leadId);
+            awardedPoints = true;
+          } else if (lowerStatus.includes('proposta') && !lowerStatus.includes('recusada') && !lowerStatus.includes('fria')) {
+            await addGamificationEvent(user.id, ACTIONS.PROPOSTA_ENVIADA.id, ACTIONS.PROPOSTA_ENVIADA.points, leadId);
+            awardedPoints = true;
+          } else if (newFunnel === 'perdido') {
+            await addGamificationEvent(user.id, ACTIONS.LEAD_PERDIDO_SEM_MOTIVO.id, ACTIONS.LEAD_PERDIDO_SEM_MOTIVO.points, leadId);
+            awardedPoints = true;
+          }
+          if (awardedPoints) {
+            await refreshUser();
+          }
+        } catch (err) {
+          console.error('Erro na gamificação ao arrastar:', err);
+        }
       }
     }
   };
@@ -761,7 +794,16 @@ const AdminLeads: React.FC = () => {
       }]);
 
       // 4. XP de gamificação
-      if (user?.id) await addXp(user.id, 500);
+      if (user?.id) {
+        const mainProp = (closingLead as any).property || (closingLead as any).interested_properties?.[0];
+        const pWeight = mainProp?.strategic_weight || 1.0;
+        const lScore = (closingLead as any).behavioral_score ? (1 + (closingLead as any).behavioral_score / 100) : 1.0;
+        const dealType = mainProp?.listing_type?.toLowerCase() === 'locacao' ? 'locacao' : 'venda';
+
+        const pts = calculateDealPoints(dealType, pWeight, lScore, 1.15); // Bônus operacional de 1.15 por usar o CRM até o fim
+        await addGamificationEvent(user.id, 'deal_closed', pts, closingLead.id, { propertyWeight: pWeight, leadScore: lScore });
+        await refreshUser();
+      }
 
       // 5. Finalizar a UI
       addToast('Venda Registada com Sucesso! Parabéns! 🎉', 'success');
@@ -902,10 +944,10 @@ const AdminLeads: React.FC = () => {
           lead={selectedLead}
           kanbanConfig={kanbanConfig}
           initialTab={detailTabParam === 'activity' ? 'timeline' : undefined}
-          onClose={closeLeadDetails}
+          onClose={handleCloseSidebar}
           onStageChange={async (newFunnel, newStatus) => {
             if (newStatus === LeadStatus.CLOSED || (newFunnel === 'venda_ganha' && newStatus.toLowerCase().includes('fechada'))) {
-              closeLeadDetails();
+              handleCloseSidebar();
               setClosingLead(selectedLead);
               const suggestedValue = Number((selectedLead as any)?.property?.price || 0);
               setSelectedSoldPropertyId('');
@@ -914,21 +956,32 @@ const AdminLeads: React.FC = () => {
               return;
             }
             const now = new Date().toISOString();
-            setLeads((prev) =>
-              prev.map((l) => (l.id === selectedLead.id ? { ...l, status: newStatus, funnel_step: newFunnel, stage_updated_at: now } : l))
-            );
+            refreshLeadData(selectedLead.id, { status: newStatus, funnel_step: newFunnel, stage_updated_at: now });
             const { error } = await supabase
               .from('leads')
               .update({ status: newStatus, funnel_step: newFunnel, stage_updated_at: now })
               .eq('id', selectedLead.id);
 
-            if (!error && user?.id && (newStatus === LeadStatus.VISIT || newStatus === LeadStatus.PROPOSAL)) {
-              await addXp(user.id, 20);
+            // --- NOVO MOTOR DE GAMIFICAÇÃO NO SIDEBAR ---
+            if (!error && user?.id) {
+              const lowerStatus = newStatus.toLowerCase();
+              let awardedPoints = false;
+              if (lowerStatus.includes('visita')) {
+                await addGamificationEvent(user.id, ACTIONS.VISITA_REALIZADA.id, ACTIONS.VISITA_REALIZADA.points, selectedLead.id);
+                awardedPoints = true;
+              } else if (lowerStatus.includes('proposta') && !lowerStatus.includes('recusada') && !lowerStatus.includes('fria')) {
+                await addGamificationEvent(user.id, ACTIONS.PROPOSTA_ENVIADA.id, ACTIONS.PROPOSTA_ENVIADA.points, selectedLead.id);
+                awardedPoints = true;
+              } else if (newFunnel === 'perdido') {
+                await addGamificationEvent(user.id, ACTIONS.LEAD_PERDIDO_SEM_MOTIVO.id, ACTIONS.LEAD_PERDIDO_SEM_MOTIVO.points, selectedLead.id);
+                awardedPoints = true;
+              }
+              if (awardedPoints) {
+                await refreshUser();
+              }
             }
           }}
-          onLeadUpdate={(leadId, updates) => {
-            setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, ...updates } : l)));
-          }}
+          onLeadUpdate={refreshLeadData}
           onRequestTransfer={(newFunnel, newStatus) => {
             if (isAdmin && selectedLead) {
               setTransferModal({ isOpen: true, lead: selectedLead, newFunnel, newStatus });

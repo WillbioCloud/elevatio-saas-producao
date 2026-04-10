@@ -3,9 +3,29 @@ import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
 
+type KeyProperty = {
+  id: string;
+  title: string;
+  status?: string | null;
+  listing_type?: string | null;
+  address?: string | null;
+  neighborhood?: string | null;
+  city?: string | null;
+  state?: string | null;
+  bedrooms?: number | null;
+  price?: number | null;
+  images?: string[] | null;
+  key_status?: string | null;
+};
+
+const getPropertyLocationText = (property: Pick<KeyProperty, 'address' | 'neighborhood' | 'city' | 'state'>) => {
+  const cityState = [property.city, property.state].filter(Boolean).join(' - ');
+  return [property.neighborhood, property.address, cityState].filter(Boolean).join(', ');
+};
+
 export default function AdminKeys() {
   const { user } = useAuth();
-  const [properties, setProperties] = useState<any[]>([]);
+  const [properties, setProperties] = useState<KeyProperty[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('todos');
@@ -16,7 +36,7 @@ export default function AdminKeys() {
       setLoading(true);
       let query = supabase
         .from('properties')
-        .select('id, title, status, location, bedrooms, price, rent_price, images, key_status')
+        .select('id, title, status, listing_type, address, neighborhood, city, state, bedrooms, price, images, key_status')
         .order('created_at', { ascending: false });
 
       // Multi-tenant isolation
@@ -27,7 +47,7 @@ export default function AdminKeys() {
       const { data, error } = await query;
 
       if (error) throw error;
-      setProperties(data || []);
+      setProperties((data as KeyProperty[]) || []);
     } catch (error) {
       console.error('Erro ao buscar imóveis para chaves:', error);
     } finally {
@@ -62,10 +82,7 @@ export default function AdminKeys() {
   };
 
   const filteredProperties = properties.filter((prop) => {
-    const locationText =
-      typeof prop.location === 'string'
-        ? prop.location
-        : [prop.location?.neighborhood, prop.location?.address, prop.location?.city].filter(Boolean).join(' ');
+    const locationText = getPropertyLocationText(prop);
 
     const matchesSearch =
       prop.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -73,8 +90,8 @@ export default function AdminKeys() {
 
     const matchesType =
       filterType === 'todos' ||
-      (filterType === 'venda' && prop.price > 0) ||
-      (filterType === 'locacao' && prop.rent_price > 0);
+      (filterType === 'venda' && (prop.listing_type === 'sale' || prop.listing_type === 'venda')) ||
+      (filterType === 'locacao' && (prop.listing_type === 'rent' || prop.listing_type === 'locacao'));
 
     return matchesSearch && matchesType;
   });
@@ -130,10 +147,7 @@ export default function AdminKeys() {
           {filteredProperties.map((prop) => {
             const currentKey = KEY_STATUS_MAP[prop.key_status || 'agency'];
             const KeyIcon = currentKey.icon;
-            const locationText =
-              typeof prop.location === 'string'
-                ? prop.location
-                : [prop.location?.neighborhood, prop.location?.address, prop.location?.city].filter(Boolean).join(' ');
+            const locationText = getPropertyLocationText(prop);
 
             return (
               <div

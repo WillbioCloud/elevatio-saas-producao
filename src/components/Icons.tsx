@@ -36,6 +36,7 @@ import {
   DollarSign,
   TrendingUp,
   Activity,
+  Radio,
   Clock,
   Loader2,
   MessageCircle,
@@ -201,6 +202,7 @@ export const Icons = {
   DollarSign,
   TrendingUp,
   Activity,
+  Radio,
   Clock,
   Loader2,
 

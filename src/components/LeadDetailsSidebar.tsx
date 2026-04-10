@@ -6,6 +6,7 @@ import { Icons } from './Icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { findSmartMatches, mapPropertyToCandidate, SmartMatchResult } from '../services/ai';
+import { calculateDealPoints } from '../services/gamification';
 
 interface Template {
   id: string;
@@ -353,6 +354,19 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     return 'Não atribuído';
   }, [lead, user?.id]);
 
+  // --- GAMIFICAÇÃO: Cálculo de Recompensa Estimada ---
+  const estimatedPoints = useMemo(() => {
+    if (!lead) return 0;
+
+    const leadProperty = (lead as any).property;
+    const propertyWeight = Number(leadProperty?.strategic_weight ?? 1.0) || 1.0;
+    const behavioralScore = Number((lead as any).behavioral_score ?? 0) || 0;
+    const leadScoreMult = behavioralScore ? (1 + behavioralScore / 100) : 1.0;
+    const dealType = `${leadProperty?.listing_type ?? ''}`.toLowerCase() === 'locacao' ? 'locacao' : 'venda';
+
+    return calculateDealPoints(dealType, propertyWeight, leadScoreMult, 1.0);
+  }, [lead]);
+
   useEffect(() => {
     const fetchAgents = async () => {
       if (!isAdmin) return;
@@ -567,7 +581,24 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
 
       {/* 2. ÁREA DE ROLAGEM GERAL */}
       <div className="flex-1 overflow-y-auto custom-scrollbar relative bg-slate-50">
-        
+        {/* BANNER DA LIGA DOS CORRETORES (GAMIFICAÇÃO) */}
+        <div className="mx-6 mb-4 mt-2 bg-gradient-to-r from-amber-100 to-yellow-50 border border-amber-200 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <div className="absolute -right-2 -top-2 opacity-20">
+            <Icons.Trophy size={80} className="text-amber-500" />
+          </div>
+          <div className="relative z-10">
+            <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+              <Icons.Target size={12} /> Liga dos Corretores
+            </p>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-amber-900">Fechar este negócio rende aprox.</span>
+              <span className="text-2xl font-black text-amber-600 flex items-center gap-1.5">
+                {estimatedPoints} <span className="text-sm font-bold">pts</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* BLOCO DE INFORMAÇÕES */}
         <div className="p-6 bg-white space-y-6">
           

@@ -2,8 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotification } from '../contexts/NotificationContext';
 import { useToast } from '../contexts/ToastContext';
 import { runWithSessionRecovery, supabase } from '../lib/supabase';
+import { generateCRMInsights } from '../services/ai';
+import { getLevelInfo } from '../services/gamification';
 import { Task } from '../types';
 
 interface TaskWithLead extends Task {
@@ -42,12 +45,15 @@ export default function AdminTasks() {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
   const { addToast } = useToast();
+  const { notifications, unreadCount } = useNotification();
 
   const [tasks, setTasks] = useState<TaskWithLead[]>([]);
   const [insights, setInsights] = useState<SmartInsight[]>([]);
   const [loading, setLoading] = useState(true);
   const [quickTask, setQuickTask] = useState({ title: '', due_date: '', lead_id: '' });
   const [savingTask, setSavingTask] = useState(false);
+  const [copilotBriefing, setCopilotBriefing] = useState('');
+  const [generatingCopilot, setGeneratingCopilot] = useState(false);
 
   const generateAIInsights = useCallback(async () => {
     if (!user?.company_id) {
@@ -126,16 +132,97 @@ export default function AdminTasks() {
       }
 
       setInsights(nextInsights);
-    } catch (error) {
+    } catch (error: any) {
       if (isAbortError(error)) return;
       console.error('Erro ao gerar insights do CRM Copilot:', error);
+      addToast(error?.message || 'Falha ao conectar com a IA do Copilot.', 'error');
     }
-  }, [navigate, user?.company_id]);
+  }, [addToast, navigate, user?.company_id]);
+
+  const generateCopilotBriefing = useCallback(async () => {
+    if (!user?.id || !user.company_id) {
+      setCopilotBriefing('');
+      return;
+    }
+
+    setGeneratingCopilot(true);
+
+    try {
+      let leadsQuery = supabase
+        .from('leads')
+        .select('id, status')
+        .eq('company_id', user.company_id);
+
+      if (!isAdmin) {
+        leadsQuery = leadsQuery.eq('assigned_to', user.id);
+      }
+
+      const [{ data: leadsData, error: leadsError }, { data: eventsData, error: eventsError }] = await Promise.all([
+        leadsQuery,
+        supabase
+          .from('gamification_events')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(50),
+      ]);
+
+      if (leadsError) throw leadsError;
+      if (eventsError) {
+        console.warn('Erro ao buscar eventos para o Copilot:', eventsError);
+      }
+
+      const userTotalXp = Number(user.xp_points || 0);
+      const { currentLevel } = getLevelInfo(userTotalXp);
+
+      try {
+        const insight = await generateCRMInsights(
+          leadsData || [],
+          tasks,
+          eventsData || [],
+          notifications || [],
+          user.name || 'Corretor',
+          { title: currentLevel.title, level: currentLevel.level }
+        );
+
+        setCopilotBriefing(insight);
+      } catch (aiError: any) {
+        if (isAbortError(aiError)) return;
+        console.error('Erro ao gerar insights do CRM Copilot:', aiError);
+        setCopilotBriefing('');
+
+        // Tratamento infalível contra o "objeto vazio" do SDK do Google
+        let errorMsg = 'Falha ao conectar com o Copilot. Verifique sua conexão.';
+
+        if (aiError && typeof aiError === 'object') {
+          if (aiError.message && aiError.message.trim() !== '') {
+            errorMsg = aiError.message;
+          } else if (Object.keys(aiError).length === 0) {
+            // Captura exatamente o maldito erro {}
+            errorMsg = 'A API da IA rejeitou a conexão automática. Tente clicar em Gerar novamente.';
+          } else {
+            errorMsg = JSON.stringify(aiError);
+          }
+        } else if (typeof aiError === 'string' && aiError.trim() !== '') {
+          errorMsg = aiError;
+        }
+
+        addToast(`Aviso Copilot: ${errorMsg}`, 'error');
+      }
+    } catch (error: any) {
+      if (isAbortError(error)) return;
+      console.error('Erro ao preparar leitura tática do CRM Copilot:', error);
+      addToast(error?.message || 'Não foi possível reunir os dados do Copilot.', 'error');
+    } finally {
+      setGeneratingCopilot(false);
+    }
+  }, [addToast, isAdmin, notifications, tasks, unreadCount, user?.company_id, user?.id, user?.name, user?.xp_points]);
 
   const fetchTasks = useCallback(async () => {
     if (!user?.id || !user.company_id) {
       setTasks([]);
       setInsights([]);
+      setCopilotBriefing('');
       setLoading(false);
       return;
     }
@@ -158,7 +245,6 @@ export default function AdminTasks() {
       if (error) throw error;
 
       setTasks((data as TaskWithLead[]) ?? []);
-      await generateAIInsights();
     } catch (error) {
       if (isAbortError(error)) return;
       console.error('Erro ao carregar tarefas:', error);
@@ -166,7 +252,7 @@ export default function AdminTasks() {
     } finally {
       setLoading(false);
     }
-  }, [addToast, generateAIInsights, isAdmin, user?.company_id, user?.id]);
+  }, [addToast, isAdmin, user?.company_id, user?.id]);
 
   useEffect(() => {
     void fetchTasks();
@@ -288,6 +374,16 @@ export default function AdminTasks() {
     return groups;
   }, [tasks]);
 
+  const copilotLines = useMemo(
+    () =>
+      copilotBriefing
+        .split('\n')
+        .map((line) => line.replace(/^(?:[-*]|\u2022)\s*/, ''))
+        .map((line) => line.replace(/^[-*•]\s*/, '').trim())
+        .filter(Boolean),
+    [copilotBriefing]
+  );
+
   return (
     <div className="mx-auto max-w-6xl animate-fade-in space-y-8 pb-12">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
@@ -298,6 +394,70 @@ export default function AdminTasks() {
           <p className="mt-1 text-slate-500 dark:text-slate-400">Sua central de inteligência e produtividade diária.</p>
         </div>
       </div>
+
+      <section className="rounded-3xl bg-gradient-to-r from-brand-600 via-emerald-500 to-sky-500 p-1 shadow-xl">
+        <div className="rounded-[22px] bg-white p-6 dark:bg-slate-900">
+          <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-slate-400">
+                <Icons.BrainCircuit size={16} className="text-brand-500" /> Leitura do Campeonato
+              </h2>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                Cruze tarefas, leads e eventos recentes de gamificaÃ§Ã£o para receber um direcionamento tÃ¡tico da IA.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {copilotLines.length > 0 && (
+                <div className="rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
+                  {copilotLines.length} foco(s) sugerido(s)
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => void generateCopilotBriefing()}
+                disabled={generatingCopilot || loading}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-lg transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+              >
+                {generatingCopilot ? (
+                  <Icons.Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Icons.Sparkles size={16} className="text-brand-400 dark:text-brand-600" />
+                )}
+                {copilotBriefing ? 'Atualizar leitura tÃ¡tica' : 'Gerar leitura tÃ¡tica'}
+              </button>
+            </div>
+          </div>
+
+          {generatingCopilot ? (
+            <div className="flex items-center justify-center rounded-2xl border border-dashed border-brand-200 bg-brand-50/60 px-4 py-10 text-sm font-medium text-brand-700 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-200">
+              <Icons.Loader2 size={18} className="mr-2 animate-spin" /> Lendo seu momento no campeonato...
+            </div>
+          ) : copilotLines.length > 0 ? (
+            <div className="space-y-3">
+              {copilotLines.map((line, index) => (
+                <div
+                  key={`${line}-${index}`}
+                  className="flex items-start gap-3 rounded-2xl border border-brand-100 bg-brand-50/50 p-4 dark:border-brand-500/20 dark:bg-brand-500/10"
+                >
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-black text-white">
+                    {index + 1}
+                  </div>
+                  <p className="text-sm leading-6 text-slate-700 dark:text-slate-200">{line}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center dark:border-slate-700">
+              <Icons.Sparkles size={22} className="mx-auto mb-3 text-slate-300" />
+              <p className="font-bold text-slate-600 dark:text-slate-200">Nenhuma leitura tÃ¡tica gerada ainda.</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Clique em "Gerar leitura tÃ¡tica" para cruzar sua liga atual, pontuaÃ§Ã£o recente e agenda.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
 
       {insights.length > 0 && (
         <section className="rounded-3xl bg-gradient-to-r from-slate-900 to-slate-800 p-1 shadow-xl">

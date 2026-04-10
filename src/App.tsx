@@ -49,6 +49,7 @@ import AdminFinance from './pages/AdminFinance';
 import AdminKeys from './pages/AdminKeys';
 import AdminClients from './pages/AdminClients';
 import AdminLeaderboard from './pages/AdminLeaderboard';
+import AdminTV from './pages/AdminTV';
 import PendingApproval from './pages/PendingApproval';
 import InviteSignup from './pages/InviteSignup';
 
@@ -193,6 +194,7 @@ const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomai
           <Route path="/admin/pendente" element={<ProtectedRoute allowInactive={true}><PendingApproval /></ProtectedRoute>} />
 
           <Route path="/admin" element={<ProtectedRoute><AdminContextWrapper /></ProtectedRoute>}>
+            <Route path="tv" element={<AdminTV />} />
             <Route element={<AdminLayout />}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<AdminDashboard />} />

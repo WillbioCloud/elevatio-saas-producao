@@ -45,6 +45,11 @@ const safeJsonParse = <T>(rawText: string): T | null => {
   }
 };
 
+const getApiKey = async (): Promise<string | null> => {
+  const apiKey = API_KEY?.trim();
+  return apiKey || null;
+};
+
 export const generateText = async (prompt: string): Promise<string | null> => {
   if (!genAI) return null;
 
@@ -134,7 +139,7 @@ export const findSmartMatches = async (
 ): Promise<SmartMatchResult[]> => {
   if (!genAI || candidateProperties.length === 0) return [];
 
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const prompt = `
 Atue como um corretor sênior.
@@ -230,6 +235,81 @@ export const mapPropertyToCandidate = (property: Property): CandidateProperty =>
   city: property.city || property.location?.city,
   features: property.features || []
 });
+
+export async function generateCRMInsights(
+  leads: any[],
+  tasks: any[],
+  gamificationEvents: any[],
+  notifications: any[],
+  userName: string,
+  userLevelInfo: { title: string; level: number }
+): Promise<string> {
+  const apiKey = await getApiKey();
+  if (!apiKey) return 'A inteligência artificial está desativada no momento. Configure sua chave da API nas opções da empresa.';
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    // Usaremos a versão mais recente da API para testes iniciais
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const activeLeads = leads.filter(l => l.status !== 'ganho' && l.status !== 'perdido');
+    const delayedTasks = tasks.filter(t => t.status !== 'concluida' && new Date(t.due_date) < new Date());
+    const unreadNotifications = notifications.filter(n => !n.read).length;
+
+    const recentWins = gamificationEvents.filter(e => e.action_type === 'deal_closed').length;
+    const totalPointsWeek = gamificationEvents.reduce((sum, e) => {
+      const isThisWeek = (new Date().getTime() - new Date(e.created_at).getTime()) < 7 * 24 * 60 * 60 * 1000;
+      return isThisWeek ? sum + (e.points_awarded || 0) : sum;
+    }, 0);
+
+    const prompt = `Você é o "Elevatio Copilot", um treinador de vendas imobiliárias experiente. 
+    Analise os números do corretor ${userName} e dê 3 dicas práticas em formato de bullet points.
+    Fale diretamente com o corretor, de forma direta e motivacional.
+
+    Contexto Atual:
+    - Patente/Liga: ${userLevelInfo.title} (Nível ${userLevelInfo.level})
+    - Pontos ganhos nos últimos 7 dias: ${totalPointsWeek}
+    - Negócios fechados na semana: ${recentWins}
+    - Leads Ativos: ${activeLeads.length}
+    - Tarefas Atrasadas: ${delayedTasks.length}
+    - Notificações Não Lidas no Sininho: ${unreadNotifications}
+
+    Regras:
+    - Se houver notificações não lidas, alerte sobre o "Sininho".
+    - Se houver tarefas atrasadas, sugira focar na "Operação Limpa" (concluir todas).
+    - Sugira focar no avanço de leads para somar pontos na gamificação.`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response; // Removido o await desnecessário aqui
+
+    if (!response.text()) {
+      throw new Error("A API retornou uma resposta vazia.");
+    }
+
+    return response.text();
+  } catch (error: any) {
+    // Tratamento de erro aprimorado para capturar o motivo real
+    console.error('🚨 Erro detalhado no Gemini API (generateCRMInsights):', error);
+
+    let errMsg = 'Erro desconhecido na API do Gemini.';
+
+    if (error instanceof Error) {
+      errMsg = error.message;
+    } else if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+      errMsg = error.message;
+    } else if (typeof error === 'string') {
+      errMsg = error;
+    }
+
+    // Evita lançar um erro com string vazia
+    if (!errMsg || errMsg.trim() === '') {
+      errMsg = 'Falha silenciosa na API do Google (Possível erro de CORS, cota excedida, ou modelo não suportado).';
+      console.warn("Objeto de erro recebido:", JSON.stringify(error)); // Ajuda a debugar
+    }
+
+    throw new Error(errMsg);
+  }
+}
 
 export async function autoTagContractTemplate(rawContent: string): Promise<string> {
   if (!genAI) throw new Error("Gemini API Key não configurada.");

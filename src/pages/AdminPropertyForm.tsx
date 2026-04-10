@@ -20,7 +20,8 @@ import L from 'leaflet';
 const UFs = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
 const ORGAOS = ['SSP', 'Detran', 'Policia Federal', 'Cartorio Civil', 'OAB', 'CREA', 'CRM'];
 
-type WizardStep = 'basic' | 'details' | 'owner' | 'legal' | 'media' | 'seo';
+type PropertyPriorityLevel = 'padrao' | 'estrategico' | 'dificil' | 'premium' | 'alta_comissao';
+type WizardStep = 'basic' | 'details' | 'owner' | 'strategy' | 'legal' | 'media' | 'seo';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -94,14 +95,18 @@ interface FormState {
   owner_spouse_rg_uf: string;
   commission_percentage: number | '';
   has_exclusivity: boolean;
+  strategic_weight: number;
+  priority_level: PropertyPriorityLevel;
 }
 
-const STEP_ORDER: WizardStep[] = ['basic', 'details', 'owner', 'media', 'seo', 'legal'];
+const DEFAULT_STEP_ORDER: WizardStep[] = ['basic', 'details', 'owner', 'media', 'seo', 'legal'];
+const STRATEGY_STEP_ORDER: WizardStep[] = ['basic', 'details', 'owner', 'strategy', 'media', 'seo', 'legal'];
 
 const STEP_META: Record<WizardStep, { label: string; icon: keyof typeof Icons }> = {
   basic: { label: 'Básico', icon: 'Home' },
   details: { label: 'Detalhes', icon: 'List' },
   owner: { label: 'Proprietário', icon: 'User' },
+  strategy: { label: 'Peso Comercial', icon: 'Target' },
   media: { label: 'Multimídia', icon: 'Image' },
   legal: { label: 'Jurídico', icon: 'Scale' },
   seo: { label: 'SEO', icon: 'Globe' },
@@ -157,6 +162,8 @@ const defaultForm: FormState = {
   owner_spouse_rg_uf: '',
   commission_percentage: 5,
   has_exclusivity: true,
+  strategic_weight: 1.0,
+  priority_level: 'padrao',
 };
 
 const createSlug = (value: string) =>
@@ -271,14 +278,21 @@ const AdminPropertyForm: React.FC = () => {
   const isEditing = Boolean(id);
   const [draftId] = useState(() => crypto.randomUUID());
   const activePropertyId = isEditing && id ? id : draftId;
+  const canAccessStrategy = ['owner', 'manager', 'admin', 'super_admin'].includes(user?.role ?? '');
+  const visibleSteps = useMemo<WizardStep[]>(
+    () => (canAccessStrategy ? STRATEGY_STEP_ORDER : DEFAULT_STEP_ORDER),
+    [canAccessStrategy]
+  );
 
   const stepParam = searchParams.get('step');
   const step =
-    stepParam && STEP_ORDER.includes(stepParam as WizardStep)
+    stepParam && visibleSteps.includes(stepParam as WizardStep)
       ? (stepParam as WizardStep)
       : 'basic';
 
   const setStep = (newStep: WizardStep) => {
+    if (!visibleSteps.includes(newStep)) return;
+
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set('step', newStep);
@@ -445,6 +459,8 @@ const AdminPropertyForm: React.FC = () => {
         owner_spouse_rg_uf: data.owner_spouse_rg_uf || '',
         commission_percentage: data.commission_percentage ?? 5,
         has_exclusivity: data.has_exclusivity ?? true,
+        strategic_weight: Number(data.strategic_weight ?? 1.0) || 1.0,
+        priority_level: data.priority_level ?? 'padrao',
       });
 
       setOriginalAgentId(data.agent_id);
@@ -863,13 +879,13 @@ const AdminPropertyForm: React.FC = () => {
   };
 
   const goNext = () => {
-    const index = STEP_ORDER.indexOf(step);
-    if (index < STEP_ORDER.length - 1) setStep(STEP_ORDER[index + 1]);
+    const index = visibleSteps.indexOf(step);
+    if (index < visibleSteps.length - 1) setStep(visibleSteps[index + 1]);
   };
 
   const goBack = () => {
-    const index = STEP_ORDER.indexOf(step);
-    if (index > 0) setStep(STEP_ORDER[index - 1]);
+    const index = visibleSteps.indexOf(step);
+    if (index > 0) setStep(visibleSteps[index - 1]);
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -952,6 +968,8 @@ const AdminPropertyForm: React.FC = () => {
         owner_spouse_rg_uf: formData.owner_spouse_rg_uf || null,
         commission_percentage: Number(formData.commission_percentage) || 0,
         has_exclusivity: formData.has_exclusivity,
+        strategic_weight: formData.strategic_weight,
+        priority_level: formData.priority_level,
         images: images.map((item) => item.url),
         slug: isEditing ? undefined : createSlug(formData.title),
         agent_id: formData.agent_id || user?.id,
@@ -983,7 +1001,7 @@ const AdminPropertyForm: React.FC = () => {
         if (error) throw error;
 
         if (user?.id) {
-          await addXp(user.id, 50);
+          await addXp(user.id, 50, 'new_property');
         }
       }
 
@@ -1097,6 +1115,7 @@ const AdminPropertyForm: React.FC = () => {
 
   const StepIcon = STEP_META[step].icon;
   const CurrentStepIcon = Icons[StepIcon];
+  const isStrategyStep = step === 'strategy';
 
   return (
     <div className="max-w-6xl mx-auto pb-20 animate-fade-in">
@@ -1116,32 +1135,38 @@ const AdminPropertyForm: React.FC = () => {
           </div>
         </div>
 
-        <div className="hidden md:block px-4 py-2 rounded-2xl bg-amber-50 border border-amber-100 text-amber-700 text-xs font-semibold">
+        <div className={`hidden md:block px-4 py-2 rounded-2xl border text-xs font-semibold ${
+          isStrategyStep
+            ? 'bg-amber-50 border-amber-100 text-amber-700'
+            : 'bg-brand-50 border-brand-100 text-brand-700'
+        }`}>
           {STEP_META[step].label}
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-3 md:p-4 mb-6">
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
-          {STEP_ORDER.map((item, index) => {
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm mb-6 overflow-hidden">
+        <div className="flex overflow-x-auto border-b border-slate-200 bg-slate-50/50 px-2 sm:px-6">
+          {visibleSteps.map((item) => {
             const ActiveIcon = Icons[STEP_META[item].icon];
             const isActive = item === step;
-            const isDone = STEP_ORDER.indexOf(step) > index;
+            const isStrategyTab = item === 'strategy';
 
             return (
               <button
                 key={item}
                 type="button"
                 onClick={() => setStep(item)}
-                className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold transition-all ${
-                  isActive
-                    ? 'bg-slate-900 text-white shadow-lg'
-                    : isDone
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                    : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                className={`flex items-center gap-2 border-b-2 px-4 py-4 text-sm font-bold transition-all whitespace-nowrap ${
+                  isStrategyTab
+                    ? isActive
+                      ? 'border-amber-500 text-amber-600 bg-amber-50'
+                      : 'border-transparent text-slate-500 hover:text-amber-600 hover:bg-amber-50/50'
+                    : isActive
+                    ? 'border-brand-600 text-brand-600 bg-white'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
                 }`}
               >
-                <ActiveIcon size={16} />
+                <ActiveIcon size={16} className={isStrategyTab && isActive ? 'text-amber-500' : ''} />
                 {STEP_META[item].label}
               </button>
             );
@@ -1152,7 +1177,7 @@ const AdminPropertyForm: React.FC = () => {
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-sm">
           <div className="flex items-center gap-2 mb-6 text-slate-800">
-            <CurrentStepIcon size={20} className="text-brand-600" />
+            <CurrentStepIcon size={20} className={isStrategyStep ? 'text-amber-600' : 'text-brand-600'} />
             <h2 className="font-bold text-xl">{STEP_META[step].label}</h2>
           </div>
 
@@ -1958,6 +1983,54 @@ const AdminPropertyForm: React.FC = () => {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {canAccessStrategy && step === 'strategy' && (
+            <div className="space-y-6 animate-fade-in p-2">
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-100 rounded-2xl p-6">
+                <h3 className="text-lg font-black text-amber-800 flex items-center gap-2 mb-2">
+                  <Icons.Trophy size={20} className="text-amber-600" /> Importância na Liga dos Corretores
+                </h3>
+                <p className="text-sm text-amber-700/80 mb-6 leading-relaxed">
+                  Configure o peso deste imóvel na gamificação. Imóveis mais difíceis, exclusivos ou com maior margem de comissão devem gerar mais pontos quando o corretor realizar o fechamento.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white p-5 rounded-xl border border-amber-200/50 shadow-sm">
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Classificação Comercial</label>
+                    <select
+                      value={formData.priority_level}
+                      onChange={(e) => {
+                        const val = e.target.value as PropertyPriorityLevel;
+                        let weight = 1.0;
+                        if (val === 'estrategico') weight = 1.2;
+                        if (val === 'dificil') weight = 1.35;
+                        if (val === 'premium') weight = 1.5;
+                        if (val === 'alta_comissao') weight = 1.6;
+                        setFormData((prev) => ({ ...prev, priority_level: val, strategic_weight: weight }));
+                      }}
+                      className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm focus:border-amber-500 focus:ring-amber-500 bg-slate-50"
+                    >
+                      <option value="padrao">Imóvel Padrão (Multiplicador x1.0)</option>
+                      <option value="estrategico">Estratégico / Boa Liquidez (x1.2)</option>
+                      <option value="dificil">Imóvel Âncora / Venda Difícil (x1.35)</option>
+                      <option value="premium">Premium / Exclusividade Absoluta (x1.5)</option>
+                      <option value="alta_comissao">Alta Comissão / Parceria Estratégica (x1.6)</option>
+                    </select>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-xl border border-amber-200/50 shadow-sm flex flex-col justify-center items-center text-center">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Multiplicador Atual</p>
+                    <div className="text-4xl font-black text-amber-500 flex items-baseline gap-1">
+                      x{formData.strategic_weight.toFixed(2)}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">
+                      Na venda deste imóvel, a pontuação base (300) valerá <strong>{Math.round(300 * formData.strategic_weight)} pontos</strong>.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

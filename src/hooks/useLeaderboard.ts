@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { getLevelInfo } from '../services/gamification';
 
 type LeaderboardBadge = {
   id: string;
@@ -16,7 +17,6 @@ type ProfileBadgeRelation = {
 type LeaderboardProfile = {
   id: string;
   name?: string | null;
-  xp?: number | null;
   xp_points?: number | null;
   level?: number | null;
   theme_color?: string | null;
@@ -26,7 +26,6 @@ type LeaderboardProfile = {
 
 type LeaderboardContract = {
   id: string;
-  user_id?: string | null;
   broker_id?: string | null;
   status?: string | null;
   type?: string | null;
@@ -41,10 +40,10 @@ type LeaderboardLogProfile = {
   name?: string | null;
 } | null;
 
-type LeaderboardLog = {
+type GamificationEvent = {
   id: string;
-  action?: string | null;
-  amount?: number | null;
+  action_type?: string | null;
+  points_awarded?: number | null;
   created_at: string;
   profiles?: LeaderboardLogProfile | LeaderboardLogProfile[] | null;
 };
@@ -58,6 +57,7 @@ export type RealAgent = {
   deals: number;
   conversion: number;
   level: number;
+  levelTitle: string;
   color: string;
   weeklyData: number[];
   badges: LeaderboardBadge[];
@@ -90,7 +90,7 @@ const formatRelativeTime = (createdAt: string) => {
   return 'Agora mesmo';
 };
 
-const extractProfileName = (profiles: LeaderboardLog['profiles']) => {
+const extractProfileName = (profiles: GamificationEvent['profiles']) => {
   if (Array.isArray(profiles)) {
     return profiles[0]?.name ?? 'Sistema';
   }
@@ -108,13 +108,28 @@ const extractBadges = (relations: LeaderboardProfile['user_badges']) => {
     .filter(Boolean);
 };
 
+const LEVEL_COLOR_FALLBACKS: Record<string, string> = {
+  'text-amber-700': '#b45309',
+  'text-slate-500': '#64748b',
+  'text-slate-600': '#475569',
+  'text-yellow-600': '#ca8a04',
+  'text-yellow-700': '#a16207',
+  'text-cyan-600': '#0891b2',
+  'text-cyan-700': '#0e7490',
+  'text-blue-600': '#2563eb',
+  'text-blue-700': '#1d4ed8',
+  'text-purple-600': '#9333ea',
+  'text-rose-600': '#e11d48',
+  'text-brand-600': '#2563eb',
+};
+
 export function useLeaderboard() {
   const { user } = useAuth();
   const [agents, setAgents] = useState<RealAgent[]>([]);
   const [activities, setActivities] = useState<RealActivity[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchLeaderboardData = async () => {
+  const fetchLeaderboardData = useCallback(async () => {
     if (!user?.company_id) {
       setLoading(false);
       return;
@@ -127,7 +142,7 @@ export function useLeaderboard() {
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select(`
-          id, name, xp, level, theme_color, avatar_url,
+          id, name, xp_points, level, theme_color, avatar_url,
           user_badges ( badges ( id, icon, label, description ) )
         `)
         .eq('company_id', companyId)
@@ -135,12 +150,20 @@ export function useLeaderboard() {
 
       if (profilesError) throw profilesError;
 
-      const { data: contractsData, error: contractsError } = await supabase
-        .from('contracts')
-        .select('id, user_id, broker_id, status, type')
-        .eq('company_id', companyId);
+      const profiles = (profilesData || []) as LeaderboardProfile[];
+      const profileIds = profiles.map((profile) => profile.id);
 
-      if (contractsError) throw contractsError;
+      let contractsData: LeaderboardContract[] = [];
+      if (profileIds.length > 0) {
+        const { data, error: contractsError } = await supabase
+          .from('contracts')
+          .select('id, broker_id, status, type')
+          .eq('company_id', companyId)
+          .in('broker_id', profileIds);
+
+        if (contractsError) throw contractsError;
+        contractsData = (data || []) as LeaderboardContract[];
+      }
 
       const { data: leadsData, error: leadsError } = await supabase
         .from('leads')
@@ -149,19 +172,30 @@ export function useLeaderboard() {
 
       if (leadsError) throw leadsError;
 
-      const { data: xpLogs, error: xpLogsError } = await supabase
-        .from('xp_logs')
-        .select('id, action, amount, created_at, profiles(name)')
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      let recentEvents: GamificationEvent[] = [];
+      if (profileIds.length > 0) {
+        const { data, error: eventsError } = await supabase
+          .from('gamification_events')
+          .select(`
+            id,
+            action_type,
+            points_awarded,
+            created_at,
+            profiles(name)
+          `)
+          .in('user_id', profileIds)
+          .order('created_at', { ascending: false })
+          .limit(20);
 
-      if (xpLogsError) throw xpLogsError;
+        if (eventsError) {
+          console.error('Erro ao buscar eventos de gamificação:', eventsError);
+        } else {
+          recentEvents = (data || []) as GamificationEvent[];
+        }
+      }
 
-      const processedAgents: RealAgent[] = ((profilesData || []) as LeaderboardProfile[]).map((profile) => {
-        const agentContracts = ((contractsData || []) as LeaderboardContract[]).filter(
-          (contract) => (contract.user_id ?? contract.broker_id) === profile.id,
-        );
+      const processedAgents: RealAgent[] = profiles.map((profile) => {
+        const agentContracts = contractsData.filter((contract) => contract.broker_id === profile.id);
         const deals = agentContracts.filter(
           (contract) => contract.status === 'active' || contract.status === 'completed',
         ).length;
@@ -173,6 +207,9 @@ export function useLeaderboard() {
 
         const badges = extractBadges(profile.user_badges);
         const profileName = profile.name || 'Corretor';
+        // Lendo exclusivamente da coluna oficial da gamificação atualizada
+        const totalXp = Number(profile.xp_points ?? 0);
+        const { currentLevel } = getLevelInfo(totalXp);
 
         return {
           id: profile.id,
@@ -180,12 +217,13 @@ export function useLeaderboard() {
           avatar:
             profile.avatar_url ||
             `https://ui-avatars.com/api/?name=${encodeURIComponent(profileName)}&background=random`,
-          score: Number(profile.xp ?? profile.xp_points ?? 0),
+          score: totalXp,
           revenue: deals * 1500,
           deals,
           conversion,
-          level: profile.level || 1,
-          color: profile.theme_color || '#3b82f6',
+          level: currentLevel.level,
+          levelTitle: currentLevel.title,
+          color: LEVEL_COLOR_FALLBACKS[currentLevel.color] ?? currentLevel.color.replace('text-', '#'),
           weeklyData: [10, 25, 30, 45, 60, 40, 50],
           badges,
         };
@@ -193,15 +231,23 @@ export function useLeaderboard() {
 
       setAgents(processedAgents);
 
-      const processedActivities: RealActivity[] = ((xpLogs || []) as LeaderboardLog[]).map((log) => ({
-        id: log.id,
-        agentName: extractProfileName(log.profiles),
-        action: log.action || 'ganhou experiência',
-        value: `+${log.amount ?? 0} XP`,
-        time: formatRelativeTime(log.created_at),
-        icon: '⚡',
-        type: 'xp',
-      }));
+      const processedActivities: RealActivity[] = recentEvents.map((event) => {
+        let actionLabel = 'ganhou pontos';
+        if (event.action_type === 'deal_closed') actionLabel = 'fechou um negócio';
+        else if (event.action_type === 'visit_done') actionLabel = 'realizou uma visita';
+        else if (event.action_type === 'proposal_sent') actionLabel = 'enviou uma proposta';
+        else if (event.action_type?.includes('lost')) actionLabel = 'perdeu um lead';
+
+        return {
+          id: event.id,
+          agentName: extractProfileName(event.profiles),
+          action: actionLabel,
+          value: `${event.points_awarded && event.points_awarded > 0 ? '+' : ''}${event.points_awarded || 0} pts`,
+          time: formatRelativeTime(event.created_at),
+          icon: event.points_awarded && event.points_awarded > 0 ? '🔥' : '⚠️',
+          type: 'xp',
+        };
+      });
 
       setActivities(processedActivities);
     } catch (error) {
@@ -209,7 +255,7 @@ export function useLeaderboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.company_id]);
 
   useEffect(() => {
     if (!user?.company_id) {
@@ -218,7 +264,22 @@ export function useLeaderboard() {
     }
 
     void fetchLeaderboardData();
-  }, [user?.company_id]);
+
+    const channel = supabase
+      .channel(`liga-corretores-${user.company_id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `company_id=eq.${user.company_id}` },
+        () => {
+          void fetchLeaderboardData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [fetchLeaderboardData, user?.company_id]);
 
   return { agents, activities, loading, refresh: fetchLeaderboardData };
 }

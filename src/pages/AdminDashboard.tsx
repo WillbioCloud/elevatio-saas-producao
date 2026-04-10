@@ -121,6 +121,17 @@ const getRecentActivityTime = (createdAt: string) => {
   return 'Agora';
 };
 
+const getRecentActivityActionLabel = (action?: string | null) => {
+  if (action === 'deal_closed') return 'fechou um negócio';
+  if (action === 'visit_done') return 'realizou uma visita';
+  if (action === 'visit_scheduled') return 'agendou uma visita';
+  if (action === 'proposal_sent') return 'enviou uma proposta';
+  if (action === 'lead_qualified') return 'qualificou um lead';
+  if (action?.includes('lost')) return 'perdeu um lead';
+
+  return 'ganhou pontos';
+};
+
 const AdminDashboard: React.FC = () => {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
@@ -300,36 +311,48 @@ const AdminDashboard: React.FC = () => {
 
       if (user.company_id && isMounted) {
         try {
-          const { data: xpLogs, error: xpLogsError } = await supabase
-            .from('xp_logs')
-            .select('id, action, amount, created_at, profiles(name)')
-            .eq('company_id', user.company_id)
-            .order('created_at', { ascending: false })
-            .limit(6);
-
-          if (xpLogsError) throw xpLogsError;
-
-          if (isMounted) {
-            setRecentActivities((xpLogs as RecentActivity[]) || []);
-          }
-
           const { data: profilesRank, error: profilesRankError } = await supabase
             .from('profiles')
-            .select('id, xp, level')
+            .select('id, xp_points, level')
             .eq('company_id', user.company_id)
-            .order('xp', { ascending: false });
+            .order('xp_points', { ascending: false });
 
           if (profilesRankError) throw profilesRankError;
+
+          const profileIds = (profilesRank || []).map((profile) => profile.id);
+          let recentEvents: RecentActivity[] = [];
+
+          if (profileIds.length > 0) {
+            const { data: eventsData, error: eventsError } = await supabase
+              .from('gamification_events')
+              .select(`
+                id,
+                action:action_type,
+                amount:points_awarded,
+                created_at,
+                profiles(name)
+              `)
+              .in('user_id', profileIds)
+              .order('created_at', { ascending: false })
+              .limit(6);
+
+            if (eventsError) throw eventsError;
+            recentEvents = (eventsData as RecentActivity[]) || [];
+          }
 
           if (profilesRank && isMounted) {
             const myIndex = profilesRank.findIndex((profile) => profile.id === user.id);
             const myData = profilesRank[myIndex];
 
             setUserGamification({
-              xp: Number(myData?.xp || 0),
+              xp: Number(myData?.xp_points || 0),
               level: Number(myData?.level || 1),
               rank: myIndex >= 0 ? myIndex + 1 : 0,
             });
+          }
+
+          if (isMounted) {
+            setRecentActivities(recentEvents);
           }
         } catch (error) {
           console.error('Erro ao buscar dados de gamificação:', error);
@@ -597,7 +620,7 @@ const AdminDashboard: React.FC = () => {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm leading-snug text-slate-600 dark:text-slate-300">
                     <span className="font-bold text-slate-900 dark:text-white">{getRecentActivityName(act.profiles)}</span>{' '}
-                    {act.action}
+                    {getRecentActivityActionLabel(act.action)}
                   </p>
                   <div className="mt-1 flex items-center justify-between gap-3">
                     <span className="text-xs font-medium text-slate-400">{getRecentActivityTime(act.created_at)}</span>
