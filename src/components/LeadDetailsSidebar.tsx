@@ -7,6 +7,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { findSmartMatches, mapPropertyToCandidate, SmartMatchResult } from '../services/ai';
 import { calculateDealPoints } from '../services/gamification';
+import { Kbd } from './ui/kbd';
+import { Textarea } from './ui/textarea';
 
 interface Template {
   id: string;
@@ -145,6 +147,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
   const [hasStoredSmartMatches, setHasStoredSmartMatches] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const FUNNELS = [
     { id: 'pre_atendimento', label: 'Pré-atend.', color: 'bg-slate-400' },
@@ -161,6 +164,14 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     setSelectedFunnel(lead.funnel_step || 'atendimento');
     setSelectedStatus(lead.status);
   }, [lead.funnel_step, lead.status]);
+
+  useEffect(() => {
+    const textarea = noteTextareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [newNote, activeTab]);
 
   useEffect(() => {
     setAiSuggestion(getLeadAiSuggestion(lead));
@@ -197,7 +208,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
 
     if (typeof onStatusChange === 'function') onStatusChange(selectedStatus as string);
     onLeadUpdate?.(lead.id, { funnel_step: selectedFunnel, status: String(selectedStatus) });
-    await addTimelineLog('status_change', `Etapa alterada para: ${selectedStatus}`);
+    await addTimelineLog('status_change', `Avançou para: ${selectedStatus}`);
     addToast('Status atualizado!', 'success');
   };
 
@@ -382,12 +393,13 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     }
   };
 
-  const handleAddNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newNote.trim()) return;
+  const saveNote = async () => {
+    const trimmedNote = newNote.trim();
+    if (!trimmedNote) return;
+
     const { data, error } = await supabase.from('timeline_events').insert([{ 
       type: 'note', 
-      description: newNote, 
+      description: trimmedNote,
       lead_id: lead.id,
       company_id: (user as any)?.company_id,
       created_by: user?.id
@@ -420,6 +432,11 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
         }]);
       }
     }
+  };
+
+  const handleAddNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveNote();
   };
 
   const toggleTask = async (id: string, completed: boolean) => {
@@ -998,15 +1015,32 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
           {activeTab === 'timeline' && (
             <div className="space-y-6">
               <form onSubmit={handleAddNote} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-                <textarea
-                  className="w-full text-sm outline-none resize-none text-slate-700"
+                <Textarea
+                  ref={noteTextareaRef}
+                  className="min-h-[44px] resize-none overflow-hidden border-0 bg-transparent p-0 text-sm text-slate-700 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   placeholder="Nova nota interna..."
                   rows={2}
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Atalho Ninja: envia com Shift+Enter.
+                    if (e.shiftKey && e.key === 'Enter') {
+                      e.preventDefault();
+                      if (newNote.trim()) {
+                        void saveNote();
+                      }
+                    }
+                  }}
                 />
                 <div className="flex justify-end mt-2 pt-2 border-t border-slate-50">
-                  <button type="submit" className="bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-lg">Salvar Nota</button>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
+                      <Kbd>Shift</Kbd>
+                      <span>+</span>
+                      <Kbd>Enter</Kbd>
+                    </div>
+                    <button type="submit" className="bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-lg">Salvar Nota</button>
+                  </div>
                 </div>
               </form>
               <div className="relative border-l-2 border-slate-100 ml-4 space-y-8 pb-4 mt-6">

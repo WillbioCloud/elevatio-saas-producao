@@ -30,58 +30,9 @@ const normalizeAdminRoute = (path: string) => {
   return path;
 };
 
-const buildLeadRoute = (leadId?: string | null, sourceLink?: string | null) => {
-  if (!leadId) return null;
-
-  try {
-    const url = new URL(
-      sourceLink || '/admin/leads',
-      typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
-    );
-
-    if (url.pathname.startsWith('/admin/leads')) {
-      url.pathname = '/admin/leads';
-      url.searchParams.set('open', leadId);
-      url.searchParams.delete('leadId');
-      url.searchParams.delete('lead_id');
-      url.searchParams.delete('id');
-
-      const query = url.searchParams.toString();
-      return `${url.pathname}${query ? `?${query}` : ''}`;
-    }
-  } catch {
-    // Usa o fallback canônico abaixo.
-  }
-
+const buildLeadRoute = (leadId?: string | null) => {
+  if (!leadId) return '/admin/leads';
   return `/admin/leads?open=${encodeURIComponent(leadId)}`;
-};
-
-const extractLeadIdFromNotification = (notification: NotificationItem) => {
-  if (notification.lead_id) return notification.lead_id;
-  if (!notification.link) return null;
-
-  try {
-    const url = new URL(
-      notification.link,
-      typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
-    );
-
-    const openId =
-      url.searchParams.get('open') ||
-      url.searchParams.get('leadId') ||
-      url.searchParams.get('lead_id') ||
-      url.searchParams.get('id');
-
-    if (openId && url.pathname.startsWith('/admin/leads')) {
-      return openId;
-    }
-
-    const pathMatch = url.pathname.match(/^\/admin\/leads\/([^/?#]+)/);
-    return pathMatch?.[1] ?? null;
-  } catch {
-    const pathMatch = notification.link.match(/\/admin\/leads\/([^/?#]+)/);
-    return pathMatch?.[1] ?? null;
-  }
 };
 
 export function CrmNotificationsMenu() {
@@ -137,10 +88,9 @@ export function CrmNotificationsMenu() {
     setIsOpen(false);
     setIsCenterOpen(false);
 
-    const leadRoute = buildLeadRoute(extractLeadIdFromNotification(notif), notif.link);
-
-    if (leadRoute) {
-      navigate(leadRoute);
+    if (notif.type === 'lead' || notif.title === 'Lead Novo!') {
+      const targetRoute = buildLeadRoute(notif.lead_id);
+      navigate(targetRoute);
       return;
     }
 
@@ -153,7 +103,7 @@ export function CrmNotificationsMenu() {
     const content = (notif.content || notif.message || '').toLowerCase();
 
     if (title.includes('lead') || content.includes('lead')) {
-      navigate(leadRoute || '/admin/leads');
+      navigate(buildLeadRoute(notif.lead_id));
       return;
     }
 

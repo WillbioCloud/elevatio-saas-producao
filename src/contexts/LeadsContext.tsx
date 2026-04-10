@@ -97,6 +97,17 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       console.error('Erro ao atualizar status do lead:', error);
     }
 
+    if (!error && user?.id && user.company_id && previousLead && previousLead.status !== status) {
+      // Registra na timeline (Clean)
+      await supabase.from('timeline_events').insert([{
+        lead_id: leadId,
+        type: 'status_change',
+        description: `Avançou para: ${status}`,
+        company_id: user.company_id,
+        created_by: user.id
+      }]);
+    }
+
     // --- DISTRIBUIÇÃO DE PONTOS (GAMIFICAÇÃO) ---
     if (!error && user?.id && previousLead && previousLead.status !== status) {
       const previousProperty = (previousLead as any).property;
@@ -135,7 +146,7 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         console.error('Falha ao distribuir pontos:', gamiErr);
       }
     }
-  }, [refreshUser, user?.id]);
+  }, [refreshUser, user?.company_id, user?.id]);
 
   const addLead = useCallback(async (lead: Partial<Lead> & Record<string, any>) => {
     const { data, error } = await supabase

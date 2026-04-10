@@ -68,13 +68,6 @@ const formatTimeInStage = (dateString?: string) => {
 
 const getLeadFunnel = (lead: Pick<Lead, 'funnel_step'>) => lead.funnel_step || 'atendimento';
 
-const buildLeadDetailsLink = (leadId: string, funnel?: string | null) => {
-  const params = new URLSearchParams();
-  if (funnel) params.set('funnel', funnel);
-  params.set('open', leadId);
-  return `/admin/leads?${params.toString()}`;
-};
-
 const InfoTooltip = ({ text }: { text: string }) => (
   <div className="relative group inline-flex items-center hover:z-[999] ml-2">
     <Icons.Info size={14} className="text-slate-400 cursor-help hover:text-brand-500 transition-colors" />
@@ -602,6 +595,16 @@ const AdminLeads: React.FC = () => {
     }, { replace: true });
   }, [setSearchParams]);
 
+  const handleBackToGeneralFunnel = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('funnel');
+      next.delete('open');
+      next.delete('tab');
+      return next;
+    });
+  }, [setSearchParams]);
+
   // Sincroniza a URL com o estado do Sidebar de forma estável
   useEffect(() => {
     const openId = searchParams.get('open');
@@ -634,17 +637,9 @@ const AdminLeads: React.FC = () => {
         if (selectedLead?.id !== openId) {
           setSelectedLead(leadToOpen);
         }
-      } 
-      // Se o ID da URL não existir na base de dados (ex: deletado), limpa a URL
-      else if (!leadToOpen && !loading) {
-        setSearchParams((prev) => {
-          const next = new URLSearchParams(prev);
-          next.delete('open');
-          return next;
-        }, { replace: true });
       }
     }
-  }, [searchParams, leads, selectedLead?.id, loading, isAdmin, setSearchParams]);
+  }, [searchParams, leads, selectedLead?.id, isAdmin, setSearchParams]);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
@@ -700,7 +695,7 @@ const AdminLeads: React.FC = () => {
             type: 'system',
             read: false,
             company_id: user.company_id,
-            link: buildLeadDetailsLink(leadId, newFunnel),
+            link: `/admin/leads?open=${lead.id}`,
             sender_id: user.id // <-- ADICIONADO: Envia a foto do autor
           }
         ]);
@@ -758,14 +753,15 @@ const AdminLeads: React.FC = () => {
         type: 'system',
         read: false,
         company_id: user.company_id,
-        link: buildLeadDetailsLink(transferModal.lead.id, transferModal.newFunnel),
+        link: `/admin/leads?open=${transferModal.lead.id}`,
         sender_id: user.id // <-- ADICIONADO: Envia a foto do autor
       }]);
 
-      // 2. Grava na Timeline com o autor
+      // 2. Grava na Timeline (Texto Limpo e Direto)
+      // Como a foto de quem enviou e quem recebeu já aparece na UI, o texto deve ser conciso.
       const timelineDesc = transferForm.note.trim()
-        ? `Lead atribuído para ${targetBrokerName}.\n\nNota: ${transferForm.note}`
-        : `Lead atribuído para ${targetBrokerName}.`;
+        ? `Transferido para ${targetBrokerName}.\n${transferForm.note}`
+        : `Transferido para ${targetBrokerName}.`;
 
       await supabase.from('timeline_events').insert([{
         lead_id: transferModal.lead.id,
@@ -939,10 +935,23 @@ const AdminLeads: React.FC = () => {
       <div className="mb-6 flex flex-col lg:flex-row justify-between lg:items-center gap-4 shrink-0">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full lg:w-auto">
           <div>
-            <h1 className="text-2xl font-serif font-bold text-slate-800 flex items-center gap-2">
-              Funil de Vendas
-              <InfoTooltip text={TOOLTIPS.leads.pageTitle} />
-            </h1>
+            <div className="flex flex-wrap items-center gap-2">
+              {!isMasterView && (
+                <button
+                  type="button"
+                  onClick={handleBackToGeneralFunnel}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"
+                >
+                  <Icons.ArrowLeft size={14} />
+                  Voltar ao geral
+                </button>
+              )}
+
+              <h1 className="text-2xl font-serif font-bold text-slate-800 flex items-center gap-2">
+                Funil de Vendas
+                <InfoTooltip text={TOOLTIPS.leads.pageTitle} />
+              </h1>
+            </div>
             <p className="text-sm text-slate-500">Arraste os cards entre as etapas do funil selecionado.</p>
           </div>
 

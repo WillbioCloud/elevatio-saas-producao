@@ -83,6 +83,17 @@ const buildLeadLink = (leadId?: string | null, sourceLink?: string | null) => {
 const extractLeadIdFromLink = (link?: string | null) => {
   if (!link) return null;
 
+  const extractOpenParamFromText = () => {
+    const match = link.match(/(?:^|[?&])open=([^&#]+)/);
+    if (!match?.[1]) return null;
+
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1];
+    }
+  };
+
   try {
     const url = new URL(link, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
 
@@ -97,10 +108,10 @@ const extractLeadIdFromLink = (link?: string | null) => {
     }
 
     const pathMatch = url.pathname.match(/^\/admin\/leads\/([^/?#]+)/);
-    return pathMatch?.[1] ?? null;
+    return pathMatch?.[1] ?? extractOpenParamFromText();
   } catch {
     const pathMatch = link.match(/\/admin\/leads\/([^/?#]+)/);
-    return pathMatch?.[1] ?? null;
+    return pathMatch?.[1] ?? extractOpenParamFromText();
   }
 };
 
@@ -155,6 +166,8 @@ const mapRowToNotification = (row: NotificationRow): NotificationItem => {
     finalTitle = 'Lead Novo!';
   }
 
+  const leadId = row.lead_id || extractLeadIdFromLink(row.link);
+
   return {
     id: row.id,
     title: finalTitle,
@@ -166,8 +179,8 @@ const mapRowToNotification = (row: NotificationRow): NotificationItem => {
     created_at: row.created_at,
     user_id: row.user_id,
     content: msg,
-    link: normalizeLeadLink(row.link, row.lead_id),
-    lead_id: row.lead_id || extractLeadIdFromLink(row.link),
+    link: row.link ?? null,
+    lead_id: leadId,
   };
 };
 
