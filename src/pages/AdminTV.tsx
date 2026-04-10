@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Icons } from '../components/Icons';
 import { useLeaderboard } from '../hooks/useLeaderboard';
 
+const getAvatarInitial = (name?: string | null) => (name?.trim().charAt(0) || 'C').toUpperCase();
+
 export default function AdminTV() {
   const { agents, activities, loading } = useLeaderboard();
   const [now, setNow] = useState(() => new Date());
@@ -128,11 +130,17 @@ export default function AdminTV() {
 
                       <td className="px-6 py-6">
                         <div className="flex items-center gap-4">
-                          <img
-                            src={agent.avatar}
-                            alt={agent.name}
-                            className="h-16 w-16 rounded-full border-2 border-slate-600 object-cover shadow-lg"
-                          />
+                          {agent.avatar_url ? (
+                            <img
+                              src={agent.avatar_url}
+                              alt={agent.name}
+                              className="h-16 w-16 rounded-full border-2 border-slate-600 object-cover shadow-lg"
+                            />
+                          ) : (
+                            <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-slate-600 bg-slate-700 text-xl font-black text-slate-200 shadow-lg">
+                              {getAvatarInitial(agent.name)}
+                            </div>
+                          )}
                           <div>
                             <p className="text-2xl font-bold text-slate-100">{agent.name}</p>
                             <p className="mt-1 text-sm font-bold uppercase tracking-wider text-brand-400">

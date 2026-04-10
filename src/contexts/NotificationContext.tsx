@@ -1,11 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { useAuth } from './AuthContext';
-import { useTenant } from './TenantContext';
 import { useToast } from './ToastContext';
 import { supabase } from '../lib/supabase';
 
 export type NotificationType = 'lead' | 'property' | 'task' | 'system';
+
+type NotificationSender = { name: string; avatar_url: string | null };
 
 export interface NotificationItem {
   id: string;
@@ -14,12 +14,21 @@ export interface NotificationItem {
   date: Date;
   read: boolean;
   type: NotificationType;
+  sender?: NotificationSender | null;
+  created_at: string;
+  user_id?: string | null;
+  content?: string | null;
+  link?: string | null;
+  lead_id?: string | null;
 }
 
 interface NotificationInput {
   title: string;
   message: string;
   type: NotificationType;
+  link?: string | null;
+  leadId?: string | null;
+  lead_id?: string | null;
 }
 
 interface NotificationContextType {
@@ -34,6 +43,7 @@ interface NotificationContextType {
 type NotificationRow = {
   id: string;
   user_id?: string | null;
+  sender_id?: string | null;
   company_id?: string | null;
   title: string;
   message?: string | null;
@@ -41,9 +51,63 @@ type NotificationRow = {
   type: NotificationType;
   read: boolean;
   created_at: string;
+  profiles?: NotificationSender | null;
+  link?: string | null;
+  lead_id?: string | null;
 };
 
 const MAX_NOTIFICATIONS = 30;
+
+const buildLeadLink = (leadId?: string | null, sourceLink?: string | null) => {
+  if (!leadId) return null;
+
+  try {
+    const url = new URL(sourceLink || '/admin/leads', typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    if (url.pathname.startsWith('/admin/leads')) {
+      url.pathname = '/admin/leads';
+      url.searchParams.set('open', leadId);
+      url.searchParams.delete('leadId');
+      url.searchParams.delete('lead_id');
+      url.searchParams.delete('id');
+
+      const query = url.searchParams.toString();
+      return `/admin/leads${query ? `?${query}` : ''}`;
+    }
+  } catch {
+    // Usa o fallback canônico abaixo.
+  }
+
+  return `/admin/leads?open=${encodeURIComponent(leadId)}`;
+};
+
+const extractLeadIdFromLink = (link?: string | null) => {
+  if (!link) return null;
+
+  try {
+    const url = new URL(link, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+
+    const openId =
+      url.searchParams.get('open') ||
+      url.searchParams.get('leadId') ||
+      url.searchParams.get('lead_id') ||
+      url.searchParams.get('id');
+
+    if (openId && url.pathname.startsWith('/admin/leads')) {
+      return openId;
+    }
+
+    const pathMatch = url.pathname.match(/^\/admin\/leads\/([^/?#]+)/);
+    return pathMatch?.[1] ?? null;
+  } catch {
+    const pathMatch = link.match(/\/admin\/leads\/([^/?#]+)/);
+    return pathMatch?.[1] ?? null;
+  }
+};
+
+const normalizeLeadLink = (link?: string | null, leadId?: string | null) => {
+  const resolvedLeadId = leadId || extractLeadIdFromLink(link);
+  return buildLeadLink(resolvedLeadId, link) || link || null;
+};
 
 const playNotificationSound = () => {
   const soundEnabled = localStorage.getItem('trimoveis-sound') !== 'disabled';
@@ -79,14 +143,33 @@ const playNotificationSound = () => {
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
-const mapRowToNotification = (row: NotificationRow): NotificationItem => ({
-  id: row.id,
-  title: row.title,
-  message: row.message ?? row.content ?? '',
-  type: row.type,
-  read: row.read,
-  date: new Date(row.created_at),
-});
+const mapRowToNotification = (row: NotificationRow): NotificationItem => {
+  let finalTitle = row.title;
+  const msg = row.message ?? row.content ?? '';
+
+  const titleLower = finalTitle.toLowerCase();
+  const msgLower = msg.toLowerCase();
+  const isNewLead = titleLower.includes('atribuído') || titleLower.includes('novo lead') || (titleLower.includes('etapa') && (msgLower.includes('novo') || msgLower.includes('atendimento')));
+
+  if (isNewLead) {
+    finalTitle = 'Lead Novo!';
+  }
+
+  return {
+    id: row.id,
+    title: finalTitle,
+    message: msg,
+    type: row.type,
+    read: row.read,
+    date: new Date(row.created_at),
+    sender: row.profiles ?? null,
+    created_at: row.created_at,
+    user_id: row.user_id,
+    content: msg,
+    link: normalizeLeadLink(row.link, row.lead_id),
+    lead_id: row.lead_id || extractLeadIdFromLink(row.link),
+  };
+};
 
 const upsertNotification = (
   current: NotificationItem[],
@@ -102,85 +185,92 @@ const upsertNotification = (
   return next.sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, MAX_NOTIFICATIONS);
 };
 
-const isVisibleToUser = (row: NotificationRow, userId: string) => !row.user_id || row.user_id === userId;
-
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const { tenant } = useTenant();
   const { addToast } = useToast();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
   const fetchNotifications = useCallback(async () => {
-    if (!user || !tenant?.id) return;
-    
-    try {
-      // Busca notificações que sejam do usuário logado OU que sejam globais da imobiliária
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('company_id', tenant.id)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (error) throw error;
-      
-      // Se houver uma coluna user_id, filtramos as que são para outro usuário
-      const filteredData = ((data ?? []) as NotificationRow[]).filter(n => !n.user_id || n.user_id === user.id);
-      
-      setNotifications(filteredData.map(mapRowToNotification));
-      setUnreadCount(filteredData?.filter(n => !n.read).length || 0);
-    } catch (error) {
-      console.error('Erro ao buscar notificações:', error);
-    }
-  }, [tenant?.id, user]);
-
-  useEffect(() => {
-    if (!user || !tenant?.id) {
+    if (!user?.company_id || !user?.id) {
       setNotifications([]);
       setUnreadCount(0);
       return;
     }
+    
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*, profiles!notifications_sender_id_fkey(name, avatar_url)')
+        .eq('company_id', user.company_id)
+        .order('created_at', { ascending: false })
+        .limit(40);
 
-    void fetchNotifications();
-  }, [fetchNotifications, tenant?.id, user]);
+      if (error) throw error;
+      
+      // Escudo Anti-Vazamento (Fetch): Se o user_id for nulo mas o texto for de Lead, bloqueia.
+      const filteredData = ((data ?? []) as NotificationRow[]).filter(n => {
+        if (n.user_id) return n.user_id === user.id;
+        if (n.title?.toLowerCase().includes('lead') || n.message?.toLowerCase().includes('lead')) return false;
+        return true;
+      });
+      
+      setNotifications(filteredData.map(mapRowToNotification));
+      setUnreadCount(filteredData.filter(n => !n.read).length);
+    } catch (error) {
+      console.error('Erro ao buscar notificações:', error);
+    }
+  }, [user?.company_id, user?.id]);
 
   useEffect(() => {
-    if (!user?.id || !tenant?.id) return;
+    void fetchNotifications();
+  }, [fetchNotifications]);
+
+  useEffect(() => {
+    if (!user?.company_id || !user?.id) return;
 
     const channel = supabase
-      .channel(`notifications-channel-${tenant.id}-${user.id}`)
+      .channel(`notifications-${user.id}`)
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `company_id=eq.${tenant.id}`,
-        },
-        (payload: RealtimePostgresChangesPayload<NotificationRow>) => {
-          const row = payload.new as NotificationRow;
-          if (!row || !isVisibleToUser(row, user.id)) return;
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `company_id=eq.${user.company_id}` },
+        async (payload) => {
+          const newRow = payload.new as NotificationRow;
 
-          const mapped = mapRowToNotification(row);
+          // Escudo Anti-Vazamento (Realtime Live)
+          if (newRow.user_id) {
+            if (newRow.user_id !== user.id) return;
+          } else {
+            if (newRow.title?.toLowerCase().includes('lead') || newRow.message?.toLowerCase().includes('lead')) return;
+          }
+
+          // Puxa a foto do autor
+          let senderProfile = null;
+          if (newRow.sender_id) {
+            const { data } = await supabase.from('profiles').select('name, avatar_url').eq('id', newRow.sender_id).single();
+            senderProfile = data;
+          }
+
+          const mapped = mapRowToNotification({ ...newRow, profiles: senderProfile });
+
           setNotifications((prev) => upsertNotification(prev, mapped));
+          setUnreadCount((c) => c + 1);
           playNotificationSound();
-          addToast(mapped.title, 'success');
-          void fetchNotifications();
+
+          // Dispara o Toast correto
+          if (mapped.title === 'Lead Novo!') {
+            addToast(mapped.message, 'new_lead', { title: 'Novo Lead!', avatar: mapped.sender?.avatar_url });
+          } else {
+            addToast(mapped.title, 'info');
+          }
         }
       )
       .on(
         'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'notifications',
-          filter: `company_id=eq.${tenant.id}`,
-        },
-        (payload: RealtimePostgresChangesPayload<NotificationRow>) => {
+        { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `company_id=eq.${user.company_id}` },
+        (payload) => {
           const row = payload.new as NotificationRow;
-          if (!row || !isVisibleToUser(row, user.id)) return;
-
+          if (row.user_id && row.user_id !== user.id) return;
           const mapped = mapRowToNotification(row);
           setNotifications((prev) => upsertNotification(prev, mapped));
           void fetchNotifications();
@@ -191,12 +281,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [addToast, fetchNotifications, tenant?.id, user?.id]);
+  }, [user?.company_id, user?.id, addToast, fetchNotifications]);
 
   const addNotification = useCallback((notification: NotificationInput) => {
-    if (!user?.id) return;
+    if (!user?.id || !user.company_id) return;
 
     void (async () => {
+      const leadId = notification.leadId || notification.lead_id || extractLeadIdFromLink(notification.link);
+
       const { data, error } = await supabase
         .from('notifications')
         .insert({
@@ -206,6 +298,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           type: notification.type,
           read: false,
           company_id: user.company_id,
+          link: normalizeLeadLink(notification.link, leadId),
         })
         .select('*')
         .single();
@@ -223,7 +316,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [user?.company_id, user?.id]);
 
   const markAsRead = useCallback((id: string) => {
-    if (!user?.id) return;
+    if (!user?.id || !user.company_id) return;
 
     const wasUnread = notifications.some((notification) => notification.id === id && !notification.read);
 
@@ -241,16 +334,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       .from('notifications')
       .update({ read: true })
       .eq('id', id)
+      .eq('company_id', user.company_id)
       .then(({ error }) => {
         if (error) {
           console.error('Erro ao marcar notificação como lida:', error);
           void fetchNotifications();
         }
       });
-  }, [fetchNotifications, notifications, user?.id]);
+  }, [fetchNotifications, notifications, user?.company_id, user?.id]);
 
   const markAllAsRead = useCallback(() => {
-    if (!user?.id || !tenant?.id) return;
+    if (!user?.id || !user.company_id) return;
 
     setNotifications((previous) => previous.map((notification) => ({ ...notification, read: true })));
     setUnreadCount(0);
@@ -258,7 +352,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     void supabase
       .from('notifications')
       .update({ read: true })
-      .eq('company_id', tenant.id)
+      .eq('company_id', user.company_id)
       .or(`user_id.is.null,user_id.eq.${user.id}`)
       .eq('read', false)
       .then(({ error }) => {
@@ -267,7 +361,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           void fetchNotifications();
         }
       });
-  }, [fetchNotifications, tenant?.id, user?.id]);
+  }, [fetchNotifications, user?.company_id, user?.id]);
 
   const value = useMemo(
     () => ({ notifications, unreadCount, addNotification, markAsRead, markAllAsRead, fetchNotifications }),

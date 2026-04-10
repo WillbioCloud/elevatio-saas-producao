@@ -28,6 +28,56 @@ interface SmartMatchView {
   match_reason: string;
 }
 
+interface AiTaskSuggestion {
+  title: string;
+  description?: string;
+  priority?: string;
+  due_in_hours?: number;
+}
+
+const normalizeAiTaskSuggestion = (value: unknown): AiTaskSuggestion | null => {
+  if (!value) return null;
+
+  let suggestion = value;
+  if (typeof value === 'string') {
+    try {
+      suggestion = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!suggestion || typeof suggestion !== 'object') return null;
+
+  const candidate = suggestion as Partial<AiTaskSuggestion>;
+  if (!candidate.title || typeof candidate.title !== 'string') return null;
+
+  return {
+    title: candidate.title,
+    description: typeof candidate.description === 'string' ? candidate.description : undefined,
+    priority: typeof candidate.priority === 'string' ? candidate.priority : undefined,
+    due_in_hours: Number.isFinite(Number(candidate.due_in_hours)) ? Number(candidate.due_in_hours) : undefined
+  };
+};
+
+const getLeadAiSuggestion = (lead: Lead): AiTaskSuggestion | null => {
+  const leadWithMetadata = lead as Lead & {
+    aiSuggestion?: unknown;
+    ai_suggestion?: unknown;
+    metadata?: {
+      aiSuggestion?: unknown;
+      ai_suggestion?: unknown;
+    };
+  };
+
+  return normalizeAiTaskSuggestion(
+    leadWithMetadata.aiSuggestion
+      ?? leadWithMetadata.ai_suggestion
+      ?? leadWithMetadata.metadata?.aiSuggestion
+      ?? leadWithMetadata.metadata?.ai_suggestion
+  );
+};
+
 const DEFAULT_TEMPLATES: Template[] = [
   { id: '1', title: '👋 Saudação Inicial', content: 'Olá {nome}, tudo bem? Sou da TR Imóveis. Vi que se interessou pelo {imovel}. Podemos conversar?' },
   { id: '2', title: '📅 Agendar Visita', content: 'Oi {nome}, gostaria de agendar uma visita para conhecer o {imovel}? Tenho horários livres.' },
@@ -80,6 +130,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
   const [selectedNewProp, setSelectedNewProp] = useState('');
   const [templates, setTemplates] = useState<Template[]>(DEFAULT_TEMPLATES);
   const [agents, setAgents] = useState<Array<{ id: string; name: string; active: boolean }>>([]);
+  const [aiSuggestion, setAiSuggestion] = useState<AiTaskSuggestion | null>(() => getLeadAiSuggestion(lead));
   const [changingAgent, setChangingAgent] = useState(false);
   const [profileForm, setProfileForm] = useState<LeadProfileForm>({
     budget: lead.budget ? String(lead.budget) : '',
@@ -110,6 +161,10 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     setSelectedFunnel(lead.funnel_step || 'atendimento');
     setSelectedStatus(lead.status);
   }, [lead.funnel_step, lead.status]);
+
+  useEffect(() => {
+    setAiSuggestion(getLeadAiSuggestion(lead));
+  }, [lead]);
 
   const handleStageChange = async () => {
     if (lead.funnel_step === 'pre_atendimento' && selectedFunnel !== 'pre_atendimento') {
@@ -151,21 +206,22 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
   const leadPhoneClean = useMemo(() => (lead.phone || '').replace(/\D/g, ''), [lead.phone]);
 
   const addTimelineLog = async (type: TimelineEvent['type'], description: string) => {
-    const authorName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Usuário';
-    const fullDescription = `${description} (por ${authorName})`;
-
     const { error } = await supabase.from('timeline_events').insert([{ 
       lead_id: lead.id, 
       type, 
-      description: fullDescription,
+      description: description,
       company_id: (user as any)?.company_id,
+      created_by: user?.id
     }]);
+
     if (error) console.error("Erro na timeline:", error);
+
     const { data } = await supabase
       .from('timeline_events')
-      .select('*')
+      .select('*, profiles!timeline_events_created_by_fkey(name, avatar_url)')
       .eq('lead_id', lead.id)
       .order('created_at', { ascending: false });
+
     if (data) setEvents(data as any);
   };
 
@@ -184,7 +240,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
 
       const [tasksRes, eventsRes, templatesRes] = await Promise.all([
         supabase.from('tasks').select('*').eq('lead_id', lead.id).order('due_date', { ascending: true }),
-        supabase.from('timeline_events').select('*').eq('lead_id', lead.id).order('created_at', { ascending: false }),
+        supabase.from('timeline_events').select('*, profiles!timeline_events_created_by_fkey(name, avatar_url)').eq('lead_id', lead.id).order('created_at', { ascending: false }),
         supabase.from('message_templates').select('*').eq('active', true)
       ]);
 
@@ -195,7 +251,13 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
       setInterestedProps(savedInterests);
 
       if (tasksRes.data) setTasks(tasksRes.data as any);
-      if (eventsRes.data) setEvents(eventsRes.data as any);
+      // Tratamento de erro explícito para a Timeline
+      if (eventsRes.error) {
+        console.error('🚨 Erro ao buscar Timeline (Possível falha de Cache/Foreign Key):', eventsRes.error);
+        addToast('Aviso: Falha ao carregar alguns itens do histórico.', 'error');
+      } else if (eventsRes.data) {
+        setEvents(eventsRes.data as any);
+      }
       if (templatesRes.data && templatesRes.data.length > 0) setTemplates(templatesRes.data as any);
 
       const { data: storedMatches } = await supabase
@@ -281,6 +343,45 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     }
   };
 
+  const handleAcceptAiSuggestion = async () => {
+    if (!user?.id || !user.company_id || !lead || !aiSuggestion?.title) return;
+
+    try {
+      // Calcula a data de vencimento baseada nas horas sugeridas pela Aura.
+      const dueDate = new Date();
+      dueDate.setHours(dueDate.getHours() + (aiSuggestion.due_in_hours || 24));
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert({
+          company_id: user.company_id,
+          user_id: user.id,
+          lead_id: lead.id,
+          title: aiSuggestion.title,
+          description: aiSuggestion.description,
+          priority: aiSuggestion.priority,
+          due_date: dueDate.toISOString(),
+          status: 'pendente',
+          completed: false,
+          type: 'other'
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setTasks((prev) => [...prev, data as any]);
+      }
+
+      addToast('Tarefa adicionada com sucesso à sua agenda!', 'success');
+      setAiSuggestion(null);
+    } catch (err: any) {
+      console.error('Erro ao salvar tarefa da Aura:', err);
+      addToast('Falha ao salvar a tarefa sugerida.', 'error');
+    }
+  };
+
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newNote.trim()) return;
@@ -289,7 +390,8 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
       description: newNote, 
       lead_id: lead.id,
       company_id: (user as any)?.company_id,
-    }]).select().single();
+      created_by: user?.id
+    }]).select('*, profiles!timeline_events_created_by_fkey(name, avatar_url)').single();
     if (error) {
       console.error("Erro ao salvar nota:", error);
       addToast("Erro ao salvar nota", "error");
@@ -313,6 +415,8 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
           type: 'system',
           read: false,
           company_id: user.company_id,
+          link: `/admin/leads?open=${lead.id}`,
+          sender_id: user.id,
         }]);
       }
     }
@@ -905,25 +1009,46 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
                   <button type="submit" className="bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-lg">Salvar Nota</button>
                 </div>
               </form>
-              <div className="relative pl-4 border-l-2 border-slate-200 space-y-6">
-                {events.map((event: any) => (
-                  <div key={event.id} className="relative">
-                    <div className={`absolute -left-[21px] top-0 w-3 h-3 rounded-full border-2 border-white ${
-                      event.type === 'whatsapp' ? 'bg-green-500' : event.type === 'note' ? 'bg-amber-400' : 'bg-blue-400'
-                    }`} />
-                    <p className="text-[10px] text-slate-400 mb-1">{formatDate(event.created_at)}</p>
-                    <div className="bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
-                      <p className="text-sm text-slate-600 whitespace-pre-wrap">{event.description}</p>
-                    </div>
-                  </div>
-                ))}
+              <div className="relative border-l-2 border-slate-100 ml-4 space-y-8 pb-4 mt-6">
+                {events.map((event: any) => {
+                  const authorName = event.profiles?.name || 'Sistema Elevatio';
+                  const authorAvatar = event.profiles?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random`;
 
-                <div className="relative">
-                  <div className="absolute -left-[21px] top-0 w-3 h-3 rounded-full border-2 border-white bg-slate-400" />
-                  <p className="text-[10px] text-slate-400 mb-1">{formatDate((lead as any).created_at || (lead as any).createdAt || new Date().toISOString())}</p>
-                  <div className="bg-slate-100 p-3 rounded-lg border border-slate-200 shadow-sm">
-                    <p className="text-sm text-slate-600 font-bold">Lead cadastrado no sistema</p>
-                    <p className="text-xs text-slate-500 mt-1">Origem: {lead.source || 'Não identificada'}</p>
+                  return (
+                    <div key={event.id} className="relative pl-8 animate-fade-in">
+                      <div className="absolute -left-[17px] top-0 w-8 h-8 bg-white rounded-full p-0.5 border-2 border-slate-200 shadow-sm z-10">
+                        <img src={authorAvatar} alt={authorName} className="w-full h-full rounded-full object-cover" />
+                        <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border border-white ${
+                          event.type === 'whatsapp' ? 'bg-green-500' : event.type === 'note' ? 'bg-amber-400' : 'bg-brand-500'
+                        }`} title={event.type} />
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[11px] text-slate-800 font-bold uppercase tracking-wider">{authorName}</p>
+                          <p className="text-[10px] font-bold text-slate-400">{formatDate(event.created_at)}</p>
+                        </div>
+                        <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">{event.description}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div className="relative pl-8">
+                  <div className="absolute -left-[17px] top-0 w-8 h-8 bg-white rounded-full p-0.5 border-2 border-slate-200 shadow-sm z-10 flex items-center justify-center text-slate-400">
+                    <Icons.Star size={16} />
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[11px] text-slate-600 font-bold uppercase tracking-wider">Sistema</p>
+                      <p className="text-[10px] font-bold text-slate-400">
+                        {formatDate((lead as any).created_at || (lead as any).createdAt || new Date().toISOString())}
+                      </p>
+                    </div>
+                    <p className="text-sm text-slate-700 font-bold">Lead cadastrado no sistema</p>
+                    <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                      <Icons.Link size={12} /> Origem: <span className="font-bold">{lead.source || 'Não identificada'}</span>
+                    </p>
                   </div>
                 </div>
               </div>
@@ -965,6 +1090,36 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
 
           {activeTab === 'tasks' && (
             <div className="space-y-4">
+              {aiSuggestion && (
+                <div className="bg-brand-50 border border-brand-100 p-4 rounded-xl shadow-sm space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-brand-600 text-white flex items-center justify-center shrink-0">
+                      <Icons.Sparkles size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-brand-600 uppercase tracking-widest">Sugestão da Aura</p>
+                      <h4 className="text-sm font-bold text-slate-800 mt-1">{aiSuggestion.title}</h4>
+                      {aiSuggestion.description && (
+                        <p className="text-xs text-slate-600 mt-1 leading-5">{aiSuggestion.description}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[10px] font-bold uppercase text-slate-400">
+                      Vence em {aiSuggestion.due_in_hours || 24}h
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void handleAcceptAiSuggestion()}
+                      className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors"
+                    >
+                      Aceitar Sugestão +
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <form onSubmit={handleAddTask} className="flex gap-2 mb-4">
                 <input
                   type="text"

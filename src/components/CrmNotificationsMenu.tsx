@@ -2,23 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import * as Icons from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
-import { useToast } from '../contexts/ToastContext';
-
-const NOTIFICATION_SOUND_URL = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
-const NOTIFICATIONS_LIMIT = 50;
-
-type CrmNotification = {
-  id: string;
-  title: string;
-  content?: string | null;
-  message?: string | null;
-  read: boolean;
-  created_at: string;
-  link?: string | null;
-  user_id?: string | null;
-};
+import { useNotification, type NotificationItem } from '../contexts/NotificationContext';
 
 const timeAgo = (dateStr: string) => {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -34,8 +18,6 @@ const timeAgo = (dateStr: string) => {
   return `${days}d atrás`;
 };
 
-const getInitials = (text: string) => text.charAt(0).toUpperCase();
-
 const normalizeAdminRoute = (path: string) => {
   if (path.startsWith('/admin/contracts')) {
     return path.replace('/admin/contracts', '/admin/contratos');
@@ -48,110 +30,70 @@ const normalizeAdminRoute = (path: string) => {
   return path;
 };
 
+const buildLeadRoute = (leadId?: string | null, sourceLink?: string | null) => {
+  if (!leadId) return null;
+
+  try {
+    const url = new URL(
+      sourceLink || '/admin/leads',
+      typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    );
+
+    if (url.pathname.startsWith('/admin/leads')) {
+      url.pathname = '/admin/leads';
+      url.searchParams.set('open', leadId);
+      url.searchParams.delete('leadId');
+      url.searchParams.delete('lead_id');
+      url.searchParams.delete('id');
+
+      const query = url.searchParams.toString();
+      return `${url.pathname}${query ? `?${query}` : ''}`;
+    }
+  } catch {
+    // Usa o fallback canônico abaixo.
+  }
+
+  return `/admin/leads?open=${encodeURIComponent(leadId)}`;
+};
+
+const extractLeadIdFromNotification = (notification: NotificationItem) => {
+  if (notification.lead_id) return notification.lead_id;
+  if (!notification.link) return null;
+
+  try {
+    const url = new URL(
+      notification.link,
+      typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    );
+
+    const openId =
+      url.searchParams.get('open') ||
+      url.searchParams.get('leadId') ||
+      url.searchParams.get('lead_id') ||
+      url.searchParams.get('id');
+
+    if (openId && url.pathname.startsWith('/admin/leads')) {
+      return openId;
+    }
+
+    const pathMatch = url.pathname.match(/^\/admin\/leads\/([^/?#]+)/);
+    return pathMatch?.[1] ?? null;
+  } catch {
+    const pathMatch = notification.link.match(/\/admin\/leads\/([^/?#]+)/);
+    return pathMatch?.[1] ?? null;
+  }
+};
+
 export function CrmNotificationsMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'system' | 'human'>('all');
   const [isCenterOpen, setIsCenterOpen] = useState(false);
   const [centerSearch, setCenterSearch] = useState('');
   const [centerFilter, setCenterFilter] = useState<'all' | 'unread'>('all');
-  const [notifications, setNotifications] = useState<CrmNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { user } = useAuth();
-  const { addToast } = useToast();
+  const { notifications, unreadCount, markAllAsRead, markAsRead, fetchNotifications } = useNotification();
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
-  const companyId = user?.company_id;
-
-  const isVisibleToCurrentUser = (notification: CrmNotification) =>
-    !notification.user_id || notification.user_id === user?.id;
-
-  const syncNotifications = (nextNotifications: CrmNotification[]) => {
-    setNotifications(nextNotifications);
-    setUnreadCount(nextNotifications.filter((notification) => !notification.read).length);
-  };
-
-  const fetchNotifs = async () => {
-    if (!companyId) return;
-
-    setIsRefreshing(true);
-
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('company_id', companyId)
-      .order('created_at', { ascending: false })
-      .limit(NOTIFICATIONS_LIMIT);
-
-    if (error) {
-      console.error('Erro ao carregar notificações:', error);
-      window.setTimeout(() => setIsRefreshing(false), 500);
-      return;
-    }
-
-    const visibleNotifications = ((data as CrmNotification[] | null) ?? []).filter(isVisibleToCurrentUser);
-    syncNotifications(visibleNotifications);
-    window.setTimeout(() => setIsRefreshing(false), 500);
-  };
-
-  useEffect(() => {
-    if (!companyId) return;
-
-    void fetchNotifs();
-
-    const channel = supabase
-      .channel(`crm_notifs_${companyId}_${user?.id ?? 'all'}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `company_id=eq.${companyId}` },
-        (payload) => {
-          const newNotification = payload.new as CrmNotification;
-          if (!isVisibleToCurrentUser(newNotification)) return;
-
-          setNotifications((prev) => {
-            const next = [newNotification, ...prev].slice(0, NOTIFICATIONS_LIMIT);
-            setUnreadCount(next.filter((notification) => !notification.read).length);
-            return next;
-          });
-
-          addToast(newNotification.title || 'Nova notificação', 'info');
-
-          try {
-            const audio = new Audio(NOTIFICATION_SOUND_URL);
-            audio.volume = 0.5;
-            void audio.play();
-          } catch (error) {
-            console.error('Erro de som', error);
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `company_id=eq.${companyId}` },
-        (payload) => {
-          const updatedNotification = payload.new as CrmNotification;
-          if (!isVisibleToCurrentUser(updatedNotification)) return;
-
-          setNotifications((prev) => {
-            const exists = prev.some((notification) => notification.id === updatedNotification.id);
-            const next = exists
-              ? prev.map((notification) =>
-                  notification.id === updatedNotification.id ? { ...notification, ...updatedNotification } : notification
-                )
-              : [updatedNotification, ...prev].slice(0, NOTIFICATIONS_LIMIT);
-
-            setUnreadCount(next.filter((notification) => !notification.read).length);
-            return next;
-          });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [companyId, addToast, user?.id]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -187,32 +129,20 @@ export function CrmNotificationsMenu() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const markNotificationAsRead = async (notificationId: string) => {
-    const { error } = await supabase.from('notifications').update({ read: true }).eq('id', notificationId);
-
-    if (error) {
-      console.error('Erro ao marcar notificação como lida:', error);
-      return false;
-    }
-
-    setNotifications((prev) => {
-      const next = prev.map((notification) =>
-        notification.id === notificationId ? { ...notification, read: true } : notification
-      );
-      setUnreadCount(next.filter((notification) => !notification.read).length);
-      return next;
-    });
-
-    return true;
-  };
-
-  const handleNotificationClick = async (notif: CrmNotification) => {
+  const handleNotificationClick = (notif: NotificationItem) => {
     if (!notif.read) {
-      await markNotificationAsRead(notif.id);
+      markAsRead(notif.id);
     }
 
     setIsOpen(false);
     setIsCenterOpen(false);
+
+    const leadRoute = buildLeadRoute(extractLeadIdFromNotification(notif), notif.link);
+
+    if (leadRoute) {
+      navigate(leadRoute);
+      return;
+    }
 
     if (notif.link) {
       navigate(normalizeAdminRoute(notif.link));
@@ -223,7 +153,7 @@ export function CrmNotificationsMenu() {
     const content = (notif.content || notif.message || '').toLowerCase();
 
     if (title.includes('lead') || content.includes('lead')) {
-      navigate('/admin/leads');
+      navigate(leadRoute || '/admin/leads');
       return;
     }
 
@@ -250,20 +180,6 @@ export function CrmNotificationsMenu() {
     if (title.includes('ranking') || title.includes('leaderboard') || content.includes('ranking')) {
       navigate('/admin/leaderboard');
     }
-  };
-
-  const handleMarkAllRead = async () => {
-    const unreadIds = notifications.filter((notification) => !notification.read).map((notification) => notification.id);
-    if (!unreadIds.length) return;
-
-    const { error } = await supabase.from('notifications').update({ read: true }).in('id', unreadIds);
-    if (error) {
-      console.error('Erro ao marcar todas como lidas:', error);
-      return;
-    }
-
-    setNotifications((prev) => prev.map((notification) => ({ ...notification, read: true })));
-    setUnreadCount(0);
   };
 
   const filteredDropdownNotifs = useMemo(
@@ -293,56 +209,28 @@ export function CrmNotificationsMenu() {
     human: notifications.filter((notification) => !!notification.user_id).length,
   };
 
-  const renderIcon = (notif: CrmNotification) => {
-    const title = notif.title.toLowerCase();
-
-    if (notif.user_id) {
-      return (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-white shadow-sm">
-          {getInitials(notif.title)}
-        </div>
-      );
-    }
-
-    if (title.includes('ia') || title.includes('copilot') || title.includes('automático')) {
-      return (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-          <Icons.Sparkles size={14} className="text-emerald-600" />
-        </div>
-      );
-    }
-
-    let bgColor = 'bg-blue-100';
-    let textColor = 'text-blue-600';
-    let Icon = Icons.Info;
-
-    if (title.includes('erro') || title.includes('falha') || title.includes('atraso')) {
-      bgColor = 'bg-red-100';
-      textColor = 'text-red-600';
-      Icon = Icons.AlertTriangle;
-    } else if (title.includes('sucesso') || title.includes('aprovado')) {
-      bgColor = 'bg-green-100';
-      textColor = 'text-green-600';
-      Icon = Icons.CheckCircle;
-    }
-
-    return (
-      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${bgColor}`}>
-        <Icon size={14} className={textColor} />
-      </div>
-    );
-  };
+  const renderIcon = (notif: NotificationItem) => (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+      {notif.sender?.avatar_url ? (
+        <img src={notif.sender.avatar_url} alt={notif.sender.name} className="h-full w-full object-cover" />
+      ) : notif.sender?.name ? (
+        <span className="text-sm font-bold text-slate-500">{notif.sender.name.charAt(0).toUpperCase()}</span>
+      ) : (
+        <Icons.Bell size={18} className="text-brand-500" />
+      )}
+    </div>
+  );
 
   const NotificationCard = ({
     notification,
     isCenter = false,
   }: {
-    notification: CrmNotification;
+    notification: NotificationItem;
     isCenter?: boolean;
   }) => (
     <button
       type="button"
-      onClick={() => void handleNotificationClick(notification)}
+      onClick={() => handleNotificationClick(notification)}
       className={`group relative flex w-full items-start gap-3 rounded-2xl border p-3.5 text-left transition-all duration-200 ${
         !notification.read
           ? 'border-[#E5E7EB] bg-[#F9FAFB] shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:bg-slate-50'
@@ -455,7 +343,7 @@ export function CrmNotificationsMenu() {
                   {unreadCount > 0 && (
                     <button
                       type="button"
-                      onClick={() => void handleMarkAllRead()}
+                      onClick={() => markAllAsRead()}
                       className="flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700"
                     >
                       <Icons.CheckCheck size={14} />
@@ -512,10 +400,10 @@ export function CrmNotificationsMenu() {
                 <h3 className="text-[15px] font-semibold text-[#111827]">Notificações</h3>
                 <button
                   type="button"
-                  onClick={() => void fetchNotifs()}
+                  onClick={() => void fetchNotifications()}
                   className="rounded-full p-1 text-[#9CA3AF] transition-colors hover:bg-slate-50 hover:text-[#6B7280]"
                 >
-                  <Icons.RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+                  <Icons.RefreshCw size={14} />
                 </button>
               </div>
 
@@ -562,7 +450,7 @@ export function CrmNotificationsMenu() {
             <div className="flex items-center justify-between border-t border-[#E5E7EB] bg-[#F9FAFB]/80 p-3 backdrop-blur-md">
               <button
                 type="button"
-                onClick={() => void handleMarkAllRead()}
+                onClick={() => markAllAsRead()}
                 className="text-[12px] font-medium text-[#6B7280] transition-colors hover:text-[#111827]"
               >
                 Marcar todas como lidas

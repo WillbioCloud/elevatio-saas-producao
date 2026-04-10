@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import ReactCrop, { type Crop } from 'react-image-crop';
+import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import SignaturePad from 'react-signature-canvas';
 import heic2any from 'heic2any';
@@ -360,6 +360,46 @@ const compressAvatar = (file: File | Blob, maxSize = 512): Promise<Blob> => {
   });
 };
 
+const cropAvatarToWebp = (image: HTMLImageElement, crop: PixelCrop, outputSize = 400): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      reject(new Error('Falha no contexto do Canvas'));
+      return;
+    }
+
+    const scaleX = image.naturalWidth / image.width;
+    const scaleY = image.naturalHeight / image.height;
+
+    canvas.width = outputSize;
+    canvas.height = outputSize;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(
+      image,
+      crop.x * scaleX,
+      crop.y * scaleY,
+      crop.width * scaleX,
+      crop.height * scaleY,
+      0,
+      0,
+      outputSize,
+      outputSize
+    );
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+        return;
+      }
+
+      reject(new Error('Falha ao gerar WebP do avatar'));
+    }, 'image/webp', 0.85);
+  });
+};
+
 const getPresenceStatus = (lastSeen?: string) => {
   if (!lastSeen) return { isOnline: false, text: 'Nunca acessou' };
 
@@ -391,7 +431,7 @@ const getPresenceStatus = (lastSeen?: string) => {
 
 const clampChannel = (value: number) => Math.max(0, Math.min(255, value));
 
-const readFileAsDataUrl = (file: File) =>
+const readFileAsDataUrl = (file: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
 
@@ -588,6 +628,11 @@ const AdminConfig: React.FC = () => {
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const [crop, setCrop] = useState<Crop>();
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState(user?.avatar_url || '');
+  const [avatarImageToCrop, setAvatarImageToCrop] = useState<string | null>(null);
+  const [avatarCrop, setAvatarCrop] = useState<Crop>();
+  const [completedAvatarCrop, setCompletedAvatarCrop] = useState<PixelCrop | null>(null);
+  const [avatarCropError, setAvatarCropError] = useState('');
   const [showSignatureQrCode, setShowSignatureQrCode] = useState(false);
   const [isSignatureCameraOpen, setIsSignatureCameraOpen] = useState(false);
   const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
@@ -660,6 +705,7 @@ const AdminConfig: React.FC = () => {
   const setIsLoading = setIsGeneratingCheckout;
   const signaturePadRef = useRef<SignaturePad | null>(null);
   const cropImageRef = useRef<HTMLImageElement | null>(null);
+  const avatarCropImageRef = useRef<HTMLImageElement | null>(null);
   const signatureUploadInputRef = useRef<HTMLInputElement | null>(null);
   const signatureVideoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -675,6 +721,10 @@ const AdminConfig: React.FC = () => {
         : '',
     []
   );
+
+  useEffect(() => {
+    setProfileAvatarUrl(user?.avatar_url || '');
+  }, [user?.avatar_url]);
 
   const checkoutDomainInfo = useMemo(() => {
     const companyDomain = siteDomain || (companySubdomain ? `${companySubdomain}.elevatio.app` : '');
@@ -1481,6 +1531,7 @@ const AdminConfig: React.FC = () => {
         name: profileForm.name,
         phone: profileForm.phone,
         creci: profileForm.creci,
+        avatar_url: profileAvatarUrl || null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', user.id);
@@ -1500,22 +1551,59 @@ const AdminConfig: React.FC = () => {
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0 || !user) return;
     const file = e.target.files[0];
+    const isHeic = file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic');
 
-    setUploadingAvatar(true);
+    if (!file.type.startsWith('image/') && !isHeic) {
+      addToast('Selecione um arquivo de imagem para usar como foto de perfil.', 'error');
+      e.target.value = '';
+      return;
+    }
 
     try {
       let processedFile: File | Blob = file;
-      if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
+      if (isHeic) {
         const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 });
         processedFile = Array.isArray(converted) ? converted[0] : converted;
       }
 
-      const compressedBlob = await compressAvatar(processedFile);
+      setAvatarCropError('');
+      setAvatarCrop(undefined);
+      setCompletedAvatarCrop(null);
+      setAvatarImageToCrop(await readFileAsDataUrl(processedFile));
+    } catch (error: any) {
+      console.error('Erro ao preparar foto para recorte:', error);
+      addToast(error.message || 'Nao foi possivel carregar a imagem selecionada.', 'error');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const resetAvatarCropModal = () => {
+    setAvatarImageToCrop(null);
+    setAvatarCrop(undefined);
+    setCompletedAvatarCrop(null);
+    setAvatarCropError('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const confirmAvatarCrop = async () => {
+    if (!user?.id || !avatarCropImageRef.current || !completedAvatarCrop?.width || !completedAvatarCrop?.height) {
+      setAvatarCropError('Selecione uma area da foto antes de continuar.');
+      return;
+    }
+
+    setUploadingAvatar(true);
+    setAvatarCropError('');
+
+    try {
+      const croppedBlob = await cropAvatarToWebp(avatarCropImageRef.current, completedAvatarCrop, 400);
       const fileName = `${user.id}-${Date.now()}.webp`;
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(fileName, compressedBlob, {
+        .upload(fileName, croppedBlob, {
           upsert: true,
           contentType: 'image/webp',
         });
@@ -1526,19 +1614,22 @@ const AdminConfig: React.FC = () => {
 
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({ avatar_url: data.publicUrl })
+        .update({ avatar_url: data.publicUrl, updated_at: new Date().toISOString() })
         .eq('id', user.id);
 
       if (updateError) throw updateError;
 
+      setProfileAvatarUrl(data.publicUrl);
       await refreshUser();
-      alert('Foto de perfil atualizada com sucesso!');
+      if (isAdmin) await fetchProfiles();
+      addToast('Foto de perfil atualizada com sucesso!', 'success');
+      resetAvatarCropModal();
     } catch (error: any) {
       console.error('Erro no upload da foto:', error);
-      alert('Não foi possível atualizar a foto: ' + error.message);
+      setAvatarCropError(error.message || 'Nao foi possivel atualizar a foto.');
+      addToast(error.message || 'Nao foi possivel atualizar a foto.', 'error');
     } finally {
       setUploadingAvatar(false);
-      e.target.value = '';
     }
   };
 
@@ -2569,8 +2660,8 @@ const AdminConfig: React.FC = () => {
                 className="relative w-20 h-20 rounded-full bg-brand-100 dark:bg-slate-700 text-brand-700 dark:text-white overflow-hidden flex items-center justify-center"
                 title="Clique para alterar avatar"
               >
-                {user?.avatar_url ? (
-                  <img src={user.avatar_url} alt="Avatar do usuário" className="w-full h-full object-cover" />
+                {profileAvatarUrl ? (
+                  <img src={profileAvatarUrl} alt="Avatar do usuário" className="w-full h-full object-cover" />
                 ) : (
                   <span className="font-bold text-2xl">{(user?.name?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase()}</span>
                 )}
@@ -2644,7 +2735,7 @@ const AdminConfig: React.FC = () => {
                 disabled={savingProfile}
                 className="bg-slate-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-800 disabled:opacity-60"
               >
-                {savingProfile ? 'Salvando...' : 'Salvar Perfil'}
+                {savingProfile ? 'Salvando...' : 'Salvar Alterações'}
               </button>
             </form>
 
@@ -3555,6 +3646,87 @@ const AdminConfig: React.FC = () => {
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {avatarImageToCrop && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-slate-800">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">Recortar foto de perfil</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">A imagem final será salva em WebP com 400x400 pixels.</p>
+              </div>
+              <button
+                type="button"
+                onClick={resetAvatarCropModal}
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white"
+                aria-label="Fechar recorte de avatar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-6">
+              <div className="flex justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-950">
+                <ReactCrop
+                  crop={avatarCrop}
+                  onChange={(nextCrop) => setAvatarCrop(nextCrop)}
+                  onComplete={(nextCrop) => setCompletedAvatarCrop(nextCrop)}
+                  aspect={1}
+                  circularCrop
+                  keepSelection
+                  className="max-h-[420px]"
+                >
+                  <img
+                    ref={avatarCropImageRef}
+                    src={avatarImageToCrop}
+                    alt="Recortar avatar"
+                    className="max-h-[420px] w-auto object-contain"
+                    onLoad={(event) => {
+                      const { width, height } = event.currentTarget;
+                      const size = Math.min(width, height) * 0.85;
+                      const nextCrop: PixelCrop = {
+                        unit: 'px',
+                        x: (width - size) / 2,
+                        y: (height - size) / 2,
+                        width: size,
+                        height: size,
+                      };
+                      setAvatarCrop(nextCrop);
+                      setCompletedAvatarCrop(nextCrop);
+                    }}
+                  />
+                </ReactCrop>
+              </div>
+
+              {avatarCropError && (
+                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600">
+                  {avatarCropError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4 dark:border-slate-800 dark:bg-slate-950">
+              <button
+                type="button"
+                onClick={resetAvatarCropModal}
+                disabled={uploadingAvatar}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmAvatarCrop}
+                disabled={uploadingAvatar}
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2 text-sm font-black text-white shadow-md transition-colors hover:bg-brand-700 disabled:opacity-60"
+              >
+                {uploadingAvatar ? <Icons.Loader2 size={16} className="animate-spin" /> : <Icons.Upload size={16} />}
+                {uploadingAvatar ? 'Enviando...' : 'Salvar Foto'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

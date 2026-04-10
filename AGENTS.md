@@ -12,6 +12,8 @@ Este documento serve como fonte da verdade para Agentes de IA (Codex, Copilot, e
 - **Linguagem:** TypeScript (Strict Mode).
 - **Estilização:** Tailwind CSS (Mobile First).
 - **Backend/Auth:** Supabase (Auth, Postgres DB, Storage, Realtime).
+- **Inteligência Artificial:** Google Gemini API (modelos `1.5-flash-latest` e `2.5-flash`).
+- **Animações:** GSAP e Framer Motion.
 - **Ícones:** Lucide React.
 - **Rotas:** React Router Dom v6.
 
@@ -38,17 +40,33 @@ O Supabase dispara eventos `SIGNED_IN` ou `TOKEN_REFRESHED` quando a aba do nave
 2.  **Ignorar AbortError:** Se uma requisição for cancelada (mudança de aba), capture o `AbortError` e **ignore-o silenciosamente**. Não mostre erro, não limpe dados.
 3.  **Botão de Refresh:** O refresh manual deve tentar renovar a sessão. Se der timeout (>3s), deve executar `window.location.reload()` (Hard Reload) para limpar sockets travados.
 
-## 5. Banco de Dados (Supabase)
+## 5. MOTOR DE GAMIFICAÇÃO (A Liga dos Corretores)
+- **Fonte da verdade de eventos:** Use a tabela `gamification_events`. A tabela `xp_logs` está obsoleta e **não deve ser usada** em novas implementações.
+- **Pontuação atual:** O total de pontos do corretor fica salvo na coluna `xp_points` da tabela `profiles`.
+- **Cálculo de pontos:** A pontuação usa multiplicadores contextuais, considerando o peso do imóvel e o score do lead antes de persistir o resultado.
+- **Escudo Anti-Farming:** A função `addGamificationEvent` possui proteção contra repetições e limites de ações diárias. Não contorne essa regra no frontend nem crie atalhos paralelos de pontuação.
+- **Ranking ao vivo:** O painel de TV (`AdminTV.tsx`) usa `Supabase Realtime` via `.channel()` para atualizar a classificação em tempo real.
+
+## 6. CÉREBRO DE IA (Copilot & Agente Autônomo)
+- **Copilot tático:** O CRM possui um Copilot que analisa dados em tempo real, incluindo tarefas, leads e notificações do sininho, para gerar insights táticos para corretores e gestores.
+- **Fallback Determinístico:** Se a API do Google falhar, a função deve usar o "Cérebro Local" determinístico para manter a UI funcionando e evitar quebra de fluxo para o usuário.
+- **Agente Autônomo:** O agente lê a timeline dos leads e cria tarefas automaticamente. Ao usar a SDK do Gemini para respostas estruturadas, é **OBRIGATÓRIO** configurar `responseMimeType: "application/json"` para garantir retorno em JSON válido.
+
+## 7. CONSTRUTOR DE SITES E TEMPLATES
+- **SaaS Multi-Tenant real:** O roteamento dos sites públicos usa o `TenantContext` para resolver subdomínios, incluindo `*.localhost` durante o desenvolvimento local.
+- **Personalização visual:** As customizações dos clientes, como cores, textos e logos, são salvas como JSON na coluna `site_data` da tabela `companies`.
+
+## 8. Banco de Dados (Supabase)
 - **Tabelas Chave:** `properties` (imóveis), `leads` (clientes), `profiles` (extensão de usuários), `tasks` (tarefas).
 - **RLS (Row Level Security):** Está ativo.
   - *Cuidado:* Evite criar políticas recursivas em `profiles` (ex: "admin vê admin"). Use funções `SECURITY DEFINER` para checar permissões.
 
-## 6. Comandos
+## 9. Comandos
 - `npm run dev`: Roda servidor local.
 - `npm run build`: Gera build de produção (Vite).
 - `npm run lint`: Verifica erros de TS/ESLint.
 
-## 7. Known Issues (Problemas Conhecidos)
+## 10. Known Issues (Problemas Conhecidos)
 - **Vercel Deploy:** O Tailwind as vezes sofre purge excessivo. As cores devem estar na safelist ou usadas explicitamente.
 - **Supabase Realtime:** Pode desconectar em conexões instáveis. O `App.tsx` não deve tentar reconectar manualmente agressivamente.
 - **Sintoma:** Ao apertar F5 ou recarregar a página, a tela ficava em um "loop infinito" invisível, onde o `loading` travava em `true` eternamente e a aplicação não saía do lugar.
@@ -56,7 +74,7 @@ O Supabase dispara eventos `SIGNED_IN` ou `TOKEN_REFRESHED` quando a aba do nave
 - **A Regra de Ouro (A Solução):** O `AuthContext.tsx` possui uma trava de concorrência chamada `let isFirstListenerEvent = true`. Ela serve para IGNORAR o primeiro disparo automático do listener, permitindo que o `getSession()` trabalhe sozinho primeiro.
 - **AVISO ESTRELA:** NUNCA, sob hipótese alguma, remova essa trava de concorrência do `AuthContext`. Se você remover, o Boss voltará!
 
-## 8. Integração Financeira (Asaas + Supabase Edge Functions)
+## 11. Integração Financeira (Asaas + Supabase Edge Functions)
 - **Sintoma:** Frontend (React) retorna o erro genérico `Failed to send a request to the Edge Function` ou `CORS error` ao tentar chamar a função de checkout via `supabase.functions.invoke()`.
 - **Causa (A Máscara do Supabase):** A biblioteca `supabase-js` esconde os erros reais (como falhas de JWT no API Gateway ou erros 400 da API do Asaas) quando a requisição é interceptada. O navegador mascara como CORS.
 - **A Solução:** Usar o `fetch` nativo no frontend para contornar o bloqueio da biblioteca e ler o JSON real do erro. Para garantir que a função seja alcançável sem bloqueios de preflight (OPTIONS), deve-se fazer o deploy com a flag `--no-verify-jwt` e realizar a autenticação e validação do usuário *dentro* da própria Edge Function, usando o `authHeader`.

@@ -5,6 +5,7 @@ import { Icons } from '../components/Icons';
 import LeadDetailsSidebar from '../components/LeadDetailsSidebar';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useLeads } from '../hooks/useLeads';
 import { TOOLTIPS } from '../constants/tooltips';
 import Loading from '../components/Loading';
 import { addGamificationEvent, ACTIONS, calculateDealPoints } from '../services/gamification';
@@ -63,6 +64,15 @@ const formatTimeInStage = (dateString?: string) => {
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
   return `${days}d`;
+};
+
+const getLeadFunnel = (lead: Pick<Lead, 'funnel_step'>) => lead.funnel_step || 'atendimento';
+
+const buildLeadDetailsLink = (leadId: string, funnel?: string | null) => {
+  const params = new URLSearchParams();
+  if (funnel) params.set('funnel', funnel);
+  params.set('open', leadId);
+  return `/admin/leads?${params.toString()}`;
 };
 
 const InfoTooltip = ({ text }: { text: string }) => (
@@ -265,10 +275,10 @@ const DraggableCardWrapper = ({
 const AdminLeads: React.FC = () => {
   const { user, isAdmin, refreshUser } = useAuth();
   const { addToast } = useToast();
+  const { addLead } = useLeads();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentFunnel = searchParams.get('funnel') || 'geral';
-  const openLeadId = searchParams.get('open');
   const detailTabParam = searchParams.get('tab');
 
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -281,6 +291,7 @@ const AdminLeads: React.FC = () => {
   });
   const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [closingLead, setClosingLead] = useState<Lead | null>(null);
   const [dealValue, setDealValue] = useState('');
   const [isCustomValue, setIsCustomValue] = useState(false);
@@ -554,13 +565,9 @@ const AdminLeads: React.FC = () => {
     fetchAvailableProperties();
   }, []);
 
-  const selectedLead = useMemo(() => {
-    if (!openLeadId) return null;
-    return leads.find((lead) => lead.id === openLeadId) || null;
-  }, [leads, openLeadId]);
-
   const refreshLeadData = useCallback((leadId: string, updates: Partial<Lead>) => {
     setLeads((prev) => prev.map((lead) => (lead.id === leadId ? { ...lead, ...updates } : lead)));
+    setSelectedLead((prev) => (prev?.id === leadId ? { ...prev, ...updates } : prev));
   }, []);
 
   const handleToggleAdminsInRoulette = async (newValue: boolean) => {
@@ -577,6 +584,7 @@ const AdminLeads: React.FC = () => {
   };
 
   const openLeadDetails = (lead: Lead) => {
+    setSelectedLead(lead);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set('open', lead.id);
@@ -585,6 +593,7 @@ const AdminLeads: React.FC = () => {
   };
 
   const handleCloseSidebar = useCallback(() => {
+    setSelectedLead(null);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.delete('open');
@@ -593,11 +602,49 @@ const AdminLeads: React.FC = () => {
     }, { replace: true });
   }, [setSearchParams]);
 
+  // Sincroniza a URL com o estado do Sidebar de forma estável
   useEffect(() => {
-    if (openLeadId && !selectedLead && !loading) {
-      handleCloseSidebar();
+    const openId = searchParams.get('open');
+    
+    // Se não tem ID na URL, garante que o sidebar está fechado
+    if (!openId) {
+      if (selectedLead?.id) setSelectedLead(null);
+      return;
     }
-  }, [handleCloseSidebar, loading, openLeadId, selectedLead]);
+
+    // Se tem ID, aguarda os leads carregarem para abrir
+    if (leads.length > 0) {
+      const leadToOpen = leads.find(l => l.id === openId);
+      
+      // Só atualiza o estado se o lead ainda não estiver aberto
+      if (leadToOpen) {
+        const targetFunnel = !isAdmin && leadToOpen.funnel_step === 'pre_atendimento'
+          ? 'atendimento'
+          : getLeadFunnel(leadToOpen);
+
+        if (searchParams.get('funnel') !== targetFunnel) {
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.set('funnel', targetFunnel);
+            next.set('open', openId);
+            return next;
+          }, { replace: true });
+        }
+
+        if (selectedLead?.id !== openId) {
+          setSelectedLead(leadToOpen);
+        }
+      } 
+      // Se o ID da URL não existir na base de dados (ex: deletado), limpa a URL
+      else if (!leadToOpen && !loading) {
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('open');
+          return next;
+        }, { replace: true });
+      }
+    }
+  }, [searchParams, leads, selectedLead?.id, loading, isAdmin, setSearchParams]);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
@@ -653,6 +700,8 @@ const AdminLeads: React.FC = () => {
             type: 'system',
             read: false,
             company_id: user.company_id,
+            link: buildLeadDetailsLink(leadId, newFunnel),
+            sender_id: user.id // <-- ADICIONADO: Envia a foto do autor
           }
         ]);
       }
@@ -700,17 +749,31 @@ const AdminLeads: React.FC = () => {
         })
         .eq('id', transferModal.lead.id);
 
-      if (transferForm.note.trim()) {
-        const authorName = user?.name?.split(' ')[0] || 'Admin';
-        await supabase.from('timeline_events').insert([
-          {
-            lead_id: transferModal.lead.id,
-            type: 'note',
-            description: `${transferForm.note}\n\n(Transferido por ${authorName})`,
-            company_id: user.company_id,
-          }
-        ]);
-      }
+      // 1. Notifica o Corretor que ele recebeu um lead
+      const targetBrokerName = roleta.stats.find(b => b.id === transferForm.brokerId)?.name || 'Corretor';
+      await supabase.from('notifications').insert([{
+        user_id: transferForm.brokerId,
+        title: 'Novo Lead Atribuído 🎯',
+        message: `${user?.name || 'A gestão'} atribuiu o lead ${transferModal.lead.name} a você.`,
+        type: 'system',
+        read: false,
+        company_id: user.company_id,
+        link: buildLeadDetailsLink(transferModal.lead.id, transferModal.newFunnel),
+        sender_id: user.id // <-- ADICIONADO: Envia a foto do autor
+      }]);
+
+      // 2. Grava na Timeline com o autor
+      const timelineDesc = transferForm.note.trim()
+        ? `Lead atribuído para ${targetBrokerName}.\n\nNota: ${transferForm.note}`
+        : `Lead atribuído para ${targetBrokerName}.`;
+
+      await supabase.from('timeline_events').insert([{
+        lead_id: transferModal.lead.id,
+        type: 'system',
+        description: timelineDesc,
+        company_id: user.company_id,
+        created_by: user.id
+      }]);
 
       setLeads((prev) =>
         prev.map((l) =>
@@ -791,6 +854,7 @@ const AdminLeads: React.FC = () => {
         type: 'status_change',
         description: `🎉 VENDA FECHADA! Imóvel negociado por ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(dealValue))}.`,
         company_id: (user as any)?.company_id,
+        created_by: user?.id
       }]);
 
       // 4. XP de gamificação
@@ -851,11 +915,11 @@ const AdminLeads: React.FC = () => {
       company_id: user.company_id,
     };
 
-    const { error } = await supabase.from('leads').insert(payload);
-
-    if (error) {
+    try {
+      await addLead(payload);
+    } catch (error: any) {
       console.error('Erro ao criar lead manualmente:', error);
-      alert(`Não foi possível criar o lead: ${error.message}`);
+      alert(`Não foi possível criar o lead: ${error.message || 'erro desconhecido'}`);
       setSavingNewLead(false);
       return;
     }

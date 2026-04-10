@@ -5,6 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLeaderboard } from '../hooks/useLeaderboard';
 import { getLevelInfo } from '../services/gamification';
 
+const getAvatarInitial = (name?: string | null) => (name?.trim().charAt(0) || 'C').toUpperCase();
+
 export default function AdminLeaderboard() {
   const { user } = useAuth();
   const { agents, activities, loading } = useLeaderboard();
@@ -21,9 +23,8 @@ export default function AdminLeaderboard() {
       : {
           id: user?.id || 'me',
           name: user?.name || 'Você',
-          avatar:
-            user?.avatar_url ||
-            `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'Você')}&background=random`,
+          avatar: user?.avatar_url || '',
+          avatar_url: user?.avatar_url || null,
           score: 0,
           deals: 0,
           conversion: 0,
@@ -66,11 +67,17 @@ export default function AdminLeaderboard() {
 
           <div className="relative z-10 flex items-start justify-between">
             <div className="flex items-center gap-4">
-              <img
-                src={me.avatar}
-                alt={me.name}
-                className="h-16 w-16 rounded-full border-4 border-slate-700/50 object-cover shadow-lg"
-              />
+              {me.avatar_url ? (
+                <img
+                  src={me.avatar_url}
+                  alt={me.name}
+                  className="h-16 w-16 rounded-full border-4 border-slate-700/50 object-cover shadow-lg"
+                />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-slate-700/50 bg-slate-800 text-xl font-black text-slate-300 shadow-lg">
+                  {getAvatarInitial(me.name)}
+                </div>
+              )}
               <div>
                 <h3 className="text-xl font-black text-white">{me.name}</h3>
                 <div
@@ -219,11 +226,17 @@ export default function AdminLeaderboard() {
                         </td>
                         <td className="py-4 px-6">
                           <div className="flex items-center gap-3">
-                            <img
-                              src={agent.avatar}
-                              alt={agent.name}
-                              className="w-10 h-10 rounded-full border border-slate-200 object-cover shadow-sm"
-                            />
+                            {agent.avatar_url ? (
+                              <img
+                                src={agent.avatar_url}
+                                alt={agent.name}
+                                className="w-10 h-10 rounded-full border border-slate-200 object-cover shadow-sm"
+                              />
+                            ) : (
+                              <div className="flex w-10 h-10 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-xs font-black text-slate-500 shadow-sm">
+                                {getAvatarInitial(agent.name)}
+                              </div>
+                            )}
                             <div>
                               <p className={`font-bold text-sm ${isMe ? 'text-brand-700' : 'text-slate-800'}`}>
                                 {agent.name}{' '}

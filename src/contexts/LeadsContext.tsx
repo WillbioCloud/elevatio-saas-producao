@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useEffect, useMemo, useState } from 
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { Lead, LeadStatus } from '../types';
+import { suggestLeadNextSteps } from '../services/ai';
 import { addGamificationEvent, ACTIONS, calculateDealPoints } from '../services/gamification';
 
 const isAbortError = (error: unknown): boolean => {
@@ -14,6 +15,7 @@ const isAbortError = (error: unknown): boolean => {
 interface LeadsContextType {
   leads: Lead[];
   loading: boolean;
+  addLead: (lead: Partial<Lead> & Record<string, any>) => Promise<Lead>;
   refreshLeads: () => Promise<void>;
   updateLeadStatus: (leadId: string, status: LeadStatus) => Promise<void>;
 }
@@ -135,6 +137,55 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [refreshUser, user?.id]);
 
+  const addLead = useCallback(async (lead: Partial<Lead> & Record<string, any>) => {
+    const { data, error } = await supabase
+      .from('leads')
+      .insert(lead)
+      .select()
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    setLeads((prev) => [data as Lead, ...prev]);
+
+    // --- AURA: CRIAÇÃO AUTOMÁTICA DE TAREFA (BACKGROUND) ---
+    if (user?.id && data) {
+      // Roda em segundo plano (Fire-and-Forget) para não travar a tela do usuário
+      (async () => {
+        try {
+          const isExternalSource = data.source && data.source.toLowerCase() !== 'manual';
+          const isAssignedByAnother = data.assigned_to && data.assigned_to !== user.id;
+
+          if (isExternalSource || isAssignedByAnother) {
+            const suggestion = await suggestLeadNextSteps(data, []);
+
+            if (suggestion && suggestion.title) {
+              const dueDate = new Date();
+              dueDate.setHours(dueDate.getHours() + (suggestion.due_in_hours || 24));
+
+              await supabase.from('tasks').insert({
+                company_id: user.company_id,
+                user_id: data.assigned_to || user.id,
+                lead_id: data.id,
+                title: `🤖 Aura: ${suggestion.title}`,
+                description: suggestion.description,
+                priority: suggestion.priority,
+                due_date: dueDate.toISOString(),
+                status: 'pendente'
+              });
+            }
+          }
+        } catch (auraError) {
+          console.error('Aura falhou ao criar tarefa inicial (Background):', auraError);
+        }
+      })();
+    }
+
+    return data as Lead;
+  }, [user?.company_id, user?.id]);
+
   useEffect(() => {
     void refreshLeads().catch((error) => {
       if (!isAbortError(error)) {
@@ -147,10 +198,11 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     () => ({
       leads,
       loading,
+      addLead,
       refreshLeads,
       updateLeadStatus,
     }),
-    [leads, loading, refreshLeads, updateLeadStatus]
+    [addLead, leads, loading, refreshLeads, updateLeadStatus]
   );
 
   return <LeadsContext.Provider value={value}>{children}</LeadsContext.Provider>;

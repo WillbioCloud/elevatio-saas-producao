@@ -52,8 +52,8 @@ export default function AdminTasks() {
   const [loading, setLoading] = useState(true);
   const [quickTask, setQuickTask] = useState({ title: '', due_date: '', lead_id: '' });
   const [savingTask, setSavingTask] = useState(false);
-  const [copilotBriefing, setCopilotBriefing] = useState('');
-  const [generatingCopilot, setGeneratingCopilot] = useState(false);
+  const [auraBriefing, setAuraBriefing] = useState('');
+  const [generatingAura, setGeneratingAura] = useState(false);
 
   const generateAIInsights = useCallback(async () => {
     if (!user?.company_id) {
@@ -134,18 +134,18 @@ export default function AdminTasks() {
       setInsights(nextInsights);
     } catch (error: any) {
       if (isAbortError(error)) return;
-      console.error('Erro ao gerar insights do CRM Copilot:', error);
-      addToast(error?.message || 'Falha ao conectar com a IA do Copilot.', 'error');
+      console.error('Erro ao gerar insights da Aura:', error);
+      addToast(error?.message || 'Falha ao conectar com a Aura.', 'error');
     }
   }, [addToast, navigate, user?.company_id]);
 
-  const generateCopilotBriefing = useCallback(async () => {
+  const generateAuraBriefing = useCallback(async () => {
     if (!user?.id || !user.company_id) {
-      setCopilotBriefing('');
+      setAuraBriefing('');
       return;
     }
 
-    setGeneratingCopilot(true);
+    setGeneratingAura(true);
 
     try {
       let leadsQuery = supabase
@@ -169,7 +169,7 @@ export default function AdminTasks() {
 
       if (leadsError) throw leadsError;
       if (eventsError) {
-        console.warn('Erro ao buscar eventos para o Copilot:', eventsError);
+        console.warn('Erro ao buscar eventos para a Aura:', eventsError);
       }
 
       const userTotalXp = Number(user.xp_points || 0);
@@ -185,14 +185,14 @@ export default function AdminTasks() {
           { title: currentLevel.title, level: currentLevel.level }
         );
 
-        setCopilotBriefing(insight);
+        setAuraBriefing(insight);
       } catch (aiError: any) {
         if (isAbortError(aiError)) return;
-        console.error('Erro ao gerar insights do CRM Copilot:', aiError);
-        setCopilotBriefing('');
+        console.error('Erro ao gerar insights da Aura:', aiError);
+        setAuraBriefing('');
 
         // Tratamento infalível contra o "objeto vazio" do SDK do Google
-        let errorMsg = 'Falha ao conectar com o Copilot. Verifique sua conexão.';
+        let errorMsg = 'Falha ao conectar com a Aura. Verifique sua conexão.';
 
         if (aiError && typeof aiError === 'object') {
           if (aiError.message && aiError.message.trim() !== '') {
@@ -207,14 +207,14 @@ export default function AdminTasks() {
           errorMsg = aiError;
         }
 
-        addToast(`Aviso Copilot: ${errorMsg}`, 'error');
+        addToast(`Aviso Aura: ${errorMsg}`, 'error');
       }
     } catch (error: any) {
       if (isAbortError(error)) return;
-      console.error('Erro ao preparar leitura tática do CRM Copilot:', error);
-      addToast(error?.message || 'Não foi possível reunir os dados do Copilot.', 'error');
+      console.error('Erro ao preparar leitura tática da Aura:', error);
+      addToast(error?.message || 'Não foi possível reunir os dados da Aura.', 'error');
     } finally {
-      setGeneratingCopilot(false);
+      setGeneratingAura(false);
     }
   }, [addToast, isAdmin, notifications, tasks, unreadCount, user?.company_id, user?.id, user?.name, user?.xp_points]);
 
@@ -222,7 +222,7 @@ export default function AdminTasks() {
     if (!user?.id || !user.company_id) {
       setTasks([]);
       setInsights([]);
-      setCopilotBriefing('');
+      setAuraBriefing('');
       setLoading(false);
       return;
     }
@@ -262,7 +262,7 @@ export default function AdminTasks() {
     if (!user?.company_id) return;
 
     const channel = supabase
-      .channel(`crm-copilot-${user.company_id}-${user.id ?? 'anon'}`)
+      .channel(`crm-aura-${user.company_id}-${user.id ?? 'anon'}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tasks', filter: `company_id=eq.${user.company_id}` },
@@ -374,14 +374,14 @@ export default function AdminTasks() {
     return groups;
   }, [tasks]);
 
-  const copilotLines = useMemo(
+  const auraLines = useMemo(
     () =>
-      copilotBriefing
+      auraBriefing
         .split('\n')
         .map((line) => line.replace(/^(?:[-*]|\u2022)\s*/, ''))
         .map((line) => line.replace(/^[-*•]\s*/, '').trim())
         .filter(Boolean),
-    [copilotBriefing]
+    [auraBriefing]
   );
 
   return (
@@ -389,7 +389,7 @@ export default function AdminTasks() {
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
         <div>
           <h1 className="flex items-center gap-3 text-2xl font-black text-slate-800 dark:text-white">
-            <Icons.BrainCircuit className="text-brand-600" /> CRM Copilot
+            <Icons.BrainCircuit className="text-brand-600" /> Insights da Aura 🔮
           </h1>
           <p className="mt-1 text-slate-500 dark:text-slate-400">Sua central de inteligência e produtividade diária.</p>
         </div>
@@ -408,34 +408,34 @@ export default function AdminTasks() {
             </div>
 
             <div className="flex items-center gap-3">
-              {copilotLines.length > 0 && (
+              {auraLines.length > 0 && (
                 <div className="rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
-                  {copilotLines.length} foco(s) sugerido(s)
+                  {auraLines.length} foco(s) sugerido(s)
                 </div>
               )}
               <button
                 type="button"
-                onClick={() => void generateCopilotBriefing()}
-                disabled={generatingCopilot || loading}
+                onClick={() => void generateAuraBriefing()}
+                disabled={generatingAura || loading}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-lg transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
               >
-                {generatingCopilot ? (
+                {generatingAura ? (
                   <Icons.Loader2 size={16} className="animate-spin" />
                 ) : (
                   <Icons.Sparkles size={16} className="text-brand-400 dark:text-brand-600" />
                 )}
-                {copilotBriefing ? 'Atualizar leitura tÃ¡tica' : 'Gerar leitura tÃ¡tica'}
+                {auraBriefing ? 'Atualizar leitura tÃ¡tica' : 'Gerar leitura tÃ¡tica'}
               </button>
             </div>
           </div>
 
-          {generatingCopilot ? (
+          {generatingAura ? (
             <div className="flex items-center justify-center rounded-2xl border border-dashed border-brand-200 bg-brand-50/60 px-4 py-10 text-sm font-medium text-brand-700 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-200">
               <Icons.Loader2 size={18} className="mr-2 animate-spin" /> Lendo seu momento no campeonato...
             </div>
-          ) : copilotLines.length > 0 ? (
+          ) : auraLines.length > 0 ? (
             <div className="space-y-3">
-              {copilotLines.map((line, index) => (
+              {auraLines.map((line, index) => (
                 <div
                   key={`${line}-${index}`}
                   className="flex items-start gap-3 rounded-2xl border border-brand-100 bg-brand-50/50 p-4 dark:border-brand-500/20 dark:bg-brand-500/10"

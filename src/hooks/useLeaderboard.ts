@@ -52,6 +52,7 @@ export type RealAgent = {
   id: string;
   name: string;
   avatar: string;
+  avatar_url: string | null;
   score: number;
   revenue: number;
   deals: number;
@@ -214,9 +215,8 @@ export function useLeaderboard() {
         return {
           id: profile.id,
           name: profileName,
-          avatar:
-            profile.avatar_url ||
-            `https://ui-avatars.com/api/?name=${encodeURIComponent(profileName)}&background=random`,
+          avatar: profile.avatar_url || '',
+          avatar_url: profile.avatar_url || null,
           score: totalXp,
           revenue: deals * 1500,
           deals,

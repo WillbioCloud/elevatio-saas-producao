@@ -276,6 +276,11 @@ export interface TimelineEvent {
   description: string;
   metadata?: any;
   lead_id: string;
+  created_by?: string;
+  profiles?: {
+    name: string;
+    avatar_url: string | null;
+  };
 }
 
 export interface Lead {

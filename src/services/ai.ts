@@ -236,6 +236,100 @@ export const mapPropertyToCandidate = (property: Property): CandidateProperty =>
   features: property.features || []
 });
 
+export interface LeadNextStepSuggestion {
+  title: string;
+  description?: string;
+  priority?: string;
+  due_in_hours?: number;
+}
+
+const getLocalLeadNextStepSuggestion = (lead: Lead): LeadNextStepSuggestion => {
+  const hasInitialMessage = Boolean(lead.message?.trim());
+
+  return {
+    title: hasInitialMessage ? "Revisar interesse e fazer primeiro contato" : "Fazer primeiro contato com o lead",
+    description: hasInitialMessage
+      ? `Revise a observacao inicial de ${lead.name} e envie a primeira mensagem de qualificacao.`
+      : `Entre em contato com ${lead.name} para entender o perfil de busca e registrar as preferencias iniciais.`,
+    priority: "alta",
+    due_in_hours: 2
+  };
+};
+
+export const suggestLeadNextSteps = async (
+  lead: Lead,
+  timelineEvents: any[] = []
+): Promise<LeadNextStepSuggestion | null> => {
+  const fallback = getLocalLeadNextStepSuggestion(lead);
+  if (!genAI) return fallback;
+
+  try {
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        responseMimeType: "application/json"
+      }
+    });
+
+    const prompt = `
+Voce e a Aura, uma IA especialista em rotina comercial imobiliaria.
+Analise o lead recem-criado e sugira a proxima acao inicial para o corretor.
+
+Retorne APENAS um JSON valido neste formato:
+{
+  "title": "Titulo curto da tarefa",
+  "description": "Descricao objetiva para orientar o corretor",
+  "priority": "alta",
+  "due_in_hours": 24
+}
+
+Regras:
+- Nao invente informacoes.
+- O titulo deve ter no maximo 80 caracteres.
+- A descricao deve ter no maximo 220 caracteres.
+- priority deve ser "alta", "media" ou "baixa".
+- due_in_hours deve ser um numero entre 1 e 72.
+- Se houver observacao/mensagem inicial, use isso para orientar a primeira abordagem.
+
+Lead:
+${JSON.stringify({
+      id: lead.id,
+      name: lead.name,
+      phone: lead.phone,
+      email: lead.email,
+      source: lead.source,
+      message: lead.message,
+      status: lead.status,
+      desired_type: lead.desired_type,
+      desired_bedrooms: lead.desired_bedrooms,
+      desired_location: lead.desired_location,
+      budget: lead.budget
+    }, null, 2)}
+
+Timeline:
+${JSON.stringify(timelineEvents || [], null, 2)}
+`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const parsed = safeJsonParse<LeadNextStepSuggestion>(response.text());
+
+    if (!parsed?.title) return fallback;
+
+    const dueInHours = Number(parsed.due_in_hours);
+
+    return {
+      title: String(parsed.title).slice(0, 80),
+      description: parsed.description ? String(parsed.description).slice(0, 220) : fallback.description,
+      priority: ["alta", "media", "baixa"].includes(String(parsed.priority)) ? String(parsed.priority) : fallback.priority,
+      due_in_hours: Number.isFinite(dueInHours) ? Math.max(1, Math.min(72, Math.round(dueInHours))) : fallback.due_in_hours
+    };
+  } catch (error) {
+    console.error("Erro ao sugerir proximos passos do lead com IA:", error);
+    return fallback;
+  }
+};
+
 export async function generateCRMInsights(
   leads: any[],
   tasks: any[],
@@ -262,7 +356,7 @@ export async function generateCRMInsights(
       return isThisWeek ? sum + (e.points_awarded || 0) : sum;
     }, 0);
 
-    const prompt = `Você é o "Elevatio Copilot", um treinador de vendas imobiliárias experiente. 
+    const prompt = `Você é a "Aura", a inteligência artificial especialista em vendas imobiliárias do Elevatio.
     Analise os números do corretor ${userName} e dê 3 dicas práticas em formato de bullet points.
     Fale diretamente com o corretor, de forma direta e motivacional.
 
@@ -291,7 +385,7 @@ export async function generateCRMInsights(
     // Tratamento de erro aprimorado para capturar o motivo real
     console.error('🚨 Erro detalhado no Gemini API (generateCRMInsights):', error);
 
-    let errMsg = 'Erro desconhecido na API do Gemini.';
+    let errMsg = 'Falha ao conectar com a Aura. Verifique sua conexão.';
 
     if (error instanceof Error) {
       errMsg = error.message;
