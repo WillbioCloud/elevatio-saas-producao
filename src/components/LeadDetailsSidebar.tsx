@@ -126,6 +126,9 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [newTask, setNewTask] = useState('');
   const [newNote, setNewNote] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editNoteText, setEditNoteText] = useState('');
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [customMessage, setCustomMessage] = useState('');
   const [originProperty, setOriginProperty] = useState<Property | null>(null);
   const [allProperties, setAllProperties] = useState<Property[]>([]);
@@ -167,6 +170,12 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
   }, [lead.funnel_step, lead.status]);
 
   useEffect(() => {
+    setEditingNoteId(null);
+    setEditNoteText('');
+    setMenuOpenId(null);
+  }, [lead.id]);
+
+  useEffect(() => {
     const textarea = noteTextareaRef.current;
     if (!textarea) return;
 
@@ -198,7 +207,8 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     const { error } = await supabase.from('leads').update({ 
       funnel_step: selectedFunnel, 
       status: selectedStatus,
-      stage_updated_at: now
+      stage_updated_at: now,
+      last_interaction: now
     }).eq('id', lead.id);
 
     if (error) {
@@ -208,8 +218,15 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     }
 
     if (typeof onStatusChange === 'function') onStatusChange(selectedStatus as string);
-    onLeadUpdate?.(lead.id, { funnel_step: selectedFunnel, status: String(selectedStatus) });
+    onLeadUpdate?.(lead.id, { funnel_step: selectedFunnel, status: String(selectedStatus), stage_updated_at: now, last_interaction: now });
     await addTimelineLog('status_change', `Avançou para: ${selectedStatus}`);
+
+    try {
+      await notifyLeadStatusChange(String(selectedStatus));
+    } catch (notificationError) {
+      console.error('Erro ao notificar atualização de etapa do lead:', notificationError);
+    }
+
     addToast('Status atualizado!', 'success');
   };
 
@@ -229,6 +246,50 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     }
   };
 
+  const notifyLeadStatusChange = async (newStatus: string, customTitle?: string, customMessage?: string) => {
+    if (!(user as any)?.company_id || !user?.id) return;
+
+    const { data: adminProfiles, error: adminError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('company_id', (user as any).company_id)
+      .eq('active', true)
+      .in('role', ['owner', 'manager', 'admin']);
+
+    if (adminError) {
+      throw adminError;
+    }
+
+    const recipientIds = new Set<string>();
+    for (const profile of adminProfiles || []) {
+      if (profile.id !== user.id) {
+        recipientIds.add(profile.id);
+      }
+    }
+
+    if ((lead as any).assigned_to && (lead as any).assigned_to !== user.id) {
+      recipientIds.add((lead as any).assigned_to);
+    }
+
+    if (recipientIds.size === 0) return;
+
+    const actorName = (user as any)?.name || 'A equipe';
+    const message = customMessage || `${actorName} atualizou o lead ${lead.name} para ${newStatus}.`;
+
+    await supabase.from('notifications').insert(
+      Array.from(recipientIds).map((recipientId) => ({
+        user_id: recipientId,
+        title: customTitle || 'Lead movimentado no funil',
+        message,
+        type: 'system',
+        read: false,
+        company_id: (user as any).company_id,
+        link: `/admin/leads?open=${lead.id}`,
+        sender_id: user.id
+      }))
+    );
+  };
+
   const addTimelineLog = async (type: TimelineEvent['type'], description: string) => {
     const { error } = await supabase.from('timeline_events').insert([{ 
       lead_id: lead.id, 
@@ -243,6 +304,11 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
       return false;
     }
 
+    // Touch no Lead para atualizar o tempo no Kanban
+    const touchedAt = new Date().toISOString();
+    await supabase.from('leads').update({ last_interaction: touchedAt }).eq('id', lead.id);
+    onLeadUpdate?.(lead.id, { last_interaction: touchedAt });
+
     await refreshTimelineEvents();
 
     // AURA ENGINE: Analisa a nota inserida
@@ -252,6 +318,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
         addToast(analysis.question, 'action_required', {
           title: '🔮 Aura pergunta:',
           onConfirm: async () => {
+            const touchedAt = new Date().toISOString();
             await executeConfirmedAction(
               lead.id,
               (user as any).company_id,
@@ -260,8 +327,21 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
               analysis.suggestedStatus
             );
 
+            onLeadUpdate?.(lead.id, {
+              last_interaction: touchedAt,
+              ...(analysis.suggestedStatus ? { status: analysis.suggestedStatus } : {})
+            });
+
             if (analysis.suggestedStatus) {
-              onLeadUpdate?.(lead.id, { status: analysis.suggestedStatus });
+              try {
+                await notifyLeadStatusChange(
+                  String(analysis.suggestedStatus),
+                  'Lead atualizado pela Aura',
+                  `${(user as any)?.name || 'A equipe'} confirmou via Aura a atualização do lead ${lead.name} para ${analysis.suggestedStatus}.`
+                );
+              } catch (notificationError) {
+                console.error('Erro ao notificar atualização da Aura:', notificationError);
+              }
             }
 
             await refreshTimelineEvents();
@@ -443,11 +523,6 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     if (saved) {
       setNewNote('');
 
-      // Atualiza o relógio de "Atualizado" do lead
-      const now = new Date().toISOString();
-      await supabase.from('leads').update({ updated_at: now }).eq('id', lead.id);
-      onLeadUpdate?.(lead.id, { updated_at: now });
-
       // Notifica o responsável se a gestão comentou no lead
       if (isAdmin && (lead as any).assigned_to && (lead as any).assigned_to !== user?.id) {
         await supabase.from('notifications').insert([{
@@ -467,6 +542,72 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     await saveNote();
+  };
+
+  const handleDeleteNote = async (id: string) => {
+    const targetNote = events.find((event) => event.id === id);
+    if (!targetNote || targetNote.type !== 'note' || targetNote.created_by !== user?.id) return;
+
+    const canDelete = (Date.now() - new Date(targetNote.created_at).getTime()) <= 5 * 60 * 1000;
+    if (!canDelete) {
+      addToast('O prazo de 5 minutos para apagar esta anotação já expirou.', 'error');
+      return;
+    }
+
+    if (!window.confirm('Deseja realmente apagar esta anotação?')) return;
+
+    try {
+      const { error } = await supabase.from('timeline_events').delete().eq('id', id);
+      if (error) throw error;
+
+      // Touch no Lead para atualizar o tempo no Kanban
+      const touchedAt = new Date().toISOString();
+      await supabase.from('leads').update({ last_interaction: touchedAt }).eq('id', lead.id);
+      onLeadUpdate?.(lead.id, { last_interaction: touchedAt });
+
+      setEvents((prev) => prev.filter((event) => event.id !== id));
+      if (editingNoteId === id) {
+        setEditingNoteId(null);
+        setEditNoteText('');
+      }
+      addToast('Nota apagada com sucesso.', 'success');
+    } catch (error) {
+      console.error('Erro ao apagar nota da timeline:', error);
+      addToast('Erro ao apagar nota.', 'error');
+    }
+  };
+
+  const handleSaveEditNote = async (id: string) => {
+    const trimmedText = editNoteText.trim();
+    const targetNote = events.find((event) => event.id === id);
+    if (!trimmedText || !targetNote || targetNote.type !== 'note' || targetNote.created_by !== user?.id) return;
+
+    const newDate = new Date().toISOString();
+
+    try {
+      const { error } = await supabase.from('timeline_events').update({
+        description: trimmedText,
+        created_at: newDate
+      }).eq('id', id);
+
+      if (error) throw error;
+
+      // Touch no Lead para atualizar o tempo no Kanban
+      const touchedAt = new Date().toISOString();
+      await supabase.from('leads').update({ last_interaction: touchedAt }).eq('id', lead.id);
+      onLeadUpdate?.(lead.id, { last_interaction: touchedAt });
+
+      setEvents((prev) => prev
+        .map((event) => (event.id === id ? { ...event, description: trimmedText, created_at: newDate } : event))
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      setEditingNoteId(null);
+      setEditNoteText('');
+      setMenuOpenId(null);
+      addToast('Nota atualizada.', 'success');
+    } catch (error) {
+      console.error('Erro ao atualizar nota da timeline:', error);
+      addToast('Erro ao atualizar nota.', 'error');
+    }
   };
 
   const toggleTask = async (id: string, completed: boolean) => {
@@ -506,6 +647,11 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
   }, [lead, user?.id]);
 
   // --- GAMIFICAÇÃO: Cálculo de Recompensa Estimada ---
+  const hasLeadCreationLog = useMemo(
+    () => events.some((event) => event.type === 'system' && event.description?.includes('Lead cadastrado no sistema')),
+    [events]
+  );
+
   const estimatedPoints = useMemo(() => {
     if (!lead) return 0;
 
@@ -1075,35 +1221,124 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
               </form>
               <div className="relative border-l-2 border-slate-100 ml-4 space-y-8 pb-4 mt-6">
                 {events.map((event: any) => {
-                  const authorName = event.profiles?.name || 'Sistema Elevatio';
-                  const authorAvatar = event.profiles?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random`;
+                  const userName = event.profiles?.name || 'Sistema Elevatio';
+                  const authorAvatar = event.profiles?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=random`;
+                  const isSystemEvent = event.type === 'system';
+                  const isOwnEditableNote = event.type === 'note' && !isSystemEvent && event.created_by === user?.id;
+                  const createdAt = new Date(event.created_at);
+                  const canDeleteNote = (Date.now() - createdAt.getTime()) <= 5 * 60 * 1000;
 
                   return (
                     <div key={event.id} className="relative pl-8 animate-fade-in">
                       <div className="absolute -left-[17px] top-0 w-8 h-8 bg-white rounded-full p-0.5 border-2 border-slate-200 shadow-sm z-10">
-                        <img src={authorAvatar} alt={authorName} className="w-full h-full rounded-full object-cover" />
+                        <img src={authorAvatar} alt={userName} className="w-full h-full rounded-full object-cover" />
                         <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border border-white ${
                           event.type === 'whatsapp' ? 'bg-green-500' : event.type === 'note' ? 'bg-amber-400' : 'bg-brand-500'
                         }`} title={event.type} />
                       </div>
 
-                      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-[11px] text-slate-800 font-bold uppercase tracking-wider">{authorName}</p>
-                          <p className="text-[10px] font-bold text-slate-400">{formatDate(event.created_at)}</p>
+                      <div className="relative flex-1 rounded-xl border border-slate-100 bg-white p-3 shadow-sm group">
+                        <div className="mb-1 flex items-start justify-between">
+                          <span className="text-sm font-bold text-slate-700">{userName}</span>
+
+                          {isOwnEditableNote && (
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setMenuOpenId(menuOpenId === event.id ? null : event.id)}
+                                className="rounded p-1 text-slate-300 transition-colors hover:bg-slate-50 hover:text-slate-500"
+                              >
+                                <Icons.MoreVertical size={14} />
+                              </button>
+
+                              {menuOpenId === event.id && (
+                                <div className="absolute right-0 top-6 z-10 w-32 rounded-lg border border-slate-100 bg-white py-1 shadow-xl animate-fade-in">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingNoteId(event.id);
+                                      setEditNoteText(event.description);
+                                      setMenuOpenId(null);
+                                    }}
+                                    className="w-full px-3 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                  >
+                                    Editar Nota
+                                  </button>
+                                  {canDeleteNote && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void handleDeleteNote(event.id);
+                                        setMenuOpenId(null);
+                                      }}
+                                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-rose-600 hover:bg-rose-50"
+                                    >
+                                      Apagar
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">{event.description}</p>
+
+                        {editingNoteId === event.id ? (
+                          <div className="mt-2 animate-fade-in">
+                            <textarea
+                              value={editNoteText}
+                              onChange={(e) => setEditNoteText(e.target.value)}
+                              className="w-full resize-none rounded-lg border border-brand-200 bg-brand-50/30 p-2 text-sm text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                              rows={3}
+                              autoFocus
+                            />
+                            <div className="mt-2 flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingNoteId(null);
+                                  setEditNoteText('');
+                                  setMenuOpenId(null);
+                                }}
+                                className="px-3 py-1 text-xs font-bold text-slate-500 hover:text-slate-700"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleSaveEditNote(event.id)}
+                                className="rounded-lg bg-brand-500 px-3 py-1 text-xs font-bold text-white hover:bg-brand-600"
+                              >
+                                Salvar Alterações
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-600">
+                            {event.description}
+                          </div>
+                        )}
+
+                        <div className="mt-2 flex items-center justify-between border-t border-slate-50 pt-2 text-[10px] font-semibold text-slate-400">
+                          <span>
+                            {createdAt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })} às{' '}
+                            {createdAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {editingNoteId !== event.id && isOwnEditableNote && !canDeleteNote && (
+                            <span className="text-slate-300">Apenas leitura (5m expirados)</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
                 })}
 
-                <div className="relative pl-8">
-                  <div className="absolute -left-[17px] top-0 w-8 h-8 bg-white rounded-full p-0.5 border-2 border-slate-200 shadow-sm z-10 flex items-center justify-center text-slate-400">
-                    <Icons.Star size={16} />
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between mb-1">
+                {!hasLeadCreationLog && (
+                  <div className="relative pl-8">
+                    <div className="absolute -left-[17px] top-0 w-8 h-8 bg-white rounded-full p-0.5 border-2 border-slate-200 shadow-sm z-10 flex items-center justify-center text-slate-400">
+                      <Icons.Star size={16} />
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm">
+                      <div className="flex items-center justify-between mb-1">
                       <p className="text-[11px] text-slate-600 font-bold uppercase tracking-wider">Sistema</p>
                       <p className="text-[10px] font-bold text-slate-400">
                         {formatDate((lead as any).created_at || (lead as any).createdAt || new Date().toISOString())}
@@ -1114,7 +1349,8 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
                       <Icons.Link size={12} /> Origem: <span className="font-bold">{lead.source || 'Não identificada'}</span>
                     </p>
                   </div>
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

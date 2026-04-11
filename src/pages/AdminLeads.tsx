@@ -211,7 +211,7 @@ const LeadCard = ({
         <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-100/50">
           <div className="flex flex-col text-[10px] text-slate-400 font-medium">
             <span>Nesta etapa: {formatTimeInStage(lead.stage_updated_at || (lead as any).created_at || lead.createdAt)}</span>
-            <span>Atualizado: {formatTimeInStage(lead.updated_at || (lead as any).created_at || lead.createdAt)} atrás</span>
+            <span>Atualizado: {formatTimeInStage(lead.last_interaction || (lead as any).created_at || lead.createdAt)} atrás</span>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -563,6 +563,189 @@ const AdminLeads: React.FC = () => {
     setSelectedLead((prev) => (prev?.id === leadId ? { ...prev, ...updates } : prev));
   }, []);
 
+  const getFunnelLabel = (funnelId?: string) => {
+    const normalizedFunnel = funnelId || 'atendimento';
+    return FUNNELS.find((funnel) => funnel.id === normalizedFunnel)?.label || normalizedFunnel.replace(/_/g, ' ');
+  };
+
+  const buildStageChangeTimelineDescription = (
+    previousFunnel: string | undefined,
+    previousStatus: string,
+    newFunnel: string,
+    newStatus: string
+  ) => {
+    const fromFunnel = getFunnelLabel(previousFunnel);
+    const toFunnel = getFunnelLabel(newFunnel);
+    const funnelChanged = (previousFunnel || 'atendimento') !== newFunnel;
+    const statusChanged = previousStatus !== newStatus;
+
+    if (funnelChanged && statusChanged) {
+      return `Mudou de etapa: ${fromFunnel} -> ${toFunnel}\nStatus: ${previousStatus} -> ${newStatus}`;
+    }
+
+    if (funnelChanged) {
+      return `Mudou de etapa: ${fromFunnel} -> ${toFunnel}\nStatus atual: ${newStatus}`;
+    }
+
+    if (statusChanged) {
+      return `Status atualizado: ${previousStatus} -> ${newStatus}`;
+    }
+
+    return `Lead revisado em ${toFunnel}.`;
+  };
+
+  const notifyLeadStageChange = async ({
+    lead,
+    previousFunnel,
+    previousStatus,
+    newFunnel,
+    newStatus,
+    assignedToOverride,
+    notifyBroker = true,
+    customTitle,
+    customMessage
+  }: {
+    lead: Lead;
+    previousFunnel?: string;
+    previousStatus: string;
+    newFunnel: string;
+    newStatus: string;
+    assignedToOverride?: string | null;
+    notifyBroker?: boolean;
+    customTitle?: string;
+    customMessage?: string;
+  }) => {
+    if (!user?.company_id || !user.id) return;
+
+    const { data: adminProfiles, error: adminError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('company_id', user.company_id)
+      .eq('active', true)
+      .in('role', ['owner', 'manager', 'admin']);
+
+    if (adminError) {
+      throw adminError;
+    }
+
+    const recipientIds = new Set<string>();
+    for (const profile of adminProfiles || []) {
+      if (profile.id !== user.id) {
+        recipientIds.add(profile.id);
+      }
+    }
+
+    const assignedBrokerId = assignedToOverride ?? lead.assigned_to;
+    if (notifyBroker && assignedBrokerId && assignedBrokerId !== user.id) {
+      recipientIds.add(assignedBrokerId);
+    }
+
+    if (recipientIds.size === 0) return;
+
+    const actorName = (user as any)?.name || 'A equipe';
+    const message = customMessage || (
+      (previousFunnel || 'atendimento') !== newFunnel
+        ? `${actorName} moveu o lead ${lead.name} de ${getFunnelLabel(previousFunnel)} / ${previousStatus} para ${getFunnelLabel(newFunnel)} / ${newStatus}.`
+        : `${actorName} atualizou o lead ${lead.name} de ${previousStatus} para ${newStatus}.`
+    );
+
+    await supabase.from('notifications').insert(
+      Array.from(recipientIds).map((recipientId) => ({
+        user_id: recipientId,
+        title: customTitle || 'Lead movimentado no funil',
+        message,
+        type: 'system',
+        read: false,
+        company_id: user.company_id,
+        link: `/admin/leads?open=${lead.id}`,
+        sender_id: user.id
+      }))
+    );
+  };
+
+  const applyLeadStageChange = async (leadToUpdate: Lead, newFunnel: string, newStatus: string) => {
+    if (!user?.company_id || !user.id) {
+      throw new Error('Usuário sem contexto de empresa para mover lead.');
+    }
+
+    const previousFunnel = leadToUpdate.funnel_step || 'atendimento';
+    const previousStatus = String(leadToUpdate.status || '');
+    const now = new Date().toISOString();
+
+    refreshLeadData(leadToUpdate.id, {
+      status: newStatus,
+      funnel_step: newFunnel,
+      stage_updated_at: now,
+      last_interaction: now
+    });
+
+    const { error } = await supabase
+      .from('leads')
+      .update({
+        status: newStatus,
+        funnel_step: newFunnel,
+        stage_updated_at: now,
+        last_interaction: now
+      })
+      .eq('id', leadToUpdate.id);
+
+    if (error) {
+      refreshLeadData(leadToUpdate.id, {
+        status: previousStatus,
+        funnel_step: previousFunnel,
+        stage_updated_at: leadToUpdate.stage_updated_at,
+        last_interaction: leadToUpdate.last_interaction
+      });
+      throw error;
+    }
+
+    try {
+      await supabase.from('timeline_events').insert([{
+        lead_id: leadToUpdate.id,
+        type: 'status_change',
+        description: buildStageChangeTimelineDescription(previousFunnel, previousStatus, newFunnel, newStatus),
+        company_id: user.company_id,
+        created_by: user.id
+      }]);
+    } catch (timelineError) {
+      console.error('Erro ao registrar movimentação do lead na timeline:', timelineError);
+    }
+
+    try {
+      await notifyLeadStageChange({
+        lead: leadToUpdate,
+        previousFunnel,
+        previousStatus,
+        newFunnel,
+        newStatus
+      });
+    } catch (notificationError) {
+      console.error('Erro ao notificar movimentação do lead:', notificationError);
+    }
+
+    if (user?.id) {
+      const lowerStatus = newStatus.toLowerCase();
+      try {
+        let awardedPoints = false;
+        if (lowerStatus.includes('visita')) {
+          await addGamificationEvent(user.id, ACTIONS.VISITA_REALIZADA.id, ACTIONS.VISITA_REALIZADA.points, leadToUpdate.id);
+          awardedPoints = true;
+        } else if (lowerStatus.includes('proposta') && !lowerStatus.includes('recusada') && !lowerStatus.includes('fria')) {
+          await addGamificationEvent(user.id, ACTIONS.PROPOSTA_ENVIADA.id, ACTIONS.PROPOSTA_ENVIADA.points, leadToUpdate.id);
+          awardedPoints = true;
+        } else if (newFunnel === 'perdido') {
+          await addGamificationEvent(user.id, ACTIONS.LEAD_PERDIDO_SEM_MOTIVO.id, ACTIONS.LEAD_PERDIDO_SEM_MOTIVO.points, leadToUpdate.id);
+          awardedPoints = true;
+        }
+        if (awardedPoints) {
+          await refreshUser();
+        }
+      } catch (gamificationError) {
+        console.error('Erro na gamificação ao mover lead:', gamificationError);
+      }
+    }
+  };
+
   const handleToggleAdminsInRoulette = async (newValue: boolean) => {
     setUpdatingAdminToggle(true);
     setIncludeAdmins(newValue);
@@ -679,49 +862,11 @@ const AdminLeads: React.FC = () => {
         return;
       }
 
-      const now = new Date().toISOString();
-      setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, status: targetStatus, funnel_step: newFunnel, stage_updated_at: now } : l)));
-      const { error } = await supabase
-        .from('leads')
-        .update({ status: targetStatus, funnel_step: newFunnel, stage_updated_at: now })
-        .eq('id', leadId);
-
-      if (!error && lead.assigned_to && lead.assigned_to !== user?.id) {
-        await supabase.from('notifications').insert([
-          {
-            user_id: lead.assigned_to,
-            title: 'Etapa do Lead Atualizada',
-            message: `O lead ${lead.name} foi movido para ${targetStatus}.`,
-            type: 'system',
-            read: false,
-            company_id: user.company_id,
-            link: `/admin/leads?open=${lead.id}`,
-            sender_id: user.id // <-- ADICIONADO: Envia a foto do autor
-          }
-        ]);
-      }
-
-      // --- NOVO MOTOR DE GAMIFICAÇÃO NO KANBAN ---
-      if (!error && user?.id) {
-        const lowerStatus = targetStatus.toLowerCase();
-        try {
-          let awardedPoints = false;
-          if (lowerStatus.includes('visita')) {
-            await addGamificationEvent(user.id, ACTIONS.VISITA_REALIZADA.id, ACTIONS.VISITA_REALIZADA.points, leadId);
-            awardedPoints = true;
-          } else if (lowerStatus.includes('proposta') && !lowerStatus.includes('recusada') && !lowerStatus.includes('fria')) {
-            await addGamificationEvent(user.id, ACTIONS.PROPOSTA_ENVIADA.id, ACTIONS.PROPOSTA_ENVIADA.points, leadId);
-            awardedPoints = true;
-          } else if (newFunnel === 'perdido') {
-            await addGamificationEvent(user.id, ACTIONS.LEAD_PERDIDO_SEM_MOTIVO.id, ACTIONS.LEAD_PERDIDO_SEM_MOTIVO.points, leadId);
-            awardedPoints = true;
-          }
-          if (awardedPoints) {
-            await refreshUser();
-          }
-        } catch (err) {
-          console.error('Erro na gamificação ao arrastar:', err);
-        }
+      try {
+        await applyLeadStageChange(lead, newFunnel, targetStatus);
+      } catch (stageError) {
+        console.error('Erro ao mover lead no Kanban:', stageError);
+        addToast('Erro ao atualizar etapa do lead.', 'error');
       }
     }
   };
@@ -733,6 +878,8 @@ const AdminLeads: React.FC = () => {
 
     try {
       const now = new Date().toISOString();
+      const previousFunnel = transferModal.lead.funnel_step || 'pre_atendimento';
+      const previousStatus = String(transferModal.lead.status || 'Aguardando Atendimento');
 
       await supabase
         .from('leads')
@@ -740,7 +887,8 @@ const AdminLeads: React.FC = () => {
           funnel_step: transferModal.newFunnel,
           status: transferModal.newStatus,
           assigned_to: transferForm.brokerId,
-          stage_updated_at: now
+          stage_updated_at: now,
+          last_interaction: now
         })
         .eq('id', transferModal.lead.id);
 
@@ -749,7 +897,7 @@ const AdminLeads: React.FC = () => {
       await supabase.from('notifications').insert([{
         user_id: transferForm.brokerId,
         title: 'Novo Lead Atribuído 🎯',
-        message: `${user?.name || 'A gestão'} atribuiu o lead ${transferModal.lead.name} a você.`,
+        message: `${(user as any)?.name || 'A gestão'} atribuiu o lead ${transferModal.lead.name} a você em ${transferModal.newStatus}.`,
         type: 'system',
         read: false,
         company_id: user.company_id,
@@ -760,30 +908,39 @@ const AdminLeads: React.FC = () => {
       // 2. Grava na Timeline (Texto Limpo e Direto)
       // Como a foto de quem enviou e quem recebeu já aparece na UI, o texto deve ser conciso.
       const timelineDesc = transferForm.note.trim()
-        ? `Transferido para ${targetBrokerName}.\n${transferForm.note}`
-        : `Transferido para ${targetBrokerName}.`;
+        ? `Transferido para ${targetBrokerName}.\nEtapa: ${getFunnelLabel(previousFunnel)} -> ${getFunnelLabel(transferModal.newFunnel)}\nStatus: ${previousStatus} -> ${transferModal.newStatus}\n${transferForm.note}`
+        : `Transferido para ${targetBrokerName}.\nEtapa: ${getFunnelLabel(previousFunnel)} -> ${getFunnelLabel(transferModal.newFunnel)}\nStatus: ${previousStatus} -> ${transferModal.newStatus}`;
 
       await supabase.from('timeline_events').insert([{
         lead_id: transferModal.lead.id,
-        type: 'system',
+        type: 'status_change',
         description: timelineDesc,
         company_id: user.company_id,
         created_by: user.id
       }]);
 
-      setLeads((prev) =>
-        prev.map((l) =>
-          l.id === transferModal.lead?.id
-            ? {
-                ...l,
-                status: transferModal.newStatus,
-                funnel_step: transferModal.newFunnel,
-                assigned_to: transferForm.brokerId,
-                stage_updated_at: now
-              }
-            : l
-        )
-      );
+      try {
+        await notifyLeadStageChange({
+          lead: transferModal.lead,
+          previousFunnel,
+          previousStatus,
+          newFunnel: transferModal.newFunnel,
+          newStatus: transferModal.newStatus,
+          notifyBroker: false,
+          customTitle: 'Lead redistribuído no funil',
+          customMessage: `${(user as any)?.name || 'A gestão'} transferiu o lead ${transferModal.lead.name} para ${targetBrokerName} em ${transferModal.newStatus}.`
+        });
+      } catch (notificationError) {
+        console.error('Erro ao notificar admins sobre a redistribuição do lead:', notificationError);
+      }
+
+      refreshLeadData(transferModal.lead.id, {
+        status: transferModal.newStatus,
+        funnel_step: transferModal.newFunnel,
+        assigned_to: transferForm.brokerId,
+        stage_updated_at: now,
+        last_interaction: now
+      });
 
       const targetBroker = roleta.stats.find((b) => b.id === transferForm.brokerId);
       if (targetBroker && targetBroker.count === roleta.rounds) {
@@ -796,7 +953,16 @@ const AdminLeads: React.FC = () => {
       }
 
       // Guarda os valores antes de limpar o modal
-      const leadToClose = transferModal.lead;
+      const leadToClose = transferModal.lead
+        ? {
+            ...transferModal.lead,
+            assigned_to: transferForm.brokerId,
+            funnel_step: transferModal.newFunnel,
+            status: transferModal.newStatus,
+            stage_updated_at: now,
+            last_interaction: now
+          }
+        : null;
       const targetFunnel = transferModal.newFunnel;
       const targetStatus = transferModal.newStatus;
       setTransferModal({ isOpen: false, lead: null, newFunnel: '', newStatus: '' });
@@ -829,6 +995,9 @@ const AdminLeads: React.FC = () => {
     setSavingClosing(true);
     try {
       const closedLeadId = closingLead.id;
+      const now = new Date().toISOString();
+      const previousFunnel = closingLead.funnel_step || 'atendimento';
+      const previousStatus = String(closingLead.status || 'Em andamento');
 
       // 1. Atualizar o Lead para Venda Fechada
       const { error: leadError } = await supabase.from('leads').update({
@@ -836,7 +1005,8 @@ const AdminLeads: React.FC = () => {
         funnel_step: 'venda_ganha',
         property_id: selectedSoldPropertyId,
         deal_value: Number(dealValue),
-        stage_updated_at: new Date().toISOString()
+        stage_updated_at: now,
+        last_interaction: now
       }).eq('id', closingLead.id);
       if (leadError) throw leadError;
 
@@ -848,10 +1018,33 @@ const AdminLeads: React.FC = () => {
       await supabase.from('timeline_events').insert([{
         lead_id: closingLead.id,
         type: 'status_change',
-        description: `🎉 VENDA FECHADA! Imóvel negociado por ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(dealValue))}.`,
+        description: `🎉 VENDA FECHADA! Imóvel negociado por ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(dealValue))}.\nEtapa: ${getFunnelLabel(previousFunnel)} -> ${getFunnelLabel('venda_ganha')}\nStatus: ${previousStatus} -> Fechado`,
         company_id: (user as any)?.company_id,
         created_by: user?.id
       }]);
+
+      try {
+        await notifyLeadStageChange({
+          lead: closingLead,
+          previousFunnel,
+          previousStatus,
+          newFunnel: 'venda_ganha',
+          newStatus: 'Fechado',
+          customTitle: 'Lead fechado com sucesso',
+          customMessage: `${(user as any)?.name || 'A equipe'} fechou o lead ${closingLead.name} por ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(dealValue))}.`
+        });
+      } catch (notificationError) {
+        console.error('Erro ao notificar fechamento do lead:', notificationError);
+      }
+
+      refreshLeadData(closingLead.id, {
+        status: 'Fechado',
+        funnel_step: 'venda_ganha',
+        propertyId: selectedSoldPropertyId,
+        deal_value: Number(dealValue),
+        stage_updated_at: now,
+        last_interaction: now
+      });
 
       // 4. XP de gamificação
       if (user?.id) {
@@ -1028,30 +1221,11 @@ const AdminLeads: React.FC = () => {
               setDealValue(suggestedValue > 0 ? String(Math.round(suggestedValue)) : '');
               return;
             }
-            const now = new Date().toISOString();
-            refreshLeadData(selectedLead.id, { status: newStatus, funnel_step: newFunnel, stage_updated_at: now });
-            const { error } = await supabase
-              .from('leads')
-              .update({ status: newStatus, funnel_step: newFunnel, stage_updated_at: now })
-              .eq('id', selectedLead.id);
-
-            // --- NOVO MOTOR DE GAMIFICAÇÃO NO SIDEBAR ---
-            if (!error && user?.id) {
-              const lowerStatus = newStatus.toLowerCase();
-              let awardedPoints = false;
-              if (lowerStatus.includes('visita')) {
-                await addGamificationEvent(user.id, ACTIONS.VISITA_REALIZADA.id, ACTIONS.VISITA_REALIZADA.points, selectedLead.id);
-                awardedPoints = true;
-              } else if (lowerStatus.includes('proposta') && !lowerStatus.includes('recusada') && !lowerStatus.includes('fria')) {
-                await addGamificationEvent(user.id, ACTIONS.PROPOSTA_ENVIADA.id, ACTIONS.PROPOSTA_ENVIADA.points, selectedLead.id);
-                awardedPoints = true;
-              } else if (newFunnel === 'perdido') {
-                await addGamificationEvent(user.id, ACTIONS.LEAD_PERDIDO_SEM_MOTIVO.id, ACTIONS.LEAD_PERDIDO_SEM_MOTIVO.points, selectedLead.id);
-                awardedPoints = true;
-              }
-              if (awardedPoints) {
-                await refreshUser();
-              }
+            try {
+              await applyLeadStageChange(selectedLead, newFunnel, newStatus);
+            } catch (stageError) {
+              console.error('Erro ao atualizar etapa pelo sidebar:', stageError);
+              addToast('Erro ao atualizar etapa do lead.', 'error');
             }
           }}
           onLeadUpdate={refreshLeadData}

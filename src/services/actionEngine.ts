@@ -83,10 +83,11 @@ export const executeConfirmedAction = async (
   suggestedStatus?: SuggestedLeadStatus
 ) => {
   if (!intent) return;
+  const touchedAt = new Date().toISOString();
 
   // Atualiza o status APENAS se a engine tiver 100% de certeza de um status válido
   if (suggestedStatus) {
-    await supabase.from('leads').update({ status: suggestedStatus }).eq('id', leadId);
+    await supabase.from('leads').update({ status: suggestedStatus, last_interaction: touchedAt }).eq('id', leadId);
   }
 
   // Dicionário de respostas amigáveis para a Timeline
@@ -108,4 +109,8 @@ export const executeConfirmedAction = async (
       created_by: userId,
     },
   ]);
+
+  if (!suggestedStatus) {
+    await supabase.from('leads').update({ last_interaction: touchedAt }).eq('id', leadId);
+  }
 };

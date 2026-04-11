@@ -81,16 +81,31 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateLeadStatus = useCallback(async (leadId: string, status: LeadStatus) => {
     let previousLead: Lead | undefined;
+    const now = new Date().toISOString();
 
     setLeads((prev) => {
       previousLead = prev.find((lead) => lead.id === leadId);
-      return prev.map((lead) => (lead.id === leadId ? { ...lead, status } : lead));
+      return prev.map((lead) => (
+        lead.id === leadId
+          ? { ...lead, status, last_interaction: now, stage_updated_at: now }
+          : lead
+      ));
     });
 
-    const { error } = await supabase
+    let updateQuery = supabase
       .from('leads')
-      .update({ status })
+      .update({
+        status,
+        last_interaction: now,
+        stage_updated_at: now
+      })
       .eq('id', leadId);
+
+    if (user?.company_id) {
+      updateQuery = updateQuery.eq('company_id', user.company_id);
+    }
+
+    const { error } = await updateQuery;
 
     if (error && previousLead) {
       setLeads((prev) => prev.map((lead) => (lead.id === leadId ? previousLead as Lead : lead)));
@@ -98,7 +113,7 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     if (!error && user?.id && user.company_id && previousLead && previousLead.status !== status) {
-      // Registra na timeline (Clean)
+      // Registra na timeline a mudança de etapa
       await supabase.from('timeline_events').insert([{
         lead_id: leadId,
         type: 'status_change',
@@ -106,6 +121,54 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         company_id: user.company_id,
         created_by: user.id
       }]);
+
+      // 🧠 AURA ENGINE: Gatilhos Inteligentes de Funil (Auto-Tasks)
+      try {
+        const statusLower = `${status}`.trim().toLowerCase();
+        let taskTitle = '';
+        let taskDesc = '';
+        let hoursDue = 24;
+        let priority = 'media';
+
+        if (statusLower.includes('visita') && (statusLower.includes('agendada') || statusLower.includes('marcada'))) {
+          taskTitle = '🤖 Aura: Confirmar logística da Visita';
+          taskDesc = 'Ligue para confirmar o horário com o cliente e certifique-se de que a chave do imóvel está disponível e separada.';
+          priority = 'alta';
+          hoursDue = 2;
+        } else if (statusLower.includes('proposta')) {
+          taskTitle = '🤖 Aura: Fazer follow-up da Proposta';
+          taskDesc = 'O cliente está quente! Acompanhe a aceitação da proposta para não deixar a negociação esfriar.';
+          priority = 'alta';
+          hoursDue = 24;
+        } else if (statusLower.includes('contrato') || statusLower.includes('fechamento')) {
+          taskTitle = '🤖 Aura: Preparar documentação do Contrato';
+          taskDesc = 'Inicie a coleta de documentos e valide os dados jurídicos na aba "Contratos".';
+          priority = 'critica';
+          hoursDue = 12;
+        }
+
+        if (taskTitle) {
+          const dueDate = new Date();
+          dueDate.setHours(dueDate.getHours() + hoursDue);
+
+          const { error: auraTaskError } = await supabase.from('tasks').insert([{
+            company_id: user.company_id,
+            user_id: user.id,
+            lead_id: leadId,
+            title: taskTitle,
+            description: taskDesc,
+            priority,
+            due_date: dueDate.toISOString(),
+            status: 'pendente'
+          }]);
+
+          if (auraTaskError) {
+            throw auraTaskError;
+          }
+        }
+      } catch (auraError) {
+        console.error('Erro na Aura ao criar task de funil:', auraError);
+      }
     }
 
     // --- DISTRIBUIÇÃO DE PONTOS (GAMIFICAÇÃO) ---
@@ -160,6 +223,21 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     setLeads((prev) => [data as Lead, ...prev]);
+
+    // Registra o nascimento do Lead na Timeline
+    if (data && user?.company_id && user.id) {
+      const { error: timelineError } = await supabase.from('timeline_events').insert([{
+        lead_id: data.id,
+        type: 'system',
+        description: `Lead cadastrado no sistema\nOrigem: ${data.source || 'Nao informada'}\nStatus: ${data.status}`,
+        company_id: user.company_id,
+        created_by: user.id
+      }]);
+
+      if (timelineError) {
+        console.error('Erro ao registrar criacao do lead na timeline:', timelineError);
+      }
+    }
 
     // --- AURA: CRIAÇÃO AUTOMÁTICA DE TAREFA (BACKGROUND) ---
     if (user?.id && data) {
