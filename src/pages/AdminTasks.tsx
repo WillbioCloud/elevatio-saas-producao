@@ -23,6 +23,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Icons } from '../components/Icons';
+import { processVisitFeedback } from '../services/ai';
 import type { Lead, Task } from '../types';
 import Loading from '../components/Loading';
 
@@ -73,6 +74,9 @@ const isTaskOwner = (
   currentUserId?: string
 ) => Boolean(task?.user_id && currentUserId && task.user_id === currentUserId);
 
+const isVisitTask = (task: Pick<BoardTask, 'title' | 'lead_id'> | null | undefined) =>
+  Boolean(task?.lead_id && task.title.toLowerCase().includes('visita'));
+
 export default function AdminTasks() {
   const { user } = useAuth();
   const { addToast } = useToast();
@@ -80,6 +84,12 @@ export default function AdminTasks() {
   const [leads, setLeads] = useState<Partial<Lead>[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'minhas' | 'equipe'>('minhas');
+  const [visitFeedbackModal, setVisitFeedbackModal] = useState<{ isOpen: boolean; task: BoardTask | null }>({
+    isOpen: false,
+    task: null,
+  });
+  const [visitFeedbackText, setVisitFeedbackText] = useState('');
+  const [isProcessingFeedback, setIsProcessingFeedback] = useState(false);
 
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -267,23 +277,117 @@ export default function AdminTasks() {
   };
 
   const handleCompleteTask = async (taskId: string, currentStatus: string) => {
-    const task = tasks.find((item) => item.id === taskId);
-    if (!isTaskOwner(task, user?.id)) return;
+    const taskToComplete = tasks.find((item) => item.id === taskId);
+    if (!taskToComplete) return;
 
-    const newStatus = currentStatus === 'concluida' ? 'pendente' : 'concluida';
+    if (taskToComplete.user_id !== user?.id) {
+      addToast('Você não tem permissão para concluir tarefas de outros usuários.', 'error');
+      return;
+    }
+
+    const newStatus = currentStatus === 'pendente' ? 'concluida' : 'pendente';
+
+    if (newStatus === 'concluida' && isVisitTask(taskToComplete)) {
+      setVisitFeedbackText('');
+      setVisitFeedbackModal({ isOpen: true, task: taskToComplete });
+      return;
+    }
 
     setTasks((prev) =>
-      prev.map((task) => (task.id === taskId ? { ...task, status: newStatus } : task))
+      prev.map((task) =>
+        task.id === taskId
+          ? { ...task, status: newStatus, completed: newStatus === 'concluida' }
+          : task
+      )
     );
 
     const { error } = await supabase
       .from('tasks')
-      .update({ status: newStatus })
+      .update({ status: newStatus, completed: newStatus === 'concluida' })
       .eq('id', taskId)
       .eq('user_id', user?.id);
 
     if (error) {
       void fetchTasks();
+      addToast('Erro ao atualizar tarefa.', 'error');
+    }
+  };
+
+  const handleSubmitVisitFeedback = async () => {
+    if (!visitFeedbackModal.task || !visitFeedbackText.trim() || !user?.id) return;
+    if (!user.company_id) {
+      addToast('Não foi possível identificar a empresa para registrar o feedback.', 'error');
+      return;
+    }
+
+    setIsProcessingFeedback(true);
+
+    try {
+      const task = visitFeedbackModal.task;
+      const analysis = await processVisitFeedback(task.leads?.name || 'Cliente', visitFeedbackText.trim());
+
+      const { error: completeTaskError } = await supabase
+        .from('tasks')
+        .update({ status: 'concluida', completed: true })
+        .eq('id', task.id)
+        .eq('user_id', user.id);
+
+      if (completeTaskError) throw completeTaskError;
+
+      if (task.lead_id) {
+        const lastInteraction = new Date().toISOString();
+
+        const { error: updateLeadError } = await supabase
+          .from('leads')
+          .update({
+            status: analysis.status_suggestion,
+            last_interaction: lastInteraction,
+          })
+          .eq('id', task.lead_id);
+
+        if (updateLeadError) throw updateLeadError;
+
+        const { error: timelineError } = await supabase.from('timeline_events').insert([
+          {
+            lead_id: task.lead_id,
+            type: 'system',
+            description: `🎯 Visita Realizada:\n"${visitFeedbackText.trim()}"\n\n🤖 Aura: ${analysis.timeline_note}\n(Avançou o lead para ${analysis.status_suggestion})`,
+            company_id: user.company_id,
+            created_by: user.id,
+          },
+        ]);
+
+        if (timelineError) throw timelineError;
+
+        const dueDate = new Date();
+        dueDate.setHours(dueDate.getHours() + (analysis.next_task_hours || 24));
+
+        const { error: createTaskError } = await supabase.from('tasks').insert([
+          {
+            company_id: user.company_id,
+            user_id: user.id,
+            lead_id: task.lead_id,
+            title: analysis.next_task_title,
+            description: analysis.next_task_desc,
+            priority: 'alta',
+            due_date: dueDate.toISOString(),
+            status: 'pendente',
+            completed: false,
+          },
+        ]);
+
+        if (createTaskError) throw createTaskError;
+      }
+
+      addToast('Feedback processado e funil atualizado!', 'success');
+      setVisitFeedbackModal({ isOpen: false, task: null });
+      setVisitFeedbackText('');
+      void fetchTasks();
+    } catch (error) {
+      console.error('Erro ao processar feedback da visita:', error);
+      addToast('Erro ao processar feedback. Tente concluir manualmente.', 'error');
+    } finally {
+      setIsProcessingFeedback(false);
     }
   };
 
@@ -367,6 +471,12 @@ export default function AdminTasks() {
     const task = tasks.find((item) => item.id === taskId);
     if (!task || !targetColumn || !isTaskOwner(task, user?.id)) return;
 
+    if (targetColumn === 'concluida' && isVisitTask(task)) {
+      setVisitFeedbackText('');
+      setVisitFeedbackModal({ isOpen: true, task });
+      return;
+    }
+
     const now = new Date();
     let newStatus = task.status;
     let newDueDate = new Date(task.due_date || now);
@@ -383,14 +493,23 @@ export default function AdminTasks() {
     setTasks((prev) =>
       prev.map((item) =>
         item.id === taskId
-          ? { ...item, status: newStatus, due_date: newDueDate.toISOString() }
+          ? {
+              ...item,
+              status: newStatus,
+              completed: newStatus === 'concluida',
+              due_date: newDueDate.toISOString(),
+            }
           : item
       )
     );
 
     const { error } = await supabase
       .from('tasks')
-      .update({ status: newStatus, due_date: newDueDate.toISOString() })
+      .update({
+        status: newStatus,
+        completed: newStatus === 'concluida',
+        due_date: newDueDate.toISOString(),
+      })
       .eq('id', taskId)
       .eq('user_id', user?.id);
 
@@ -832,6 +951,53 @@ export default function AdminTasks() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {visitFeedbackModal.isOpen && visitFeedbackModal.task && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-100 text-brand-600">
+                <Icons.Sparkles size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Como foi a visita?</h3>
+                <p className="text-sm text-slate-500">Com {visitFeedbackModal.task.leads?.name || 'Cliente'}</p>
+              </div>
+            </div>
+
+            <textarea
+              value={visitFeedbackText}
+              onChange={(e) => setVisitFeedbackText(e.target.value)}
+              placeholder="Ex: Ele adorou a varanda, mas achou o condomínio caro. Vou tentar conseguir um desconto..."
+              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              rows={4}
+              autoFocus
+            />
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setVisitFeedbackModal({ isOpen: false, task: null });
+                  setVisitFeedbackText('');
+                }}
+                className="rounded-lg px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100"
+                disabled={isProcessingFeedback}
+                type="button"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSubmitVisitFeedback}
+                disabled={isProcessingFeedback || !visitFeedbackText.trim()}
+                className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50"
+                type="button"
+              >
+                {isProcessingFeedback ? <Icons.Loader2 size={16} className="animate-spin" /> : <Icons.Check size={16} />}
+                {isProcessingFeedback ? 'Aura analisando...' : 'Concluir e Atualizar'}
+              </button>
+            </div>
           </div>
         </div>
       )}

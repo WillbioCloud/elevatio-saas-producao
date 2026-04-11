@@ -146,6 +146,7 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [isAdmin, leads.length, user?.company_id, user?.id]);
 
   const updateLeadStatus = useCallback(async (leadId: string, status: LeadStatus) => {
+    const targetLead = leads.find(l => l.id === leadId);
     let previousLead: Lead | undefined;
     const now = new Date().toISOString();
 
@@ -197,10 +198,48 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         let priority = 'media';
 
         if (statusLower.includes('visita') && (statusLower.includes('agendada') || statusLower.includes('marcada'))) {
-          taskTitle = '🤖 Aura: Confirmar logística da Visita';
-          taskDesc = 'Ligue para confirmar o horário com o cliente e certifique-se de que a chave do imóvel está disponível e separada.';
-          priority = 'alta';
-          hoursDue = 2;
+          let keyIsInUse = false;
+          let keyHolderName = 'outro corretor';
+
+          // 🛡️ O ESCUDO DE OPERAÇÕES: Verificação de Conflito de Chave (Arquitetura Nativa)
+          if (targetLead?.property_id) {
+            try {
+              const { data: propData } = await supabase
+                .from('properties')
+                .select('key_status')
+                .eq('id', targetLead.property_id)
+                .single();
+
+              // Se a chave não estiver na imobiliária ('agency'), está em uso!
+              if (propData && propData.key_status && propData.key_status !== 'agency') {
+                keyIsInUse = true;
+
+                // Traduz o status real do banco para a mensagem amigável da Aura
+                const statusMap: Record<string, string> = {
+                  broker: 'outro corretor',
+                  client: 'um cliente em visita',
+                  owner: 'o proprietário do imóvel'
+                };
+
+                keyHolderName = statusMap[propData.key_status] || 'outra pessoa';
+              }
+            } catch (keyCheckError) {
+              console.error('Aura: Erro ao checar chave nativa', keyCheckError);
+            }
+          }
+
+          // Bifurcação de Inteligência
+          if (keyIsInUse) {
+            taskTitle = '🚨 Aura: Conflito de Chave Detectado!';
+            taskDesc = `Você agendou uma visita, mas a chave deste imóvel está atualmente com ${keyHolderName}. Entre em contato urgentemente para alinhar a devolução antes do horário da visita com o cliente.`;
+            priority = 'critica';
+            hoursDue = 1;
+          } else {
+            taskTitle = '🤖 Aura: Confirmar logística da Visita';
+            taskDesc = 'Ligue para confirmar o horário com o cliente e certifique-se de que a chave do imóvel está separada na recepção.';
+            priority = 'alta';
+            hoursDue = 2;
+          }
         } else if (statusLower.includes('proposta')) {
           taskTitle = '🤖 Aura: Fazer follow-up da Proposta';
           taskDesc = 'O cliente está quente! Acompanhe a aceitação da proposta para não deixar a negociação esfriar.';
@@ -275,7 +314,7 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         console.error('Falha ao distribuir pontos:', gamiErr);
       }
     }
-  }, [refreshUser, user?.company_id, user?.id]);
+  }, [leads, refreshUser, user?.company_id, user?.id]);
 
   const addLead = useCallback(async (lead: Partial<Lead> & Record<string, any>) => {
     const { data, error } = await supabase

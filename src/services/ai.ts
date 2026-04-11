@@ -470,3 +470,189 @@ ${rawContent}`;
     throw new Error("Não foi possível analisar o contrato no momento.");
   }
 }
+
+/**
+ * Copiloto de Comunicação: Gera rascunho de WhatsApp baseado no histórico do Lead.
+ * Inclui sistema de Retry para lidar com picos temporários de uso na API do Google (Erro 503).
+ */
+export const generateAuraWhatsAppDraft = async (leadName: string, context: string, retries = 3): Promise<string> => {
+  if (!genAI) throw new Error("Gemini API Key não configurada.");
+
+  try {
+    // Usando o modelo que a sua API Key reconheceu (pode usar gemini-2.0-flash se preferir)
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const prompt = `
+      Atue como um corretor de imóveis de elite, mestre em persuasão e atendimento humanizado.
+      Escreva uma mensagem de WhatsApp para o cliente: ${leadName}.
+      
+      CONTEXTO RECENTE DA TIMELINE DO CLIENTE:
+      ${context || 'O cliente acabou de entrar no sistema e aguarda o primeiro contato.'}
+
+      DIRETRIZES:
+      1. Tom de voz: Profissional, acolhedor e focado em gerar resposta.
+      2. Gatilho de contexto: Use a timeline para personalizar a mensagem.
+      3. Estrutura: Direta ao ponto (2 ou 3 parágrafos curtos).
+      4. Fechamento: Termine sempre com uma pergunta simples e aberta (Call to Action).
+      5. Formatação: Use negrito do WhatsApp (*texto*) nos pontos altos e emojis com muita moderação.
+      6. IMPORTANTE: Retorne APENAS o texto da mensagem. Sem introduções, aspas ou comentários extras.
+    `;
+
+    const result = await model.generateContent(prompt);
+    return result.response.text().trim();
+  } catch (error: any) {
+    // Se for erro de servidor ocupado (503) e ainda tivermos tentativas, esperamos e tentamos de novo
+    if (error?.message?.includes('503') && retries > 0) {
+      console.warn(`Aura: API ocupada (503). Tentando novamente em 2 segundos... (Restam ${retries} tentativas)`);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Espera 2 segundos
+      return generateAuraWhatsAppDraft(leadName, context, retries - 1);
+    }
+    
+    console.error("Aura: Erro final ao gerar draft de WhatsApp", error);
+    throw new Error("Não foi possível gerar a mensagem com a IA neste momento. Tente novamente em alguns minutos.");
+  }
+};
+
+export interface VisitFeedbackAnalysis {
+  status_suggestion: "Proposta" | "Atendimento" | "Congelado";
+  timeline_note: string;
+  next_task_title: string;
+  next_task_desc: string;
+  next_task_hours: number;
+}
+
+const getLocalVisitFeedbackFallback = (
+  leadName: string,
+  feedback: string
+): VisitFeedbackAnalysis => {
+  const normalized = feedback.toLowerCase();
+
+  const isFrozen =
+    normalized.includes("desist") ||
+    normalized.includes("parou de procurar") ||
+    normalized.includes("nao quer mais comprar") ||
+    normalized.includes("não quer mais comprar") ||
+    normalized.includes("sem interesse") ||
+    normalized.includes("vai pausar");
+
+  const isProposal =
+    normalized.includes("gostou") ||
+    normalized.includes("adorou") ||
+    normalized.includes("proposta") ||
+    normalized.includes("negoci") ||
+    normalized.includes("desconto") ||
+    normalized.includes("fechar") ||
+    normalized.includes("comprar");
+
+  if (isFrozen) {
+    return {
+      status_suggestion: "Congelado",
+      timeline_note: `${leadName} sinalizou pausa na busca apos a visita, exigindo acompanhamento futuro mais leve.`,
+      next_task_title: "🤖 Aura: Registrar motivo da pausa do lead",
+      next_task_desc: "Documente o motivo da pausa, confirme quando retomar o contato e mantenha o lead aquecido sem pressao comercial.",
+      next_task_hours: 72,
+    };
+  }
+
+  if (isProposal) {
+    return {
+      status_suggestion: "Proposta",
+      timeline_note: `${leadName} demonstrou interesse concreto no imovel visitado e avancou para tratativas comerciais.`,
+      next_task_title: `🤖 Aura: Preparar proposta para ${leadName}`,
+      next_task_desc: "Organize a proposta comercial, alinhe margem de negociacao e confirme os proximos documentos necessarios.",
+      next_task_hours: 24,
+    };
+  }
+
+  return {
+    status_suggestion: "Atendimento",
+    timeline_note: `${leadName} concluiu a visita, mas ainda precisa de novas opcoes aderentes ao perfil informado.`,
+    next_task_title: `🤖 Aura: Selecionar novos imoveis para ${leadName}`,
+    next_task_desc: "Revise os pontos levantados na visita e envie novas sugestoes com melhor encaixe de perfil, valor ou localizacao.",
+    next_task_hours: 24,
+  };
+};
+
+const sanitizeVisitFeedbackAnalysis = (
+  parsed: Partial<VisitFeedbackAnalysis> | null,
+  leadName: string,
+  feedback: string
+): VisitFeedbackAnalysis => {
+  const fallback = getLocalVisitFeedbackFallback(leadName, feedback);
+  if (!parsed) return fallback;
+
+  const statusSuggestion =
+    parsed.status_suggestion === "Proposta" ||
+    parsed.status_suggestion === "Atendimento" ||
+    parsed.status_suggestion === "Congelado"
+      ? parsed.status_suggestion
+      : fallback.status_suggestion;
+
+  const nextTaskHours = Number(parsed.next_task_hours);
+
+  return {
+    status_suggestion: statusSuggestion,
+    timeline_note: String(parsed.timeline_note || fallback.timeline_note).slice(0, 220),
+    next_task_title: String(parsed.next_task_title || fallback.next_task_title).slice(0, 120),
+    next_task_desc: String(parsed.next_task_desc || fallback.next_task_desc).slice(0, 280),
+    next_task_hours: Number.isFinite(nextTaskHours)
+      ? Math.max(1, Math.min(168, Math.round(nextTaskHours)))
+      : fallback.next_task_hours,
+  };
+};
+
+/**
+ * Loop de Pós-Visita: Analisa o feedback do corretor e decide o destino do Lead.
+ */
+export const processVisitFeedback = async (
+  leadName: string,
+  feedback: string
+): Promise<VisitFeedbackAnalysis> => {
+  const fallback = getLocalVisitFeedbackFallback(leadName, feedback);
+  if (!genAI) return fallback;
+
+  try {
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+      },
+    });
+
+    const prompt = `
+Voce e a inteligencia por tras de um CRM imobiliario.
+O corretor acabou de realizar uma visita com o cliente e precisa decidir o proximo passo do funil.
+
+Contexto:
+${JSON.stringify({ leadName, feedback }, null, 2)}
+
+Sua tarefa e analisar o relato e devolver APENAS um objeto JSON valido com esta estrutura:
+{
+  "status_suggestion": "Proposta" | "Atendimento" | "Congelado",
+  "timeline_note": "Um resumo profissional de 1 frase para o historico",
+  "next_task_title": "Titulo da proxima tarefa",
+  "next_task_desc": "Descricao objetiva da tarefa",
+  "next_task_hours": 24
+}
+
+Regras:
+- Se o cliente gostou e quer negociar/comprar, status_suggestion deve ser "Proposta".
+- Se o cliente nao gostou, mas quer ver outros imoveis, status_suggestion deve ser "Atendimento".
+- Se o cliente desistiu de comprar ou pausou a busca, status_suggestion deve ser "Congelado".
+- timeline_note deve ter no maximo 180 caracteres.
+- next_task_title deve ter no maximo 80 caracteres.
+- next_task_desc deve ter no maximo 220 caracteres.
+- next_task_hours deve ser um numero inteiro entre 1 e 168.
+- Nao use markdown, comentarios ou texto fora do JSON.
+`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const parsed = safeJsonParse<VisitFeedbackAnalysis>(response.text());
+
+    return sanitizeVisitFeedbackAnalysis(parsed, leadName, feedback);
+  } catch (error) {
+    console.error("Aura: Erro ao processar feedback da visita", error);
+    return fallback;
+  }
+};

@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Lead, LeadMatch, LeadStatus, Task, TimelineEvent, Property } from '../types';
 import { Icons } from './Icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { findSmartMatches, mapPropertyToCandidate, SmartMatchResult } from '../services/ai';
+import { findSmartMatches, generateAuraWhatsAppDraft, mapPropertyToCandidate, SmartMatchResult } from '../services/ai';
 import { calculateDealPoints } from '../services/gamification';
 import { parseTimelineNote, executeConfirmedAction } from '../services/actionEngine';
 import { Kbd } from './ui/kbd';
@@ -126,6 +126,9 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [newTask, setNewTask] = useState('');
   const [newNote, setNewNote] = useState('');
+  const [isGeneratingAura, setIsGeneratingAura] = useState(false);
+  const [showTemplateForm, setShowTemplateForm] = useState(false);
+  const [newTemplate, setNewTemplate] = useState({ title: '', content: '' });
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editNoteText, setEditNoteText] = useState('');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -152,6 +155,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
   const [isOpen, setIsOpen] = useState(true);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const whatsappTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const FUNNELS = [
     { id: 'pre_atendimento', label: 'Pré-atend.', color: 'bg-slate-400' },
@@ -173,6 +177,9 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     setEditingNoteId(null);
     setEditNoteText('');
     setMenuOpenId(null);
+    setCustomMessage('');
+    setShowTemplateForm(false);
+    setNewTemplate({ title: '', content: '' });
   }, [lead.id]);
 
   useEffect(() => {
@@ -182,6 +189,14 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     textarea.style.height = 'auto';
     textarea.style.height = `${textarea.scrollHeight}px`;
   }, [newNote, activeTab]);
+
+  useEffect(() => {
+    const textarea = whatsappTextareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [customMessage, activeTab]);
 
   useEffect(() => {
     setAiSuggestion(getLeadAiSuggestion(lead));
@@ -233,6 +248,10 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
 
   const leadFirstName = useMemo(() => (lead.name || '').trim().split(' ')[0] || 'Cliente', [lead.name]);
   const leadPhoneClean = useMemo(() => (lead.phone || '').replace(/\D/g, ''), [lead.phone]);
+  const fillTemplateContent = useCallback((content: string) => {
+    const propertyTitle = originProperty?.title || 'imovel';
+    return content.replaceAll('{nome}', leadFirstName).replaceAll('{imovel}', propertyTitle);
+  }, [leadFirstName, originProperty?.title]);
 
   const refreshTimelineEvents = async () => {
     const { data } = await supabase
@@ -324,7 +343,8 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
               (user as any).company_id,
               user.id,
               analysis.intent,
-              analysis.suggestedStatus
+              analysis.suggestedStatus,
+              analysis.originalText
             );
 
             onLeadUpdate?.(lead.id, {
@@ -363,14 +383,37 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     });
   }, [lead]);
 
+  const fetchTemplates = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('message_templates')
+        .select('id, title, content')
+        .eq('active', true)
+        .or(`user_id.eq.${user.id},user_id.is.null`)
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        setTemplates(data as Template[]);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar templates:', err);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!lead?.id) return;
+    void fetchTemplates();
+  }, [fetchTemplates, lead?.id]);
+
   useEffect(() => {
     const fetchData = async () => {
       if (!lead?.id) return;
 
-      const [tasksRes, eventsRes, templatesRes] = await Promise.all([
+      const [tasksRes, eventsRes] = await Promise.all([
         supabase.from('tasks').select('*').eq('lead_id', lead.id).order('due_date', { ascending: true }),
-        supabase.from('timeline_events').select('*, profiles!timeline_events_created_by_fkey(name, avatar_url)').eq('lead_id', lead.id).order('created_at', { ascending: false }),
-        supabase.from('message_templates').select('*').eq('active', true)
+        supabase.from('timeline_events').select('*, profiles!timeline_events_created_by_fkey(name, avatar_url)').eq('lead_id', lead.id).order('created_at', { ascending: false })
       ]);
 
       const { data: propsData } = await supabase.from('properties').select('id, title, price, status').eq('status', 'Disponível');
@@ -387,8 +430,6 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
       } else if (eventsRes.data) {
         setEvents(eventsRes.data as any);
       }
-      if (templatesRes.data && templatesRes.data.length > 0) setTemplates(templatesRes.data as any);
-
       const { data: storedMatches } = await supabase
         .from('lead_matches')
         .select('id, lead_id, property_id, match_score, match_reason, property:properties!leads_property_id_fkey(*)')
@@ -396,7 +437,7 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
         .order('match_score', { ascending: false });
 
       if (storedMatches && storedMatches.length > 0) {
-        const loadedMatches = (storedMatches as LeadMatch[])
+        const loadedMatches = (storedMatches as unknown as LeadMatch[])
           .filter((match) => Boolean(match.property))
           .map((match) => ({
             property_id: match.property_id,
@@ -450,6 +491,59 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
 
     await supabase.from('leads').update({ interested_properties: newList }).eq('id', lead.id);
     await addTimelineLog('system', `Removeu o interesse no imóvel: ${propToRemove.title}`);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!newTemplate.title.trim() || !newTemplate.content.trim()) {
+      addToast('Preencha o titulo e o conteudo do modelo.', 'info');
+      return;
+    }
+
+    if (!user?.id) {
+      addToast('Nao foi possivel identificar o usuario logado.', 'error');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('message_templates').insert([{
+        title: newTemplate.title.trim(),
+        content: newTemplate.content.trim(),
+        user_id: user.id,
+        active: true
+      }]);
+
+      if (error) throw error;
+
+      addToast('Modelo salvo com sucesso!', 'success');
+      setNewTemplate({ title: '', content: '' });
+      setShowTemplateForm(false);
+      await fetchTemplates();
+    } catch (error) {
+      console.error('Erro ao salvar template:', error);
+      addToast('Erro ao salvar modelo.', 'error');
+    }
+  };
+
+  const handleAuraDraft = async () => {
+    setIsGeneratingAura(true);
+
+    try {
+      const context = events
+        .filter((event) => event.type !== 'system')
+        .slice(0, 5)
+        .reverse()
+        .map((event) => `[${new Date(event.created_at).toLocaleDateString('pt-BR')}] ${event.description}`)
+        .join('\n');
+
+      const draft = await generateAuraWhatsAppDraft(lead?.name || 'Cliente', context);
+      setCustomMessage(draft);
+      addToast('Aura gerou uma mensagem estrategica!', 'success');
+    } catch (error) {
+      console.error('Erro ao gerar draft com a Aura:', error);
+      addToast('Erro ao gerar mensagem com a Aura.', 'error');
+    } finally {
+      setIsGeneratingAura(false);
+    }
   };
 
   const handleAddTask = async (e: React.FormEvent) => {
@@ -1146,12 +1240,86 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
               </div>
 
               <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm space-y-3">
-                <textarea
+                <div className="mb-3 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-1 gap-2">
+                      <select
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-700 focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                        onChange={(e) => {
+                          if (e.target.value === 'new') {
+                            setShowTemplateForm(true);
+                          } else if (e.target.value) {
+                            const template = templates.find((item) => item.id === e.target.value);
+                            if (template) {
+                              setCustomMessage(fillTemplateContent(template.content));
+                            }
+                          }
+
+                          e.target.value = '';
+                        }}
+                        defaultValue=""
+                      >
+                        <option value="" disabled>Usar modelo pronto...</option>
+                        {templates.map((template) => (
+                          <option key={template.id} value={template.id}>{template.title}</option>
+                        ))}
+                        <option value="new" className="font-bold text-brand-600">+ Criar meu modelo</option>
+                      </select>
+                    </div>
+
+                    <button
+                      onClick={() => void handleAuraDraft()}
+                      disabled={isGeneratingAura}
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-100 px-3 py-1.5 text-xs font-bold text-indigo-700 transition-colors hover:bg-indigo-200 disabled:opacity-50"
+                      title="A IA le a timeline e cria a mensagem perfeita"
+                    >
+                      {isGeneratingAura ? <Icons.Loader2 size={14} className="animate-spin" /> : <Icons.Sparkles size={14} />}
+                      {isGeneratingAura ? 'Pensando...' : 'Gerar com Aura'}
+                    </button>
+                  </div>
+
+                  {showTemplateForm && (
+                    <div className="mt-2 flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm animate-fade-in">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-600">Novo Modelo</span>
+                        <button
+                          onClick={() => setShowTemplateForm(false)}
+                          className="text-slate-400 hover:text-slate-600"
+                        >
+                          <Icons.X size={14} />
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Nome do modelo (ex: Abordagem Fria)"
+                        value={newTemplate.title}
+                        onChange={(e) => setNewTemplate((prev) => ({ ...prev, title: e.target.value }))}
+                        className="w-full rounded-md border border-slate-200 px-2 py-1 text-xs focus:border-brand-500 focus:outline-none"
+                      />
+                      <textarea
+                        placeholder="Escreva a mensagem padrao..."
+                        value={newTemplate.content}
+                        onChange={(e) => setNewTemplate((prev) => ({ ...prev, content: e.target.value }))}
+                        className="w-full resize-none rounded-md border border-slate-200 px-2 py-1 text-xs focus:border-brand-500 focus:outline-none"
+                        rows={3}
+                      />
+                      <button
+                        onClick={() => void handleSaveTemplate()}
+                        className="w-full rounded-md bg-slate-800 py-1.5 text-xs font-bold text-white transition-colors hover:bg-slate-700"
+                      >
+                        Salvar Modelo
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <Textarea
+                  ref={whatsappTextareaRef}
                   value={customMessage}
                   onChange={(e) => setCustomMessage(e.target.value)}
-                  rows={4}
-                  placeholder="Digite sua mensagem ou escolha um modelo abaixo..."
-                  className="w-full text-sm outline-none resize-none text-slate-700"
+                  rows={2}
+                  placeholder="Digite sua mensagem, use um modelo ou gere com a Aura..."
+                  className="min-h-[44px] resize-none overflow-hidden border-0 bg-transparent p-0 text-sm text-slate-700 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                 />
                 <div className="flex justify-end pt-2 border-t border-slate-100">
                   <button
@@ -1169,22 +1337,6 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
                 </div>
               </div>
 
-              <h4 className="text-xs font-bold text-slate-400 uppercase mt-4 mb-2">Modelos Prontos</h4>
-              <div className="grid grid-cols-1 gap-2">
-                {templates.map((tpl) => (
-                  <button
-                    key={tpl.id}
-                    onClick={() => {
-                      const imovel = originProperty?.title || 'imóvel';
-                      const text = tpl.content.replaceAll('{nome}', leadFirstName).replaceAll('{imovel}', imovel);
-                      setCustomMessage(text);
-                    }}
-                    className="w-full text-left bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-brand-400 transition-all"
-                  >
-                    <span className="font-bold text-slate-700 block text-sm">{tpl.title}</span>
-                  </button>
-                ))}
-              </div>
             </div>
           )}
 
