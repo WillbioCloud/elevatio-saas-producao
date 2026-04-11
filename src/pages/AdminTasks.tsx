@@ -1,604 +1,1066 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Icons } from '../components/Icons';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  DndContext,
+  PointerSensor,
+  useDroppable,
+  useSensor,
+  useSensors,
+  DragOverEvent,
+  DragEndEvent,
+  DragStartEvent,
+  closestCenter,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { useNotification } from '../contexts/NotificationContext';
 import { useToast } from '../contexts/ToastContext';
-import { runWithSessionRecovery, supabase } from '../lib/supabase';
-import { generateCRMInsights } from '../services/ai';
-import { getLevelInfo } from '../services/gamification';
-import { Task } from '../types';
+import { Icons } from '../components/Icons';
+import type { Lead, Task } from '../types';
+import Loading from '../components/Loading';
 
-interface TaskWithLead extends Task {
-  leads: { name: string; phone: string } | null;
-}
+type TaskStatus = 'pendente' | 'concluida';
+type ColumnId = 'atrasadas' | 'hoje' | 'proximas' | 'concluida';
 
-interface SmartInsight {
-  id: string;
-  type: 'danger' | 'warning' | 'info' | 'success';
-  title: string;
-  description: string;
-  actionText: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-}
-
-const isAbortError = (error: unknown): boolean => {
-  if (!error || typeof error !== 'object') return false;
-  const maybe = error as { name?: string; message?: string };
-  return maybe.name === 'AbortError' || maybe.message?.includes('AbortError') === true;
+type BoardTask = Task & {
+  status?: TaskStatus | string | null;
+  priority?: string | null;
+  leads?: { name?: string | null } | null;
+  completed?: boolean | null;
 };
 
-const parseDueDate = (value: string) => {
-  if (!value) return null;
+const BOARD_COLUMNS: ColumnId[] = ['atrasadas', 'hoje', 'proximas', 'concluida'];
+const AURA_MARKER = 'Aura:';
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split('-').map(Number);
-    return new Date(year, month - 1, day);
-  }
+const isAbortError = (error: unknown) => {
+  if (!error || typeof error !== 'object') return false;
+  const maybe = error as { name?: string; message?: string };
+  const message = `${maybe.message ?? ''}`.toLowerCase();
+  return maybe.name === 'AbortError' || message.includes('aborted') || message.includes('signal is aborted');
+};
 
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+const cleanTaskTitle = (title: string) => {
+  const markerIndex = title.indexOf(AURA_MARKER);
+  return markerIndex >= 0 ? title.slice(markerIndex + AURA_MARKER.length).trim() : title.trim();
+};
+
+const normalizeTaskPriority = (priority?: string | null) => {
+  const value = `${priority ?? ''}`.toLowerCase().trim();
+  if (value === 'baixa' || value === 'media' || value === 'alta') return value;
+  if (value === 'critica' || value === 'crítica') return 'alta';
+  return 'media';
+};
+
+const formatTaskPriority = (priority?: string | null) => {
+  const value = `${priority ?? ''}`.toLowerCase().trim();
+  if (value === 'baixa') return 'Baixa';
+  if (value === 'media') return 'Média';
+  if (value === 'alta') return 'Alta';
+  if (value === 'critica' || value === 'crítica') return 'Crítica';
+  return 'Normal';
 };
 
 export default function AdminTasks() {
-  const navigate = useNavigate();
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
   const { addToast } = useToast();
-  const { notifications, unreadCount } = useNotification();
-
-  const [tasks, setTasks] = useState<TaskWithLead[]>([]);
-  const [insights, setInsights] = useState<SmartInsight[]>([]);
+  const [tasks, setTasks] = useState<BoardTask[]>([]);
+  const [leads, setLeads] = useState<Partial<Lead>[]>([]);
   const [loading, setLoading] = useState(true);
-  const [quickTask, setQuickTask] = useState({ title: '', due_date: '', lead_id: '' });
-  const [savingTask, setSavingTask] = useState(false);
-  const [auraBriefing, setAuraBriefing] = useState('');
-  const [generatingAura, setGeneratingAura] = useState(false);
 
-  const generateAIInsights = useCallback(async () => {
-    if (!user?.company_id) {
-      setInsights([]);
-      return;
-    }
+  const [currentMonth, setCurrentMonth] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [overColumnId, setOverColumnId] = useState<ColumnId | null>(null);
+  const [spotlightedTask, setSpotlightedTask] = useState<{ id: string; token: number } | null>(null);
 
-    try {
-      const now = new Date();
-      const threeDaysAgo = new Date(now.getTime() - (3 * 24 * 60 * 60 * 1000));
-      const overdueCutoff = new Date(now.getTime() - 86_400_000);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [newTask, setNewTask] = useState({
+    title: '',
+    description: '',
+    due_date: new Date().toISOString().slice(0, 16),
+    priority: 'media',
+    lead_id: '',
+  });
+  const [editingTask, setEditingTask] = useState<BoardTask | null>(null);
 
-      const [coldLeadsResponse, pendingContractsResponse, overdueTasksResponse] = await Promise.all([
-        supabase
-          .from('leads')
-          .select('id', { count: 'exact', head: true })
-          .eq('company_id', user.company_id)
-          .not('status', 'in', '("Venda Fechada","Perdido","Fechado","Venda Ganha")')
-          .lt('updated_at', threeDaysAgo.toISOString()),
-        supabase
-          .from('contracts')
-          .select('id', { count: 'exact', head: true })
-          .eq('company_id', user.company_id)
-          .eq('status', 'pending'),
-        supabase
-          .from('tasks')
-          .select('id', { count: 'exact', head: true })
-          .eq('company_id', user.company_id)
-          .eq('completed', false)
-          .lt('due_date', overdueCutoff.toISOString()),
-      ]);
-
-      if (coldLeadsResponse.error) throw coldLeadsResponse.error;
-      if (pendingContractsResponse.error) throw pendingContractsResponse.error;
-      if (overdueTasksResponse.error) throw overdueTasksResponse.error;
-
-      const coldLeadsCount = coldLeadsResponse.count ?? 0;
-      const pendingContractsCount = pendingContractsResponse.count ?? 0;
-      const overdueTasksCount = overdueTasksResponse.count ?? 0;
-      const nextInsights: SmartInsight[] = [];
-
-      if (coldLeadsCount > 0) {
-        nextInsights.push({
-          id: 'cold_leads',
-          type: 'danger',
-          title: 'Leads Esfriando',
-          description: `Você tem ${coldLeadsCount} lead(s) sem contato há mais de 3 dias. Eles podem procurar a concorrência.`,
-          actionText: 'Ver Leads',
-          icon: <Icons.Flame size={20} className="text-red-500" />,
-          onClick: () => navigate('/admin/leads'),
-        });
-      }
-
-      if (pendingContractsCount > 0) {
-        nextInsights.push({
-          id: 'pending_contracts',
-          type: 'warning',
-          title: 'Assinaturas Pendentes',
-          description: `Existem ${pendingContractsCount} contrato(s) aguardando assinatura dos clientes.`,
-          actionText: 'Cobrar Assinaturas',
-          icon: <Icons.PenTool size={20} className="text-amber-500" />,
-          onClick: () => navigate('/admin/contratos'),
-        });
-      }
-
-      if (overdueTasksCount > 0) {
-        nextInsights.push({
-          id: 'overdue_tasks',
-          type: 'info',
-          title: 'Tarefas Acumuladas',
-          description: `Há ${overdueTasksCount} tarefa(s) atrasadas. Organize sua agenda para não perder vendas.`,
-          actionText: 'Organizar Agenda',
-          icon: <Icons.Clock size={20} className="text-blue-500" />,
-          onClick: () => document.getElementById('tasks-board')?.scrollIntoView({ behavior: 'smooth' }),
-        });
-      }
-
-      setInsights(nextInsights);
-    } catch (error: any) {
-      if (isAbortError(error)) return;
-      console.error('Erro ao gerar insights da Aura:', error);
-      addToast(error?.message || 'Falha ao conectar com a Aura.', 'error');
-    }
-  }, [addToast, navigate, user?.company_id]);
-
-  const generateAuraBriefing = useCallback(async () => {
-    if (!user?.id || !user.company_id) {
-      setAuraBriefing('');
-      return;
-    }
-
-    setGeneratingAura(true);
-
-    try {
-      let leadsQuery = supabase
-        .from('leads')
-        .select('id, status')
-        .eq('company_id', user.company_id);
-
-      if (!isAdmin) {
-        leadsQuery = leadsQuery.eq('assigned_to', user.id);
-      }
-
-      const [{ data: leadsData, error: leadsError }, { data: eventsData, error: eventsError }] = await Promise.all([
-        leadsQuery,
-        supabase
-          .from('gamification_events')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(50),
-      ]);
-
-      if (leadsError) throw leadsError;
-      if (eventsError) {
-        console.warn('Erro ao buscar eventos para a Aura:', eventsError);
-      }
-
-      const userTotalXp = Number(user.xp_points || 0);
-      const { currentLevel } = getLevelInfo(userTotalXp);
-
-      try {
-        const insight = await generateCRMInsights(
-          leadsData || [],
-          tasks,
-          eventsData || [],
-          notifications || [],
-          user.name || 'Corretor',
-          { title: currentLevel.title, level: currentLevel.level }
-        );
-
-        setAuraBriefing(insight);
-      } catch (aiError: any) {
-        if (isAbortError(aiError)) return;
-        console.error('Erro ao gerar insights da Aura:', aiError);
-        setAuraBriefing('');
-
-        // Tratamento infalível contra o "objeto vazio" do SDK do Google
-        let errorMsg = 'Falha ao conectar com a Aura. Verifique sua conexão.';
-
-        if (aiError && typeof aiError === 'object') {
-          if (aiError.message && aiError.message.trim() !== '') {
-            errorMsg = aiError.message;
-          } else if (Object.keys(aiError).length === 0) {
-            // Captura exatamente o maldito erro {}
-            errorMsg = 'A API da IA rejeitou a conexão automática. Tente clicar em Gerar novamente.';
-          } else {
-            errorMsg = JSON.stringify(aiError);
-          }
-        } else if (typeof aiError === 'string' && aiError.trim() !== '') {
-          errorMsg = aiError;
-        }
-
-        addToast(`Aviso Aura: ${errorMsg}`, 'error');
-      }
-    } catch (error: any) {
-      if (isAbortError(error)) return;
-      console.error('Erro ao preparar leitura tática da Aura:', error);
-      addToast(error?.message || 'Não foi possível reunir os dados da Aura.', 'error');
-    } finally {
-      setGeneratingAura(false);
-    }
-  }, [addToast, isAdmin, notifications, tasks, unreadCount, user?.company_id, user?.id, user?.name, user?.xp_points]);
-
-  const fetchTasks = useCallback(async () => {
-    if (!user?.id || !user.company_id) {
-      setTasks([]);
-      setInsights([]);
-      setAuraBriefing('');
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      let query = supabase
-        .from('tasks')
-        .select('*, leads(name, phone)')
-        .eq('company_id', user.company_id)
-        .eq('completed', false)
-        .order('due_date', { ascending: true });
-
-      if (!isAdmin) {
-        query = query.eq('user_id', user.id);
-      }
-
-      const { data, error } = await runWithSessionRecovery(() => query);
-      if (error) throw error;
-
-      setTasks((data as TaskWithLead[]) ?? []);
-    } catch (error) {
-      if (isAbortError(error)) return;
-      console.error('Erro ao carregar tarefas:', error);
-      addToast('Não foi possível carregar as tarefas agora.', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [addToast, isAdmin, user?.company_id, user?.id]);
-
-  useEffect(() => {
-    void fetchTasks();
-  }, [fetchTasks]);
-
-  useEffect(() => {
-    if (!user?.company_id) return;
-
-    const channel = supabase
-      .channel(`crm-aura-${user.company_id}-${user.id ?? 'anon'}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tasks', filter: `company_id=eq.${user.company_id}` },
-        () => {
-          void fetchTasks();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'leads', filter: `company_id=eq.${user.company_id}` },
-        () => {
-          void generateAIInsights();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'contracts', filter: `company_id=eq.${user.company_id}` },
-        () => {
-          void generateAIInsights();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [fetchTasks, generateAIInsights, user?.company_id, user?.id]);
-
-  const toggleTask = async (task: TaskWithLead, event: React.MouseEvent) => {
-    event.stopPropagation();
-
-    const previousTasks = tasks;
-    setTasks((prev) => prev.filter((item) => item.id !== task.id));
-
-    try {
-      const { error } = await supabase.from('tasks').update({ completed: true }).eq('id', task.id);
-      if (error) throw error;
-
-      addToast('Tarefa concluída! Parabéns.', 'success');
-      await generateAIInsights();
-    } catch (error) {
-      console.error('Erro ao concluir tarefa:', error);
-      setTasks(previousTasks);
-      addToast('Não foi possível concluir a tarefa.', 'error');
-    }
-  };
-
-  const createQuickTask = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!user?.id || !user.company_id) return;
-
-    setSavingTask(true);
-
-    try {
-      const payload = {
-        title: quickTask.title,
-        due_date: quickTask.due_date,
-        lead_id: quickTask.lead_id || null,
-        type: 'other',
-        completed: false,
-        user_id: user.id,
-        company_id: user.company_id,
-      };
-
-      const { error } = await supabase.from('tasks').insert([payload]);
-      if (error) throw error;
-
-      setQuickTask({ title: '', due_date: '', lead_id: '' });
-      addToast('Tarefa criada com sucesso!', 'success');
-      await fetchTasks();
-    } catch (error) {
-      console.error('Erro ao criar tarefa:', error);
-      addToast('Não foi possível criar a tarefa.', 'error');
-    } finally {
-      setSavingTask(false);
-    }
-  };
-
-  const groupedTasks = useMemo(() => {
-    const groups: Record<'Atrasadas' | 'Hoje' | 'Futuro', TaskWithLead[]> = {
-      Atrasadas: [],
-      Hoje: [],
-      Futuro: [],
-    };
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayKey = today.toDateString();
-
-    tasks.forEach((task) => {
-      const taskDate = parseDueDate(task.due_date);
-      if (!taskDate) {
-        groups.Futuro.push(task);
-        return;
-      }
-
-      if (taskDate.getTime() < today.getTime()) {
-        groups.Atrasadas.push(task);
-        return;
-      }
-
-      if (taskDate.toDateString() === todayKey) {
-        groups.Hoje.push(task);
-        return;
-      }
-
-      groups.Futuro.push(task);
-    });
-
-    return groups;
-  }, [tasks]);
-
-  const auraLines = useMemo(
-    () =>
-      auraBriefing
-        .split('\n')
-        .map((line) => line.replace(/^(?:[-*]|\u2022)\s*/, ''))
-        .map((line) => line.replace(/^[-*•]\s*/, '').trim())
-        .filter(Boolean),
-    [auraBriefing]
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    })
   );
 
+  useEffect(() => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+
+    void fetchTasks();
+    void fetchLeads();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!spotlightedTask) return;
+
+    const timeoutId = setTimeout(() => {
+      setSpotlightedTask((current) =>
+        current?.token === spotlightedTask.token ? null : current
+      );
+    }, 2600);
+
+    return () => clearTimeout(timeoutId);
+  }, [spotlightedTask]);
+
+  const fetchTasks = async () => {
+    if (!user?.id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*, leads(name)')
+        .eq('user_id', user.id)
+        .order('due_date', { ascending: true });
+
+      if (error) throw error;
+      setTasks((data as BoardTask[] | null) || []);
+    } catch (error) {
+      if (isAbortError(error)) return;
+      addToast('Erro ao carregar tarefas.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchLeads = async () => {
+    if (!user?.id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('id, name')
+        .eq('assigned_to', user.id);
+
+      if (error) throw error;
+      if (data) setLeads(data);
+    } catch (error) {
+      if (isAbortError(error)) return;
+    }
+  };
+
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTask.title.trim() || !user?.id) return;
+
+    const parsedDueDate = new Date(newTask.due_date);
+    if (Number.isNaN(parsedDueDate.getTime())) {
+      addToast('Data da tarefa inválida.', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await supabase.from('tasks').insert([
+        {
+          company_id: user.company_id,
+          user_id: user.id,
+          lead_id: newTask.lead_id || null,
+          title: newTask.title.trim(),
+          description: newTask.description.trim() || null,
+          priority: normalizeTaskPriority(newTask.priority),
+          due_date: parsedDueDate.toISOString(),
+          status: 'pendente',
+        },
+      ]);
+
+      if (error) throw error;
+
+      addToast('Tarefa criada!', 'success');
+      setIsModalOpen(false);
+      setNewTask({
+        title: '',
+        description: '',
+        due_date: new Date().toISOString().slice(0, 16),
+        priority: 'media',
+        lead_id: '',
+      });
+      void fetchTasks();
+    } catch (error) {
+      addToast('Erro ao criar.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask || !editingTask.title.trim() || !user?.id) return;
+
+    const parsedDueDate = new Date(editingTask.due_date ?? '');
+    if (Number.isNaN(parsedDueDate.getTime())) {
+      addToast('Data da tarefa inválida.', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({
+          title: editingTask.title.trim(),
+          description: editingTask.description?.trim() || null,
+          priority: normalizeTaskPriority(editingTask.priority),
+          due_date: parsedDueDate.toISOString(),
+          lead_id: editingTask.lead_id || null,
+        })
+        .eq('id', editingTask.id);
+
+      if (error) throw error;
+
+      addToast('Tarefa atualizada com sucesso!', 'success');
+      setEditingTask(null);
+      void fetchTasks();
+    } catch (error) {
+      console.error('Erro ao atualizar tarefa:', error);
+      const message =
+        error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+          ? error.message
+          : 'Erro ao atualizar tarefa.';
+      addToast(message, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCompleteTask = async (taskId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'concluida' ? 'pendente' : 'concluida';
+
+    setTasks((prev) =>
+      prev.map((task) => (task.id === taskId ? { ...task, status: newStatus } : task))
+    );
+
+    const { error } = await supabase.from('tasks').update({ status: newStatus }).eq('id', taskId);
+
+    if (error) {
+      void fetchTasks();
+    }
+  };
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const nextActiveId = event.active.id as string;
+    setActiveId(nextActiveId);
+    setOverColumnId(resolveColumnId(nextActiveId));
+  };
+
+  const { auraRecommendations, columns, agendaTasks } = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const cols: Record<ColumnId, BoardTask[]> = {
+      atrasadas: [],
+      hoje: [],
+      proximas: [],
+      concluida: [],
+    };
+    const auraRecs: BoardTask[] = [];
+    const agenda: BoardTask[] = [];
+
+    const selectedStart = new Date(selectedDate);
+    selectedStart.setHours(0, 0, 0, 0);
+    const selectedEnd = new Date(selectedDate);
+    selectedEnd.setHours(23, 59, 59, 999);
+
+    tasks.forEach((task) => {
+      const status = task.status === 'concluida' || task.completed ? 'concluida' : 'pendente';
+      if (status === 'pendente' && task.title.includes(AURA_MARKER)) auraRecs.push(task);
+
+      const tDate = new Date(task.due_date || new Date());
+      const tDay = new Date(tDate.getFullYear(), tDate.getMonth(), tDate.getDate());
+
+      if (status === 'concluida') cols.concluida.push(task);
+      else if (tDay < today) cols.atrasadas.push(task);
+      else if (tDay.getTime() === today.getTime()) cols.hoje.push(task);
+      else cols.proximas.push(task);
+
+      if (tDate >= selectedStart && tDate <= selectedEnd) {
+        agenda.push(task);
+      }
+    });
+
+    agenda.sort((a, b) => {
+      const aTime = new Date(a.due_date || '').getTime();
+      const bTime = new Date(b.due_date || '').getTime();
+      return aTime - bTime;
+    });
+
+    return {
+      auraRecommendations: auraRecs.slice(0, 3),
+      columns: cols,
+      agendaTasks: agenda,
+    };
+  }, [tasks, selectedDate]);
+
+  const resolveColumnId = (id: string): ColumnId | null => {
+    if (BOARD_COLUMNS.includes(id as ColumnId)) {
+      return id as ColumnId;
+    }
+
+    return BOARD_COLUMNS.find((columnId) => columns[columnId].some((task) => task.id === id)) ?? null;
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveId(null);
+    setOverColumnId(null);
+    const { active, over } = event;
+    if (!over) return;
+
+    const taskId = active.id as string;
+    const targetColumn = resolveColumnId(String(over.id));
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task || !targetColumn) return;
+
+    const now = new Date();
+    let newStatus = task.status;
+    let newDueDate = new Date(task.due_date || now);
+
+    if (targetColumn === 'concluida') {
+      newStatus = 'concluida';
+    } else {
+      newStatus = 'pendente';
+      if (targetColumn === 'hoje') newDueDate = new Date();
+      else if (targetColumn === 'proximas') newDueDate = new Date(now.setDate(now.getDate() + 1));
+      else if (targetColumn === 'atrasadas') newDueDate = new Date(now.setDate(now.getDate() - 1));
+    }
+
+    setTasks((prev) =>
+      prev.map((item) =>
+        item.id === taskId
+          ? { ...item, status: newStatus, due_date: newDueDate.toISOString() }
+          : item
+      )
+    );
+
+    const { error } = await supabase
+      .from('tasks')
+      .update({ status: newStatus, due_date: newDueDate.toISOString() })
+      .eq('id', taskId);
+
+    if (error) {
+      void fetchTasks();
+      addToast('Erro ao mover tarefa.', 'error');
+    }
+  };
+
+  const activeTask = useMemo(() => tasks.find((task) => task.id === activeId), [activeId, tasks]);
+  const activeColumnId = useMemo(
+    () => (activeTask ? resolveColumnId(activeTask.id) : null),
+    [activeTask, columns]
+  );
+  const previewColumnId =
+    activeTask && overColumnId && activeColumnId !== overColumnId ? overColumnId : null;
+
+  const handleDragOver = (event: DragOverEvent) => {
+    if (!event.over) {
+      setOverColumnId(null);
+      return;
+    }
+
+    setOverColumnId(resolveColumnId(String(event.over.id)));
+  };
+
+  const handleDragCancel = () => {
+    setActiveId(null);
+    setOverColumnId(null);
+  };
+
+  const handleAgendaTaskClick = (taskId: string) => {
+    setSpotlightedTask({ id: taskId, token: Date.now() });
+  };
+
+  const calendarDays = useMemo(() => {
+    const firstDayOfMonth = new Date(
+      currentMonth.getFullYear(),
+      currentMonth.getMonth(),
+      1
+    ).getDay();
+
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(
+        currentMonth.getFullYear(),
+        currentMonth.getMonth(),
+        index - firstDayOfMonth + 1
+      );
+
+      const hasTask = tasks.some((task) => {
+        const taskDate = new Date(task.due_date || '');
+        return (
+          taskDate.getDate() === date.getDate() &&
+          taskDate.getMonth() === date.getMonth() &&
+          taskDate.getFullYear() === date.getFullYear()
+        );
+      });
+
+      return {
+        date,
+        isCurrentMonth: date.getMonth() === currentMonth.getMonth(),
+        hasTask,
+      };
+    });
+  }, [currentMonth, tasks]);
+
+  if (loading) return <Loading />;
+
   return (
-    <div className="mx-auto max-w-6xl animate-fade-in space-y-8 pb-12">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+    <div className="flex flex-col h-[calc(100vh-6rem)] animate-fade-in font-sans text-slate-800">
+      <div className="flex items-end justify-between pb-6 border-b border-slate-100/60 mb-6 shrink-0">
         <div>
-          <h1 className="flex items-center gap-3 text-2xl font-black text-slate-800 dark:text-white">
-            <Icons.BrainCircuit className="text-brand-600" /> Insights da Aura 🔮
-          </h1>
-          <p className="mt-1 text-slate-500 dark:text-slate-400">Sua central de inteligência e produtividade diária.</p>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">Tarefas</h1>
+          <p className="text-sm font-medium text-slate-500">
+            {columns.hoje.length} tarefas para hoje • {columns.atrasadas.length} em atraso
+          </p>
         </div>
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center gap-2 bg-slate-900 text-white hover:bg-slate-800 px-4 py-2 rounded-lg font-bold text-sm transition-all shadow-sm"
+          type="button"
+        >
+          <Icons.Plus size={16} /> Nova
+        </button>
       </div>
 
-      <section className="rounded-3xl bg-gradient-to-r from-brand-600 via-emerald-500 to-sky-500 p-1 shadow-xl">
-        <div className="rounded-[22px] bg-white p-6 dark:bg-slate-900">
-          <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-slate-400">
-                <Icons.BrainCircuit size={16} className="text-brand-500" /> Leitura do Campeonato
-              </h2>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                Cruze tarefas, leads e eventos recentes de gamificaÃ§Ã£o para receber um direcionamento tÃ¡tico da IA.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {auraLines.length > 0 && (
-                <div className="rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
-                  {auraLines.length} foco(s) sugerido(s)
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => void generateAuraBriefing()}
-                disabled={generatingAura || loading}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-lg transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+      {auraRecommendations.length > 0 && (
+        <div className="mb-6 flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-indigo-600 font-bold text-sm">
+            <Icons.Sparkles size={16} /> <span>Sugestões da Aura</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {auraRecommendations.map((task) => (
+              <div
+                key={task.id}
+                className="bg-indigo-50/50 border border-indigo-100/80 rounded-xl p-4 flex justify-between items-center group"
               >
-                {generatingAura ? (
-                  <Icons.Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Icons.Sparkles size={16} className="text-brand-400 dark:text-brand-600" />
-                )}
-                {auraBriefing ? 'Atualizar leitura tÃ¡tica' : 'Gerar leitura tÃ¡tica'}
+                <div>
+                  <h4 className="font-bold text-indigo-900 text-sm mb-1">
+                    {cleanTaskTitle(task.title)}
+                  </h4>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-indigo-500 bg-indigo-100 px-2 py-0.5 rounded-md">
+                    Recomendado
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleCompleteTask(task.id, 'pendente')}
+                  className="p-2 text-indigo-400 hover:text-indigo-600 bg-white rounded-lg shadow-sm"
+                  type="button"
+                >
+                  <Icons.Check size={16} strokeWidth={3} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-1 gap-6 overflow-hidden">
+        <div className="flex-1 overflow-x-auto custom-scrollbar pr-2 flex gap-4 h-full">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <KanbanColumn
+              id="atrasadas"
+              title="Atrasadas"
+              icon={<Icons.AlertCircle size={14} className="text-rose-500" />}
+              tasks={columns.atrasadas}
+              onToggle={handleCompleteTask}
+              onEdit={setEditingTask}
+              isDropTarget={previewColumnId === 'atrasadas'}
+              dropPreviewTask={previewColumnId === 'atrasadas' ? activeTask : null}
+              spotlightedTask={spotlightedTask}
+            />
+            <KanbanColumn
+              id="hoje"
+              title="Hoje"
+              icon={<Icons.Clock size={14} className="text-amber-500" />}
+              tasks={columns.hoje}
+              onToggle={handleCompleteTask}
+              onEdit={setEditingTask}
+              isDropTarget={previewColumnId === 'hoje'}
+              dropPreviewTask={previewColumnId === 'hoje' ? activeTask : null}
+              spotlightedTask={spotlightedTask}
+            />
+            <KanbanColumn
+              id="proximas"
+              title="Próximas"
+              icon={<Icons.Calendar size={14} className="text-slate-400" />}
+              tasks={columns.proximas}
+              onToggle={handleCompleteTask}
+              onEdit={setEditingTask}
+              isDropTarget={previewColumnId === 'proximas'}
+              dropPreviewTask={previewColumnId === 'proximas' ? activeTask : null}
+              spotlightedTask={spotlightedTask}
+            />
+            <KanbanColumn
+              id="concluida"
+              title="Concluídas"
+              icon={<Icons.CheckCircle2 size={14} className="text-emerald-500" />}
+              tasks={columns.concluida}
+              onToggle={handleCompleteTask}
+              onEdit={setEditingTask}
+              isCompleted
+              isDropTarget={previewColumnId === 'concluida'}
+              dropPreviewTask={previewColumnId === 'concluida' ? activeTask : null}
+              spotlightedTask={spotlightedTask}
+            />
+
+            <DragOverlay
+              dropAnimation={{
+                sideEffects: defaultDropAnimationSideEffects({
+                  styles: { active: { opacity: '0.4' } },
+                }),
+              }}
+            >
+              {activeTask ? <TaskCard task={activeTask} isOverlay /> : null}
+            </DragOverlay>
+          </DndContext>
+        </div>
+
+        <div className="w-[280px] shrink-0 border-l border-slate-100 pl-6 flex flex-col overflow-y-auto custom-scrollbar pb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-slate-800">
+              {currentMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+            </h3>
+            <div className="flex gap-1">
+              <button
+                onClick={() =>
+                  setCurrentMonth(
+                    (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1)
+                  )
+                }
+                className="p-1 text-slate-400 hover:bg-slate-100 rounded"
+                type="button"
+              >
+                <Icons.ChevronLeft size={16} />
+              </button>
+              <button
+                onClick={() =>
+                  setCurrentMonth(
+                    (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1)
+                  )
+                }
+                className="p-1 text-slate-400 hover:bg-slate-100 rounded"
+                type="button"
+              >
+                <Icons.ChevronRight size={16} />
               </button>
             </div>
           </div>
 
-          {generatingAura ? (
-            <div className="flex items-center justify-center rounded-2xl border border-dashed border-brand-200 bg-brand-50/60 px-4 py-10 text-sm font-medium text-brand-700 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-200">
-              <Icons.Loader2 size={18} className="mr-2 animate-spin" /> Lendo seu momento no campeonato...
-            </div>
-          ) : auraLines.length > 0 ? (
-            <div className="space-y-3">
-              {auraLines.map((line, index) => (
-                <div
-                  key={`${line}-${index}`}
-                  className="flex items-start gap-3 rounded-2xl border border-brand-100 bg-brand-50/50 p-4 dark:border-brand-500/20 dark:bg-brand-500/10"
-                >
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-black text-white">
-                    {index + 1}
-                  </div>
-                  <p className="text-sm leading-6 text-slate-700 dark:text-slate-200">{line}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center dark:border-slate-700">
-              <Icons.Sparkles size={22} className="mx-auto mb-3 text-slate-300" />
-              <p className="font-bold text-slate-600 dark:text-slate-200">Nenhuma leitura tÃ¡tica gerada ainda.</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Clique em "Gerar leitura tÃ¡tica" para cruzar sua liga atual, pontuaÃ§Ã£o recente e agenda.
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
+          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-400 mb-2">
+            {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((day, index) => (
+              <div key={index}>{day}</div>
+            ))}
+          </div>
 
-      {insights.length > 0 && (
-        <section className="rounded-3xl bg-gradient-to-r from-slate-900 to-slate-800 p-1 shadow-xl">
-          <div className="rounded-[22px] bg-white p-6 dark:bg-slate-900">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-slate-400">
-              <Icons.Sparkles size={16} className="text-brand-500" /> Ações Recomendadas
-            </h2>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {insights.map((insight) => (
-                <div
-                  key={insight.id}
-                  className={`rounded-2xl border p-5 ${
-                    insight.type === 'danger'
-                      ? 'border-red-100 bg-red-50/50 dark:border-red-500/20 dark:bg-red-500/10'
-                      : insight.type === 'warning'
-                        ? 'border-amber-100 bg-amber-50/50 dark:border-amber-500/20 dark:bg-amber-500/10'
-                        : 'border-blue-100 bg-blue-50/50 dark:border-blue-500/20 dark:bg-blue-500/10'
-                  }`}
+          <div className="grid grid-cols-7 gap-1 mb-6">
+            {calendarDays.map((day, index) => {
+              const isSelected = day.date.toDateString() === selectedDate.toDateString();
+              const isToday = day.date.toDateString() === new Date().toDateString();
+
+              return (
+                <button
+                  key={index}
+                  onClick={() => {
+                    setSelectedDate(day.date);
+                    if (!day.isCurrentMonth) {
+                      setCurrentMonth(new Date(day.date.getFullYear(), day.date.getMonth(), 1));
+                    }
+                  }}
+                  className={`aspect-square flex flex-col items-center justify-center rounded-lg text-xs font-medium transition-all relative
+                    ${!day.isCurrentMonth ? 'text-slate-300' : 'text-slate-700 hover:bg-slate-100'}
+                    ${isSelected ? 'bg-slate-900 text-white hover:bg-slate-800' : ''}
+                    ${isToday && !isSelected ? 'text-brand-600 font-black' : ''}
+                  `}
+                  type="button"
                 >
-                  <div className="mb-2 flex items-center gap-3">
-                    <div className="rounded-xl bg-white p-2 shadow-sm dark:bg-slate-800">{insight.icon}</div>
-                    <h3 className="font-bold text-slate-800 dark:text-white">{insight.title}</h3>
-                  </div>
-                  <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">{insight.description}</p>
+                  {day.date.getDate()}
+                  {day.hasTask && (
+                    <span
+                      className={`absolute bottom-1 w-1 h-1 rounded-full ${
+                        isSelected ? 'bg-white' : 'bg-brand-500'
+                      }`}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div>
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+              Agenda do Dia
+            </h4>
+            <div className="space-y-3">
+              {agendaTasks.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">Dia livre de tarefas.</p>
+              ) : (
+                agendaTasks.map((task) => (
                   <button
-                    onClick={insight.onClick}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wide shadow-sm transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
+                    key={task.id}
+                    onClick={() => handleAgendaTaskClick(task.id)}
+                    className="w-full flex gap-3 items-start group rounded-xl p-2 -m-2 text-left transition-colors hover:bg-slate-50"
+                    type="button"
                   >
-                    {insight.actionText} <Icons.ArrowRight size={14} />
+                    <div className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1.5 shrink-0 group-hover:bg-brand-500 transition-colors" />
+                    <div>
+                      <p className="text-sm font-bold text-slate-700 leading-tight mb-0.5">
+                        {cleanTaskTitle(task.title)}
+                      </p>
+                      <p className="text-xs font-medium text-slate-400 flex items-center gap-1">
+                        <Icons.Clock size={10} />
+                        {new Date(task.due_date || '').toLocaleTimeString('pt-BR', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        {task.leads?.name && (
+                          <span className="truncate ml-1">· {task.leads.name}</span>
+                        )}
+                      </p>
+                    </div>
                   </button>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
-        </section>
-      )}
-
-      <form
-        onSubmit={createQuickTask}
-        className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:flex-row"
-      >
-        <div className="relative flex-1">
-          <Icons.CheckSquare size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={quickTask.title}
-            onChange={(event) => setQuickTask({ ...quickTask, title: event.target.value })}
-            className="w-full rounded-xl border-none bg-transparent py-3 pl-11 pr-4 font-medium text-slate-800 focus:ring-2 focus:ring-brand-500 dark:text-white"
-            placeholder="O que você precisa fazer?"
-            required
-          />
         </div>
-        <div className="relative w-full border-t border-slate-100 dark:border-slate-800 md:w-48 md:border-l md:border-t-0">
-          <Icons.Calendar size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="date"
-            value={quickTask.due_date}
-            onChange={(event) => setQuickTask({ ...quickTask, due_date: event.target.value })}
-            className="w-full cursor-pointer rounded-xl border-none bg-transparent py-3 pl-11 pr-4 text-sm text-slate-600 focus:ring-0 dark:text-slate-300"
-            required
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={savingTask}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-6 py-3 font-bold text-white shadow-sm transition-colors hover:bg-brand-700 disabled:opacity-60 md:w-auto"
-        >
-          {savingTask ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.Plus size={18} />} Adicionar
-        </button>
-      </form>
+      </div>
 
-      {loading && tasks.length === 0 ? (
-        <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white py-16 text-slate-400 dark:border-slate-800 dark:bg-slate-900">
-          <Icons.Loader2 size={22} className="mr-2 animate-spin text-brand-500" /> Analisando seu CRM...
-        </div>
-      ) : (
-        <div id="tasks-board" className="grid grid-cols-1 gap-6 pt-4 md:grid-cols-3">
-          {(['Atrasadas', 'Hoje', 'Futuro'] as const).map((group) => (
-            <div key={group} className="flex flex-col gap-3">
-              <div className="flex items-center justify-between border-b-2 border-slate-100 pb-2 dark:border-slate-800">
-                <h2
-                  className={`text-sm font-black uppercase tracking-wider ${
-                    group === 'Atrasadas' ? 'text-red-500' : group === 'Hoje' ? 'text-brand-600' : 'text-slate-400'
-                  }`}
-                >
-                  {group}
-                </h2>
-                <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                  {groupedTasks[group].length}
-                </span>
-              </div>
-
-              <div className="mt-2 space-y-3">
-                {groupedTasks[group].map((task) => (
-                  <div
-                    key={task.id}
-                    className="group relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-brand-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-slate-900/20 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg overflow-hidden rounded-xl border border-slate-200/60 bg-white shadow-2xl">
+            <div className="flex justify-between p-4 pb-0">
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Nova Tarefa</span>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100"
+                type="button"
+              >
+                <Icons.X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateTask} className="space-y-4 p-5">
+              <input
+                autoFocus
+                placeholder="Título da tarefa..."
+                value={newTask.title}
+                onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                className="w-full border-0 bg-transparent px-0 text-2xl font-black text-slate-800 placeholder-slate-300 transition-colors focus:ring-0"
+                required
+              />
+              <textarea
+                placeholder="Adicione uma descrição..."
+                value={newTask.description}
+                onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                className="w-full resize-none border-0 bg-transparent px-0 text-sm text-slate-600 placeholder-slate-400 focus:ring-0"
+                rows={2}
+              />
+              <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Data/Hora
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={newTask.due_date}
+                    onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm text-slate-700 focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Prioridade
+                  </label>
+                  <select
+                    value={newTask.priority}
+                    onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm text-slate-700 focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
                   >
-                    <div className="absolute left-0 top-0 h-full w-1 bg-slate-200 transition-colors group-hover:bg-brand-400 dark:bg-slate-700" />
+                    <option value="baixa">Baixa</option>
+                    <option value="media">Média</option>
+                    <option value="alta">Alta</option>
+                    <option value="critica">Crítica</option>
+                  </select>
+                </div>
+              </div>
+              <div className="pt-2">
+                <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Lead Associado
+                </label>
+                <select
+                  value={newTask.lead_id}
+                  onChange={(e) => setNewTask({ ...newTask, lead_id: e.target.value })}
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm text-slate-700 focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                >
+                  <option value="">Nenhum lead</option>
+                  {leads.map((lead) => (
+                    <option key={lead.id} value={lead.id}>
+                      {lead.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex justify-end pt-4">
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !newTask.title.trim()}
+                  className="rounded-lg bg-slate-900 px-6 py-2 text-sm font-bold text-white transition-all hover:bg-slate-800 active:scale-95 disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {editingTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200/60">
+            <div className="flex justify-between p-4 pb-0">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <Icons.Edit3 size={14} /> Editar Tarefa
+              </span>
+              <button
+                onClick={() => setEditingTask(null)}
+                className="text-slate-400 hover:bg-slate-100 p-1 rounded-md transition-colors"
+                type="button"
+              >
+                <Icons.X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateTask} className="p-5 space-y-4">
+              <input
+                autoFocus
+                placeholder="Título da tarefa..."
+                value={cleanTaskTitle(editingTask.title)}
+                onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                className="w-full text-2xl font-black text-slate-800 placeholder-slate-300 border-0 focus:ring-0 px-0 transition-colors bg-transparent"
+                required
+              />
+              <textarea
+                placeholder="Adicione uma descrição..."
+                value={editingTask.description || ''}
+                onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
+                className="w-full text-sm text-slate-600 placeholder-slate-400 border-0 focus:ring-0 px-0 resize-none bg-transparent"
+                rows={3}
+              />
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Data/Hora
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={editingTask.due_date ? editingTask.due_date.slice(0, 16) : ''}
+                    onChange={(e) => setEditingTask({ ...editingTask, due_date: e.target.value })}
+                    className="w-full text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Prioridade
+                  </label>
+                  <select
+                    value={editingTask.priority || 'media'}
+                    onChange={(e) => setEditingTask({ ...editingTask, priority: e.target.value })}
+                    className="w-full text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                  >
+                    <option value="baixa">Baixa</option>
+                    <option value="media">Média</option>
+                    <option value="alta">Alta</option>
+                    <option value="critica">Crítica</option>
+                  </select>
+                </div>
+              </div>
+              <div className="pt-2">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Lead Associado
+                </label>
+                <select
+                  value={editingTask.lead_id || ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, lead_id: e.target.value })}
+                  className="w-full text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                >
+                  <option value="">Nenhum lead</option>
+                  {leads.map((lead) => (
+                    <option key={lead.id} value={lead.id}>
+                      {lead.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="pt-4 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !editingTask.title.trim()}
+                  className="bg-brand-500 hover:bg-brand-600 text-white font-bold py-2 px-6 rounded-lg text-sm transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Atualizando...' : 'Atualizar Tarefa'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-                    <div className="flex items-start gap-3 pl-2">
-                      <button
-                        onClick={(event) => void toggleTask(task, event)}
-                        className="mt-1 shrink-0 text-slate-300 transition-colors hover:text-green-500"
-                        aria-label={`Concluir tarefa ${task.title}`}
-                      >
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-current">
-                          <Icons.Check size={12} className="opacity-0 transition-opacity group-hover:opacity-100" />
-                        </div>
-                      </button>
+function KanbanColumn({
+  id,
+  title,
+  icon,
+  tasks,
+  onToggle,
+  onEdit,
+  isCompleted,
+  isDropTarget,
+  dropPreviewTask,
+  spotlightedTask,
+}: {
+  id: ColumnId;
+  title: string;
+  icon: React.ReactNode;
+  tasks: BoardTask[];
+  onToggle: (id: string, s: string) => void;
+  onEdit: (t: BoardTask) => void;
+  isCompleted?: boolean;
+  isDropTarget?: boolean;
+  dropPreviewTask?: BoardTask | null;
+  spotlightedTask?: { id: string; token: number } | null;
+}) {
+  const { setNodeRef } = useDroppable({ id });
 
-                      <div
-                        className="flex-1"
-                        onClick={() => task.lead_id && navigate(`/admin/leads?open=${task.lead_id}&tab=activity`)}
-                      >
-                        <p className="mb-1 leading-tight text-slate-800 dark:text-white">
-                          <span className="font-bold">{task.title}</span>
-                        </p>
-                        <p className="text-xs text-slate-400 dark:text-slate-500">
-                          {parseDueDate(task.due_date)?.toLocaleDateString('pt-BR') || 'Sem data definida'}
-                        </p>
-                        {task.leads?.name && (
-                          <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-                            <Icons.User size={12} /> {task.leads.name}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {groupedTasks[group].length === 0 && (
-                  <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 p-8 text-center dark:border-slate-800">
-                    <Icons.Sparkles size={24} className="mb-2 text-slate-300" />
-                    <p className="text-sm font-bold text-slate-400">Tudo limpo por aqui</p>
-                  </div>
-                )}
+  return (
+    <div
+      className={`flex flex-col min-w-[270px] max-w-[270px] shrink-0 rounded-xl p-2 h-full transition-all duration-200 ${
+        isDropTarget
+          ? 'bg-brand-50/80 ring-1 ring-brand-200 shadow-inner'
+          : 'bg-slate-50/50'
+      }`}
+    >
+      <div className="flex items-center gap-2 mb-3 px-2 py-1">
+        {icon}
+        <h3 className="text-sm font-bold text-slate-700 flex-1">{title}</h3>
+        <span className="text-xs font-semibold text-slate-400 bg-slate-200/60 px-2 py-0.5 rounded-full">
+          {tasks.length}
+        </span>
+      </div>
+      <div ref={setNodeRef} className="flex flex-col gap-2 flex-1 overflow-y-auto custom-scrollbar p-1">
+        <SortableContext items={tasks.map((task) => task.id)} strategy={verticalListSortingStrategy}>
+          {tasks.map((task) => (
+            <SortableTaskItem
+              key={task.id}
+              task={task}
+              onToggle={onToggle}
+              onEdit={onEdit}
+              isCompleted={isCompleted}
+              spotlightedTask={spotlightedTask}
+            />
+          ))}
+        </SortableContext>
+        {dropPreviewTask && (
+          <div className="rounded-xl border border-dashed border-brand-300 bg-white/90 p-3 shadow-sm animate-fade-in">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-brand-300 bg-brand-50 text-brand-500">
+                <Icons.Check size={11} strokeWidth={4} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="mb-1 text-[9px] font-black uppercase tracking-[0.18em] text-brand-500">
+                  Soltar em {title}
+                </p>
+                <h4 className="text-sm font-bold leading-snug text-slate-700">
+                  {cleanTaskTitle(dropPreviewTask.title)}
+                </h4>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SortableTaskItem({
+  task,
+  onToggle,
+  onEdit,
+  isCompleted,
+  spotlightedTask,
+}: {
+  task: BoardTask;
+  onToggle: (id: string, s: string) => void;
+  onEdit: (t: BoardTask) => void;
+  isCompleted?: boolean;
+  spotlightedTask?: { id: string; token: number } | null;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: task.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <TaskCard
+        task={task}
+        onToggle={onToggle}
+        onEdit={onEdit}
+        isCompleted={isCompleted}
+        isSpotlighted={spotlightedTask?.id === task.id}
+        spotlightToken={spotlightedTask?.id === task.id ? spotlightedTask.token : 0}
+      />
+    </div>
+  );
+}
+
+function TaskCard({
+  task,
+  onToggle,
+  onEdit,
+  isCompleted,
+  isOverlay,
+  isSpotlighted,
+  spotlightToken,
+}: {
+  task: BoardTask;
+  onToggle?: (id: string, s: string) => void;
+  onEdit?: (t: BoardTask) => void;
+  isCompleted?: boolean;
+  isOverlay?: boolean;
+  isSpotlighted?: boolean;
+  spotlightToken?: number;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const cleanTitle = cleanTaskTitle(task.title);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isOverlay || !spotlightToken) return;
+
+    setIsExpanded(true);
+    cardRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'center',
+    });
+  }, [isOverlay, spotlightToken]);
+
+  const handleClick = () => {
+    if (isOverlay) return;
+
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+      onEdit?.(task);
+      return;
+    }
+
+    clickTimeoutRef.current = setTimeout(() => {
+      setIsExpanded((prev) => !prev);
+      clickTimeoutRef.current = null;
+    }, 220);
+  };
+
+  return (
+    <div
+      ref={cardRef}
+      onClick={handleClick}
+      className={`bg-white border border-slate-200 rounded-xl p-3 flex items-start gap-3 transition-all duration-200 overflow-hidden ${
+        isOverlay
+          ? 'shadow-2xl scale-105 rotate-2 cursor-grabbing'
+          : isSpotlighted
+            ? 'shadow-lg ring-2 ring-brand-300 border-brand-300 cursor-pointer'
+            : 'shadow-sm hover:shadow-md cursor-pointer hover:border-brand-200'
+      }`}
+    >
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle?.(task.id, task.status || 'pendente');
+        }}
+        className={`mt-0.5 shrink-0 w-4 h-4 rounded flex items-center justify-center transition-colors border ${
+          isCompleted
+            ? 'bg-brand-500 border-brand-500 text-white'
+            : 'border-slate-300 hover:border-brand-500 text-transparent hover:text-brand-500'
+        }`}
+        type="button"
+      >
+        <Icons.Check size={12} strokeWidth={4} />
+      </button>
+      <div className="flex-1 min-w-0 select-none">
+        <h4
+          className={`text-sm font-bold text-slate-800 leading-snug transition-all ${
+            isCompleted ? 'line-through text-slate-400' : ''
+          } ${isExpanded ? 'mb-2' : ''}`}
+        >
+          {cleanTitle}
+        </h4>
+        {isExpanded && (
+          <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-slate-50 animate-fade-in">
+            {task.leads?.name && (
+              <Link
+                to={`/admin/leads?open=${task.lead_id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-50 hover:bg-brand-50 hover:text-brand-600 hover:shadow-sm px-2 py-1 rounded-md w-fit transition-all pointer-events-auto"
+              >
+                <Icons.User size={12} /> {task.leads.name}
+              </Link>
+            )}
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-1 text-[10px] font-medium text-slate-400">
+                <Icons.Clock size={10} />
+                {new Date(task.due_date || '').toLocaleString('pt-BR', {
+                  day: '2-digit',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+              <span className="bg-slate-100 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider text-slate-400">
+                {formatTaskPriority(task.priority)}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

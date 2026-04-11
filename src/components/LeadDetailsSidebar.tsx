@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { findSmartMatches, mapPropertyToCandidate, SmartMatchResult } from '../services/ai';
 import { calculateDealPoints } from '../services/gamification';
+import { parseTimelineNote, executeConfirmedAction } from '../services/actionEngine';
 import { Kbd } from './ui/kbd';
 import { Textarea } from './ui/textarea';
 
@@ -216,6 +217,18 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
   const leadFirstName = useMemo(() => (lead.name || '').trim().split(' ')[0] || 'Cliente', [lead.name]);
   const leadPhoneClean = useMemo(() => (lead.phone || '').replace(/\D/g, ''), [lead.phone]);
 
+  const refreshTimelineEvents = async () => {
+    const { data } = await supabase
+      .from('timeline_events')
+      .select('*, profiles!timeline_events_created_by_fkey(name, avatar_url)')
+      .eq('lead_id', lead.id)
+      .order('created_at', { ascending: false });
+
+    if (data) {
+      setEvents(data as any);
+    }
+  };
+
   const addTimelineLog = async (type: TimelineEvent['type'], description: string) => {
     const { error } = await supabase.from('timeline_events').insert([{ 
       lead_id: lead.id, 
@@ -225,15 +238,40 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
       created_by: user?.id
     }]);
 
-    if (error) console.error("Erro na timeline:", error);
+    if (error) {
+      console.error("Erro na timeline:", error);
+      return false;
+    }
 
-    const { data } = await supabase
-      .from('timeline_events')
-      .select('*, profiles!timeline_events_created_by_fkey(name, avatar_url)')
-      .eq('lead_id', lead.id)
-      .order('created_at', { ascending: false });
+    await refreshTimelineEvents();
 
-    if (data) setEvents(data as any);
+    // AURA ENGINE: Analisa a nota inserida
+    if (type === 'note') {
+      const analysis = parseTimelineNote(description);
+      if (analysis.intent && analysis.question && (user as any)?.company_id && user?.id) {
+        addToast(analysis.question, 'action_required', {
+          title: '🔮 Aura pergunta:',
+          onConfirm: async () => {
+            await executeConfirmedAction(
+              lead.id,
+              (user as any).company_id,
+              user.id,
+              analysis.intent,
+              analysis.suggestedStatus
+            );
+
+            if (analysis.suggestedStatus) {
+              onLeadUpdate?.(lead.id, { status: analysis.suggestedStatus });
+            }
+
+            await refreshTimelineEvents();
+            window.dispatchEvent(new Event('refresh_leads'));
+          },
+        });
+      }
+    }
+
+    return true;
   };
 
   useEffect(() => {
@@ -397,20 +435,12 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     const trimmedNote = newNote.trim();
     if (!trimmedNote) return;
 
-    const { data, error } = await supabase.from('timeline_events').insert([{ 
-      type: 'note', 
-      description: trimmedNote,
-      lead_id: lead.id,
-      company_id: (user as any)?.company_id,
-      created_by: user?.id
-    }]).select('*, profiles!timeline_events_created_by_fkey(name, avatar_url)').single();
-    if (error) {
-      console.error("Erro ao salvar nota:", error);
+    const saved = await addTimelineLog('note', trimmedNote);
+    if (!saved) {
       addToast("Erro ao salvar nota", "error");
       return;
     }
-    if (data) {
-      setEvents((prev) => [data as any, ...prev]);
+    if (saved) {
       setNewNote('');
 
       // Atualiza o relógio de "Atualizado" do lead
