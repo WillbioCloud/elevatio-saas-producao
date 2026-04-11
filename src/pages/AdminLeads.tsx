@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useLeads } from '../hooks/useLeads';
 import { TOOLTIPS } from '../constants/tooltips';
+import { getHoursSinceLeadInteraction, LEAD_FREEZING_THRESHOLD_HOURS, LEAD_HOT_THRESHOLD_HOURS } from '../constants/leadHealth';
 import Loading from '../components/Loading';
 import { addGamificationEvent, ACTIONS, calculateDealPoints } from '../services/gamification';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -34,6 +35,7 @@ import {
   defaultDropAnimationSideEffects,
   DropAnimation
 } from '@dnd-kit/core';
+import { Thermometer } from 'lucide-react';
 
 // Configuração da animação suave ao soltar
 const dropAnimation: DropAnimation = {
@@ -67,6 +69,53 @@ const formatTimeInStage = (dateString?: string) => {
 };
 
 const getLeadFunnel = (lead: Pick<Lead, 'funnel_step'>) => lead.funnel_step || 'atendimento';
+
+// Helper: Calcula a "Saude do Lead" baseado na ultima interacao
+const getLeadHealth = (lastInteraction?: string | null) => {
+  if (!lastInteraction) {
+    return {
+      percent: 0,
+      color: 'bg-slate-300',
+      text: 'Sem contato',
+      textColor: 'text-slate-500'
+    };
+  }
+
+  const hoursSince = getHoursSinceLeadInteraction(lastInteraction);
+  if (hoursSince === null) {
+    return {
+      percent: 0,
+      color: 'bg-slate-300',
+      text: 'Sem contato',
+      textColor: 'text-slate-500'
+    };
+  }
+
+  if (hoursSince <= LEAD_HOT_THRESHOLD_HOURS) {
+    return {
+      percent: 100,
+      color: 'bg-emerald-500',
+      text: 'Quente 🔥',
+      textColor: 'text-emerald-600'
+    };
+  }
+
+  if (hoursSince <= LEAD_FREEZING_THRESHOLD_HOURS) {
+    return {
+      percent: 50,
+      color: 'bg-amber-500',
+      text: 'Morno ⚠️',
+      textColor: 'text-amber-600'
+    };
+  }
+
+  return {
+    percent: 15,
+    color: 'bg-rose-500',
+    text: 'Congelando ❄️',
+    textColor: 'text-rose-600'
+  };
+};
 
 const InfoTooltip = ({ text }: { text: string }) => (
   <div className="relative group inline-flex items-center hover:z-[999] ml-2">
@@ -147,6 +196,7 @@ const LeadCard = ({
   const score = (lead as any).score ?? 0;
   const metadata = (lead as any).metadata;
   const visitedProps = (lead as any).navigation_data || metadata?.visited_properties || [];
+  const health = getLeadHealth(lead.last_interaction);
 
   return (
     <div
@@ -214,16 +264,15 @@ const LeadCard = ({
             <span>Atualizado: {formatTimeInStage(lead.last_interaction || (lead as any).created_at || lead.createdAt)} atrás</span>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          {/* TERMOMETRO DE SAUDE (SLA) */}
+          <div className="flex items-center gap-1.5 shrink-0" title={`Saúde do Lead: ${health.text}`}>
+            <Thermometer size={12} className={health.textColor} />
             <div className="h-1.5 w-16 bg-slate-100 rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full ${
-                  score > 60 ? 'bg-emerald-500' : score > 30 ? 'bg-amber-400' : 'bg-slate-300'
-                }`}
-                style={{ width: `${score}%` }}
+                className={`h-full rounded-full transition-all duration-1000 ${health.color}`}
+                style={{ width: `${health.percent}%` }}
               />
             </div>
-            <span className="text-[10px] font-bold text-slate-600">{score}</span>
           </div>
         </div>
       </div>
@@ -908,7 +957,7 @@ const AdminLeads: React.FC = () => {
       // 2. Grava na Timeline (Texto Limpo e Direto)
       // Como a foto de quem enviou e quem recebeu já aparece na UI, o texto deve ser conciso.
       const timelineDesc = transferForm.note.trim()
-        ? `Transferido para ${targetBrokerName}.\nEtapa: ${getFunnelLabel(previousFunnel)} -> ${getFunnelLabel(transferModal.newFunnel)}\nStatus: ${previousStatus} -> ${transferModal.newStatus}\n${transferForm.note}`
+        ? `${transferForm.note}\n\nTransferido para ${targetBrokerName}.\nEtapa: ${getFunnelLabel(previousFunnel)} -> ${getFunnelLabel(transferModal.newFunnel)}\nStatus: ${previousStatus} -> ${transferModal.newStatus}`
         : `Transferido para ${targetBrokerName}.\nEtapa: ${getFunnelLabel(previousFunnel)} -> ${getFunnelLabel(transferModal.newFunnel)}\nStatus: ${previousStatus} -> ${transferModal.newStatus}`;
 
       await supabase.from('timeline_events').insert([{

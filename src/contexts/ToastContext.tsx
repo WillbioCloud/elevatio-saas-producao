@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useMemo } from 'react';
 import { toast } from 'sonner';
-import { Toaster } from '../../components/ui/sonner'; // Ajuste o caminho se necessário para encontrar o componente do Shadcn
+import { Toaster } from '../../components/ui/sonner';
 
 type ToastType = 'success' | 'error' | 'info' | 'new_lead' | 'action_required';
 
@@ -19,21 +19,21 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const addToast = useCallback((message: string, type: ToastType, opts?: ToastOptions) => {
-    // Layout Interativo para a Aura (Botões UI 100% Customizados)
+    // Interactive layout for Aura actions.
     if (type === 'action_required') {
       toast.custom((t) => (
-        <div className="flex w-[340px] flex-col gap-3 rounded-2xl bg-slate-900 p-5 shadow-2xl border border-slate-700 text-white pointer-events-auto animate-fade-in">
+        <div className="flex w-[340px] flex-col gap-3 rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl pointer-events-auto animate-fade-in">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500/20 text-brand-400 text-lg">🔮</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500/20 text-lg text-brand-400">🔮</span>
             <span className="text-[15px] font-bold text-slate-100">{opts?.title || 'Confirmação Rápida'}</span>
           </div>
 
-          <p className="text-[14px] text-slate-300 font-medium leading-relaxed">{message}</p>
+          <p className="text-[14px] font-medium leading-relaxed text-slate-300">{message}</p>
 
           <div className="mt-3 flex gap-3">
             <button
               onClick={async () => {
-                toast.dismiss(t); // Fecha o balão imediatamente
+                toast.dismiss(t);
                 try {
                   if (opts?.onConfirm) {
                     await opts.onConfirm();
@@ -50,12 +50,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             </button>
             <button
               onClick={() => {
-                toast.dismiss(t); // Fecha o balão se disser "Não"
+                toast.dismiss(t);
                 if (opts?.onCancel) {
                   void opts.onCancel();
                 }
               }}
-              className="flex-1 rounded-xl bg-slate-800 py-2.5 text-sm font-bold text-slate-300 border border-slate-700 transition-all hover:bg-slate-700 active:scale-95"
+              className="flex-1 rounded-xl border border-slate-700 bg-slate-800 py-2.5 text-sm font-bold text-slate-300 transition-all hover:bg-slate-700 active:scale-95"
             >
               Não
             </button>
@@ -65,26 +65,31 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
-    // Layout Exclusivo para Novo Lead (Balão Branco Infalível com Avatar)
+    // Exclusive layout for new leads with an isolated avatar column.
     if (type === 'new_lead') {
-      toast(opts?.title || 'Lead Novo!', {
-        description: message,
-        duration: 6000,
-        className: '!bg-white !border-slate-200 !shadow-[0_10px_40px_rgb(0,0,0,0.12)] !rounded-2xl !p-3 !flex !items-start !gap-4',
-        icon: opts?.avatar ? (
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-50 border border-slate-200 shadow-sm">
-            <img src={opts.avatar} alt="Avatar" className="h-full w-full object-cover" />
+      toast.custom((t) => (
+        <div
+          onClick={() => toast.dismiss(t)}
+          className="flex w-[340px] cursor-pointer items-start gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_10px_40px_rgb(0,0,0,0.12)] pointer-events-auto animate-fade-in"
+        >
+          {opts?.avatar ? (
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-50">
+              <img src={opts.avatar} alt="Avatar" className="h-full w-full object-cover" />
+            </div>
+          ) : (
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-lg">
+              🎯
+            </div>
+          )}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="text-[14px] font-bold text-slate-800">{opts?.title || 'Lead Novo!'}</span>
+            <p className="mt-0.5 line-clamp-3 text-[13px] leading-relaxed text-slate-500">{message}</p>
           </div>
-        ) : (
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-50 border border-slate-200">
-            <span className="text-xl">🎯</span>
-          </div>
-        ),
-      });
+        </div>
+      ), { duration: 6000, position: 'top-center' });
       return;
     }
 
-    // Mapeia o tipo legado da aplicação para os métodos do Sonner
     if (type === 'success') {
       toast.success(message);
     } else if (type === 'error') {
@@ -99,7 +104,6 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {/* O Toaster do Shadcn substitui toda a lógica manual antiga de renderização e timers */}
       <Toaster position="top-center" richColors theme="light" className="font-sans" />
     </ToastContext.Provider>
   );

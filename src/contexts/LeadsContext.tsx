@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 import { Lead, LeadStatus } from '../types';
 import { suggestLeadNextSteps } from '../services/ai';
 import { addGamificationEvent, ACTIONS, calculateDealPoints } from '../services/gamification';
+import { getHoursSinceLeadInteraction, LEAD_FREEZING_THRESHOLD_HOURS } from '../constants/leadHealth';
 
 const isAbortError = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') return false;
@@ -65,8 +66,73 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         throw error;
       }
 
-      if (data) {
-        setLeads(data as Lead[]);
+      const loadedLeads = (data || []) as Lead[];
+      setLeads(loadedLeads);
+
+      // ❄️ RADAR DE ESFRIAMENTO (Aura Proativa)
+      // Faz uma varredura para encontrar leads "Congelando" (> 72h) e criar alertas
+      if (loadedLeads.length > 0 && user?.id && user.company_id) {
+        try {
+          const freezingLeads = loadedLeads.filter((lead) => {
+            const hoursSince = getHoursSinceLeadInteraction(lead.last_interaction);
+            if (hoursSince === null) return false;
+
+            return (
+              hoursSince > LEAD_FREEZING_THRESHOLD_HOURS &&
+              lead.status !== 'Arquivado' &&
+              lead.status !== 'Venda Concluída'
+            );
+          });
+
+          if (freezingLeads.length > 0) {
+            const freezingLeadIds = freezingLeads.map((lead) => lead.id);
+            const { data: existingTasks, error: existingTasksError } = await supabase
+              .from('tasks')
+              .select('lead_id')
+              .in('lead_id', freezingLeadIds)
+              .eq('status', 'pendente')
+              .ilike('title', '%🤖 Aura: Retomar contato%');
+
+            if (existingTasksError) {
+              throw existingTasksError;
+            }
+
+            const leadsWithPendingAuraTask = new Set(
+              (existingTasks || [])
+                .map((task) => task.lead_id)
+                .filter((leadId): leadId is string => typeof leadId === 'string' && leadId.length > 0)
+            );
+
+            const tasksToInsert = freezingLeads
+              .filter((lead) => !leadsWithPendingAuraTask.has(lead.id))
+              .map((lead) => ({
+                company_id: user.company_id,
+                user_id: lead.assigned_to || user.id,
+                lead_id: lead.id,
+                title: '🤖 Aura: Retomar contato urgente (Lead Esfriando)',
+                description:
+                  'Este lead está há mais de 3 dias sem interação. Risco alto de perda de interesse. Tente um contato rápido agora.',
+                priority: 'alta',
+                due_date: new Date().toISOString(),
+                status: 'pendente'
+              }));
+
+            if (tasksToInsert.length > 0) {
+              const { error: insertTasksError } = await supabase.from('tasks').insert(tasksToInsert);
+
+              if (insertTasksError) {
+                throw insertTasksError;
+              }
+
+              tasksToInsert.forEach((task) => {
+                const lead = freezingLeads.find((item) => item.id === task.lead_id);
+                console.log(`Aura: Gerada tarefa de emergência para o lead ${lead?.name || task.lead_id}`);
+              });
+            }
+          }
+        } catch (freezingRadarError) {
+          console.error('Erro no Radar de Esfriamento:', freezingRadarError);
+        }
       }
     } catch (error) {
       if (!isAbortError(error)) {
@@ -77,7 +143,7 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (shouldShowInitialLoading) {
       setLoading(false);
     }
-  }, [isAdmin, leads.length, user?.id]);
+  }, [isAdmin, leads.length, user?.company_id, user?.id]);
 
   const updateLeadStatus = useCallback(async (leadId: string, status: LeadStatus) => {
     let previousLead: Lead | undefined;
@@ -153,7 +219,7 @@ export const LeadsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           const { error: auraTaskError } = await supabase.from('tasks').insert([{
             company_id: user.company_id,
-            user_id: user.id,
+            user_id: previousLead.assigned_to || user.id,
             lead_id: leadId,
             title: taskTitle,
             description: taskDesc,

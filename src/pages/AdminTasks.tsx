@@ -33,6 +33,7 @@ type BoardTask = Task & {
   status?: TaskStatus | string | null;
   priority?: string | null;
   leads?: { name?: string | null } | null;
+  profiles?: { name?: string | null; avatar_url?: string | null } | null;
   completed?: boolean | null;
 };
 
@@ -67,12 +68,18 @@ const formatTaskPriority = (priority?: string | null) => {
   return 'Normal';
 };
 
+const isTaskOwner = (
+  task: Pick<BoardTask, 'user_id'> | null | undefined,
+  currentUserId?: string
+) => Boolean(task?.user_id && currentUserId && task.user_id === currentUserId);
+
 export default function AdminTasks() {
   const { user } = useAuth();
   const { addToast } = useToast();
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [leads, setLeads] = useState<Partial<Lead>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'minhas' | 'equipe'>('minhas');
 
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -105,7 +112,7 @@ export default function AdminTasks() {
 
     void fetchTasks();
     void fetchLeads();
-  }, [user?.id]);
+  }, [user?.id, activeTab]);
 
   useEffect(() => {
     if (!spotlightedTask) return;
@@ -121,13 +128,26 @@ export default function AdminTasks() {
 
   const fetchTasks = async () => {
     if (!user?.id) return;
+    setLoading(true);
 
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('tasks')
-        .select('*, leads(name)')
-        .eq('user_id', user.id)
+        .select('*, leads(name), profiles:user_id(name, avatar_url)')
         .order('due_date', { ascending: true });
+
+      if (activeTab === 'minhas') {
+        // Aba Minhas: Traz rigorosamente apenas as do corretor logado
+        query = query.eq('user_id', user.id);
+      } else if (user.company_id) {
+        // Aba Equipe: Traz todas da imobiliária (se o user tiver company_id na sessão)
+        query = query.eq('company_id', user.company_id);
+      } else {
+        // Fallback de segurança para ambiente de teste/single-tenant
+        // Se company_id falhar, trazemos as tarefas e o frontend filtra
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setTasks((data as BoardTask[] | null) || []);
@@ -203,6 +223,10 @@ export default function AdminTasks() {
   const handleUpdateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTask || !editingTask.title.trim() || !user?.id) return;
+    if (!isTaskOwner(editingTask, user.id)) {
+      setEditingTask(null);
+      return;
+    }
 
     const parsedDueDate = new Date(editingTask.due_date ?? '');
     if (Number.isNaN(parsedDueDate.getTime())) {
@@ -222,7 +246,8 @@ export default function AdminTasks() {
           due_date: parsedDueDate.toISOString(),
           lead_id: editingTask.lead_id || null,
         })
-        .eq('id', editingTask.id);
+        .eq('id', editingTask.id)
+        .eq('user_id', user.id);
 
       if (error) throw error;
 
@@ -242,13 +267,20 @@ export default function AdminTasks() {
   };
 
   const handleCompleteTask = async (taskId: string, currentStatus: string) => {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!isTaskOwner(task, user?.id)) return;
+
     const newStatus = currentStatus === 'concluida' ? 'pendente' : 'concluida';
 
     setTasks((prev) =>
       prev.map((task) => (task.id === taskId ? { ...task, status: newStatus } : task))
     );
 
-    const { error } = await supabase.from('tasks').update({ status: newStatus }).eq('id', taskId);
+    const { error } = await supabase
+      .from('tasks')
+      .update({ status: newStatus })
+      .eq('id', taskId)
+      .eq('user_id', user?.id);
 
     if (error) {
       void fetchTasks();
@@ -257,6 +289,13 @@ export default function AdminTasks() {
 
   const handleDragStart = (event: DragStartEvent) => {
     const nextActiveId = event.active.id as string;
+    const activeTask = tasks.find((task) => task.id === nextActiveId);
+    if (!isTaskOwner(activeTask, user?.id)) {
+      setActiveId(null);
+      setOverColumnId(null);
+      return;
+    }
+
     setActiveId(nextActiveId);
     setOverColumnId(resolveColumnId(nextActiveId));
   };
@@ -326,7 +365,7 @@ export default function AdminTasks() {
     const taskId = active.id as string;
     const targetColumn = resolveColumnId(String(over.id));
     const task = tasks.find((item) => item.id === taskId);
-    if (!task || !targetColumn) return;
+    if (!task || !targetColumn || !isTaskOwner(task, user?.id)) return;
 
     const now = new Date();
     let newStatus = task.status;
@@ -352,7 +391,8 @@ export default function AdminTasks() {
     const { error } = await supabase
       .from('tasks')
       .update({ status: newStatus, due_date: newDueDate.toISOString() })
-      .eq('id', taskId);
+      .eq('id', taskId)
+      .eq('user_id', user?.id);
 
     if (error) {
       void fetchTasks();
@@ -417,24 +457,52 @@ export default function AdminTasks() {
     });
   }, [currentMonth, tasks]);
 
-  if (loading) return <Loading />;
+  if (loading && tasks.length === 0) return <Loading />;
 
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)] animate-fade-in font-sans text-slate-800">
-      <div className="flex items-end justify-between pb-6 border-b border-slate-100/60 mb-6 shrink-0">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">Tarefas</h1>
+      <div className="mb-6 shrink-0">
+        <div className="w-full">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">Tarefas</h1>
           <p className="text-sm font-medium text-slate-500">
             {columns.hoje.length} tarefas para hoje • {columns.atrasadas.length} em atraso
-          </p>
-        </div>
-        <button
+              </p>
+            </div>
+            <button
           onClick={() => setIsModalOpen(true)}
           className="flex items-center gap-2 bg-slate-900 text-white hover:bg-slate-800 px-4 py-2 rounded-lg font-bold text-sm transition-all shadow-sm"
           type="button"
         >
           <Icons.Plus size={16} /> Nova
         </button>
+          </div>
+          <div className="flex gap-6 border-b border-slate-200">
+            <button
+              onClick={() => setActiveTab('minhas')}
+              className={`pb-3 text-sm font-bold transition-all border-b-2 ${
+                activeTab === 'minhas'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
+              type="button"
+            >
+              Minhas tarefas
+            </button>
+            <button
+              onClick={() => setActiveTab('equipe')}
+              className={`pb-3 text-sm font-bold transition-all border-b-2 ${
+                activeTab === 'equipe'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
+              type="button"
+            >
+              Tarefas da equipe
+            </button>
+          </div>
+        </div>
       </div>
 
       {auraRecommendations.length > 0 && (
@@ -443,28 +511,56 @@ export default function AdminTasks() {
             <Icons.Sparkles size={16} /> <span>Sugestões da Aura</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {auraRecommendations.map((task) => (
-              <div
-                key={task.id}
-                className="bg-indigo-50/50 border border-indigo-100/80 rounded-xl p-4 flex justify-between items-center group"
-              >
-                <div>
-                  <h4 className="font-bold text-indigo-900 text-sm mb-1">
-                    {cleanTaskTitle(task.title)}
-                  </h4>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-indigo-500 bg-indigo-100 px-2 py-0.5 rounded-md">
-                    Recomendado
-                  </span>
-                </div>
-                <button
-                  onClick={() => handleCompleteTask(task.id, 'pendente')}
-                  className="p-2 text-indigo-400 hover:text-indigo-600 bg-white rounded-lg shadow-sm"
-                  type="button"
+            {auraRecommendations.map((task) => {
+              const isOwner = isTaskOwner(task, user?.id);
+
+              return (
+                <div
+                  key={task.id}
+                  className="bg-indigo-50/50 border border-indigo-100/80 rounded-xl p-4 flex justify-between items-center gap-3 group"
                 >
-                  <Icons.Check size={16} strokeWidth={3} />
-                </button>
-              </div>
-            ))}
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-indigo-900 text-sm mb-1">
+                      {cleanTaskTitle(task.title)}
+                    </h4>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-indigo-500 bg-indigo-100 px-2 py-0.5 rounded-md">
+                        Recomendado
+                      </span>
+                      {!isOwner && task.profiles?.name && (
+                        <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-white/80 px-2 py-0.5 rounded-md">
+                          <span className="w-4 h-4 rounded-full bg-slate-200 overflow-hidden flex items-center justify-center text-[8px] text-slate-600">
+                            {task.profiles.avatar_url ? (
+                              <img
+                                src={task.profiles.avatar_url}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              task.profiles.name.charAt(0)
+                            )}
+                          </span>
+                          {task.profiles.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {isOwner ? (
+                    <button
+                      onClick={() => handleCompleteTask(task.id, 'pendente')}
+                      className="p-2 text-indigo-400 hover:text-indigo-600 bg-white rounded-lg shadow-sm"
+                      type="button"
+                    >
+                      <Icons.Check size={16} strokeWidth={3} />
+                    </button>
+                  ) : (
+                    <div className="p-2 text-slate-300 bg-white/80 rounded-lg shadow-sm">
+                      <Icons.Lock size={16} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -486,6 +582,7 @@ export default function AdminTasks() {
               tasks={columns.atrasadas}
               onToggle={handleCompleteTask}
               onEdit={setEditingTask}
+              currentUserId={user?.id}
               isDropTarget={previewColumnId === 'atrasadas'}
               dropPreviewTask={previewColumnId === 'atrasadas' ? activeTask : null}
               spotlightedTask={spotlightedTask}
@@ -497,6 +594,7 @@ export default function AdminTasks() {
               tasks={columns.hoje}
               onToggle={handleCompleteTask}
               onEdit={setEditingTask}
+              currentUserId={user?.id}
               isDropTarget={previewColumnId === 'hoje'}
               dropPreviewTask={previewColumnId === 'hoje' ? activeTask : null}
               spotlightedTask={spotlightedTask}
@@ -508,6 +606,7 @@ export default function AdminTasks() {
               tasks={columns.proximas}
               onToggle={handleCompleteTask}
               onEdit={setEditingTask}
+              currentUserId={user?.id}
               isDropTarget={previewColumnId === 'proximas'}
               dropPreviewTask={previewColumnId === 'proximas' ? activeTask : null}
               spotlightedTask={spotlightedTask}
@@ -519,6 +618,7 @@ export default function AdminTasks() {
               tasks={columns.concluida}
               onToggle={handleCompleteTask}
               onEdit={setEditingTask}
+              currentUserId={user?.id}
               isCompleted
               isDropTarget={previewColumnId === 'concluida'}
               dropPreviewTask={previewColumnId === 'concluida' ? activeTask : null}
@@ -836,6 +936,7 @@ function KanbanColumn({
   tasks,
   onToggle,
   onEdit,
+  currentUserId,
   isCompleted,
   isDropTarget,
   dropPreviewTask,
@@ -847,6 +948,7 @@ function KanbanColumn({
   tasks: BoardTask[];
   onToggle: (id: string, s: string) => void;
   onEdit: (t: BoardTask) => void;
+  currentUserId?: string;
   isCompleted?: boolean;
   isDropTarget?: boolean;
   dropPreviewTask?: BoardTask | null;
@@ -877,6 +979,7 @@ function KanbanColumn({
               task={task}
               onToggle={onToggle}
               onEdit={onEdit}
+              currentUserId={currentUserId}
               isCompleted={isCompleted}
               spotlightedTask={spotlightedTask}
             />
@@ -908,17 +1011,21 @@ function SortableTaskItem({
   task,
   onToggle,
   onEdit,
+  currentUserId,
   isCompleted,
   spotlightedTask,
 }: {
   task: BoardTask;
   onToggle: (id: string, s: string) => void;
   onEdit: (t: BoardTask) => void;
+  currentUserId?: string;
   isCompleted?: boolean;
   spotlightedTask?: { id: string; token: number } | null;
 }) {
+  const isOwner = isTaskOwner(task, currentUserId);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
+    disabled: !isOwner,
   });
 
   const style = {
@@ -928,11 +1035,17 @@ function SortableTaskItem({
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...(isOwner ? attributes : {})}
+      {...(isOwner ? listeners : {})}
+    >
       <TaskCard
         task={task}
         onToggle={onToggle}
         onEdit={onEdit}
+        isOwner={isOwner}
         isCompleted={isCompleted}
         isSpotlighted={spotlightedTask?.id === task.id}
         spotlightToken={spotlightedTask?.id === task.id ? spotlightedTask.token : 0}
@@ -947,6 +1060,7 @@ function TaskCard({
   onEdit,
   isCompleted,
   isOverlay,
+  isOwner = true,
   isSpotlighted,
   spotlightToken,
 }: {
@@ -955,21 +1069,13 @@ function TaskCard({
   onEdit?: (t: BoardTask) => void;
   isCompleted?: boolean;
   isOverlay?: boolean;
+  isOwner?: boolean;
   isSpotlighted?: boolean;
   spotlightToken?: number;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const cleanTitle = cleanTaskTitle(task.title);
-
-  useEffect(() => {
-    return () => {
-      if (clickTimeoutRef.current) {
-        clearTimeout(clickTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (isOverlay || !spotlightToken) return;
@@ -982,64 +1088,89 @@ function TaskCard({
     });
   }, [isOverlay, spotlightToken]);
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
     if (isOverlay) return;
+    // O e.detail conta quantos cliques aconteceram sequencialmente.
+    // Se for > 1, é um duplo clique, então abortamos o clique simples para não dar conflito.
+    if (e.detail > 1) return;
 
-    if (clickTimeoutRef.current) {
-      clearTimeout(clickTimeoutRef.current);
-      clickTimeoutRef.current = null;
-      onEdit?.(task);
-      return;
-    }
+    // Toggle perfeito: se estiver fechado abre, se estiver aberto fecha.
+    setIsExpanded(!isExpanded);
+  };
 
-    clickTimeoutRef.current = setTimeout(() => {
-      setIsExpanded((prev) => !prev);
-      clickTimeoutRef.current = null;
-    }, 220);
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isOverlay || !isOwner) return;
+    onEdit?.(task);
   };
 
   return (
     <div
       ref={cardRef}
       onClick={handleClick}
-      className={`bg-white border border-slate-200 rounded-xl p-3 flex items-start gap-3 transition-all duration-200 overflow-hidden ${
+      onDoubleClick={handleDoubleClick}
+      className={`bg-white border rounded-xl p-3 flex items-start gap-3 transition-all duration-200 overflow-hidden ${
         isOverlay
-          ? 'shadow-2xl scale-105 rotate-2 cursor-grabbing'
+          ? 'shadow-2xl scale-105 rotate-2 cursor-grabbing border-slate-200'
           : isSpotlighted
-            ? 'shadow-lg ring-2 ring-brand-300 border-brand-300 cursor-pointer'
-            : 'shadow-sm hover:shadow-md cursor-pointer hover:border-brand-200'
+            ? `shadow-lg ring-2 ring-brand-300 border-brand-300 ${isOwner ? 'cursor-grab' : 'cursor-pointer'}`
+            : `shadow-sm ${isOwner ? 'hover:shadow-md cursor-grab hover:border-brand-200 border-slate-200' : 'cursor-pointer border-slate-100 bg-slate-50/50'}`
       }`}
     >
-      <button
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle?.(task.id, task.status || 'pendente');
-        }}
-        className={`mt-0.5 shrink-0 w-4 h-4 rounded flex items-center justify-center transition-colors border ${
-          isCompleted
-            ? 'bg-brand-500 border-brand-500 text-white'
-            : 'border-slate-300 hover:border-brand-500 text-transparent hover:text-brand-500'
-        }`}
-        type="button"
-      >
-        <Icons.Check size={12} strokeWidth={4} />
-      </button>
-      <div className="flex-1 min-w-0 select-none">
+      {isOwner ? (
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle?.(task.id, task.status || 'pendente');
+          }}
+          className={`mt-0.5 shrink-0 w-4 h-4 rounded flex items-center justify-center transition-colors border ${
+            isCompleted
+              ? 'bg-brand-500 border-brand-500 text-white'
+              : 'border-slate-300 hover:border-brand-500 text-transparent hover:text-brand-500'
+          }`}
+          type="button"
+        >
+          <Icons.Check size={12} strokeWidth={4} />
+        </button>
+      ) : (
+        <div className="mt-0.5 shrink-0 w-4 h-4 rounded border border-slate-200 bg-slate-100 flex items-center justify-center text-slate-300">
+          <Icons.Lock size={10} />
+        </div>
+      )}
+      <div className="flex-1 min-w-0 pointer-events-none select-none">
         <h4
-          className={`text-sm font-bold text-slate-800 leading-snug transition-all ${
-            isCompleted ? 'line-through text-slate-400' : ''
+          className={`text-sm font-bold leading-snug transition-all ${
+            isCompleted ? 'line-through text-slate-400' : 'text-slate-800'
           } ${isExpanded ? 'mb-2' : ''}`}
         >
           {cleanTitle}
         </h4>
+        {!isOwner && task.profiles?.name && (
+          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 mb-2">
+            <div className="w-4 h-4 rounded-full bg-slate-200 overflow-hidden">
+              {task.profiles.avatar_url ? (
+                <img src={task.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-[8px]">
+                  {task.profiles.name.charAt(0)}
+                </div>
+              )}
+            </div>
+            {task.profiles.name}
+          </div>
+        )}
         {isExpanded && (
-          <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-slate-50 animate-fade-in">
+          <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-slate-100 animate-fade-in">
             {task.leads?.name && (
               <Link
                 to={`/admin/leads?open=${task.lead_id}`}
                 onClick={(e) => e.stopPropagation()}
-                className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-50 hover:bg-brand-50 hover:text-brand-600 hover:shadow-sm px-2 py-1 rounded-md w-fit transition-all pointer-events-auto"
+                className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-md w-fit transition-all pointer-events-auto ${
+                  isOwner
+                    ? 'text-slate-500 bg-slate-50 hover:bg-brand-50 hover:text-brand-600 hover:shadow-sm'
+                    : 'text-slate-400 bg-slate-100'
+                }`}
               >
                 <Icons.User size={12} /> {task.leads.name}
               </Link>
