@@ -9,7 +9,44 @@ let genAI: GoogleGenerativeAI | null = null;
 if (API_KEY) {
   genAI = new GoogleGenerativeAI(API_KEY);
 } else {
-  console.warn("Gemini API Key não encontrada. Funcionalidades de IA estarão desabilitadas.");
+  console.warn("Gemini API Key nÃ£o encontrada. Funcionalidades de IA estarÃ£o desabilitadas.");
+}
+
+export type ChatMessageType = 'text' | 'action_prompt';
+export type ChatMessageActionVariant = 'primary' | 'secondary' | 'ghost';
+export type ChatMessageActionIcon = 'smartphone' | 'edit' | 'task' | 'timeline' | 'lead' | 'cancel';
+
+export interface ChatMessageActionPayload {
+  draftText?: string;
+  leadName?: string;
+  taskTitle?: string;
+  taskDescription?: string;
+  timelineNote?: string;
+  leadId?: string;
+}
+
+export interface ChatMessageAction {
+  id: string;
+  label: string;
+  icon?: ChatMessageActionIcon;
+  variant?: ChatMessageActionVariant;
+  payload?: ChatMessageActionPayload;
+  disabled?: boolean;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
+  messageType?: ChatMessageType;
+  actions?: ChatMessageAction[];
+}
+
+export interface AuraLeadChatContext {
+  leadId?: string;
+  leadName?: string;
+  leadStatus?: string;
+  propertyTitle?: string;
+  timelineContext?: string[];
 }
 
 export interface CandidateProperty {
@@ -69,64 +106,64 @@ export const generatePropertyDescription = async (
   condoName?: string | null,
   condoFeatures?: string[]
 ): Promise<string | null> => {
-  const condoFeaturesText = condoFeatures && condoFeatures.length > 0 ? `\nComodidades do Condomínio: ${condoFeatures.join(', ')}` : '';
+  const condoFeaturesText = condoFeatures && condoFeatures.length > 0 ? `\nComodidades do CondomÃ­nio: ${condoFeatures.join(', ')}` : '';
   const condominiumContext = condoName
-    ? `Informação Adicional: O imóvel fica no condomínio ${condoName}.
-Se houver um nome de condomínio, destaque a segurança, infraestrutura e o estilo de vida exclusivo de residir nesta localidade.`
+    ? `InformaÃ§Ã£o Adicional: O imÃ³vel fica no condomÃ­nio ${condoName}.
+Se houver um nome de condomÃ­nio, destaque a seguranÃ§a, infraestrutura e o estilo de vida exclusivo de residir nesta localidade.`
     : '';
 
   const condominiumContextWithFeatures = condoName
-    ? `Informação Adicional: O imóvel fica no condomínio ${condoName}. ${condoFeaturesText}
-Se houver um nome de condomínio, destaque a segurança, infraestrutura e o estilo de vida exclusivo de residir nesta localidade, incluindo as comodidades citadas.`
+    ? `InformaÃ§Ã£o Adicional: O imÃ³vel fica no condomÃ­nio ${condoName}. ${condoFeaturesText}
+Se houver um nome de condomÃ­nio, destaque a seguranÃ§a, infraestrutura e o estilo de vida exclusivo de residir nesta localidade, incluindo as comodidades citadas.`
     : condominiumContext;
 
   const prompt = `
-Atue como um redator imobiliário profissional. Sua tarefa é criar um anúncio padronizado SUBSTITUINDO os colchetes [...] do template abaixo pelos DADOS REAIS DO IMÓVEL, respeitando regras estritas de segurança jurídica.
+Atue como um redator imobiliÃ¡rio profissional. Sua tarefa Ã© criar um anÃºncio padronizado SUBSTITUINDO os colchetes [...] do template abaixo pelos DADOS REAIS DO IMÃ“VEL, respeitando regras estritas de seguranÃ§a jurÃ­dica.
 
-DADOS DO IMÓVEL A SEREM UTILIZADOS:
+DADOS DO IMÃ“VEL A SEREM UTILIZADOS:
 ${propertyFeatures}
 ${condominiumContextWithFeatures ? `\n${condominiumContextWithFeatures}\n` : ''}
 
-⚠️ REGRAS DE SEGURANÇA JURÍDICA (CRÍTICO):
-1. NÃO invente informações. Use APENAS os dados fornecidos. Se algo não foi informado, omita.
-2. Nunca mencione metragem, vagas ou quartos se não estiverem nos dados.
-3. Nunca cite aceitação de financiamento, permuta ou valor de condomínio se não estiver nos dados.
-4. Não use adjetivos exagerados como "imperdível", "maravilhoso", "dos sonhos".
+âš ï¸ REGRAS DE SEGURANÃ‡A JURÃDICA (CRÃTICO):
+1. NÃƒO invente informaÃ§Ãµes. Use APENAS os dados fornecidos. Se algo nÃ£o foi informado, omita.
+2. Nunca mencione metragem, vagas ou quartos se nÃ£o estiverem nos dados.
+3. Nunca cite aceitaÃ§Ã£o de financiamento, permuta ou valor de condomÃ­nio se nÃ£o estiver nos dados.
+4. NÃ£o use adjetivos exagerados como "imperdÃ­vel", "maravilhoso", "dos sonhos".
 5. Mantenha um tom profissional, limpo e direto.
 
-=== TEMPLATE OBRIGATÓRIO (Preencha os dados reais no lugar dos colchetes) ===
-[Emoji correspondente] [Tipo do Imóvel] com [1 Diferencial Principal] - [Bairro]
-📍 [Bairro] - [Cidade]/[UF]
+=== TEMPLATE OBRIGATÃ“RIO (Preencha os dados reais no lugar dos colchetes) ===
+[Emoji correspondente] [Tipo do ImÃ³vel] com [1 Diferencial Principal] - [Bairro]
+ðŸ“ [Bairro] - [Cidade]/[UF]
 
-📐 Características principais:
+ðŸ“ CaracterÃ­sticas principais:
 (Crie os bullets preenchidos com os dados reais. Exemplo de como deve ficar:
-- 150m² de área construída
-- 3 quartos (1 suíte)
+- 150mÂ² de Ã¡rea construÃ­da
+- 3 quartos (1 suÃ­te)
 - 2 vagas de garagem
 - Piscina aquecida)
 
-📝 Descrição:
-(Escreva 1 ou 2 parágrafos curtos descrevendo o imóvel real. Aplique a diretriz correspondente:
-- CASA: Destaque conforto, praticidade, integração e área externa (se houver).
-- APARTAMENTO: Destaque praticidade, elevador/lazer (se houver) e localização.
-- LOTE/TERRENO: Destaque potencial construtivo e valorização da região.
-- SOBRADO: Destaque a divisão entre área íntima e social, espaço e privacidade.
-- COBERTURA: Destaque exclusividade, vista, terraço (se houver) e amplitude.)
+ðŸ“ DescriÃ§Ã£o:
+(Escreva 1 ou 2 parÃ¡grafos curtos descrevendo o imÃ³vel real. Aplique a diretriz correspondente:
+- CASA: Destaque conforto, praticidade, integraÃ§Ã£o e Ã¡rea externa (se houver).
+- APARTAMENTO: Destaque praticidade, elevador/lazer (se houver) e localizaÃ§Ã£o.
+- LOTE/TERRENO: Destaque potencial construtivo e valorizaÃ§Ã£o da regiÃ£o.
+- SOBRADO: Destaque a divisÃ£o entre Ã¡rea Ã­ntima e social, espaÃ§o e privacidade.
+- COBERTURA: Destaque exclusividade, vista, terraÃ§o (se houver) e amplitude.)
 
-💰 Valor: [Preço real do imóvel formatado]
+ðŸ’° Valor: [PreÃ§o real do imÃ³vel formatado]
 
-(Adicione esta última linha APENAS se os dados informarem financiamento, permuta ou condomínio:)
-✔ [Informação financeira adicional real]
+(Adicione esta Ãºltima linha APENAS se os dados informarem financiamento, permuta ou condomÃ­nio:)
+âœ” [InformaÃ§Ã£o financeira adicional real]
 ========================================
 
-GUIA DE EMOJIS PARA O TÍTULO (Use apenas 1):
-- Casa: 🏡
-- Apartamento: 🏢
-- Terreno/Lote: 🌳
-- Sobrado: 🏘
-- Cobertura: 🌇
+GUIA DE EMOJIS PARA O TÃTULO (Use apenas 1):
+- Casa: ðŸ¡
+- Apartamento: ðŸ¢
+- Terreno/Lote: ðŸŒ³
+- Sobrado: ðŸ˜
+- Cobertura: ðŸŒ‡
 
-IMPORTANTE: Retorne APENAS o texto do anúncio final preenchido. NÃO imprima os colchetes literais e não inclua saudações.
+IMPORTANTE: Retorne APENAS o texto do anÃºncio final preenchido. NÃƒO imprima os colchetes literais e nÃ£o inclua saudaÃ§Ãµes.
   `;
 
   return generateText(prompt);
@@ -142,11 +179,11 @@ export const findSmartMatches = async (
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const prompt = `
-Atue como um corretor sênior.
-Analise este Lead (Orçamento: ${lead.budget ?? "não informado"}, Busca: ${lead.desired_type ?? "tipo livre"}, Quartos: ${lead.desired_bedrooms ?? "não informado"}, Localização: ${lead.desired_location ?? "não informada"}) e estes Imóveis Candidatos.
-Retorne um JSON com os 3 melhores imóveis, dando uma nota de 0-100 (match_score) e um "match_reason" (uma frase curta de venda explicando por que serve).
+Atue como um corretor sÃªnior.
+Analise este Lead (OrÃ§amento: ${lead.budget ?? "nÃ£o informado"}, Busca: ${lead.desired_type ?? "tipo livre"}, Quartos: ${lead.desired_bedrooms ?? "nÃ£o informado"}, LocalizaÃ§Ã£o: ${lead.desired_location ?? "nÃ£o informada"}) e estes ImÃ³veis Candidatos.
+Retorne um JSON com os 3 melhores imÃ³veis, dando uma nota de 0-100 (match_score) e um "match_reason" (uma frase curta de venda explicando por que serve).
 
-Formato obrigatório da resposta:
+Formato obrigatÃ³rio da resposta:
 {
   "matches": [
     {
@@ -158,11 +195,11 @@ Formato obrigatório da resposta:
 }
 
 Regras:
-- Use APENAS os imóveis recebidos.
-- Traga no máximo 3 itens.
-- match_score deve ser número inteiro entre 0 e 100.
-- match_reason deve ter no máximo 160 caracteres.
-- Não adicione texto fora do JSON.
+- Use APENAS os imÃ³veis recebidos.
+- Traga no mÃ¡ximo 3 itens.
+- match_score deve ser nÃºmero inteiro entre 0 e 100.
+- match_reason deve ter no mÃ¡ximo 160 caracteres.
+- NÃ£o adicione texto fora do JSON.
 
 Lead:
 ${JSON.stringify(
@@ -179,11 +216,11 @@ ${JSON.stringify(
     2
   )}
 
-Imóveis Candidatos:
+ImÃ³veis Candidatos:
 ${JSON.stringify(candidateProperties, null, 2)}
 
-HISTÓRICO DE NAVEGAÇÃO RECENTE: ${JSON.stringify(navigationHistory || [])}.
-Instrução: Se o cliente visitou imóveis diferentes do perfil declarado, considere isso como um forte sinal de interesse latente.
+HISTÃ“RICO DE NAVEGAÃ‡ÃƒO RECENTE: ${JSON.stringify(navigationHistory || [])}.
+InstruÃ§Ã£o: Se o cliente visitou imÃ³veis diferentes do perfil declarado, considere isso como um forte sinal de interesse latente.
   `;
 
   try {
@@ -200,7 +237,7 @@ Instrução: Se o cliente visitou imóveis diferentes do perfil declarado, consi
       .map((item) => ({
         property_id: item.property_id,
         match_score: Math.max(0, Math.min(100, Math.round(item.match_score))),
-        match_reason: item.match_reason || "Boa opção para o perfil informado."
+        match_reason: item.match_reason || "Boa opÃ§Ã£o para o perfil informado."
       }))
       .slice(0, 3);
 
@@ -339,11 +376,11 @@ export async function generateCRMInsights(
   userLevelInfo: { title: string; level: number }
 ): Promise<string> {
   const apiKey = await getApiKey();
-  if (!apiKey) return 'A inteligência artificial está desativada no momento. Configure sua chave da API nas opções da empresa.';
+  if (!apiKey) return 'A inteligÃªncia artificial estÃ¡ desativada no momento. Configure sua chave da API nas opÃ§Ãµes da empresa.';
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Usaremos a versão mais recente da API para testes iniciais
+    // Usaremos a versÃ£o mais recente da API para testes iniciais
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const activeLeads = leads.filter(l => l.status !== 'ganho' && l.status !== 'perdido');
@@ -356,25 +393,25 @@ export async function generateCRMInsights(
       return isThisWeek ? sum + (e.points_awarded || 0) : sum;
     }, 0);
 
-    const prompt = `Você é a "Aura", a inteligência artificial especialista em vendas imobiliárias do Elevatio.
-    Analise os números do corretor ${userName} e dê 3 dicas práticas em formato de bullet points.
+    const prompt = `VocÃª Ã© a "Aura", a inteligÃªncia artificial especialista em vendas imobiliÃ¡rias do Elevatio.
+    Analise os nÃºmeros do corretor ${userName} e dÃª 3 dicas prÃ¡ticas em formato de bullet points.
     Fale diretamente com o corretor, de forma direta e motivacional.
 
     Contexto Atual:
-    - Patente/Liga: ${userLevelInfo.title} (Nível ${userLevelInfo.level})
-    - Pontos ganhos nos últimos 7 dias: ${totalPointsWeek}
-    - Negócios fechados na semana: ${recentWins}
+    - Patente/Liga: ${userLevelInfo.title} (NÃ­vel ${userLevelInfo.level})
+    - Pontos ganhos nos Ãºltimos 7 dias: ${totalPointsWeek}
+    - NegÃ³cios fechados na semana: ${recentWins}
     - Leads Ativos: ${activeLeads.length}
     - Tarefas Atrasadas: ${delayedTasks.length}
-    - Notificações Não Lidas no Sininho: ${unreadNotifications}
+    - NotificaÃ§Ãµes NÃ£o Lidas no Sininho: ${unreadNotifications}
 
     Regras:
-    - Se houver notificações não lidas, alerte sobre o "Sininho".
-    - Se houver tarefas atrasadas, sugira focar na "Operação Limpa" (concluir todas).
-    - Sugira focar no avanço de leads para somar pontos na gamificação.`;
+    - Se houver notificaÃ§Ãµes nÃ£o lidas, alerte sobre o "Sininho".
+    - Se houver tarefas atrasadas, sugira focar na "OperaÃ§Ã£o Limpa" (concluir todas).
+    - Sugira focar no avanÃ§o de leads para somar pontos na gamificaÃ§Ã£o.`;
 
     const result = await model.generateContent(prompt);
-    const response = result.response; // Removido o await desnecessário aqui
+    const response = result.response; // Removido o await desnecessÃ¡rio aqui
 
     if (!response.text()) {
       throw new Error("A API retornou uma resposta vazia.");
@@ -383,9 +420,9 @@ export async function generateCRMInsights(
     return response.text();
   } catch (error: any) {
     // Tratamento de erro aprimorado para capturar o motivo real
-    console.error('🚨 Erro detalhado no Gemini API (generateCRMInsights):', error);
+    console.error('ðŸš¨ Erro detalhado no Gemini API (generateCRMInsights):', error);
 
-    let errMsg = 'Falha ao conectar com a Aura. Verifique sua conexão.';
+    let errMsg = 'Falha ao conectar com a Aura. Verifique sua conexÃ£o.';
 
     if (error instanceof Error) {
       errMsg = error.message;
@@ -395,9 +432,9 @@ export async function generateCRMInsights(
       errMsg = error;
     }
 
-    // Evita lançar um erro com string vazia
+    // Evita lanÃ§ar um erro com string vazia
     if (!errMsg || errMsg.trim() === '') {
-      errMsg = 'Falha silenciosa na API do Google (Possível erro de CORS, cota excedida, ou modelo não suportado).';
+      errMsg = 'Falha silenciosa na API do Google (PossÃ­vel erro de CORS, cota excedida, ou modelo nÃ£o suportado).';
       console.warn("Objeto de erro recebido:", JSON.stringify(error)); // Ajuda a debugar
     }
 
@@ -406,54 +443,54 @@ export async function generateCRMInsights(
 }
 
 export async function autoTagContractTemplate(rawContent: string): Promise<string> {
-  if (!genAI) throw new Error("Gemini API Key não configurada.");
+  if (!genAI) throw new Error("Gemini API Key nÃ£o configurada.");
 
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-  const prompt = `Você é um Assistente Jurídico Imobiliário. Sua tarefa é ler o contrato bruto fornecido e substituir os dados reais, nomes e valores por nossas TAGS (Shortcodes) padronizadas.
+  const prompt = `VocÃª Ã© um Assistente JurÃ­dico ImobiliÃ¡rio. Sua tarefa Ã© ler o contrato bruto fornecido e substituir os dados reais, nomes e valores por nossas TAGS (Shortcodes) padronizadas.
 
-MANTENHA toda a formatação HTML, negritos e estrutura do texto original. APENAS substitua os dados específicos pelas tags abaixo.
+MANTENHA toda a formataÃ§Ã£o HTML, negritos e estrutura do texto original. APENAS substitua os dados especÃ­ficos pelas tags abaixo.
 
-Dicionário de Variáveis Disponíveis:
+DicionÃ¡rio de VariÃ¡veis DisponÃ­veis:
 
-[DADOS DA IMOBILIÁRIA / CORRETOR]
+[DADOS DA IMOBILIÃRIA / CORRETOR]
 {{IMOBILIARIA_NOME}} - Nome da sua empresa
-{{IMOBILIARIA_CNPJ}} - CNPJ da imobiliária
-{{IMOBILIARIA_ENDERECO}} - Endereço da imobiliária
-{{CORRETOR_NOME}} - Nome do corretor responsável
+{{IMOBILIARIA_CNPJ}} - CNPJ da imobiliÃ¡ria
+{{IMOBILIARIA_ENDERECO}} - EndereÃ§o da imobiliÃ¡ria
+{{CORRETOR_NOME}} - Nome do corretor responsÃ¡vel
 {{CORRETOR_CRECI}} - CRECI do corretor
-{{IMOBILIARIA_ASSINATURA}} - A imagem da assinatura salva nas configurações
+{{IMOBILIARIA_ASSINATURA}} - A imagem da assinatura salva nas configuraÃ§Ãµes
 
-[DADOS DO CLIENTE / LOCATÁRIO / COMPRADOR]
+[DADOS DO CLIENTE / LOCATÃRIO / COMPRADOR]
 {{CLIENTE_NOME}} - Nome completo
 {{CLIENTE_CPF}} - CPF ou CNPJ
 {{CLIENTE_RG}} - RG
 {{CLIENTE_NACIONALIDADE}} - Ex: Brasileiro
 {{CLIENTE_PROFISSAO}} - Ex: Engenheiro
 {{CLIENTE_ESTADO_CIVIL}} - Ex: Casado, Solteiro
-{{CLIENTE_ENDERECO}} - Endereço de residência atual
+{{CLIENTE_ENDERECO}} - EndereÃ§o de residÃªncia atual
 
-[DADOS DO PROPRIETÁRIO / LOCADOR / VENDEDOR]
+[DADOS DO PROPRIETÃRIO / LOCADOR / VENDEDOR]
 {{PROPRIETARIO_NOME}}
 {{PROPRIETARIO_CPF}}
 {{PROPRIETARIO_RG}}
 {{PROPRIETARIO_ESTADO_CIVIL}}
 {{PROPRIETARIO_ENDERECO}}
 
-[DADOS DO IMÓVEL E FINANCEIRO]
-{{IMOVEL_ENDERECO}} - Endereço completo do imóvel negociado
-{{IMOVEL_MATRICULA}} - Número da matrícula no cartório
-{{VALOR_TOTAL}} - Valor total do aluguel ou venda (em números)
+[DADOS DO IMÃ“VEL E FINANCEIRO]
+{{IMOVEL_ENDERECO}} - EndereÃ§o completo do imÃ³vel negociado
+{{IMOVEL_MATRICULA}} - NÃºmero da matrÃ­cula no cartÃ³rio
+{{VALOR_TOTAL}} - Valor total do aluguel ou venda (em nÃºmeros)
 {{VALOR_TOTAL_EXTENSO}} - Valor escrito por extenso
 {{DATA_VENCIMENTO}} - Dia do vencimento (ex: dia 10)
-{{PRAZO_MESES}} - Prazo de vigência do contrato (ex: 30 meses)
-{{DATA_ATUAL}} - Data de geração do contrato (ex: 15 de Março de 2026)
+{{PRAZO_MESES}} - Prazo de vigÃªncia do contrato (ex: 30 meses)
+{{DATA_ATUAL}} - Data de geraÃ§Ã£o do contrato (ex: 15 de MarÃ§o de 2026)
 
 Regras rigorosas:
-1. Preserve RIGOROSAMENTE todo o texto jurídico, pontuação, quebras de linha e cláusulas originais.
-2. Quando o contrato mencionar cliente, locatário ou comprador, normalize para a família CLIENTE.
-3. Quando o contrato mencionar proprietário, locador ou vendedor, normalize para a família PROPRIETARIO.
-4. Retorne APENAS o texto do contrato com as tags aplicadas. Não adicione saudações, explicações ou formatação Markdown extra.
+1. Preserve RIGOROSAMENTE todo o texto jurÃ­dico, pontuaÃ§Ã£o, quebras de linha e clÃ¡usulas originais.
+2. Quando o contrato mencionar cliente, locatÃ¡rio ou comprador, normalize para a famÃ­lia CLIENTE.
+3. Quando o contrato mencionar proprietÃ¡rio, locador ou vendedor, normalize para a famÃ­lia PROPRIETARIO.
+4. Retorne APENAS o texto do contrato com as tags aplicadas. NÃ£o adicione saudaÃ§Ãµes, explicaÃ§Ãµes ou formataÃ§Ã£o Markdown extra.
 
 CONTRATO ORIGINAL PARA ANALISAR:
 ${rawContent}`;
@@ -467,23 +504,23 @@ ${rawContent}`;
       .trim();
   } catch (error) {
     console.error("Erro ao analisar contrato com IA:", error);
-    throw new Error("Não foi possível analisar o contrato no momento.");
+    throw new Error("NÃ£o foi possÃ­vel analisar o contrato no momento.");
   }
 }
 
 /**
- * Copiloto de Comunicação: Gera rascunho de WhatsApp baseado no histórico do Lead.
- * Inclui sistema de Retry para lidar com picos temporários de uso na API do Google (Erro 503).
+ * Copiloto de ComunicaÃ§Ã£o: Gera rascunho de WhatsApp baseado no histÃ³rico do Lead.
+ * Inclui sistema de Retry para lidar com picos temporÃ¡rios de uso na API do Google (Erro 503).
  */
 export const generateAuraWhatsAppDraft = async (leadName: string, context: string, retries = 3): Promise<string> => {
-  if (!genAI) throw new Error("Gemini API Key não configurada.");
+  if (!genAI) throw new Error("Gemini API Key nÃ£o configurada.");
 
   try {
     // Usando o modelo que a sua API Key reconheceu (pode usar gemini-2.0-flash se preferir)
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const prompt = `
-      Atue como um corretor de imóveis de elite, mestre em persuasão e atendimento humanizado.
+      Atue como um corretor de imÃ³veis de elite, mestre em persuasÃ£o e atendimento humanizado.
       Escreva uma mensagem de WhatsApp para o cliente: ${leadName}.
       
       CONTEXTO RECENTE DA TIMELINE DO CLIENTE:
@@ -492,10 +529,10 @@ export const generateAuraWhatsAppDraft = async (leadName: string, context: strin
       DIRETRIZES:
       1. Tom de voz: Profissional, acolhedor e focado em gerar resposta.
       2. Gatilho de contexto: Use a timeline para personalizar a mensagem.
-      3. Estrutura: Direta ao ponto (2 ou 3 parágrafos curtos).
+      3. Estrutura: Direta ao ponto (2 ou 3 parÃ¡grafos curtos).
       4. Fechamento: Termine sempre com uma pergunta simples e aberta (Call to Action).
-      5. Formatação: Use negrito do WhatsApp (*texto*) nos pontos altos e emojis com muita moderação.
-      6. IMPORTANTE: Retorne APENAS o texto da mensagem. Sem introduções, aspas ou comentários extras.
+      5. FormataÃ§Ã£o: Use negrito do WhatsApp (*texto*) nos pontos altos e emojis com muita moderaÃ§Ã£o.
+      6. IMPORTANTE: Retorne APENAS o texto da mensagem. Sem introduÃ§Ãµes, aspas ou comentÃ¡rios extras.
     `;
 
     const result = await model.generateContent(prompt);
@@ -509,7 +546,7 @@ export const generateAuraWhatsAppDraft = async (leadName: string, context: strin
     }
     
     console.error("Aura: Erro final ao gerar draft de WhatsApp", error);
-    throw new Error("Não foi possível gerar a mensagem com a IA neste momento. Tente novamente em alguns minutos.");
+    throw new Error("NÃ£o foi possÃ­vel gerar a mensagem com a IA neste momento. Tente novamente em alguns minutos.");
   }
 };
 
@@ -531,7 +568,7 @@ const getLocalVisitFeedbackFallback = (
     normalized.includes("desist") ||
     normalized.includes("parou de procurar") ||
     normalized.includes("nao quer mais comprar") ||
-    normalized.includes("não quer mais comprar") ||
+    normalized.includes("nÃ£o quer mais comprar") ||
     normalized.includes("sem interesse") ||
     normalized.includes("vai pausar");
 
@@ -548,7 +585,7 @@ const getLocalVisitFeedbackFallback = (
     return {
       status_suggestion: "Congelado",
       timeline_note: `${leadName} sinalizou pausa na busca apos a visita, exigindo acompanhamento futuro mais leve.`,
-      next_task_title: "🤖 Aura: Registrar motivo da pausa do lead",
+      next_task_title: "ðŸ¤– Aura: Registrar motivo da pausa do lead",
       next_task_desc: "Documente o motivo da pausa, confirme quando retomar o contato e mantenha o lead aquecido sem pressao comercial.",
       next_task_hours: 72,
     };
@@ -558,7 +595,7 @@ const getLocalVisitFeedbackFallback = (
     return {
       status_suggestion: "Proposta",
       timeline_note: `${leadName} demonstrou interesse concreto no imovel visitado e avancou para tratativas comerciais.`,
-      next_task_title: `🤖 Aura: Preparar proposta para ${leadName}`,
+      next_task_title: `ðŸ¤– Aura: Preparar proposta para ${leadName}`,
       next_task_desc: "Organize a proposta comercial, alinhe margem de negociacao e confirme os proximos documentos necessarios.",
       next_task_hours: 24,
     };
@@ -567,7 +604,7 @@ const getLocalVisitFeedbackFallback = (
   return {
     status_suggestion: "Atendimento",
     timeline_note: `${leadName} concluiu a visita, mas ainda precisa de novas opcoes aderentes ao perfil informado.`,
-    next_task_title: `🤖 Aura: Selecionar novos imoveis para ${leadName}`,
+    next_task_title: `ðŸ¤– Aura: Selecionar novos imoveis para ${leadName}`,
     next_task_desc: "Revise os pontos levantados na visita e envie novas sugestoes com melhor encaixe de perfil, valor ou localizacao.",
     next_task_hours: 24,
   };
@@ -602,7 +639,7 @@ const sanitizeVisitFeedbackAnalysis = (
 };
 
 /**
- * Loop de Pós-Visita: Analisa o feedback do corretor e decide o destino do Lead.
+ * Loop de PÃ³s-Visita: Analisa o feedback do corretor e decide o destino do Lead.
  */
 export const processVisitFeedback = async (
   leadName: string,
@@ -657,54 +694,63 @@ Regras:
   }
 };
 
-export interface ChatMessage {
-  role: "user" | "model";
-  text: string;
-}
-
 /**
- * Oraculo (Chat Global): Permite conversacao livre com a Aura baseada num historico.
- * Inclui resiliencia para erros de servidor (503).
+ * Oráculo (Chat Global): Permite conversação livre com a Aura baseada num histórico e contexto atual.
  */
 export const chatWithAura = async (
   message: string,
   history: ChatMessage[],
   userName: string = "Corretor",
-  retries = 3
+  options?: { retries?: number; leadContext?: AuraLeadChatContext }
 ): Promise<string> => {
   if (!genAI) throw new Error("Gemini API Key não configurada.");
+  const retries = options?.retries ?? 3;
+  const context = options?.leadContext;
+
+  // INJEÇÃO INVISÍVEL DE CONTEXTO
+  // Fornecemos as respostas antes mesmo da Aura perguntar.
+  let contextPrompt = '';
+  if (context && (context.leadName || context.leadStatus || context.timelineContext)) {
+    contextPrompt = `\n\n--- INFORMAÇÕES ATUAIS DO LEAD (USE ISTO, NÃO PERGUNTE O QUE JÁ ESTÁ AQUI) ---\n`;
+    if (context.leadName) contextPrompt += `- Nome do Lead: ${context.leadName}\n`;
+    if (context.leadStatus) contextPrompt += `- Status no Funil: ${context.leadStatus}\n`;
+    if (context.propertyTitle) contextPrompt += `- Imóvel de Interesse: ${context.propertyTitle}\n`;
+    if (context.timelineContext && context.timelineContext.length > 0) {
+      contextPrompt += `- Histórico Recente (Timeline):\n  * ${context.timelineContext.join('\n  * ')}\n`;
+    }
+    contextPrompt += `--------------------------------------------------------------------------\n`;
+  }
 
   try {
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
-      systemInstruction: `Você é a Aura, a Inteligência Artificial super-avançada integrada a este CRM Imobiliário.
-      Sua missão é ajudar o corretor ${userName} a fechar mais negócios, redigir textos persuasivos para anúncios,
-      sugerir abordagens de negociação e tirar dúvidas.
-      Regras:
-      1. Seja direta, extremamente profissional e com foco em alta conversão.
-      2. Não use introduções robóticas como "Olá, eu sou a Aura". Vá direto ao ponto.
-      3. Use formatação limpa (tópicos e negritos) para facilitar a leitura.
-      4. Se pedirem para gerar uma descrição de imóvel, use gatilhos mentais.`,
+      systemInstruction: `Você é a Aura, a Inteligência Artificial integrada a este CRM Imobiliário.
+      Sua missão é ajudar o corretor ${userName} a fechar negócios, resumir a timeline, redigir mensagens e sugerir próximos passos.
+      Regras de Ouro:
+      1. Seja absurdamente direta, comercial e profissional.
+      2. USE O CONTEXTO FORNECIDO! Nunca pergunte "qual o status" ou "qual o interesse" se esses dados já estiverem no bloco de Informações Atuais.
+      3. Se não houver informações, aí sim pergunte.
+      4. Se o corretor pedir para "resumir" ou "criar uma tarefa", cuspa o texto pronto para ser copiado. Evite enrolações como "Claro, aqui está a sua tarefa:".`
     });
 
     const formattedHistory = history.map((msg) => ({
       role: msg.role,
-      parts: [{ text: msg.text }],
+      parts: [{ text: msg.text }]
     }));
 
-    const chat = model.startChat({
-      history: formattedHistory,
-    });
+    const chat = model.startChat({ history: formattedHistory });
 
-    const result = await chat.sendMessage(message);
+    // Envia o prompt do usuário + os dados frescos do lead por trás dos panos
+    const finalMessage = contextPrompt ? `${contextPrompt}\nPergunta do Corretor: ${message}` : message;
+
+    const result = await chat.sendMessage(finalMessage);
     return result.response.text().trim();
   } catch (error: any) {
-    if (error?.message?.includes("503") && retries > 0) {
+    if (error?.message?.includes('503') && retries > 0) {
       console.warn(`Aura Chat: Servidor ocupado (503). Tentando novamente... (${retries} restantes)`);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      return chatWithAura(message, history, userName, retries - 1);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return chatWithAura(message, history, userName, { ...options, retries: retries - 1 });
     }
-
     console.error("Aura Chat: Erro ao gerar resposta", error);
     throw new Error("Desculpe, a minha linha de raciocínio falhou por um momento. Pode repetir?");
   }
