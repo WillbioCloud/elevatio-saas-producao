@@ -82,6 +82,8 @@ const truncateText = (value: string, maxLength = MAX_TIMELINE_CONTEXT_LENGTH) =>
 
 const getLeadFirstName = (leadName?: string) => leadName?.trim().split(/\s+/)[0] || '';
 
+const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' ');
+
 const buildQuickPrompts = (leadContext?: AuraLeadChatContext): string[] => {
   const leadFirstName = getLeadFirstName(leadContext?.leadName);
 
@@ -628,6 +630,9 @@ export default function AuraChatWidget({
   const { user } = useAuth();
   const { addToast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
+  // Estados para o Morfismo (Figma: Stage 1 -> Stage 2 -> Stage 3)
+  const [animStage, setAnimStage] = useState<'closed' | 'pill' | 'open'>('closed');
+  const [isContentVisible, setIsContentVisible] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -635,10 +640,27 @@ export default function AuraChatWidget({
   const [activeActionKey, setActiveActionKey] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const animationTimeoutsRef = useRef<number[]>([]);
+
+  const clearAnimationTimeouts = () => {
+    animationTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    animationTimeoutsRef.current = [];
+  };
+
+  const queueAnimationTimeout = (callback: () => void, delay: number) => {
+    const timeoutId = window.setTimeout(callback, delay);
+    animationTimeoutsRef.current.push(timeoutId);
+  };
 
   useEffect(() => {
     setIsLeadContextDismissed(false);
   }, [leadId, leadName, leadStatus, propertyTitle]);
+
+  useEffect(() => {
+    return () => {
+      clearAnimationTimeouts();
+    };
+  }, []);
 
   const leadContext = isLeadContextDismissed
     ? undefined
@@ -655,25 +677,27 @@ export default function AuraChatWidget({
   const quickPrompts = buildQuickPrompts(leadContext);
   const inputPlaceholder = leadFirstName
     ? `Ex.: qual abordagem pode destravar ${leadFirstName} agora?`
-    : 'Ex.: monte uma resposta de WhatsApp ou diga o prÃ³ximo passo';
+    : 'Ex.: monte uma resposta de WhatsApp ou diga o proximo passo';
   const contextualHint = leadContext
-    ? 'Aura vai considerar o lead em foco e o histÃ³rico resumido deste atendimento.'
-    : 'VocÃª pode pedir resumo, mensagem de WhatsApp, prÃ³ximo passo ou leitura de risco.';
+    ? 'Aura vai considerar o lead em foco e o historico resumido deste atendimento.'
+    : 'Voce pode pedir resumo, mensagem de WhatsApp, proximo passo ou leitura de risco.';
   const loadingMessage = leadFirstName
-    ? `Lendo o momento de ${leadFirstName} e montando uma resposta com direÃ§Ã£o comercial.`
-    : 'Organizando prÃ³ximos passos, argumentos e mensagem comercial.';
+    ? `Lendo o momento de ${leadFirstName} e montando uma resposta com direcao comercial.`
+    : 'Organizando proximos passos, argumentos e mensagem comercial.';
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   };
 
   useEffect(() => {
-    if (isOpen) scrollToBottom();
-  }, [messages, isOpen, isLoading]);
+    if (isContentVisible) scrollToBottom();
+  }, [messages, isContentVisible, isLoading]);
 
   useEffect(() => {
-    if (isOpen && !isLoading) inputRef.current?.focus();
-  }, [isOpen, isLoading]);
+    if (animStage === 'open' && isContentVisible && !isLoading) {
+      inputRef.current?.focus();
+    }
+  }, [animStage, isContentVisible, isLoading]);
 
   const appendAuraMessage = (text: string) => {
     setMessages((prev) => [...prev, normalizeChatMessage({ role: 'model', text })]);
@@ -721,7 +745,7 @@ export default function AuraChatWidget({
       if (action.id === 'send_whatsapp') {
         const draftText = action.payload?.draftText?.trim() || targetMessage.text || '';
         if (!draftText) {
-          addToast('NÃ£o achei uma mensagem pronta para abrir no WhatsApp agora.', 'error');
+          addToast('Nao achei uma mensagem pronta para abrir no WhatsApp agora.', 'error');
           return;
         }
 
@@ -734,7 +758,7 @@ export default function AuraChatWidget({
       if (action.id === 'edit_whatsapp') {
         const targetLeadName = action.payload?.leadName || leadContext?.leadName || 'o lead';
         setInputValue(
-          `Refine a Ãºltima mensagem de WhatsApp para ${targetLeadName} com tom de corretor, mais curta, natural e fÃ¡cil de responder.`
+          `Refine a ultima mensagem de WhatsApp para ${targetLeadName} com tom de corretor, mais curta, natural e facil de responder.`
         );
         inputRef.current?.focus();
         updateMessageAction(messageIndex, action.id, { disabled: true, label: 'Texto em ajuste' });
@@ -744,24 +768,23 @@ export default function AuraChatWidget({
 
       if (action.id === 'create_task') {
         const taskTitle = action.payload?.taskTitle || buildFollowUpTaskTitle(leadContext);
-
-        appendAuraMessage(`Tarefa gerada: "${taskTitle}". Pode fechá-la na aba de tarefas do lead.`);
+        appendAuraMessage(`Tarefa gerada: "${taskTitle}". Pode fecha-la na aba de tarefas do lead.`);
         updateMessageAction(messageIndex, action.id, { disabled: true, label: 'Tarefa pronta' });
         addToast('Deixei uma tarefa de follow-up rascunhada no chat.', 'success');
         return;
       }
 
       if (action.id === 'register_timeline') {
-        appendAuraMessage(`Nota adicionada com sucesso ao histórico!`);
+        appendAuraMessage('Nota adicionada com sucesso ao historico.');
         updateMessageAction(messageIndex, action.id, { disabled: true, label: 'Nota pronta' });
-        addToast('Deixei uma nota pronta para o histÃ³rico do lead.', 'success');
+        addToast('Deixei uma nota pronta para o historico do lead.', 'success');
         return;
       }
 
       if (action.id === 'open_lead') {
         const targetLeadId = action.payload?.leadId || leadContext?.leadId;
         if (!targetLeadId) {
-          addToast('NÃ£o encontrei um lead em foco para abrir agora.', 'info');
+          addToast('Nao encontrei um lead em foco para abrir agora.', 'info');
           return;
         }
 
@@ -774,8 +797,8 @@ export default function AuraChatWidget({
         addToast('Atalho recolhido.', 'info');
       }
     } catch (error: unknown) {
-      console.error('Erro ao executar aÃ§Ã£o rÃ¡pida da Aura:', error);
-      addToast('NÃ£o consegui executar esse atalho agora.', 'error');
+      console.error('Erro ao executar acao rapida da Aura:', error);
+      addToast('Nao consegui executar esse atalho agora.', 'error');
     } finally {
       setActiveActionKey(null);
     }
@@ -818,6 +841,40 @@ export default function AuraChatWidget({
     await sendMessage(inputValue);
   };
 
+  const handleOpenSequence = () => {
+    if (animStage !== 'closed') return;
+
+    clearAnimationTimeouts();
+    setIsOpen(true);
+    setIsContentVisible(false);
+    setAnimStage('pill');
+
+    queueAnimationTimeout(() => {
+      setAnimStage('open');
+
+      queueAnimationTimeout(() => {
+        setIsContentVisible(true);
+        inputRef.current?.focus();
+      }, 200);
+    }, 250);
+  };
+
+  const handleCloseSequence = () => {
+    if (!isOpen) return;
+
+    clearAnimationTimeouts();
+    setIsContentVisible(false);
+    setAnimStage('pill');
+
+    queueAnimationTimeout(() => {
+      setAnimStage('closed');
+
+      queueAnimationTimeout(() => {
+        setIsOpen(false);
+      }, 300);
+    }, 200);
+  };
+
   const handleQuickPrompt = (prompt: string) => {
     if (isLoading) return;
     setInputValue(prompt);
@@ -832,227 +889,253 @@ export default function AuraChatWidget({
 
   return (
     <div className="fixed bottom-4 right-4 z-[9999] flex flex-col items-end sm:bottom-6 sm:right-6">
-      {isOpen && (
-        <div className="mb-4 flex h-[650px] max-h-[calc(100dvh-4rem)] w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-fade-in sm:w-[460px]">
-          <div className="flex items-center justify-between bg-slate-900 px-4 py-3 text-white">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-500/20 text-brand-300">
-                <Icons.Sparkles size={16} />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold">Aura</h3>
-                <p className="text-[10px] text-slate-300">
-                  {leadFirstName ? `Em contexto com ${leadFirstName}` : 'Copiloto comercial do plantÃ£o'}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="text-slate-400 transition-colors hover:text-white"
-              aria-label="Fechar chat da Aura"
-            >
-              <Icons.X size={18} />
-            </button>
-          </div>
+      {animStage === 'closed' && leadFirstName && (
+        <span className="mb-2 rounded-full border border-brand-200 bg-white px-3 py-1 text-[11px] font-semibold text-brand-700 shadow-sm">
+          Lead em foco: {leadFirstName}
+        </span>
+      )}
 
-          {leadContext && (
-            <div className="border-b border-brand-100 bg-brand-50/80 px-4 py-2.5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-brand-600">Modo contextual</p>
-                  <p className="truncate text-xs font-semibold text-slate-800">
-                    Conversando sobre: {leadContext.leadName || 'Lead selecionado'}
+      <div
+        className={cn(
+          'group relative overflow-hidden shadow-2xl transition-all duration-300 ease-in-out',
+          animStage === 'closed' && 'h-14 w-14 cursor-pointer rounded-full bg-slate-900 hover:bg-slate-800',
+          animStage === 'pill' &&
+            'h-14 w-[min(380px,calc(100vw-2rem))] rounded-full border border-slate-200 bg-white sm:w-[460px]',
+          animStage === 'open' &&
+            'h-[650px] max-h-[calc(100dvh-4rem)] w-[min(380px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white sm:w-[460px]'
+        )}
+        onClick={animStage === 'closed' ? handleOpenSequence : undefined}
+        onKeyDown={
+          animStage === 'closed'
+            ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleOpenSequence();
+                }
+              }
+            : undefined
+        }
+        role={animStage === 'closed' ? 'button' : undefined}
+        tabIndex={animStage === 'closed' ? 0 : undefined}
+        aria-label={animStage === 'closed' ? 'Abrir chat da Aura' : undefined}
+      >
+        <div
+          className={cn(
+            'absolute inset-0 flex items-center justify-center transition-opacity duration-200',
+            animStage === 'closed' ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          )}
+        >
+          <Icons.Sparkles size={24} className="text-brand-400 transition-transform group-hover:rotate-12" />
+        </div>
+
+        {isOpen && (
+          <div
+            className={cn(
+              'flex h-full w-full flex-col transition-opacity duration-300',
+              isContentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            )}
+          >
+            <div className="flex items-center justify-between bg-slate-900 px-4 py-3 text-white">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-500/20 text-brand-300">
+                  <Icons.Sparkles size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold">Aura</h3>
+                  <p className="text-[10px] text-slate-300">
+                    {leadFirstName ? `Em contexto com ${leadFirstName}` : 'Copiloto comercial do plantao'}
                   </p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={handleClearContext}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700"
-                  aria-label="Limpar contexto do lead"
-                >
-                  <Icons.X size={12} />
-                  Limpar
-                </button>
               </div>
-
-              {(leadContext.leadStatus || leadContext.propertyTitle || leadContext.timelineContext?.length) && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {leadContext.leadStatus && (
-                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                      {leadContext.leadStatus}
-                    </span>
-                  )}
-
-                  {leadContext.propertyTitle && (
-                    <span className="max-w-full truncate rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                      ImÃ³vel: {leadContext.propertyTitle}
-                    </span>
-                  )}
-
-                  {leadContext.timelineContext?.length ? (
-                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                      HistÃ³rico recente: {leadContext.timelineContext.length}
-                    </span>
-                  ) : null}
-                </div>
-              )}
+              <button
+                onClick={handleCloseSequence}
+                className="text-slate-400 transition-colors hover:text-white"
+                aria-label="Fechar chat da Aura"
+              >
+                <Icons.X size={18} />
+              </button>
             </div>
-          )}
 
-          <div className="flex-1 overflow-y-auto bg-gradient-to-b from-slate-50 via-white to-slate-100/70 p-4">
-            {normalizedMessages.length === 0 ? (
-              <EmptyState
-                onUsePrompt={handleQuickPrompt}
-                leadName={leadContext?.leadName}
-                leadStatus={leadContext?.leadStatus}
-                propertyTitle={leadContext?.propertyTitle}
-                quickPrompts={quickPrompts}
-              />
-            ) : (
-              <div className="flex flex-col gap-4">
-                {normalizedMessages.map((msg, idx) => {
-                  if (msg.role === 'user') {
-                    const lines = msg.text.split(/\r?\n/);
+            {leadContext && (
+              <div className="border-b border-brand-100 bg-brand-50/80 px-4 py-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-brand-600">Modo contextual</p>
+                    <p className="truncate text-xs font-semibold text-slate-800">
+                      Conversando sobre: {leadContext.leadName || 'Lead selecionado'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleClearContext}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700"
+                    aria-label="Limpar contexto do lead"
+                  >
+                    <Icons.X size={12} />
+                    Limpar
+                  </button>
+                </div>
+
+                {(leadContext.leadStatus || leadContext.propertyTitle || leadContext.timelineContext?.length) && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {leadContext.leadStatus && (
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                        {leadContext.leadStatus}
+                      </span>
+                    )}
+
+                    {leadContext.propertyTitle && (
+                      <span className="max-w-full truncate rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                        Imovel: {leadContext.propertyTitle}
+                      </span>
+                    )}
+
+                    {leadContext.timelineContext?.length ? (
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                        Historico recente: {leadContext.timelineContext.length}
+                      </span>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto bg-gradient-to-b from-slate-50 via-white to-slate-100/70 p-4">
+              {normalizedMessages.length === 0 ? (
+                <EmptyState
+                  onUsePrompt={handleQuickPrompt}
+                  leadName={leadContext?.leadName}
+                  leadStatus={leadContext?.leadStatus}
+                  propertyTitle={leadContext?.propertyTitle}
+                  quickPrompts={quickPrompts}
+                />
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {normalizedMessages.map((msg, idx) => {
+                    if (msg.role === 'user') {
+                      const lines = msg.text.split(/\r?\n/);
+
+                      return (
+                        <div key={`message-${idx}`} className="flex justify-end">
+                          <div className="max-w-[82%] rounded-[22px] rounded-tr-md bg-slate-900 px-4 py-3 text-sm leading-6 text-white shadow-sm">
+                            {lines.map((line, lineIndex) => (
+                              <React.Fragment key={`user-line-${idx}-${lineIndex}`}>
+                                {line}
+                                {lineIndex !== lines.length - 1 && <br />}
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
 
                     return (
-                      <div key={`message-${idx}`} className="flex justify-end">
-                        <div className="max-w-[82%] rounded-[22px] rounded-tr-md bg-slate-900 px-4 py-3 text-sm leading-6 text-white shadow-sm">
-                          {lines.map((line, lineIndex) => (
-                            <React.Fragment key={`user-line-${idx}-${lineIndex}`}>
-                              {line}
-                              {lineIndex !== lines.length - 1 && <br />}
-                            </React.Fragment>
-                          ))}
+                      <div key={`message-${idx}`} className="flex justify-start">
+                        <div className="flex max-w-[92%] items-start gap-2.5">
+                          <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-brand-100 text-brand-600 shadow-sm">
+                            <Icons.Sparkles size={16} />
+                          </div>
+
+                          <div className="min-w-0 flex-1 overflow-hidden rounded-[24px] rounded-tl-md border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
+                            <div className="border-b border-slate-100 bg-gradient-to-r from-brand-50 via-white to-white px-4 py-2">
+                              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brand-600">Aura</p>
+                              <p className="text-[11px] text-slate-500">
+                                {msg.messageType === 'action_prompt'
+                                  ? 'Movimento sugerido pela Aura'
+                                  : 'Copiloto comercial do plantao'}
+                              </p>
+                            </div>
+
+                            <div className="px-4 py-3.5">
+                              <AuraMessageBody text={msg.text} />
+                            </div>
+
+                            {msg.messageType === 'action_prompt' && msg.actions?.length ? (
+                              <AuraMessageActions
+                                actions={msg.actions}
+                                isBusy={Boolean(activeActionKey)}
+                                onActionClick={(action) => void handleActionClick(idx, action)}
+                              />
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                     );
-                  }
+                  })}
 
-                  return (
-                    <div key={`message-${idx}`} className="flex justify-start">
+                  {isLoading && (
+                    <div className="flex justify-start">
                       <div className="flex max-w-[92%] items-start gap-2.5">
                         <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-brand-100 text-brand-600 shadow-sm">
                           <Icons.Sparkles size={16} />
                         </div>
 
-                        <div className="min-w-0 flex-1 overflow-hidden rounded-[24px] rounded-tl-md border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-                          <div className="border-b border-slate-100 bg-gradient-to-r from-brand-50 via-white to-white px-4 py-2">
-                            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brand-600">Aura</p>
-                            <p className="text-[11px] text-slate-500">
-                              {msg.messageType === 'action_prompt'
-                                ? 'Movimento sugerido pela Aura'
-                                : 'Copiloto comercial do plantÃ£o'}
-                            </p>
+                        <div className="overflow-hidden rounded-[24px] rounded-tl-md border border-slate-200 bg-white px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
+                          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-brand-600">
+                            <Icons.Loader2 size={14} className="animate-spin" />
+                            Aura montando a melhor abordagem
                           </div>
-
-                          <div className="px-4 py-3.5">
-                            <AuraMessageBody text={msg.text} />
-                          </div>
-
-                          {msg.messageType === 'action_prompt' && msg.actions?.length ? (
-                            <AuraMessageActions
-                              actions={msg.actions}
-                              isBusy={Boolean(activeActionKey)}
-                              onActionClick={(action) => void handleActionClick(idx, action)}
-                            />
-                          ) : null}
+                          <p className="mt-2 text-xs leading-5 text-slate-500">{loadingMessage}</p>
                         </div>
                       </div>
                     </div>
-                  );
-                })}
+                  )}
 
-                {isLoading && (
-                  <div className="flex justify-start">
-                    <div className="flex max-w-[92%] items-start gap-2.5">
-                      <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-brand-100 text-brand-600 shadow-sm">
-                        <Icons.Sparkles size={16} />
-                      </div>
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
+            </div>
 
-                      <div className="overflow-hidden rounded-[24px] rounded-tl-md border border-slate-200 bg-white px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-                        <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-brand-600">
-                          <Icons.Loader2 size={14} className="animate-spin" />
-                          Aura montando a melhor abordagem
-                        </div>
-                        <p className="mt-2 text-xs leading-5 text-slate-500">{loadingMessage}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+            <form onSubmit={handleSendMessage} className="border-t border-slate-100 bg-white p-3">
+              <div className="mb-3">
+                <div className="mb-2 flex items-center justify-between gap-3 px-1">
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Comece por aqui</p>
+                  {leadFirstName ? (
+                    <span className="text-[11px] font-medium text-brand-600">Lead em foco: {leadFirstName}</span>
+                  ) : null}
+                </div>
 
-                <div ref={messagesEndRef} />
+                <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                  {quickPrompts.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => handleQuickPrompt(prompt)}
+                      disabled={isLoading}
+                      className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
+
+              <div className="relative flex items-center">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder={inputPlaceholder}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-4 pr-12 text-sm focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  disabled={isLoading}
+                />
+                <button
+                  type="submit"
+                  disabled={!inputValue.trim() || isLoading}
+                  className="absolute right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
+                  aria-label="Enviar mensagem para a Aura"
+                >
+                  <Icons.Send size={14} />
+                </button>
+              </div>
+
+              <p className="mt-2 px-1 text-[11px] leading-5 text-slate-500">{contextualHint}</p>
+            </form>
           </div>
-
-          <form onSubmit={handleSendMessage} className="border-t border-slate-100 bg-white p-3">
-            <div className="mb-3">
-              <div className="mb-2 flex items-center justify-between gap-3 px-1">
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Comece por aqui</p>
-                {leadFirstName ? (
-                  <span className="text-[11px] font-medium text-brand-600">Lead em foco: {leadFirstName}</span>
-                ) : null}
-              </div>
-
-              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-                {quickPrompts.map((prompt) => (
-                  <button
-                    key={prompt}
-                    type="button"
-                    onClick={() => handleQuickPrompt(prompt)}
-                    disabled={isLoading}
-                    className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="relative flex items-center">
-              <input
-                ref={inputRef}
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder={inputPlaceholder}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-4 pr-12 text-sm focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
-                disabled={isLoading}
-              />
-              <button
-                type="submit"
-                disabled={!inputValue.trim() || isLoading}
-                className="absolute right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
-                aria-label="Enviar mensagem para a Aura"
-              >
-                <Icons.Send size={14} />
-              </button>
-            </div>
-
-            <p className="mt-2 px-1 text-[11px] leading-5 text-slate-500">{contextualHint}</p>
-          </form>
-        </div>
-      )}
-
-      {!isOpen && (
-        <>
-          {leadFirstName ? (
-            <span className="mb-2 rounded-full border border-brand-200 bg-white px-3 py-1 text-[11px] font-semibold text-brand-700 shadow-sm">
-              Lead em foco: {leadFirstName}
-            </span>
-          ) : null}
-
-          <button
-            onClick={() => setIsOpen(true)}
-            className="group flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-white shadow-xl transition-all hover:scale-105 hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-900/20"
-            aria-label="Abrir chat da Aura"
-          >
-            <Icons.Sparkles size={24} className="text-brand-400 transition-transform group-hover:rotate-12" />
-          </button>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }
-
