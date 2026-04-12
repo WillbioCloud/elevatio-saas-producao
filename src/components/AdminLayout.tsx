@@ -11,6 +11,7 @@ import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 import BillingPortalModal from './BillingPortalModal';
 import ProductTour from './ProductTour';
 import SetupWizardModal from './SetupWizardModal';
+import AuraChatWidget from './AuraChatWidget';
 
 const getSmartNavigationBasePath = (pathname: string) => {
   const segments = pathname.split('/').filter(Boolean);
@@ -943,6 +944,8 @@ const AdminLayout: React.FC = () => {
           />
         )}
       </main>
+
+      <AuraChatWidget />
     </div>
   );
 };

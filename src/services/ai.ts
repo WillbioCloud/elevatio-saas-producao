@@ -656,3 +656,56 @@ Regras:
     return fallback;
   }
 };
+
+export interface ChatMessage {
+  role: "user" | "model";
+  text: string;
+}
+
+/**
+ * Oraculo (Chat Global): Permite conversacao livre com a Aura baseada num historico.
+ * Inclui resiliencia para erros de servidor (503).
+ */
+export const chatWithAura = async (
+  message: string,
+  history: ChatMessage[],
+  userName: string = "Corretor",
+  retries = 3
+): Promise<string> => {
+  if (!genAI) throw new Error("Gemini API Key não configurada.");
+
+  try {
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      systemInstruction: `Você é a Aura, a Inteligência Artificial super-avançada integrada a este CRM Imobiliário.
+      Sua missão é ajudar o corretor ${userName} a fechar mais negócios, redigir textos persuasivos para anúncios,
+      sugerir abordagens de negociação e tirar dúvidas.
+      Regras:
+      1. Seja direta, extremamente profissional e com foco em alta conversão.
+      2. Não use introduções robóticas como "Olá, eu sou a Aura". Vá direto ao ponto.
+      3. Use formatação limpa (tópicos e negritos) para facilitar a leitura.
+      4. Se pedirem para gerar uma descrição de imóvel, use gatilhos mentais.`,
+    });
+
+    const formattedHistory = history.map((msg) => ({
+      role: msg.role,
+      parts: [{ text: msg.text }],
+    }));
+
+    const chat = model.startChat({
+      history: formattedHistory,
+    });
+
+    const result = await chat.sendMessage(message);
+    return result.response.text().trim();
+  } catch (error: any) {
+    if (error?.message?.includes("503") && retries > 0) {
+      console.warn(`Aura Chat: Servidor ocupado (503). Tentando novamente... (${retries} restantes)`);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      return chatWithAura(message, history, userName, retries - 1);
+    }
+
+    console.error("Aura Chat: Erro ao gerar resposta", error);
+    throw new Error("Desculpe, a minha linha de raciocínio falhou por um momento. Pode repetir?");
+  }
+};
