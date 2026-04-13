@@ -65,15 +65,6 @@ const ACTION_ICON_MAP: Record<ChatMessageActionIcon, typeof Icons.Smartphone> = 
   cancel: Icons.X,
 };
 
-const ACTION_VARIANT_CLASSNAME: Record<ChatMessageActionVariant, string> = {
-  primary:
-    'border-transparent bg-slate-900 text-white shadow-sm hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-500',
-  secondary:
-    'border-brand-200 bg-brand-50 text-brand-700 hover:border-brand-300 hover:bg-brand-100 disabled:border-brand-100 disabled:bg-brand-50/60 disabled:text-brand-300',
-  ghost:
-    'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-400',
-} as const;
-
 const truncateText = (value: string, maxLength = MAX_TIMELINE_CONTEXT_LENGTH) => {
   const trimmedValue = value.trim();
   if (trimmedValue.length <= maxLength) return trimmedValue;
@@ -476,11 +467,14 @@ const parseInlineTokens = (text: string): InlineToken[] => {
   return tokens;
 };
 
-const renderInlineContent = (text: string, keyPrefix: string) =>
+const renderInlineContent = (text: string, keyPrefix: string, tone: 'default' | 'inverse' = 'default') =>
   parseInlineTokens(text).map((token, index) => {
     if (token.type === 'strong') {
       return (
-        <strong key={`${keyPrefix}-strong-${index}`} className="font-semibold text-slate-900">
+        <strong
+          key={`${keyPrefix}-strong-${index}`}
+          className={cn('font-semibold', tone === 'inverse' ? 'text-white' : 'text-slate-900')}
+        >
           {token.value}
         </strong>
       );
@@ -488,7 +482,10 @@ const renderInlineContent = (text: string, keyPrefix: string) =>
 
     if (token.type === 'emphasis') {
       return (
-        <em key={`${keyPrefix}-em-${index}`} className="font-medium italic text-brand-700">
+        <em
+          key={`${keyPrefix}-em-${index}`}
+          className={cn('font-medium italic', tone === 'inverse' ? 'text-brand-300' : 'text-brand-700')}
+        >
           {token.value}
         </em>
       );
@@ -554,32 +551,45 @@ const parseMessageBlocks = (text: string): MessageBlock[] => {
   return blocks;
 };
 
-function AuraMessageBody({ text }: { text: string }) {
+function AuraMessageBody({
+  text,
+  tone = 'default',
+}: {
+  text: string;
+  tone?: 'default' | 'inverse';
+}) {
   const safeText = text.trim() || 'Posso te ajudar a destravar esse atendimento.';
   const blocks = parseMessageBlocks(safeText);
+  const isInverse = tone === 'inverse';
 
   if (blocks.length === 0) {
     return (
-      <p className="prose prose-slate prose-invert max-w-none text-[13px] leading-6 text-slate-700">
+      <p className={cn('max-w-none text-[13px] leading-6', isInverse ? 'text-slate-100' : 'text-slate-700')}>
         {safeText}
       </p>
     );
   }
 
   return (
-    <div className="prose prose-slate prose-invert max-w-none space-y-2 text-[13px]">
+    <div className="max-w-none space-y-2 text-[13px]">
       {blocks.map((block, blockIndex) => {
         if (block.type === 'heading') {
           const headingClassName =
             block.level === 1
-              ? 'text-[11px] font-black uppercase tracking-[0.18em] text-brand-600'
+              ? isInverse
+                ? 'text-[11px] font-black uppercase tracking-[0.18em] text-brand-300'
+                : 'text-[11px] font-black uppercase tracking-[0.18em] text-brand-600'
               : block.level === 2
-                ? 'text-sm font-bold text-slate-900'
-                : 'text-xs font-bold uppercase tracking-[0.14em] text-slate-500';
+                ? isInverse
+                  ? 'text-sm font-bold text-white'
+                  : 'text-sm font-bold text-slate-900'
+                : isInverse
+                  ? 'text-xs font-bold uppercase tracking-[0.14em] text-slate-400'
+                  : 'text-xs font-bold uppercase tracking-[0.14em] text-slate-500';
 
           return (
             <p key={`heading-${blockIndex}`} className={headingClassName}>
-              {renderInlineContent(block.text, `heading-${blockIndex}`)}
+              {renderInlineContent(block.text, `heading-${blockIndex}`, tone)}
             </p>
           );
         }
@@ -588,13 +598,18 @@ function AuraMessageBody({ text }: { text: string }) {
           return (
             <ul
               key={`list-${blockIndex}`}
-              className="my-1 space-y-1.5 rounded-2xl border border-slate-100 bg-slate-50/90 px-3 py-2"
+              className={cn(
+                'my-1 space-y-1.5 rounded-2xl px-3 py-2',
+                isInverse
+                  ? 'border border-slate-700/80 bg-slate-900/60'
+                  : 'border border-slate-100 bg-slate-50/90'
+              )}
             >
               {block.items.map((item, itemIndex) => (
                 <li key={`list-item-${blockIndex}-${itemIndex}`} className="my-0 flex items-start gap-2">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
-                  <span className="min-w-0 flex-1 text-[13px] leading-5 text-slate-700">
-                    {renderInlineContent(item, `list-item-${blockIndex}-${itemIndex}`)}
+                  <span className={cn('mt-2 h-1.5 w-1.5 shrink-0 rounded-full', isInverse ? 'bg-brand-300' : 'bg-brand-500')} />
+                  <span className={cn('min-w-0 flex-1 text-[13px] leading-5', isInverse ? 'text-slate-100' : 'text-slate-700')}>
+                    {renderInlineContent(item, `list-item-${blockIndex}-${itemIndex}`, tone)}
                   </span>
                 </li>
               ))}
@@ -603,10 +618,10 @@ function AuraMessageBody({ text }: { text: string }) {
         }
 
         return (
-          <p key={`paragraph-${blockIndex}`} className="text-[13px] leading-6 text-slate-700">
+          <p key={`paragraph-${blockIndex}`} className={cn('text-[13px] leading-6', isInverse ? 'text-slate-100' : 'text-slate-700')}>
             {block.lines.map((line, lineIndex) => (
               <React.Fragment key={`paragraph-line-${blockIndex}-${lineIndex}`}>
-                {renderInlineContent(line, `paragraph-line-${blockIndex}-${lineIndex}`)}
+                {renderInlineContent(line, `paragraph-line-${blockIndex}-${lineIndex}`, tone)}
                 {lineIndex !== block.lines.length - 1 && <br />}
               </React.Fragment>
             ))}
@@ -627,26 +642,33 @@ function AuraMessageActions({
   onActionClick: (action: ChatMessageAction) => void;
 }) {
   return (
-    <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
-      <div className="flex flex-wrap gap-2">
-        {actions.map((action) => {
-          const IconComponent = action.icon ? ACTION_ICON_MAP[action.icon] : null;
-          const variant = action.variant || 'ghost';
+    <div className="mt-1 flex flex-wrap gap-2">
+      {actions.map((action) => {
+        const IconComponent = action.icon ? ACTION_ICON_MAP[action.icon] : Icons.Zap;
+        const variant = action.variant || 'ghost';
+        const variantClassName =
+          variant === 'primary'
+            ? 'border-brand-500/30 bg-brand-500/12 text-brand-200 hover:border-brand-400/40 hover:bg-brand-500/18 hover:text-white'
+            : variant === 'secondary'
+              ? 'border-slate-600 bg-slate-900 text-slate-100 hover:border-slate-500 hover:bg-slate-800 hover:text-white'
+              : 'border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800 hover:text-white';
 
-          return (
-            <button
-              key={action.id}
-              type="button"
-              onClick={() => onActionClick(action)}
-              disabled={isBusy || action.disabled}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] ${ACTION_VARIANT_CLASSNAME[variant]}`}
-            >
-              {IconComponent && <IconComponent size={13} />}
-              <span>{action.label}</span>
-            </button>
-          );
-        })}
-      </div>
+        return (
+          <button
+            key={action.id}
+            type="button"
+            onClick={() => onActionClick(action)}
+            disabled={isBusy || action.disabled}
+            className={cn(
+              'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+              variantClassName
+            )}
+          >
+            <IconComponent size={12} className="text-brand-400" />
+            <span>{action.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -789,10 +811,21 @@ export default function AuraChatWidget() {
   const quickPrompts = buildQuickPrompts(leadContext);
   const inputPlaceholder = leadFirstName
     ? `Ex.: qual abordagem pode destravar ${leadFirstName} agora?`
-    : 'Ex.: monte uma resposta de WhatsApp ou diga o proximo passo';
+    : 'Escreva aqui sua pergunta ou solicitação para a Aura';
   const loadingMessage = leadFirstName
     ? `Lendo o momento de ${leadFirstName} e montando uma resposta com direcao comercial.`
     : 'Organizando proximos passos, argumentos e mensagem comercial.';
+  const userAvatarUrl = user?.avatar_url || user?.user_metadata?.avatar_url;
+  const userInitial = (
+    user?.name ||
+    user?.user_metadata?.name ||
+    user?.user_metadata?.full_name ||
+    user?.email ||
+    'U'
+  )
+    .trim()
+    .charAt(0)
+    .toUpperCase();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -1229,7 +1262,7 @@ export default function AuraChatWidget() {
           animStage === 'closed' && 'h-14 w-14 cursor-pointer rounded-full bg-slate-900 hover:bg-slate-800',
           animStage !== 'closed' && 'border border-slate-200 bg-white',
           animStage === 'pill' && 'w-[483px] h-14 rounded-[50px]',
-          animStage === 'open' && 'w-[483px] h-[650px] rounded-[3rem]',
+          animStage === 'open' && 'w-[483px] h-[650px] rounded-[24px]',
           animStage === 'open' && 'max-h-[calc(100dvh-4rem)]'
         )}
         onClick={animStage === 'closed' ? handleOpenSequence : undefined}
@@ -1271,7 +1304,7 @@ export default function AuraChatWidget() {
                 <div>
                   <h3 className="text-sm font-bold">Aura</h3>
                   <p className="text-[10px] text-slate-300">
-                    {context.leadName ? `Em contexto com ${context.leadName}` : 'Copiloto comercial do plantao'}
+                    {context.leadName ? `Em contexto com ${context.leadName}` : 'Seu Assistente Comercial do Plantao'}
                   </p>
                 </div>
               </div>
@@ -1284,48 +1317,45 @@ export default function AuraChatWidget() {
               </button>
             </div>
 
-            {leadContext && (
-              <div className="border-b border-brand-100 bg-brand-50/80 px-4 py-2.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-brand-600">Modo contextual</p>
-                    <p className="truncate text-xs font-semibold text-slate-800">
-                      Conversando sobre: {context.leadName || 'Lead selecionado'}
-                    </p>
+            {leadContext?.leadId && leadContext.leadName && (
+              <div className="border-b border-slate-800/60 bg-slate-900/50 px-6 py-2 backdrop-blur-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      <Icons.Target size={10} />
+                      Foco Atual
+                    </span>
+                    <div className="flex max-w-[190px] items-center gap-1.5 rounded-md border border-brand-500/20 bg-brand-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-brand-400">
+                      <Icons.User size={10} />
+                      <span className="max-w-[150px] truncate">{leadContext.leadName}</span>
+                    </div>
+                    {leadContext.leadStatus && (
+                      <span className="rounded-md border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                        {leadContext.leadStatus}
+                      </span>
+                    )}
+                    {leadContext.propertyTitle && (
+                      <span className="max-w-[150px] truncate rounded-md border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                        Imovel: {leadContext.propertyTitle}
+                      </span>
+                    )}
+                    {leadContext.timelineContext?.length ? (
+                      <span className="rounded-md border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                        Historico: {leadContext.timelineContext.length}
+                      </span>
+                    ) : null}
                   </div>
 
                   <button
                     type="button"
                     onClick={handleClearContext}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700"
+                    className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-slate-400 transition-colors hover:text-slate-200"
+                    title="Sair do modo contextual"
                     aria-label="Limpar contexto do lead"
                   >
-                    <Icons.X size={12} />
-                    Limpar
+                    Limpar <Icons.X size={12} />
                   </button>
                 </div>
-
-                {(leadContext.leadStatus || leadContext.propertyTitle || leadContext.timelineContext?.length) && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {leadContext.leadStatus && (
-                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                        {leadContext.leadStatus}
-                      </span>
-                    )}
-
-                    {leadContext.propertyTitle && (
-                      <span className="max-w-full truncate rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                        Imovel: {leadContext.propertyTitle}
-                      </span>
-                    )}
-
-                    {leadContext.timelineContext?.length ? (
-                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                        Historico recente: {leadContext.timelineContext.length}
-                      </span>
-                    ) : null}
-                  </div>
-                )}
               </div>
             )}
 
@@ -1341,71 +1371,79 @@ export default function AuraChatWidget() {
               ) : (
                 <div className="flex flex-col gap-4">
                   {normalizedMessages.map((msg, idx) => {
-                    if (msg.role === 'user') {
-                      const lines = msg.text.split(/\r?\n/);
-
-                      return (
-                        <div key={`message-${idx}`} className="flex justify-end">
-                          <div className="max-w-[82%] rounded-[22px] rounded-tr-md bg-slate-900 px-4 py-3 text-sm leading-6 text-white shadow-sm">
-                            {lines.map((line, lineIndex) => (
-                              <React.Fragment key={`user-line-${idx}-${lineIndex}`}>
-                                {line}
-                                {lineIndex !== lines.length - 1 && <br />}
-                              </React.Fragment>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    }
+                    const userLines = msg.text.split(/\r?\n/);
 
                     return (
-                      <div key={`message-${idx}`} className="flex justify-start">
-                        <div className="flex max-w-[92%] items-start gap-2.5">
-                          <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-brand-100 text-brand-600 shadow-sm">
-                            <Icons.Sparkles size={16} />
+                      <div
+                        key={`message-${idx}`}
+                        className={cn('flex w-full gap-2.5', msg.role === 'user' ? 'justify-end' : 'justify-start')}
+                      >
+                        {msg.role === 'model' && (
+                          <div className="mt-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-800 shadow-sm">
+                            <Icons.Sparkles size={12} className="text-brand-400" />
+                          </div>
+                        )}
+
+                        <div
+                          className={cn(
+                            'flex max-w-[82%] flex-col gap-1.5',
+                            msg.role === 'user' ? 'items-end' : 'items-start'
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              'overflow-hidden rounded-[20px] px-4 py-3 text-[13px] leading-relaxed shadow-sm',
+                              msg.role === 'user'
+                                ? 'rounded-br-sm bg-brand-600 text-white'
+                                : 'rounded-bl-sm border border-slate-700 bg-slate-800 text-slate-100'
+                            )}
+                          >
+                            {msg.role === 'user' ? (
+                              userLines.map((line, lineIndex) => (
+                                <React.Fragment key={`user-line-${idx}-${lineIndex}`}>
+                                  {line}
+                                  {lineIndex !== userLines.length - 1 && <br />}
+                                </React.Fragment>
+                              ))
+                            ) : (
+                              <AuraMessageBody text={msg.text} tone="inverse" />
+                            )}
                           </div>
 
-                          <div className="min-w-0 flex-1 overflow-hidden rounded-[24px] rounded-tl-md border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-                            <div className="border-b border-slate-100 bg-gradient-to-r from-brand-50 via-white to-white px-4 py-2">
-                              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brand-600">Aura</p>
-                              <p className="text-[11px] text-slate-500">
-                                {msg.messageType === 'action_prompt'
-                                  ? 'Movimento sugerido pela Aura'
-                                  : 'Copiloto comercial do plantao'}
-                              </p>
-                            </div>
-
-                            <div className="px-4 py-3.5">
-                              <AuraMessageBody text={msg.text} />
-                            </div>
-
-                            {msg.messageType === 'action_prompt' && msg.actions?.length ? (
-                              <AuraMessageActions
-                                actions={msg.actions}
-                                isBusy={Boolean(activeActionKey)}
-                                onActionClick={(action) => void handleActionClick(idx, action)}
-                              />
-                            ) : null}
-                          </div>
+                          {msg.messageType === 'action_prompt' && msg.actions?.length ? (
+                            <AuraMessageActions
+                              actions={msg.actions}
+                              isBusy={Boolean(activeActionKey)}
+                              onActionClick={(action) => void handleActionClick(idx, action)}
+                            />
+                          ) : null}
                         </div>
+
+                        {msg.role === 'user' && (
+                          <div className="mt-auto flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-600 bg-slate-700 shadow-sm">
+                            {userAvatarUrl ? (
+                              <img src={userAvatarUrl} alt="User" className="h-full w-full object-cover" />
+                            ) : (
+                              <span className="text-[10px] font-bold uppercase text-white">{userInitial}</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
 
                   {isLoading && (
-                    <div className="flex justify-start">
-                      <div className="flex max-w-[92%] items-start gap-2.5">
-                        <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-brand-100 text-brand-600 shadow-sm">
-                          <Icons.Sparkles size={16} />
-                        </div>
+                    <div className="flex w-full justify-start gap-2.5">
+                      <div className="mt-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-800 shadow-sm">
+                        <Icons.Sparkles size={12} className="text-brand-400" />
+                      </div>
 
-                        <div className="overflow-hidden rounded-[24px] rounded-tl-md border border-slate-200 bg-white px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-                          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-brand-600">
-                            <Icons.Loader2 size={14} className="animate-spin" />
-                            Aura montando a melhor abordagem
-                          </div>
-                          <p className="mt-2 text-xs leading-5 text-slate-500">{loadingMessage}</p>
+                      <div className="max-w-[82%] rounded-[20px] rounded-bl-sm border border-slate-700 bg-slate-800 px-4 py-3 text-slate-100 shadow-sm">
+                        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-brand-300">
+                          <Icons.Loader2 size={14} className="animate-spin" />
+                          Aura montando a melhor abordagem
                         </div>
+                        <p className="mt-2 text-[13px] leading-5 text-slate-300">{loadingMessage}</p>
                       </div>
                     </div>
                   )}
