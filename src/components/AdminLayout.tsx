@@ -12,6 +12,7 @@ import BillingPortalModal from './BillingPortalModal';
 import ProductTour from './ProductTour';
 import SetupWizardModal from './SetupWizardModal';
 import AuraChatWidget from './AuraChatWidget';
+import SystemReviewModal from './SystemReviewModal';
 
 const getSmartNavigationBasePath = (pathname: string) => {
   const segments = pathname.split('/').filter(Boolean);
@@ -37,6 +38,7 @@ const AdminLayout: React.FC = () => {
   const [contractPlanName, setContractPlanName] = useState(() => user?.company?.plan ?? '');
   const [billingWarning, setBillingWarning] = useState<{ dueDate: string; daysLeft: number; isOverdue: boolean } | null>(null);
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [hasContextualAura, setHasContextualAura] = useState(false);
   const [dismissedUntil, setDismissedUntil] = useState<number>(() => {
     const saved = localStorage.getItem(`hideBillingWarning_${user?.company_id}`);
@@ -98,6 +100,46 @@ const AdminLayout: React.FC = () => {
     return `${role.charAt(0).toUpperCase()}${role.slice(1)}`;
   }, [role]);
   const userInitial = (user?.name?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase();
+
+  const checkReviewEligibility = async () => {
+    if (!user?.created_at) {
+      setIsReviewModalOpen(false);
+      return;
+    }
+
+    const createdAt = new Date(user.created_at).getTime();
+
+    if (!Number.isFinite(createdAt)) {
+      setIsReviewModalOpen(false);
+      return;
+    }
+
+    const accountAge = Date.now() - createdAt;
+    if (accountAge < 604800000) {
+      setIsReviewModalOpen(false);
+      return;
+    }
+
+    try {
+      const { data: existingReview, error } = await supabase
+        .from('system_reviews')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      setIsReviewModalOpen(!existingReview);
+    } catch (error) {
+      console.error('Erro ao verificar elegibilidade da avaliacao do sistema:', error);
+      setIsReviewModalOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    void checkReviewEligibility();
+  }, [user?.id]);
 
   const handleRefresh = async () => {
     if (isRefreshing) return;
@@ -960,6 +1002,10 @@ const AdminLayout: React.FC = () => {
             }}
           />
         )}
+        <SystemReviewModal
+          isOpen={isReviewModalOpen}
+          onClose={() => setIsReviewModalOpen(false)}
+        />
       </main>
 
       {!hasContextualAura ? <AuraChatWidget /> : null}

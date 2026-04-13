@@ -65,6 +65,7 @@ import SaasSupport from './pages/saas/SaasSupport';
 import SaasCoupons from './pages/saas/SaasCoupons';
 import SaasTemplates from './pages/saas/SaasTemplates';
 import SaasDomains from './pages/saas/SaasDomains';
+import SaasReviews from './pages/saas/SaasReviews';
 
 // ============================================================================
 // 🧠 ROTEADOR INTELIGENTE MULTI-TENANT (Elevatio Vendas SaaS)
@@ -236,6 +237,7 @@ const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomai
             <Route path="cupons" element={<SaasCoupons />} />
             <Route path="pagamentos" element={<SaasPayments />} />
             <Route path="contratos" element={<SaasContracts />} />
+            <Route path="avaliacoes" element={<SaasReviews />} />
             <Route path="definicoes" element={<SaasSettings />} />
             <Route path="suporte" element={<SaasSupport />} />
           </Route>

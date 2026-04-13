@@ -22,6 +22,7 @@ import {
   Plus,
   Tag,
   Palette,
+  Star,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -65,6 +66,7 @@ const navigation = [
   {
     title: 'Sistema',
     items: [
+      { name: 'Avaliacoes', href: `${BASE}/avaliacoes`, icon: Star },
       { name: 'Definições', href: `${BASE}/definicoes`, icon: Settings },
       { name: 'Suporte', href: `${BASE}/suporte`, icon: HelpCircle },
     ],
@@ -108,6 +110,7 @@ export default function SaasLayout() {
     if (path === `${BASE}/cupons`) return ['Dashboard', 'Financeiro', 'Cupons'];
     if (path === `${BASE}/pagamentos`) return ['Dashboard', 'Financeiro', 'Pagamentos'];
     if (path === `${BASE}/contratos`) return ['Dashboard', 'Financeiro', 'Contratos'];
+    if (path === `${BASE}/avaliacoes`) return ['Dashboard', 'Sistema', 'Avaliacoes'];
     if (path === `${BASE}/definicoes`) return ['Dashboard', 'Sistema', 'Definições'];
     if (path === `${BASE}/suporte`) return ['Dashboard', 'Sistema', 'Suporte'];
     return ['Dashboard'];
