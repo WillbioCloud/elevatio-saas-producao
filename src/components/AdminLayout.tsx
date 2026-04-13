@@ -303,6 +303,7 @@ const AdminLayout: React.FC = () => {
     { label: 'Tarefas', path: '/admin/tarefas', icon: Icons.Calendar },
     { label: 'Relatórios', path: '/admin/analytics', icon: Icons.PieChart, ownerOnly: true },
     { label: 'Leaderboard', path: '/admin/leaderboard', icon: Icons.Trophy },
+    { label: 'Suporte', path: '/admin/suporte', icon: Icons.MessageSquare },
     { label: 'Configurações', path: '/admin/config', icon: Icons.Settings },
   ];
   const normalizedPlanName = (contractPlanName || user?.company?.plan || '').trim().toUpperCase();
@@ -318,6 +319,7 @@ const AdminLayout: React.FC = () => {
     if (path === '/admin/config') return 'order-11';
     if (path === '/admin/analytics') return 'order-10';
     if (path === '/admin/leaderboard') return 'order-9';
+    if (path === '/admin/suporte') return 'order-10';
     return '';
   };
 
@@ -328,6 +330,7 @@ const AdminLayout: React.FC = () => {
     if (path === '/admin/config') return 'order-11';
     if (path === '/admin/analytics') return 'order-10';
     if (path === '/admin/leaderboard') return 'order-9';
+    if (path === '/admin/suporte') return 'order-10';
     return '';
   };
 

@@ -49,6 +49,7 @@ import AdminFinance from './pages/AdminFinance';
 import AdminKeys from './pages/AdminKeys';
 import AdminClients from './pages/AdminClients';
 import AdminLeaderboard from './pages/AdminLeaderboard';
+import AdminSupport from './pages/AdminSupport';
 import AdminTV from './pages/AdminTV';
 import PendingApproval from './pages/PendingApproval';
 import InviteSignup from './pages/InviteSignup';
@@ -211,6 +212,7 @@ const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomai
               <Route path="analytics" element={<AdminAnalytics />} />
               <Route path="leaderboard" element={<AdminLeaderboard />} />
               <Route path="config" element={<AdminConfig />} />
+              <Route path="suporte" element={<AdminSupport />} />
             </Route>
           </Route>
 
