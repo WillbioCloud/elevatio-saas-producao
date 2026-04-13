@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ScrollSmoother } from 'gsap/ScrollSmoother';
-import { Bot, Check, FileSignature, Headset, Kanban, Target, X, Zap } from 'lucide-react';
+import { Bot, Check, FileSignature, Globe, Headset, Kanban, Target, X, Zap } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 gsap.registerPlugin(ScrollTrigger, ScrollSmoother);
@@ -60,6 +60,8 @@ const FEATURES_LIST = [
 ];
 
 // ── Hooks ─────────────────────────────────────────────────────
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
 function useScrollSmoother() {
   useLayoutEffect(() => {
     const ctx = gsap.context(() => {
@@ -723,6 +725,7 @@ const Pricing: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans
           {plans.map((plan, i) => {
             const basePrice = Number(plan.price || 0);
             const price = annual ? basePrice * 0.85 : basePrice;
+            const totalAnual = annual ? price * 12 : null;
             return (
               <div key={i} className={`ev-plan ${!plan.is_popular ? 'ev-card-hover' : ''}`} style={{
                 borderRadius: 20, padding: '32px 28px', position: 'relative', overflow: 'hidden',
@@ -740,6 +743,11 @@ const Pricing: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans
                 <div style={{ marginBottom: 24 }}>
                   <span style={{ fontFamily: "'Sora',sans-serif", fontSize: 36, fontWeight: 900, letterSpacing: '-1.5px', color: plan.is_popular ? '#7dd3fc' : '#1a56db' }}>R${price.toFixed(2).replace('.',',')}</span>
                   <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, color: plan.is_popular ? 'rgba(255,255,255,0.6)' : '#94a3b8' }}>/mês</span>
+                  {annual && (
+                    <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: plan.is_popular ? '#7dd3fc' : '#0f172a', marginTop: 4 }}>
+                      Total anual: <b>R${totalAnual!.toFixed(2).replace('.',',')}</b>
+                    </div>
+                  )}
                 </div>
                 <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 28px 0', display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
                   {isYearly && plan.has_free_domain && (
@@ -792,6 +800,48 @@ const PlanComparison: React.FC<{ plans: any[]; features: PlanComparisonFeature[]
   const ref = useRef<HTMLElement>(null);
   const [annual, setAnnual] = useState(false);
   useFadeIn(ref, { y: 30 });
+
+  useIsomorphicLayoutEffect(() => {
+    const scope = ref.current;
+    if (!scope) return;
+
+    let cleanup: (() => void) | undefined;
+
+    const ctx = gsap.context(() => {
+      const card = document.getElementById('domain-alert-card');
+      const orb = document.getElementById('orb-follow');
+
+      if (card && orb) {
+        const onMove = (e: MouseEvent) => {
+          const rect = card.getBoundingClientRect();
+          gsap.to(orb, {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+            opacity: 0.4,
+            duration: 0.6,
+            ease: 'power2.out',
+          });
+        };
+
+        const onLeave = () => {
+          gsap.to(orb, { opacity: 0, duration: 0.5 });
+        };
+
+        card.addEventListener('mousemove', onMove);
+        card.addEventListener('mouseleave', onLeave);
+
+        cleanup = () => {
+          card.removeEventListener('mousemove', onMove);
+          card.removeEventListener('mouseleave', onLeave);
+        };
+      }
+    }, scope);
+
+    return () => {
+      cleanup?.();
+      ctx.revert();
+    };
+  }, []);
 
   const featureIcons: Record<string, React.ReactNode> = {
     has_funnel: <Kanban className="w-4 h-4 text-blue-400" />,
@@ -851,6 +901,22 @@ const PlanComparison: React.FC<{ plans: any[]; features: PlanComparisonFeature[]
             <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 600, color: annual ? '#e2e8f0' : '#475569' }}>
               Anual <span style={{ color: '#4ade80', fontSize: 11 }}>−15%</span>
             </span>
+          </div>
+        </div>
+
+        <div
+          id="domain-alert-card"
+          className="relative max-w-4xl mx-auto mb-12 p-6 rounded-2xl bg-slate-900/60 border border-slate-800/80 overflow-hidden group cursor-default"
+        >
+          <div id="orb-follow" className="absolute w-96 h-96 bg-brand-500/25 rounded-full blur-[80px] opacity-0 pointer-events-none -translate-x-1/2 -translate-y-1/2" />
+
+          <div className="relative z-10 flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-400 border border-brand-500/30">
+              <Globe size={20} />
+            </div>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              <strong className="text-slate-200">Nota:</strong> O valor do domínio não está incluso (.com.br ~R$40 | .com ~R$70). A configuração técnica e o apontamento são por nossa conta.
+            </p>
           </div>
         </div>
 
@@ -947,33 +1013,76 @@ const PlanComparison: React.FC<{ plans: any[]; features: PlanComparisonFeature[]
 };
 
 // ── TESTIMONIALS ──────────────────────────────────────────────
-const Testimonials: React.FC = () => {
+const Testimonials: React.FC<{ dynamicReviews: any[] }> = ({ dynamicReviews }) => {
   const ref = useRef<HTMLElement>(null);
-  useFadeIn(ref, { selector: '.ev-test', stagger: 0.1, y: 30 });
+  void TESTIMONIALS;
+
+  useIsomorphicLayoutEffect(() => {
+    const scope = ref.current;
+    if (!scope || dynamicReviews.length === 0) return;
+
+    const targets = scope.querySelectorAll('.ev-test');
+    const ctx = gsap.context(() => {
+      gsap.from(targets, {
+        opacity: 0,
+        y: 30,
+        duration: 0.7,
+        ease: 'power2.out',
+        stagger: 0.1,
+        scrollTrigger: { trigger: scope, start: 'top 92%', once: true },
+      });
+    }, scope);
+
+    return () => ctx.revert();
+  }, [dynamicReviews.length]);
+
   return (
-    <section ref={ref} style={{ background: '#fff', padding: '96px 0' }}>
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 32px' }}>
+    <>
+      {dynamicReviews.length > 0 && (
+        <section ref={ref} style={{ background: '#fff', padding: '96px 0' }}>
+          <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 32px' }}>
         <div style={{ textAlign: 'center', marginBottom: 64 }}>
           <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.12em', color: '#1a56db', textTransform: 'uppercase' as const, display: 'block', marginBottom: 16 }}>Depoimentos de clientes</span>
           <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 'clamp(28px,4vw,44px)', fontWeight: 800, letterSpacing: '-1.5px', color: '#0f172a' }}>Resultados que transformam negócios</h2>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
-          {TESTIMONIALS.map((t, i) => (
+          {dynamicReviews.map((item, i) => {
+            const rating = Math.max(0, Math.min(5, Number(item.rating || 0)));
+            const t = { role: '', company: '' };
+
+            return (
             <div key={i} className="ev-test ev-card-hover" style={{ background: '#fff', borderRadius: 20, padding: '32px', border: '1px solid #e2e8f0' }}>
-              <div style={{ display: 'flex', gap: 2, marginBottom: 20 }}>{[1,2,3,4,5].map(s=><svg key={s} width="16" height="16" viewBox="0 0 24 24" fill="#fbbf24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>)}</div>
-              <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 15, lineHeight: 1.7, color: '#374151', fontStyle: 'italic', marginBottom: 24 }}>"{t.quote}"</p>
+              <div style={{ display: 'flex', gap: 2, marginBottom: 20 }}>{[1,2,3,4,5].map(s=><svg key={s} width="16" height="16" viewBox="0 0 24 24" fill={s <= rating ? '#fbbf24' : '#e5e7eb'}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>)}</div>
+              <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 15, lineHeight: 1.7, color: '#374151', fontStyle: 'italic', marginBottom: 24 }}>"{item.comment}"</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 44, height: 44, borderRadius: '50%', background: `linear-gradient(135deg, hsl(${210+i*20},70%,55%), hsl(${210+i*20+20},70%,65%))`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', fontFamily: "'DM Sans',sans-serif" }}>{t.avatar}</div>
+                <div style={{ width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', background: `linear-gradient(135deg, hsl(${210 + i * 20},70%,55%), hsl(${230 + i * 20},70%,65%))`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', fontFamily: "'DM Sans',sans-serif" }}>
+                  {item.profiles?.avatar_url ? (
+                    <img
+                      src={item.profiles.avatar_url}
+                      alt={item.profiles?.name || 'Cliente'}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    item.profiles?.name?.split(' ').filter(Boolean).slice(0, 2).map((part: string) => part[0]).join('').toUpperCase() || 'CL'
+                  )}
+                </div>
                 <div>
-                  <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{t.name}</div>
+                  <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{item.profiles?.name}</div>
+                  <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: '#94a3b8' }}>{item.companies?.name}</div>
+                </div>
+                <div style={{ display: 'none' }}>
+                  <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{item.profiles?.name}</div>
                   <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: '#94a3b8' }}>{t.role} · {t.company}</div>
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
+      )}
+    </>
   );
 };
 
@@ -1072,6 +1181,7 @@ export default function LandingPage() {
   useScrollSmoother();
   const [plans, setPlans] = useState<any[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
+  const [dynamicReviews, setDynamicReviews] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchPlans = async () => {
@@ -1084,6 +1194,20 @@ export default function LandingPage() {
     };
 
     fetchPlans();
+  }, []);
+
+  useEffect(() => {
+    const fetchReviews = async () => {
+      const { data } = await supabase
+        .from('system_reviews')
+        .select('rating, comment, profiles(name, avatar_url), companies(name)')
+        .eq('is_public', true)
+        .limit(6);
+
+      if (data) setDynamicReviews(data);
+    };
+
+    fetchReviews();
   }, []);
 
   let comparisonData: PlanComparisonFeature[] = [];
@@ -1186,7 +1310,7 @@ export default function LandingPage() {
           <Features />
           <Pricing plans={plans} loadingPlans={loadingPlans} />
           <PlanComparison plans={plans} features={comparisonData} loadingPlans={loadingPlans} />
-          <Testimonials />
+          <Testimonials dynamicReviews={dynamicReviews} />
           <FAQ />
           <FinalCTA />
           <Footer />
