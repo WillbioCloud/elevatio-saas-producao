@@ -1778,6 +1778,18 @@ export const executeConfirmedAction = async (
     return;
   }
 
+  // 🛑 SEGURANÇA: Não cria tarefas ou altera status de leads já marcados como "Perdido"
+  const { data: currentLead } = await supabase
+    .from('leads')
+    .select('status')
+    .eq('id', leadId)
+    .single();
+
+  if (currentLead?.status === 'Perdido') {
+    console.warn('Action Engine: Ignorando automação para lead com status Perdido.');
+    return;
+  }
+
   const definition = INTENT_DICTIONARY_BY_ID[intent] ?? null;
 
   if (!definition) {

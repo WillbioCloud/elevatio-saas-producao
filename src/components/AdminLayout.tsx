@@ -37,6 +37,7 @@ const AdminLayout: React.FC = () => {
   const [contractPlanName, setContractPlanName] = useState(() => user?.company?.plan ?? '');
   const [billingWarning, setBillingWarning] = useState<{ dueDate: string; daysLeft: number; isOverdue: boolean } | null>(null);
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+  const [hasContextualAura, setHasContextualAura] = useState(false);
   const [dismissedUntil, setDismissedUntil] = useState<number>(() => {
     const saved = localStorage.getItem(`hideBillingWarning_${user?.company_id}`);
     const parsed = saved ? parseInt(saved, 10) : 0;
@@ -224,6 +225,19 @@ const AdminLayout: React.FC = () => {
       clearInterval(interval);
     };
   }, [role, user?.company_id]);
+
+  useEffect(() => {
+    const handleAuraVisibilityChange = (event: Event) => {
+      const { detail } = event as CustomEvent<boolean>;
+      setHasContextualAura(Boolean(detail));
+    };
+
+    window.addEventListener('aura-context-visibility', handleAuraVisibilityChange as EventListener);
+
+    return () => {
+      window.removeEventListener('aura-context-visibility', handleAuraVisibilityChange as EventListener);
+    };
+  }, []);
 
   const handleDismissBillingWarning = () => {
     const hideUntil = Date.now() + 10800000;
@@ -945,7 +959,7 @@ const AdminLayout: React.FC = () => {
         )}
       </main>
 
-      <AuraChatWidget />
+      {!hasContextualAura ? <AuraChatWidget /> : null}
     </div>
   );
 };

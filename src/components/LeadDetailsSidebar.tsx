@@ -740,6 +740,36 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     return 'Não atribuído';
   }, [lead, user?.id]);
 
+  // 🧠 PONTE TELEPÁTICA PARA A AURA GLOBAL
+  useEffect(() => {
+    if (!lead) return;
+
+    // Montar o perfil de interesse do cliente
+    const interestStr = [
+      profileForm.desired_type,
+      profileForm.desired_location ? `em ${profileForm.desired_location}` : '',
+      profileForm.budget ? `(Orçamento: ${profileForm.budget})` : ''
+    ].filter(Boolean).join(' ');
+
+    const auraContext = {
+      leadId: lead.id,
+      leadName: lead.name,
+      leadStatus: lead.status,
+      propertyTitle: interestStr || 'Perfil de interesse não definido',
+      timelineContext: events?.slice(0, 10).map(t => {
+        const date = t.created_at ? new Date(t.created_at).toLocaleDateString('pt-BR') : 'Recente';
+        return `[${date}] ${t.description}`;
+      }) || [],
+      pendingTasks: tasks?.filter(t => !t.completed).map(t => t.title) || []
+    };
+
+    window.dispatchEvent(new CustomEvent('auraTelepathy', { detail: auraContext }));
+
+    return () => {
+      window.dispatchEvent(new CustomEvent('auraTelepathy', { detail: {} }));
+    };
+  }, [lead, events, tasks, profileForm]);
+
   // --- GAMIFICAÇÃO: Cálculo de Recompensa Estimada ---
   const hasLeadCreationLog = useMemo(
     () => events.some((event) => event.type === 'system' && event.description?.includes('Lead cadastrado no sistema')),
@@ -945,11 +975,20 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
     };
   }, [onClose]);
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('aura-context-visibility', { detail: true }));
+
+    return () => {
+      window.dispatchEvent(new CustomEvent('aura-context-visibility', { detail: false }));
+    };
+  }, []);
+
   return (
-    <div
-      ref={sidebarRef}
-      className="fixed inset-y-0 right-0 w-full md:w-[500px] bg-white shadow-2xl z-[60] transform transition-transform duration-300 ease-out flex flex-col border-l border-slate-100"
-    >
+    <>
+      <div
+        ref={sidebarRef}
+        className="fixed inset-y-0 right-0 w-full md:w-[500px] bg-white shadow-2xl z-[60] transform transition-transform duration-300 ease-out flex flex-col border-l border-slate-100"
+      >
       
       {/* 1. HEADER FIXO (Mínimo) */}
       <div className="p-4 border-b border-slate-100 bg-white flex justify-between items-center shrink-0 z-20 shadow-sm">
@@ -1684,7 +1723,9 @@ const LeadDetailsSidebar: React.FC<LeadDetailsSidebarProps> = ({ lead, kanbanCon
           )}
         </div>
       </div>
-    </div>
+      </div>
+
+    </>
   );
 };
 

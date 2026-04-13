@@ -47,6 +47,19 @@ export interface AuraLeadChatContext {
   leadStatus?: string;
   propertyTitle?: string;
   timelineContext?: string[];
+  pendingTasks?: string[];
+}
+
+export interface AuraRecentLeadOption {
+  id: string;
+  name: string;
+  status?: string | null;
+}
+
+export interface AuraGlobalChatContext {
+  recentLeads?: AuraRecentLeadOption[];
+  pendingTasks?: string[];
+  activeLeadId?: string | null;
 }
 
 export interface CandidateProperty {
@@ -701,16 +714,47 @@ export const chatWithAura = async (
   message: string,
   history: ChatMessage[],
   userName: string = "Corretor",
-  options?: { retries?: number; leadContext?: AuraLeadChatContext }
+  options?: { retries?: number; leadContext?: AuraLeadChatContext; globalContext?: AuraGlobalChatContext }
 ): Promise<string> => {
   if (!genAI) throw new Error("Gemini API Key não configurada.");
   const retries = options?.retries ?? 3;
   const context = options?.leadContext;
+  const globalContext = options?.globalContext;
 
   // INJEÇÃO INVISÍVEL DE CONTEXTO
   // Fornecemos as respostas antes mesmo da Aura perguntar.
+  let globalContextPrompt = '';
+  if (
+    globalContext &&
+    (globalContext.recentLeads?.length ||
+      globalContext.pendingTasks?.length ||
+      globalContext.activeLeadId)
+  ) {
+    globalContextPrompt = `\n\n--- CONTEXTO GLOBAL DO CORRETOR ---\n`;
+    if (globalContext.recentLeads && globalContext.recentLeads.length > 0) {
+      globalContextPrompt += '- Recent Leads (o corretor pode escolher por numero ou nome):\n';
+      globalContext.recentLeads.slice(0, 10).forEach((lead, index) => {
+        globalContextPrompt += `  ${index + 1}. ${lead.name}${lead.status ? ` - ${lead.status}` : ''}\n`;
+      });
+    }
+    if (globalContext.pendingTasks && globalContext.pendingTasks.length > 0) {
+      globalContextPrompt += `- Tarefas do Dia:\n  * ${globalContext.pendingTasks.join('\n  * ')}\n`;
+    }
+    if (globalContext.activeLeadId) {
+      globalContextPrompt += `- Lead ativo no chat: ${globalContext.activeLeadId}\n`;
+    }
+    globalContextPrompt += `---------------------------------\n`;
+  }
+
   let contextPrompt = '';
-  if (context && (context.leadName || context.leadStatus || context.timelineContext)) {
+  if (
+    context &&
+    (context.leadName ||
+      context.leadStatus ||
+      context.propertyTitle ||
+      context.timelineContext?.length ||
+      context.pendingTasks?.length)
+  ) {
     contextPrompt = `\n\n--- INFORMAÇÕES ATUAIS DO LEAD (USE ISTO, NÃO PERGUNTE O QUE JÁ ESTÁ AQUI) ---\n`;
     if (context.leadName) contextPrompt += `- Nome do Lead: ${context.leadName}\n`;
     if (context.leadStatus) contextPrompt += `- Status no Funil: ${context.leadStatus}\n`;
@@ -718,19 +762,29 @@ export const chatWithAura = async (
     if (context.timelineContext && context.timelineContext.length > 0) {
       contextPrompt += `- Histórico Recente (Timeline):\n  * ${context.timelineContext.join('\n  * ')}\n`;
     }
+    if (context.pendingTasks && context.pendingTasks.length > 0) {
+      contextPrompt += `- Tarefas Pendentes na Agenda:\n  * ${context.pendingTasks.join('\n  * ')}\n`;
+    }
     contextPrompt += `--------------------------------------------------------------------------\n`;
   }
 
   try {
-    const model = genAI.getGenerativeModel({
+    const model = genAI.getGenerativeModel({ 
       model: "gemini-2.5-flash",
-      systemInstruction: `Você é a Aura, a Inteligência Artificial integrada a este CRM Imobiliário.
-      Sua missão é ajudar o corretor ${userName} a fechar negócios, resumir a timeline, redigir mensagens e sugerir próximos passos.
-      Regras de Ouro:
-      1. Seja absurdamente direta, comercial e profissional.
-      2. USE O CONTEXTO FORNECIDO! Nunca pergunte "qual o status" ou "qual o interesse" se esses dados já estiverem no bloco de Informações Atuais.
-      3. Se não houver informações, aí sim pergunte.
-      4. Se o corretor pedir para "resumir" ou "criar uma tarefa", cuspa o texto pronto para ser copiado. Evite enrolações como "Claro, aqui está a sua tarefa:".`
+      systemInstruction: `Você é a Aura, a Inteligência Artificial de elite integrada a este CRM Imobiliário. 
+      Sua missão é ajudar o corretor ${userName} a fechar negócios.
+      
+      REGRAS DE SOBREVIVÊNCIA (OBRIGAÇÃO ESTREITA):
+      1. NUNCA faça perguntas ao corretor pedindo mais contexto, linha do tempo, orçamentos, ou motivos de silêncio. O corretor odeia preencher dados. A única exceção permitida é uma pergunta objetiva de navegação entre leads já listados no contexto global.
+      2. USE EXCLUSIVAMENTE os dados fornecidos no bloco "INFORMAÇÕES ATUAIS DO LEAD".
+      3. Se uma informação não constar no bloco (ex: sem motivo de objeção explícito), assuma que não há objeção mapeada e crie o seu resumo ou mensagem APENAS com as informações que você tem.
+      4. É expressamente PROIBIDO responder com frases como "Preciso de mais contexto", "Por favor, forneça" ou "Faltam detalhes".
+      5. Vá direto ao ponto. Entregue a resposta pronta, aja como um diretor de vendas sênior ajudando sua equipe.
+      6. Quando não houver um lead focado, use primeiro o CONTEXTO GLOBAL DO CORRETOR antes de responder qualquer coisa específica sobre atendimento.
+      7. FLUXO DE DESCOBERTA:
+         - Se o corretor perguntar sobre "meus leads" ou "quem eu tenho", use a lista de "Recent Leads" fornecida no contexto global e pergunte: "Sobre qual desses leads você gostaria de falar?".
+         - Se o corretor mencionar um nome que NÃO está no contexto atual, peça para ele confirmar o nome ou use a ferramenta de busca (simulada pelo contexto).
+         - Assim que um lead for identificado pelo nome, sua resposta deve ser focada em confirmar: "Entendido, carregando dados do [Nome]. O que você precisa saber sobre ele?".`
     });
 
     const formattedHistory = history.map((msg) => ({
@@ -741,7 +795,8 @@ export const chatWithAura = async (
     const chat = model.startChat({ history: formattedHistory });
 
     // Envia o prompt do usuário + os dados frescos do lead por trás dos panos
-    const finalMessage = contextPrompt ? `${contextPrompt}\nPergunta do Corretor: ${message}` : message;
+    const injectedContext = `${globalContextPrompt}${contextPrompt}`.trim();
+    const finalMessage = injectedContext ? `${injectedContext}\n\nPergunta do Corretor: ${message}` : message;
 
     const result = await chat.sendMessage(finalMessage);
     return result.response.text().trim();

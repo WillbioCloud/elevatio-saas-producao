@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icons } from './Icons';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import {
+  AuraGlobalChatContext,
   AuraLeadChatContext,
+  AuraRecentLeadOption,
   ChatMessage,
   ChatMessageAction,
   ChatMessageActionIcon,
@@ -19,10 +22,6 @@ const DEFAULT_QUICK_PROMPTS = [
   'Monte uma mensagem curta para WhatsApp',
   'O que merece prioridade agora?',
 ] as const;
-
-interface AuraChatWidgetProps extends AuraLeadChatContext {
-  onClearContext?: () => void;
-}
 
 type LegacyChatMessage = Partial<ChatMessage> & {
   role?: ChatMessage['role'] | string | null;
@@ -43,6 +42,7 @@ type MessageBlock =
 
 const MAX_TIMELINE_CONTEXT_ITEMS = 4;
 const MAX_TIMELINE_CONTEXT_LENGTH = 160;
+const MAX_AURA_LEAD_RESULTS = 10;
 
 const CHAT_MESSAGE_TYPES = new Set<ChatMessageType>(['text', 'action_prompt']);
 const CHAT_ACTION_VARIANTS = new Set<ChatMessageActionVariant>(['primary', 'secondary', 'ghost']);
@@ -105,6 +105,10 @@ const buildLeadContext = (leadContext: AuraLeadChatContext): AuraLeadChatContext
     .map((item) => truncateText(item))
     .filter(Boolean)
     .slice(-MAX_TIMELINE_CONTEXT_ITEMS);
+  const pendingTasks = (leadContext.pendingTasks || [])
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
 
   const normalizedContext: AuraLeadChatContext = {
     leadId: leadContext.leadId?.trim() || undefined,
@@ -112,6 +116,7 @@ const buildLeadContext = (leadContext: AuraLeadChatContext): AuraLeadChatContext
     leadStatus: leadContext.leadStatus?.trim() || undefined,
     propertyTitle: leadContext.propertyTitle?.trim() || undefined,
     timelineContext: timelineContext.length ? timelineContext : undefined,
+    pendingTasks: pendingTasks.length ? pendingTasks : undefined,
   };
 
   if (
@@ -119,7 +124,8 @@ const buildLeadContext = (leadContext: AuraLeadChatContext): AuraLeadChatContext
     !normalizedContext.leadName &&
     !normalizedContext.leadStatus &&
     !normalizedContext.propertyTitle &&
-    !normalizedContext.timelineContext?.length
+    !normalizedContext.timelineContext?.length &&
+    !normalizedContext.pendingTasks?.length
   ) {
     return undefined;
   }
@@ -132,6 +138,105 @@ const normalizeSearchText = (value: string) =>
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
+
+const LIST_LEADS_INTENT_REGEX =
+  /\b(meus leads|meus clientes|quem eu tenho|quais leads|listar leads|liste os leads|lista de leads|mostre meus leads|mostre os leads)\b/;
+const EXPLICIT_LEAD_LOOKUP_REGEX =
+  /\b(lead|cliente|timeline|historico|abrir|carregar|mostrar|buscar|busque|procure)\b|falar com|dados do|dados da|me fale de/;
+const GENERIC_ANALYSIS_REGEX =
+  /\b(resuma|resume|qual|como|mande|monte|escreva|crie|prioridade|proximo|oque|oq|abordagem|risco)\b/;
+const LEAD_QUERY_STOPWORDS = new Set([
+  'a',
+  'abrir',
+  'agora',
+  'ao',
+  'aos',
+  'as',
+  'buscar',
+  'busque',
+  'carregar',
+  'cliente',
+  'clientes',
+  'com',
+  'da',
+  'das',
+  'dados',
+  'de',
+  'do',
+  'dos',
+  'eu',
+  'falar',
+  'lead',
+  'leads',
+  'me',
+  'meu',
+  'meus',
+  'minha',
+  'mostrar',
+  'mostre',
+  'na',
+  'no',
+  'o',
+  'os',
+  'para',
+  'por',
+  'procure',
+  'quais',
+  'quero',
+  'sobre',
+  'tenho',
+  'um',
+  'uma',
+]);
+
+const buildLeadInterestLabel = (lead: {
+  desired_type?: string | null;
+  desired_location?: string | null;
+  budget?: string | number | null;
+}) =>
+  [
+    lead.desired_type,
+    lead.desired_location ? `em ${lead.desired_location}` : '',
+    lead.budget ? `(Orcamento: ${lead.budget})` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+const extractPotentialLeadQuery = (value: string) => {
+  const cleanedTokens = value
+    .replace(/[^\wÀ-ÿ\s-]/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .filter((token) => !LEAD_QUERY_STOPWORDS.has(normalizeSearchText(token)));
+
+  if (!cleanedTokens.length || cleanedTokens.length > 4) return null;
+  return cleanedTokens.join(' ');
+};
+
+const findLeadByReference = (value: string, leads: AuraRecentLeadOption[] = []) => {
+  const normalizedValue = normalizeSearchText(value).trim();
+  if (!normalizedValue) return null;
+
+  if (/^\d+$/.test(normalizedValue)) {
+    const selectedIndex = Number(normalizedValue) - 1;
+    return leads[selectedIndex] || null;
+  }
+
+  const messageTokens = new Set(normalizedValue.split(/\s+/).filter(Boolean));
+
+  return (
+    leads.find((lead) => {
+      const normalizedLeadName = normalizeSearchText(lead.name || '').trim();
+      if (!normalizedLeadName) return false;
+      if (normalizedValue === normalizedLeadName || normalizedValue.includes(normalizedLeadName)) return true;
+
+      const firstName = normalizedLeadName.split(/\s+/)[0];
+      return Boolean(firstName && firstName.length >= 3 && messageTokens.has(firstName));
+    }) || null
+  );
+};
 
 const normalizeMessageText = (value: unknown, fallback = '') => {
   if (typeof value !== 'string') return fallback;
@@ -454,11 +559,15 @@ function AuraMessageBody({ text }: { text: string }) {
   const blocks = parseMessageBlocks(safeText);
 
   if (blocks.length === 0) {
-    return <p className="text-[13px] leading-6 text-slate-700">{safeText}</p>;
+    return (
+      <p className="prose prose-slate prose-invert max-w-none text-[13px] leading-6 text-slate-700">
+        {safeText}
+      </p>
+    );
   }
 
   return (
-    <div className="space-y-3">
+    <div className="prose prose-slate prose-invert max-w-none space-y-2 text-[13px]">
       {blocks.map((block, blockIndex) => {
         if (block.type === 'heading') {
           const headingClassName =
@@ -479,12 +588,12 @@ function AuraMessageBody({ text }: { text: string }) {
           return (
             <ul
               key={`list-${blockIndex}`}
-              className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/90 px-3 py-3"
+              className="my-1 space-y-1.5 rounded-2xl border border-slate-100 bg-slate-50/90 px-3 py-2"
             >
               {block.items.map((item, itemIndex) => (
-                <li key={`list-item-${blockIndex}-${itemIndex}`} className="flex items-start gap-2.5">
+                <li key={`list-item-${blockIndex}-${itemIndex}`} className="my-0 flex items-start gap-2">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
-                  <span className="min-w-0 flex-1 text-[13px] leading-6 text-slate-700">
+                  <span className="min-w-0 flex-1 text-[13px] leading-5 text-slate-700">
                     {renderInlineContent(item, `list-item-${blockIndex}-${itemIndex}`)}
                   </span>
                 </li>
@@ -544,22 +653,21 @@ function AuraMessageActions({
 
 function EmptyState({
   onUsePrompt,
-  leadName,
+  contextLeadName,
   leadStatus,
   propertyTitle,
   quickPrompts,
 }: {
   onUsePrompt: (prompt: string) => void;
-  leadName?: string;
+  contextLeadName?: string;
   leadStatus?: string;
   propertyTitle?: string;
   quickPrompts: string[];
 }) {
-  const leadFirstName = getLeadFirstName(leadName);
-  const title = leadFirstName
-    ? `Vamos destravar ${leadFirstName}?`
+  const intro = contextLeadName
+    ? `Vamos destravar ${contextLeadName}?`
     : 'Sua copiloto comercial para destravar conversas e acelerar negociações.';
-  const description = leadFirstName
+  const description = contextLeadName
     ? 'Já estou olhando o contexto desse atendimento. Se quiser, eu resumo o momento do lead, sugiro a abordagem e preparo a próxima mensagem.'
     : 'Peça ajuda para entender o momento do lead, montar abordagens para WhatsApp e decidir o próximo movimento sem esfriar a oportunidade.';
 
@@ -572,15 +680,15 @@ function EmptyState({
           </div>
 
           <div className="min-w-0">
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-brand-600">Aura no plantão</p>
-            <h4 className="mt-1 text-base font-bold text-slate-900">{title}</h4>
+            <h4 className="mt-1 text-base font-bold text-slate-900">Aura</h4>
+            <p className="mt-1 text-sm font-semibold leading-6 text-slate-800">{intro}</p>
             <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
 
-            {leadName && (
+            {contextLeadName && (
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-[11px] font-semibold text-brand-700">
                   <Icons.User size={12} />
-                  <span className="truncate">Conversando sobre: {leadName}</span>
+                  <span className="truncate">Conversando sobre: {contextLeadName}</span>
                 </span>
 
                 {leadStatus && (
@@ -619,16 +727,12 @@ function EmptyState({
   );
 }
 
-export default function AuraChatWidget({
-  leadId,
-  leadName,
-  leadStatus,
-  propertyTitle,
-  timelineContext,
-  onClearContext,
-}: AuraChatWidgetProps) {
+export default function AuraChatWidget() {
   const { user } = useAuth();
   const { addToast } = useToast();
+  const [context, setContext] = useState<AuraLeadChatContext>({});
+  const [globalContext, setGlobalContext] = useState<AuraGlobalChatContext>({});
+  const [activeLeadId, setActiveLeadId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   // Estados para o Morfismo (Figma: Stage 1 -> Stage 2 -> Stage 3)
   const [animStage, setAnimStage] = useState<'closed' | 'pill' | 'open'>('closed');
@@ -642,6 +746,16 @@ export default function AuraChatWidget({
   const inputRef = useRef<HTMLInputElement>(null);
   const animationTimeoutsRef = useRef<number[]>([]);
 
+  useEffect(() => {
+    const handleTelepathy = (e: Event) => {
+      const customEvent = e as CustomEvent<AuraLeadChatContext>;
+      setContext(customEvent.detail || {});
+    };
+
+    window.addEventListener('auraTelepathy', handleTelepathy);
+    return () => window.removeEventListener('auraTelepathy', handleTelepathy);
+  }, []);
+
   const clearAnimationTimeouts = () => {
     animationTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     animationTimeoutsRef.current = [];
@@ -654,7 +768,11 @@ export default function AuraChatWidget({
 
   useEffect(() => {
     setIsLeadContextDismissed(false);
-  }, [leadId, leadName, leadStatus, propertyTitle]);
+  }, [context]);
+
+  useEffect(() => {
+    setActiveLeadId(context.leadId || null);
+  }, [context.leadId]);
 
   useEffect(() => {
     return () => {
@@ -664,13 +782,7 @@ export default function AuraChatWidget({
 
   const leadContext = isLeadContextDismissed
     ? undefined
-    : buildLeadContext({
-        leadId,
-        leadName,
-        leadStatus,
-        propertyTitle,
-        timelineContext,
-      });
+    : buildLeadContext(context);
 
   const normalizedMessages = messages.map((message) => normalizeChatMessage(message));
   const leadFirstName = getLeadFirstName(leadContext?.leadName);
@@ -678,15 +790,126 @@ export default function AuraChatWidget({
   const inputPlaceholder = leadFirstName
     ? `Ex.: qual abordagem pode destravar ${leadFirstName} agora?`
     : 'Ex.: monte uma resposta de WhatsApp ou diga o proximo passo';
-  const contextualHint = leadContext
-    ? 'Aura vai considerar o lead em foco e o historico resumido deste atendimento.'
-    : 'Voce pode pedir resumo, mensagem de WhatsApp, proximo passo ou leitura de risco.';
   const loadingMessage = leadFirstName
     ? `Lendo o momento de ${leadFirstName} e montando uma resposta com direcao comercial.`
     : 'Organizando proximos passos, argumentos e mensagem comercial.';
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  };
+
+  const fetchDeepLeadContext = async (id: string): Promise<AuraLeadChatContext | null> => {
+    try {
+      const { data: lead, error: leadError } = await supabase.from('leads').select('*').eq('id', id).single();
+      if (leadError) throw leadError;
+
+      const { data: timeline, error: timelineError } = await supabase
+        .from('timeline_events')
+        .select('description, created_at')
+        .eq('lead_id', id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (timelineError) throw timelineError;
+
+      if (!lead) return null;
+
+      const nextContext: AuraLeadChatContext = {
+        leadId: lead.id,
+        leadName: lead.name,
+        leadStatus: lead.status,
+        propertyTitle: buildLeadInterestLabel(lead) || 'Perfil de interesse nao definido',
+        timelineContext:
+          timeline?.map((item) => {
+            const date = item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : 'Recente';
+            return `[${date}] ${item.description}`;
+          }) || [],
+      };
+
+      setContext(nextContext);
+      setIsLeadContextDismissed(false);
+      setActiveLeadId(id);
+      setGlobalContext((prev) => ({ ...prev, activeLeadId: id }));
+
+      return nextContext;
+    } catch (error) {
+      console.error('Aura: erro ao carregar contexto profundo do lead', error);
+      addToast('Nao consegui carregar o historico desse lead agora.', 'error');
+      return null;
+    }
+  };
+
+  const searchLeadsForAura = async (query?: string): Promise<AuraRecentLeadOption[]> => {
+    if (!user?.id) return [];
+
+    try {
+      let q = supabase
+        .from('leads')
+        .select('id, name, status')
+        .eq('assigned_to', user.id)
+        .order('created_at', { ascending: false });
+
+      if (query) q = q.ilike('name', `%${query}%`);
+
+      const { data, error } = await q.limit(MAX_AURA_LEAD_RESULTS);
+      if (error) throw error;
+
+      return (data || []).map((lead) => ({
+        id: lead.id,
+        name: lead.name,
+        status: lead.status,
+      }));
+    } catch (error) {
+      console.error('Aura: erro ao buscar leads do corretor', error);
+      return [];
+    }
+  };
+
+  const fetchGlobalContext = async (): Promise<AuraGlobalChatContext> => {
+    if (!user?.id) return {};
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    try {
+      const [recentLeads, tasksRes] = await Promise.all([
+        searchLeadsForAura(),
+        supabase
+          .from('tasks')
+          .select('title, due_date, completed, status')
+          .eq('user_id', user.id)
+          .gte('due_date', startOfDay.toISOString())
+          .lte('due_date', endOfDay.toISOString())
+          .order('due_date', { ascending: true })
+          .limit(MAX_AURA_LEAD_RESULTS),
+      ]);
+
+      if (tasksRes.error) throw tasksRes.error;
+
+      const pendingTasks =
+        tasksRes.data
+          ?.filter((task) => {
+            const normalizedStatus = normalizeSearchText(String((task as { status?: string | null }).status || ''));
+            return !(task.completed || normalizedStatus === 'done' || normalizedStatus === 'completed' || normalizedStatus === 'concluida');
+          })
+          .map((task) => task.title)
+          .filter((title): title is string => typeof title === 'string' && Boolean(title.trim())) || [];
+
+      const nextGlobalContext: AuraGlobalChatContext = {
+        recentLeads,
+        pendingTasks,
+        activeLeadId,
+      };
+
+      setGlobalContext(nextGlobalContext);
+      return nextGlobalContext;
+    } catch (error) {
+      console.error('Aura: erro ao montar contexto global', error);
+      return globalContext;
+    }
   };
 
   useEffect(() => {
@@ -756,7 +979,7 @@ export default function AuraChatWidget({
       }
 
       if (action.id === 'edit_whatsapp') {
-        const targetLeadName = action.payload?.leadName || leadContext?.leadName || 'o lead';
+        const targetLeadName = action.payload?.leadName || context.leadName || 'o lead';
         setInputValue(
           `Refine a ultima mensagem de WhatsApp para ${targetLeadName} com tom de corretor, mais curta, natural e facil de responder.`
         );
@@ -767,7 +990,7 @@ export default function AuraChatWidget({
       }
 
       if (action.id === 'create_task') {
-        const taskTitle = action.payload?.taskTitle || buildFollowUpTaskTitle(leadContext);
+        const taskTitle = action.payload?.taskTitle || buildFollowUpTaskTitle(context);
         appendAuraMessage(`Tarefa gerada: "${taskTitle}". Pode fecha-la na aba de tarefas do lead.`);
         updateMessageAction(messageIndex, action.id, { disabled: true, label: 'Tarefa pronta' });
         addToast('Deixei uma tarefa de follow-up rascunhada no chat.', 'success');
@@ -782,7 +1005,7 @@ export default function AuraChatWidget({
       }
 
       if (action.id === 'open_lead') {
-        const targetLeadId = action.payload?.leadId || leadContext?.leadId;
+        const targetLeadId = action.payload?.leadId || context.leadId;
         if (!targetLeadId) {
           addToast('Nao encontrei um lead em foco para abrir agora.', 'info');
           return;
@@ -804,12 +1027,17 @@ export default function AuraChatWidget({
     }
   };
 
-  const sendMessage = async (messageText: string) => {
+  const sendMessage = async (
+    messageText: string,
+    overrides?: { leadContext?: AuraLeadChatContext | null; globalContext?: AuraGlobalChatContext }
+  ) => {
     const trimmedMessage = messageText.trim();
     if (!trimmedMessage || isLoading) return;
 
     const currentHistory = messages.map((message) => normalizeChatMessage(message));
     const nextUserMessage = normalizeChatMessage({ role: 'user', text: trimmedMessage });
+    const effectiveLeadContext = overrides?.leadContext === undefined ? leadContext : overrides.leadContext || undefined;
+    const effectiveGlobalContext = overrides?.globalContext || globalContext;
 
     setMessages([...currentHistory, nextUserMessage]);
     setInputValue('');
@@ -820,10 +1048,13 @@ export default function AuraChatWidget({
         trimmedMessage,
         currentHistory,
         user?.name || user?.user_metadata?.name || 'Corretor',
-        { leadContext }
+        {
+          leadContext: effectiveLeadContext,
+          globalContext: effectiveGlobalContext,
+        }
       );
 
-      setMessages((prev) => [...prev, normalizeChatMessage(buildAuraReply(response, trimmedMessage, leadContext))]);
+      setMessages((prev) => [...prev, normalizeChatMessage(buildAuraReply(response, trimmedMessage, effectiveLeadContext))]);
     } catch (error: unknown) {
       const fallbackMessage =
         error instanceof Error && error.message.trim()
@@ -838,13 +1069,108 @@ export default function AuraChatWidget({
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    await sendMessage(inputValue);
+    const trimmedMessage = inputValue.trim();
+    if (!trimmedMessage || isLoading) return;
+
+    const normalizedMessage = normalizeSearchText(trimmedMessage);
+    const currentRecentLeads = globalContext.recentLeads || [];
+    const referencedLead = findLeadByReference(trimmedMessage, currentRecentLeads);
+    const explicitLookup = EXPLICIT_LEAD_LOOKUP_REGEX.test(normalizedMessage);
+    const listIntent = LIST_LEADS_INTENT_REGEX.test(normalizedMessage);
+    const looseLookup =
+      !activeLeadId &&
+      !GENERIC_ANALYSIS_REGEX.test(normalizedMessage) &&
+      normalizedMessage.split(/\s+/).filter(Boolean).length <= 3;
+    const leadQuery = extractPotentialLeadQuery(trimmedMessage);
+
+    if (listIntent) {
+      const nextGlobalContext = await fetchGlobalContext();
+
+      if (!nextGlobalContext.recentLeads?.length) {
+        setInputValue('');
+        appendAuraMessage('Nao encontrei leads atribuidos a voce neste momento.');
+        return;
+      }
+
+      await sendMessage(trimmedMessage, {
+        leadContext: null,
+        globalContext: nextGlobalContext,
+      });
+      return;
+    }
+
+    if (referencedLead?.id) {
+      const nextLeadContext =
+        leadContext?.leadId === referencedLead.id && activeLeadId === referencedLead.id
+          ? leadContext
+          : await fetchDeepLeadContext(referencedLead.id);
+
+      if (nextLeadContext) {
+        const nextGlobalContext = {
+          ...globalContext,
+          activeLeadId: referencedLead.id,
+        };
+        setGlobalContext(nextGlobalContext);
+
+        await sendMessage(trimmedMessage, {
+          leadContext: nextLeadContext,
+          globalContext: nextGlobalContext,
+        });
+        return;
+      }
+    }
+
+    if (leadQuery && (explicitLookup || looseLookup)) {
+      const foundLeads = await searchLeadsForAura(leadQuery);
+
+      if (foundLeads.length === 1) {
+        const nextLeadContext = await fetchDeepLeadContext(foundLeads[0].id);
+        if (nextLeadContext) {
+          const nextGlobalContext = {
+            ...globalContext,
+            recentLeads: foundLeads,
+            activeLeadId: foundLeads[0].id,
+          };
+          setGlobalContext(nextGlobalContext);
+
+          await sendMessage(trimmedMessage, {
+            leadContext: nextLeadContext,
+            globalContext: nextGlobalContext,
+          });
+          return;
+        }
+      }
+
+      if (foundLeads.length > 1) {
+        const nextGlobalContext = {
+          ...globalContext,
+          recentLeads: foundLeads,
+          activeLeadId: null,
+        };
+        setGlobalContext(nextGlobalContext);
+
+        await sendMessage(trimmedMessage, {
+          leadContext: null,
+          globalContext: nextGlobalContext,
+        });
+        return;
+      }
+
+      if (explicitLookup) {
+        setInputValue('');
+        appendAuraMessage(`Nao encontrei um lead com "${leadQuery}" na sua carteira agora. Me passe o nome exato ou peça "meus leads".`);
+        return;
+      }
+    }
+
+    await sendMessage(trimmedMessage);
   };
 
   const handleOpenSequence = () => {
     if (animStage !== 'closed') return;
 
     clearAnimationTimeouts();
+    void fetchGlobalContext();
     setIsOpen(true);
     setIsContentVisible(false);
     setAnimStage('pill');
@@ -883,26 +1209,28 @@ export default function AuraChatWidget({
 
   const handleClearContext = () => {
     setIsLeadContextDismissed(true);
-    onClearContext?.();
+    setContext({});
+    setActiveLeadId(null);
+    setGlobalContext((prev) => ({ ...prev, activeLeadId: null }));
     inputRef.current?.focus();
   };
 
   return (
     <div className="fixed bottom-4 right-4 z-[9999] flex flex-col items-end sm:bottom-6 sm:right-6">
-      {animStage === 'closed' && leadFirstName && (
+      {animStage === 'closed' && context.leadName && (
         <span className="mb-2 rounded-full border border-brand-200 bg-white px-3 py-1 text-[11px] font-semibold text-brand-700 shadow-sm">
-          Lead em foco: {leadFirstName}
+          Lead em foco: {context.leadName}
         </span>
       )}
 
       <div
         className={cn(
-          'group relative overflow-hidden shadow-2xl transition-all duration-300 ease-in-out',
+          'group relative max-w-[calc(100vw-2rem)] overflow-hidden shadow-2xl transition-all duration-300 ease-in-out',
           animStage === 'closed' && 'h-14 w-14 cursor-pointer rounded-full bg-slate-900 hover:bg-slate-800',
-          animStage === 'pill' &&
-            'h-14 w-[min(380px,calc(100vw-2rem))] rounded-full border border-slate-200 bg-white sm:w-[460px]',
-          animStage === 'open' &&
-            'h-[650px] max-h-[calc(100dvh-4rem)] w-[min(380px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white sm:w-[460px]'
+          animStage !== 'closed' && 'border border-slate-200 bg-white',
+          animStage === 'pill' && 'w-[483px] h-14 rounded-[50px]',
+          animStage === 'open' && 'w-[483px] h-[650px] rounded-[3rem]',
+          animStage === 'open' && 'max-h-[calc(100dvh-4rem)]'
         )}
         onClick={animStage === 'closed' ? handleOpenSequence : undefined}
         onKeyDown={
@@ -931,7 +1259,7 @@ export default function AuraChatWidget({
         {isOpen && (
           <div
             className={cn(
-              'flex h-full w-full flex-col transition-opacity duration-300',
+              'flex flex-col h-full w-full transition-opacity duration-300',
               isContentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
             )}
           >
@@ -943,7 +1271,7 @@ export default function AuraChatWidget({
                 <div>
                   <h3 className="text-sm font-bold">Aura</h3>
                   <p className="text-[10px] text-slate-300">
-                    {leadFirstName ? `Em contexto com ${leadFirstName}` : 'Copiloto comercial do plantao'}
+                    {context.leadName ? `Em contexto com ${context.leadName}` : 'Copiloto comercial do plantao'}
                   </p>
                 </div>
               </div>
@@ -962,7 +1290,7 @@ export default function AuraChatWidget({
                   <div className="min-w-0">
                     <p className="text-[10px] font-black uppercase tracking-[0.18em] text-brand-600">Modo contextual</p>
                     <p className="truncate text-xs font-semibold text-slate-800">
-                      Conversando sobre: {leadContext.leadName || 'Lead selecionado'}
+                      Conversando sobre: {context.leadName || 'Lead selecionado'}
                     </p>
                   </div>
 
@@ -1005,7 +1333,7 @@ export default function AuraChatWidget({
               {normalizedMessages.length === 0 ? (
                 <EmptyState
                   onUsePrompt={handleQuickPrompt}
-                  leadName={leadContext?.leadName}
+                  contextLeadName={context.leadName}
                   leadStatus={leadContext?.leadStatus}
                   propertyTitle={leadContext?.propertyTitle}
                   quickPrompts={quickPrompts}
@@ -1088,29 +1416,6 @@ export default function AuraChatWidget({
             </div>
 
             <form onSubmit={handleSendMessage} className="border-t border-slate-100 bg-white p-3">
-              <div className="mb-3">
-                <div className="mb-2 flex items-center justify-between gap-3 px-1">
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Comece por aqui</p>
-                  {leadFirstName ? (
-                    <span className="text-[11px] font-medium text-brand-600">Lead em foco: {leadFirstName}</span>
-                  ) : null}
-                </div>
-
-                <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-                  {quickPrompts.map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      onClick={() => handleQuickPrompt(prompt)}
-                      disabled={isLoading}
-                      className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               <div className="relative flex items-center">
                 <input
                   ref={inputRef}
@@ -1130,8 +1435,6 @@ export default function AuraChatWidget({
                   <Icons.Send size={14} />
                 </button>
               </div>
-
-              <p className="mt-2 px-1 text-[11px] leading-5 text-slate-500">{contextualHint}</p>
             </form>
           </div>
         )}
