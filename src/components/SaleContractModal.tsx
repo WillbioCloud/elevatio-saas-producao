@@ -6,7 +6,7 @@ import { useNotification } from '../contexts/NotificationContext';
 import { buildContractHtml, generateContract } from '../utils/contractGenerator';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
-import { SALE_DOCUMENTS, ADMIN_DOCUMENTS } from '../constants/contractTypes';
+import { SALE_DOCUMENTS } from '../constants/contractTypes';
 
 interface SaleContractModalProps {
   isOpen: boolean;
@@ -444,7 +444,6 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
       const rawTemplate =
         selectedTemplate?.content ||
         (SALE_DOCUMENTS.find((document) => document.id === documentType) as { content?: string } | undefined)?.content ||
-        (ADMIN_DOCUMENTS.find((document) => document.id === documentType) as { content?: string } | undefined)?.content ||
         '';
       const contractHtmlData = {
         ...contractDataObj,
@@ -612,9 +611,6 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                       )}
                       <optgroup label="Modelos Padrão do Sistema">
                         {SALE_DOCUMENTS.map(doc => (<option key={doc.id} value={doc.id}>{doc.title}</option>))}
-                      </optgroup>
-                      <optgroup label="Administrativos e Outros">
-                        {ADMIN_DOCUMENTS.map(doc => (<option key={doc.id} value={doc.id}>{doc.title}</option>))}
                       </optgroup>
                     </select>
                   </div>

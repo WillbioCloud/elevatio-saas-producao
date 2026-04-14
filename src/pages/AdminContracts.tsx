@@ -12,7 +12,7 @@ import { ContractQuickViewSidebar } from '../components/contracts/ContractQuickV
 // Modais Antigos e Motores
 import SaleContractModal from '../components/SaleContractModal';
 import RentContractModal from '../components/RentContractModal';
-import IntermediationContractModal from '../components/IntermediationContractModal';
+import AdministrativeContractModal from '../components/AdministrativeContractModal';
 import SignatureManagerModal from '../components/SignatureManagerModal';
 
 export default function AdminContracts() {
@@ -25,7 +25,7 @@ export default function AdminContracts() {
   // Estados de Modais
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
   const [isRentModalOpen, setIsRentModalOpen] = useState(false);
-  const [isIntermedModalOpen, setIsIntermedModalOpen] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [selectedContract, setSelectedContract] = useState<any>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [signatureModalState, setSignatureModalState] = useState<any>(null);
@@ -58,11 +58,14 @@ export default function AdminContracts() {
 
   // Filtragem
   const filteredContracts = contracts.filter((c) => {
-    const matchesSearch =
-      (c.property?.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = (c.property?.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (c.lead?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType =
-      filterType === 'all' ||
+
+    if (filterType === 'signatures') {
+      return matchesSearch && (c.status === 'pending' || c.status === 'draft');
+    }
+
+    const matchesType = filterType === 'all' ||
       (filterType === 'administrative' ? !['sale', 'rent'].includes(c.type) : c.type === filterType);
     return matchesSearch && matchesType;
   });
@@ -113,7 +116,7 @@ export default function AdminContracts() {
                 </button>
                 <button
                   onClick={() => {
-                    setIsIntermedModalOpen(true);
+                    setIsAdminModalOpen(true);
                     setIsNewDropdownOpen(false);
                   }}
                   className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
@@ -159,17 +162,15 @@ export default function AdminContracts() {
         {/* Filtros e Busca */}
         <div className="flex flex-col items-center justify-between gap-4 border-b border-slate-100 bg-white/50 p-4 dark:border-slate-800/60 dark:bg-slate-900/50 md:flex-row">
           <div className="custom-scrollbar flex w-full gap-2 overflow-x-auto rounded-xl bg-slate-100 p-1 dark:bg-slate-800/50 md:w-auto">
-            {['all', 'sale', 'rent', 'administrative'].map((type) => (
+            {['all', 'sale', 'rent', 'administrative', 'signatures'].map((type) => (
               <button
                 key={type}
                 onClick={() => setFilterType(type)}
-                className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
-                  filterType === type
-                    ? 'bg-white text-slate-800 shadow-sm dark:bg-slate-700 dark:text-white'
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${
+                  filterType === type ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                {type === 'all' ? 'Todos' : type === 'sale' ? 'Venda' : type === 'rent' ? 'Locação' : 'Administrativos'}
+                {type === 'all' ? 'Todos' : type === 'sale' ? 'Venda' : type === 'rent' ? 'Locação' : type === 'administrative' ? 'Administrativos' : 'Assinaturas Pendentes'}
               </button>
             ))}
           </div>
@@ -234,21 +235,17 @@ export default function AdminContracts() {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         contract={selectedContract}
+        onOpenSignatures={(contractId) => {
+          setIsSidebarOpen(false);
+          setSignatureModalState({ contractId, companyId: user?.company_id });
+        }}
+        onRefresh={fetchContracts}
       />
 
       {/* Modais Antigos de Criação (Motores de Geração PDF) */}
       <SaleContractModal isOpen={isSaleModalOpen} onClose={() => setIsSaleModalOpen(false)} onSuccess={fetchContracts} />
       <RentContractModal isOpen={isRentModalOpen} onClose={() => setIsRentModalOpen(false)} onSuccess={fetchContracts} />
-      {/* Exemplo de integração do Modal Administrativo - Use a prop correta conforme o seu modal */}
-      {isIntermedModalOpen && (
-        <IntermediationContractModal
-          isOpen={isIntermedModalOpen}
-          onClose={() => setIsIntermedModalOpen(false)}
-          onSuccess={fetchContracts}
-          propertyId="" // Adicionado para evitar quebra, a lógica real de vinculação você fará por dentro do modal
-          propertyData={{} as any}
-        />
-      )}
+      <AdministrativeContractModal isOpen={isAdminModalOpen} onClose={() => setIsAdminModalOpen(false)} onSuccess={fetchContracts} />
 
       {signatureModalState && (
         <SignatureManagerModal
