@@ -1,19 +1,41 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
+import { supabase } from '../../lib/supabase';
 import { Icons } from '../Icons';
 import { StatusPill, StatusType } from '../ui/StatusPill';
 import { ContractTypeBadge, ContractTypeKey } from '../ui/ContractTypeBadge';
-import { format } from 'date-fns';
 
 interface Props {
   contract: any;
   isOpen: boolean;
   onClose: () => void;
+  onOpenSignatures: (contractId: string) => void;
+  onRefresh: () => void;
 }
 
-export const ContractQuickViewSidebar: React.FC<Props> = ({ contract, isOpen, onClose }) => {
+export const ContractQuickViewSidebar: React.FC<Props> = ({ contract, isOpen, onClose, onOpenSignatures, onRefresh }) => {
   const navigate = useNavigate();
+  const [loadingAction, setLoadingAction] = useState(false);
+
   if (!isOpen || !contract) return null;
+
+  const handleUpdateKeys = async (newStatus: string) => {
+    setLoadingAction(true);
+    await supabase.from('contracts').update({ keys_status: newStatus }).eq('id', contract.id);
+    onRefresh();
+    setLoadingAction(false);
+  };
+
+  const handleFinalizeContract = async () => {
+    if (!window.confirm('Tem certeza que deseja encerrar e arquivar este contrato?')) return;
+    setLoadingAction(true);
+    await supabase.from('contracts').update({ status: 'archived' }).eq('id', contract.id);
+    if (contract.property_id) await supabase.from('properties').update({ status: 'available' }).eq('id', contract.property_id);
+    onRefresh();
+    onClose();
+    setLoadingAction(false);
+  };
 
   const typeKey = contract.type === 'sale' || contract.type === 'rent' ? contract.type : 'administrative';
   const statusMap: Record<string, StatusType> = {
@@ -79,6 +101,49 @@ export const ContractQuickViewSidebar: React.FC<Props> = ({ contract, isOpen, on
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* PAINEL DE CONTROLE RÁPIDO (Trazido dos Detalhes) */}
+          <div className="space-y-4">
+            {/* 1. Assinaturas */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex justify-between items-center">
+              <div>
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-200">Assinaturas</p>
+                <p className="text-xs text-slate-500">Gerenciar envios</p>
+              </div>
+              <button onClick={() => onOpenSignatures(contract.id)} className="p-2 bg-brand-50 text-brand-600 rounded-lg hover:bg-brand-100 transition-colors">
+                <Icons.FileSignature size={18} />
+              </button>
+            </div>
+
+            {/* 2. Controle de Chaves */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+              <p className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3">Controle de Chaves</p>
+              <select
+                value={contract.keys_status || 'na_imobiliaria'}
+                onChange={(e) => handleUpdateKeys(e.target.value)}
+                disabled={loadingAction}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-2 text-sm"
+              >
+                <option value="na_imobiliaria">Na Imobiliária</option>
+                <option value="com_inquilino">Com Inquilino</option>
+                <option value="com_proprietario">Com Proprietário</option>
+              </select>
+            </div>
+
+            {/* 3. Zona de Perigo */}
+            {contract.status !== 'archived' && (
+              <div className="bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-xl p-4">
+                <p className="text-sm font-bold text-red-800 dark:text-red-400 mb-2">Zona de Perigo</p>
+                <button
+                  onClick={handleFinalizeContract}
+                  disabled={loadingAction}
+                  className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50"
+                >
+                  {loadingAction ? 'Processando...' : 'Encerrar Contrato'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
