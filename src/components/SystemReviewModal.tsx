@@ -80,14 +80,13 @@ export default function SystemReviewModal({ isOpen, onClose }: SystemReviewModal
 
     try {
       const sanitizedComment = comment.trim();
-      const { error } = await supabase.from('system_reviews').insert([
-        {
-          user_id: user.id,
-          rating,
-          comment: sanitizedComment || null,
-          is_public: false,
-        },
-      ]);
+      const { error } = await supabase.from('system_reviews').insert({
+        user_id: user?.id,
+        company_id: user?.company_id,
+        rating: rating,
+        comment: sanitizedComment || null,
+        is_public: false,
+      });
 
       if (error) throw error;
 
@@ -163,18 +162,29 @@ export default function SystemReviewModal({ isOpen, onClose }: SystemReviewModal
                   </div>
                 </div>
 
-                <div className="mt-8 grid grid-cols-3 gap-3 text-xs text-slate-400 sm:grid-cols-5">
+                <div className="mt-8 grid grid-cols-5 gap-2 text-xs text-slate-400 sm:gap-3">
                   {STAR_OPTIONS.map((value) => (
                     <div
                       key={value}
                       className={cn(
-                        'rounded-2xl border px-3 py-3 text-center transition-colors',
+                        'flex h-14 flex-col items-center justify-center rounded-2xl border transition-colors',
                         activeRating >= value
-                          ? 'border-amber-300/40 bg-amber-400/10 text-amber-100'
+                          ? 'border-amber-300/40 bg-amber-400/10'
                           : 'border-white/10 bg-white/5'
                       )}
                     >
-                      {value} estrela{value > 1 ? 's' : ''}
+                      <div className="flex flex-wrap justify-center gap-0.5 px-1">
+                        {[...Array(value)].map((_, i) => (
+                          <Star
+                            key={i}
+                            size={10}
+                            className={cn(
+                              'transition-colors',
+                              activeRating >= value ? 'fill-amber-400 text-amber-400' : 'fill-slate-600/40 text-transparent'
+                            )}
+                          />
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -185,7 +195,7 @@ export default function SystemReviewModal({ isOpen, onClose }: SystemReviewModal
               <div>
                 <Label className="text-sm font-semibold text-slate-200">Sua nota</Label>
                 <div
-                  className="mt-4 flex flex-wrap gap-3"
+                  className="mt-4 flex w-full gap-2 sm:gap-3"
                   onMouseLeave={() => setHoveredRating(0)}
                 >
                   {STAR_OPTIONS.map((value) => {
@@ -199,7 +209,7 @@ export default function SystemReviewModal({ isOpen, onClose }: SystemReviewModal
                         onClick={() => setRating(value)}
                         onMouseEnter={() => setHoveredRating(value)}
                         className={cn(
-                          'group flex h-16 w-16 items-center justify-center rounded-2xl border transition-all duration-200',
+                          'group flex h-16 flex-1 min-w-0 items-center justify-center rounded-2xl border transition-all duration-200',
                           isActive
                             ? 'border-amber-300/50 bg-amber-400/15 text-amber-300 shadow-[0_18px_40px_rgba(251,191,36,0.12)]'
                             : 'border-white/10 bg-white/5 text-slate-500 hover:border-white/20 hover:bg-white/10 hover:text-slate-200'
