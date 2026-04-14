@@ -36,7 +36,12 @@ export default function AdminContracts() {
     setLoading(true);
     const { data, error } = await supabase
       .from('contracts')
-      .select('*, property:properties(title, address), lead:leads!contracts_lead_id_fkey(name, phone)')
+      .select(`
+        *, 
+        property:properties(title, address), 
+        lead:leads!contracts_lead_id_fkey(name, phone),
+        signatures:contract_signatures(status)
+      `)
       .eq('company_id', user.company_id)
       .order('created_at', { ascending: false });
 
@@ -193,23 +198,24 @@ export default function AdminContracts() {
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:border-slate-800/60 dark:bg-slate-800/20">
                 <th className="p-4 font-semibold">Imóvel & Cliente</th>
-                <th className="hidden p-4 font-semibold sm:table-cell">Tipo</th>
+                <th className="p-4 font-semibold hidden sm:table-cell">Tipo</th>
                 <th className="p-4 font-semibold">Status</th>
-                <th className="hidden p-4 font-semibold md:table-cell">Data de Emissão</th>
-                <th className="p-4 text-right font-semibold">Valor</th>
-                <th className="p-4"></th>
+                <th className="p-4 font-semibold hidden lg:table-cell text-center">Assinaturas</th>
+                <th className="p-4 font-semibold hidden md:table-cell">Data de Emissão</th>
+                <th className="p-4 font-semibold text-right">Valor</th>
+                <th className="p-4 font-semibold text-center">Ações</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center">
+                  <td colSpan={7} className="p-8 text-center">
                     <Icons.Loader2 className="mx-auto animate-spin text-brand-500" />
                   </td>
                 </tr>
               ) : filteredContracts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-12 text-center text-slate-500">
+                  <td colSpan={7} className="p-12 text-center text-slate-500">
                     Nenhum contrato encontrado.
                   </td>
                 </tr>
