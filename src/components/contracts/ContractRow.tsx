@@ -10,8 +10,8 @@ interface ContractRowProps {
 }
 
 export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick }) => {
-  const propertyTitle = contract.properties?.title || 'Imóvel Removido';
-  const leadName = contract.leads?.name || contract.tenant_name || contract.buyer_name || 'N/A';
+  const propertyTitle = contract.property?.title || 'Imóvel Removido';
+  const leadName = contract.lead?.name || contract.tenant_name || contract.buyer_name || 'N/A';
 
   // Mapeamento de status do banco para a UI
   const statusMap: Record<string, StatusType> = {

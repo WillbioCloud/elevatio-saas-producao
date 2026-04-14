@@ -36,7 +36,7 @@ export default function AdminContracts() {
     setLoading(true);
     const { data, error } = await supabase
       .from('contracts')
-      .select('*, properties(title, address), leads(name, phone)')
+      .select('*, property:properties(title, address), lead:leads!contracts_lead_id_fkey(name, phone)')
       .eq('company_id', user.company_id)
       .order('created_at', { ascending: false });
 
@@ -59,8 +59,8 @@ export default function AdminContracts() {
   // Filtragem
   const filteredContracts = contracts.filter((c) => {
     const matchesSearch =
-      (c.properties?.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (c.leads?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+      (c.property?.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.lead?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType =
       filterType === 'all' ||
       (filterType === 'administrative' ? !['sale', 'rent'].includes(c.type) : c.type === filterType);
