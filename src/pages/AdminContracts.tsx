@@ -530,10 +530,10 @@ const AdminContracts: React.FC = () => {
 
     const hasRejectedSignature = signatureState.rejectedSignaturesCount > 0;
     const badgeClasses = hasRejectedSignature
-      ? 'border-red-200 bg-red-50 text-red-700'
+      ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-300'
       : signatureState.isFullySigned
-        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-        : 'border-amber-200 bg-amber-50 text-amber-700';
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300'
+        : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300';
     const statusLabel = hasRejectedSignature
       ? 'Assinatura recusada'
       : signatureState.isFullySigned
@@ -557,7 +557,7 @@ const AdminContracts: React.FC = () => {
         <button
           type="button"
           onClick={() => handleOpenSignatureManager(contract.id, contract.company_id)}
-          className="text-xs font-semibold text-brand-600 transition-colors hover:text-brand-700"
+          className="text-xs font-semibold text-brand-600 transition-colors hover:text-brand-700 underline-offset-2 hover:underline"
         >
           {signatureState.isFullySigned ? 'Ver assinaturas' : 'Gerenciar'}
         </button>
@@ -602,9 +602,16 @@ const AdminContracts: React.FC = () => {
     );
   };
 
+  const glassCardClass =
+    'rounded-3xl border border-white/60 dark:border-white/10 bg-white/75 dark:bg-[#0b1220]/75 backdrop-blur-xl shadow-[0_12px_30px_rgba(15,23,42,0.08)] dark:shadow-none';
+  const subtlePanelClass =
+    'rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/85 dark:bg-[#111a2b]/70 backdrop-blur-md shadow-sm';
+
+
   return (
     <div className="space-y-6 animate-fade-in pb-10">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="rounded-[30px] border border-slate-200/70 dark:border-white/10 bg-gradient-to-br from-white via-slate-50/90 to-sky-50/60 dark:from-[#0a0f1c] dark:via-[#0d1424] dark:to-[#111a2b] p-4 sm:p-6 shadow-[0_10px_35px_rgba(15,23,42,0.06)]">
+      <div className="sticky top-2 z-20 flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-[#0b1220]/75 backdrop-blur-xl p-4 sm:p-5 shadow-sm">
         <div>
           <h1 className="text-3xl font-serif font-bold tracking-tight text-slate-800 dark:text-white">
             Contratos e Recebíveis
@@ -612,7 +619,7 @@ const AdminContracts: React.FC = () => {
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             Gestão de vendas, locações e acompanhamento de parcelas.
           </p>
-          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-white/10 bg-white/80 dark:bg-[#0a0f1c]/80 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
+          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-indigo-100 dark:border-indigo-400/20 bg-indigo-50/70 dark:bg-indigo-500/10 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
             <Icons.KeyRound size={14} className="text-indigo-500" />
             <span>Locações Ativas: {activeRentContractsCount} / {contractsUsageLabel}</span>
           </div>
@@ -622,7 +629,7 @@ const AdminContracts: React.FC = () => {
           <button 
             onClick={() => handleOpenContractModal('rent')}
             disabled={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts}
-            className="inline-flex items-center gap-2 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl border border-slate-200/60 dark:border-white/5 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 bg-white/90 dark:bg-[#111a2b]/80 backdrop-blur-xl border border-slate-200/70 dark:border-white/10 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             title={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts ? 'Limite de contratos de locação atingido' : 'Novo Aluguel'}
           >
             <Icons.Plus size={16} /> Novo Aluguel
@@ -630,7 +637,7 @@ const AdminContracts: React.FC = () => {
           
           <button 
             onClick={() => handleOpenContractModal('sale')}
-            className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-600 to-sky-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:shadow-lg transition-all shadow-sm"
+            className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-600 to-sky-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:shadow-lg hover:brightness-105 transition-all shadow-sm"
           >
             <Icons.Plus size={16} /> Nova Venda
           </button>
@@ -638,27 +645,27 @@ const AdminContracts: React.FC = () => {
       </div>
 
       {/* Navegação Interna (Tabs) */}
-      <div className="flex gap-6 border-b border-slate-200/60 dark:border-white/5 overflow-x-auto custom-scrollbar">
+      <div className={`${subtlePanelClass} mt-5 flex gap-2 overflow-x-auto custom-scrollbar p-2`}>
         <button
           onClick={() => setTab('geral')}
-          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            currentTab === 'geral' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          className={`px-4 py-2.5 text-sm font-bold transition-all rounded-xl border flex items-center gap-2 whitespace-nowrap ${
+            currentTab === 'geral' ? 'border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-500/40 dark:bg-brand-500/15 dark:text-brand-300' : 'border-transparent text-slate-500 dark:text-slate-400 hover:bg-white/70 dark:hover:bg-white/5 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
           <Icons.LayoutDashboard size={18} /> Visão Geral
         </button>
         <button
           onClick={() => setTab('vendas')}
-          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            currentTab === 'vendas' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          className={`px-4 py-2.5 text-sm font-bold transition-all rounded-xl border flex items-center gap-2 whitespace-nowrap ${
+            currentTab === 'vendas' ? 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/40 dark:bg-sky-500/15 dark:text-sky-300' : 'border-transparent text-slate-500 dark:text-slate-400 hover:bg-white/70 dark:hover:bg-white/5 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
           <Icons.Building size={18} /> Vendas (Recebíveis)
         </button>
         <button
           onClick={() => setTab('alugueis')}
-          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
-            currentTab === 'alugueis' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          className={`px-4 py-2.5 text-sm font-bold transition-all rounded-xl border flex items-center gap-2 whitespace-nowrap ${
+            currentTab === 'alugueis' ? 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-300' : 'border-transparent text-slate-500 dark:text-slate-400 hover:bg-white/70 dark:hover:bg-white/5 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
         >
           <Icons.KeyRound size={18} /> Locações Ativas
@@ -673,13 +680,13 @@ const AdminContracts: React.FC = () => {
           <div className="lg:col-span-2 flex flex-col gap-6">
 
             {loading ? (
-               <div className="flex-1 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex items-center justify-center min-h-[300px]"><Icons.Loader2 className="animate-spin text-brand-500" size={32} /></div>
+               <div className={`flex-1 ${glassCardClass} flex items-center justify-center min-h-[300px]`}><Icons.Loader2 className="animate-spin text-brand-500" size={32} /></div>
             ) : (
               <>
                 {/* Linha 1: 4 Cards de Métricas Core */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {/* Card: VGV */}
-                  <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between hover:border-sky-300 dark:hover:border-sky-500/30 transition-colors">
+                  <div className={`${glassCardClass} p-4 relative overflow-hidden flex flex-col justify-between hover:border-sky-300 dark:hover:border-sky-500/30 transition-colors`}>
                     <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
                       <Icons.Building size={12}/> VGV do Ano
                     </p>
@@ -689,7 +696,7 @@ const AdminContracts: React.FC = () => {
                   </div>
 
                   {/* Card: MRR */}
-                  <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between hover:border-violet-300 dark:hover:border-violet-500/30 transition-colors">
+                  <div className={`${glassCardClass} p-4 relative overflow-hidden flex flex-col justify-between hover:border-violet-300 dark:hover:border-violet-500/30 transition-colors`}>
                     <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
                       <Icons.KeyRound size={12}/> MRR (Ativos)
                     </p>
@@ -699,7 +706,7 @@ const AdminContracts: React.FC = () => {
                   </div>
 
                   {/* Card: Recebido no Mês */}
-                  <div className="bg-emerald-50/50 dark:bg-emerald-500/10 rounded-3xl border border-emerald-200 dark:border-emerald-500/20 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between">
+                  <div className="rounded-3xl border border-emerald-200/90 dark:border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-500/12 shadow-sm p-4 relative overflow-hidden flex flex-col justify-between">
                     <p className="text-[10px] font-bold text-emerald-600/70 dark:text-emerald-400/70 uppercase tracking-wider mb-1 flex items-center gap-1">
                       <Icons.TrendingUp size={12}/> Recebido (Mês)
                     </p>
@@ -709,7 +716,7 @@ const AdminContracts: React.FC = () => {
                   </div>
 
                   {/* Card: A Receber no Mês */}
-                  <div className="bg-blue-50/50 dark:bg-blue-500/10 rounded-3xl border border-blue-200 dark:border-blue-500/20 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between">
+                  <div className="rounded-3xl border border-sky-200/90 dark:border-sky-500/30 bg-sky-50/70 dark:bg-sky-500/12 shadow-sm p-4 relative overflow-hidden flex flex-col justify-between">
                     <p className="text-[10px] font-bold text-blue-600/70 dark:text-blue-400/70 uppercase tracking-wider mb-1 flex items-center gap-1">
                       <Icons.Clock size={12}/> A Receber (Mês)
                     </p>
@@ -722,7 +729,7 @@ const AdminContracts: React.FC = () => {
                 {/* Linha 2: Gráfico e Controle de Inadimplência */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Gráfico de Carteira */}
-                  <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-5 flex flex-col">
+                  <div className={`${glassCardClass} p-5 flex flex-col`}>
                     <h3 className="text-sm font-bold font-serif text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
                       <Icons.PieChart size={16} className="text-brand-500" /> Distribuição da Carteira
                     </h3>
@@ -762,7 +769,7 @@ const AdminContracts: React.FC = () => {
                   {/* Box de Análise de Risco */}
                   <div className="flex flex-col gap-4">
                     {/* Saúde Financeira (Adimplência) */}
-                    <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-5 flex items-center justify-between h-auto">
+                    <div className={`${glassCardClass} p-5 flex items-center justify-between h-auto`}>
                       <div>
                         <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Saúde da Carteira</p>
                         <p className="text-[10px] text-slate-500 dark:text-slate-400">Taxa de Adimplência Geral</p>
@@ -773,7 +780,7 @@ const AdminContracts: React.FC = () => {
                     </div>
 
                     {/* Inadimplência Expansível */}
-                    <div onClick={() => setShowOverdue(!showOverdue)} className="bg-red-50/50 dark:bg-red-500/10 rounded-3xl border border-red-200 dark:border-red-500/20 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-5 flex flex-col cursor-pointer hover:border-red-300 dark:hover:border-red-500/30 transition-colors relative flex-1 justify-center">
+                    <div onClick={() => setShowOverdue(!showOverdue)} className="rounded-3xl border border-red-200/90 dark:border-red-500/30 bg-red-50/70 dark:bg-red-500/12 shadow-sm p-5 flex flex-col cursor-pointer hover:border-red-300 dark:hover:border-red-500/30 transition-colors relative flex-1 justify-center">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-1 flex items-center gap-1">
@@ -813,8 +820,8 @@ const AdminContracts: React.FC = () => {
           </div>
 
           {/* Coluna Direita: Próximos Vencimentos */}
-          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col h-full overflow-hidden">
-            <div className="p-5 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.02] flex items-center gap-2">
+          <div className={`${glassCardClass} flex flex-col h-full overflow-hidden`}>
+            <div className="p-5 border-b border-slate-100 dark:border-white/5 bg-slate-50/70 dark:bg-white/[0.03] flex items-center gap-2">
               <Icons.Calendar size={18} className="text-brand-500" />
               <h3 className="font-bold font-serif text-slate-800 dark:text-white">Próximos Vencimentos</h3>
             </div>
@@ -831,7 +838,7 @@ const AdminContracts: React.FC = () => {
               ) : (
                 <div className="space-y-1">
                   {dashboardStats.proximos.map(inst => (
-                    <div key={inst.id} className="p-3 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl transition-colors border border-transparent hover:border-slate-100 dark:hover:border-white/5 flex items-center justify-between group">
+                    <div key={inst.id} className="p-3 hover:bg-slate-50/80 dark:hover:bg-white/5 rounded-xl transition-colors border border-transparent hover:border-slate-100 dark:hover:border-white/5 flex items-center justify-between group">
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-bold font-serif text-slate-800 dark:text-white truncate">
                           {inst.contract?.lead?.name || 'Cliente'}
@@ -868,17 +875,17 @@ const AdminContracts: React.FC = () => {
           </div>
 
           <div className="space-y-4 animate-fade-in">
-            <div className="flex gap-2 mb-4 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-2 rounded-xl border border-slate-200/60 dark:border-white/5 w-fit shadow-sm">
-              <button onClick={() => setContractTab('active')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'active' ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Ativos / Vigentes</button>
-              <button onClick={() => setContractTab('pending')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'pending' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Pendentes</button>
-              <button onClick={() => setContractTab('archived')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'archived' ? 'bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Arquivados</button>
+            <div className={`${subtlePanelClass} flex gap-2 mb-4 p-2 w-fit`}>
+              <button onClick={() => setContractTab('active')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'active' ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50/80 dark:hover:bg-white/5'}`}>Ativos / Vigentes</button>
+              <button onClick={() => setContractTab('pending')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'pending' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50/80 dark:hover:bg-white/5'}`}>Pendentes</button>
+              <button onClick={() => setContractTab('archived')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'archived' ? 'bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50/80 dark:hover:bg-white/5'}`}>Arquivados</button>
             </div>
 
-            <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden">
+            <div className={`${glassCardClass} overflow-hidden`}>
               <div className="overflow-x-auto">
                 <table className="w-full text-left whitespace-nowrap">
                   <thead>
-                    <tr className="bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
+                    <tr className="bg-slate-50/70 dark:bg-white/[0.03] border-b border-slate-100 dark:border-white/5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
                       <th className="p-4">Cliente</th>
                       <th className="p-4">Imóvel</th>
                       <th className="p-4">Valor</th>
@@ -888,22 +895,22 @@ const AdminContracts: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-white/5 text-sm text-slate-600 dark:text-slate-300">
                     {filteredSalesContracts.map((contract) => (
-                      <tr key={contract.id} className="hover:bg-slate-50 dark:hover:bg-white/5">
+                      <tr key={contract.id} className="hover:bg-slate-50/80 dark:hover:bg-white/5">
                         <td className="p-4 font-semibold font-serif">{contract.lead?.name || 'Não informado'}</td>
                         <td className="p-4">{contract.property?.title || 'Não informado'}</td>
                         <td className="p-4 font-bold font-serif text-slate-700 dark:text-slate-200">{Number(contract.sale_total_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                         <td className="p-4 align-middle">{renderSignatureStatus(contract)}</td>
                         <td className="p-4 text-right">
                           <div className="flex justify-end gap-2">
-                            <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Detalhes (Gestão)"><Icons.Eye size={16} /></button>
-                            <button onClick={() => setViewContractData(contract)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Formulário Original"><Icons.FileText size={16} /></button>
+                            <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded-lg bg-white/90 dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Detalhes (Gestão)"><Icons.Eye size={16} /></button>
+                            <button onClick={() => setViewContractData(contract)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg bg-white/90 dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Formulário Original"><Icons.FileText size={16} /></button>
                             {renderFinalPdfButton(contract)}
                             {renderApproveAction(contract)}
 
                             {isAdmin && (
                               <>
-                                <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
-                                <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
+                                <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white/90 dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
+                                <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white/90 dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
                               </>
                             )}
                           </div>
@@ -926,16 +933,16 @@ const AdminContracts: React.FC = () => {
           </div>
 
           <div className="space-y-4 animate-fade-in"> 
-            <div className="flex gap-2 mb-4 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-2 rounded-xl border border-slate-200/60 dark:border-white/5 w-fit shadow-sm"> 
-              <button onClick={() => setContractTab('active')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'active' ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Ativos / Vigentes</button>
-              <button onClick={() => setContractTab('pending')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'pending' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Pendentes</button>
-              <button onClick={() => setContractTab('archived')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'archived' ? 'bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Arquivados</button>
+            <div className={`${subtlePanelClass} flex gap-2 mb-4 p-2 w-fit`}> 
+              <button onClick={() => setContractTab('active')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'active' ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50/80 dark:hover:bg-white/5'}`}>Ativos / Vigentes</button>
+              <button onClick={() => setContractTab('pending')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'pending' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50/80 dark:hover:bg-white/5'}`}>Pendentes</button>
+              <button onClick={() => setContractTab('archived')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'archived' ? 'bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50/80 dark:hover:bg-white/5'}`}>Arquivados</button>
             </div>
 
             {loading ? (
               <div className="flex justify-center py-10"><Icons.Loader2 className="animate-spin text-indigo-500" size={32} /></div>
             ) : rentContracts.length === 0 ? (
-              <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-10 flex flex-col items-center text-center">
+              <div className={`${glassCardClass} p-10 flex flex-col items-center text-center`}>
                 <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-500/10 rounded-full flex items-center justify-center text-indigo-500 mb-4">
                   <Icons.KeyRound size={40} />
                 </div>
@@ -946,11 +953,11 @@ const AdminContracts: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden">
+              <div className={`${glassCardClass} overflow-hidden`}>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
+                      <tr className="bg-slate-50/70 dark:bg-white/[0.03] border-b border-slate-100 dark:border-white/5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
                         <th className="p-4">Imóvel & Locatário</th>
                         <th className="p-4">Vencimento Contrato</th>
                         <th className="p-4 text-right">Aluguel Mensal</th>
@@ -964,7 +971,7 @@ const AdminContracts: React.FC = () => {
                         <tr><td colSpan={6} className="p-8 text-center text-slate-400">Nenhum contrato encontrado nesta categoria.</td></tr>
                       ) : (
                         filteredRentContracts.map((contract) => (
-                          <tr key={contract.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                          <tr key={contract.id} className="hover:bg-slate-50/80 dark:hover:bg-white/5 transition-colors">
                             <td className="p-4">
                               <p className="font-bold font-serif text-slate-800 dark:text-white">{contract.property?.title || 'Imóvel Excluído'}</p>
                               <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5"><Icons.User size={12}/> {contract.lead?.name || 'Cliente Excluído'}</p>
@@ -979,15 +986,15 @@ const AdminContracts: React.FC = () => {
                             </td>
                             <td className="p-4 text-right">
                               <div className="flex justify-end gap-2">
-                                <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Detalhes (Gestão)"><Icons.Eye size={16} /></button>
-                                <button onClick={() => setViewContractData(contract)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Formulário Original"><Icons.FileText size={16} /></button>
+                                <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg bg-white/90 dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Detalhes (Gestão)"><Icons.Eye size={16} /></button>
+                                <button onClick={() => setViewContractData(contract)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg bg-white/90 dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Formulário Original"><Icons.FileText size={16} /></button>
                                 {renderFinalPdfButton(contract)}
                                 {renderApproveAction(contract)}
 
                                 {isAdmin && (
                                   <>
-                                    <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
-                                    <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
+                                    <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white/90 dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
+                                    <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white/90 dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
                                   </>
                                 )}
                               </div>
@@ -1036,6 +1043,7 @@ const AdminContracts: React.FC = () => {
         />
       )}
 
+      </div>
     </div>
   );
 };
