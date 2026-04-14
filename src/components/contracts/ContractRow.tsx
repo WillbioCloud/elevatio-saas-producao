@@ -25,17 +25,20 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick }) =
   };
 
   const statusType = statusMap[contract.status] || 'draft';
+  const typeKey = contract.type === 'sale' || contract.type === 'rent' ? contract.type : 'administrative';
+
+  // Lógica de Assinaturas
   const sigs = contract.signatures || [];
   const sigsCount = sigs.length;
   const signedCount = sigs.filter((s: any) => s.status === 'signed').length;
   const isFullySigned = sigsCount > 0 && signedCount === sigsCount;
-  const typeKey = contract.type === 'sale' || contract.type === 'rent' ? contract.type : 'administrative';
 
   return (
     <tr
       onClick={() => onClick(contract)}
       className="group cursor-pointer border-b border-slate-100 bg-white/40 transition-all duration-200 hover:bg-white dark:border-slate-800/60 dark:bg-slate-900/40 dark:hover:bg-slate-800/80"
     >
+      {/* 1. Imóvel & Cliente */}
       <td className="p-4 align-middle">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-transform group-hover:scale-105 dark:bg-slate-800">
@@ -47,26 +50,28 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick }) =
           </div>
         </div>
       </td>
+
+      {/* 2. Tipo */}
       <td className="hidden p-4 align-middle sm:table-cell">
         <ContractTypeBadge type={typeKey as ContractTypeKey} />
       </td>
+
+      {/* 3. Status */}
       <td className="p-4 align-middle">
         <StatusPill status={statusType} />
       </td>
 
-      {/* Coluna de Assinaturas */}
+      {/* 4. Assinaturas (AGORA PRESENTE E ALINHADA) */}
       <td className="p-4 align-middle hidden lg:table-cell">
         <div className="flex flex-col items-center justify-center">
           {sigsCount > 0 ? (
-            <div
-              className={cn(
-                'flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-colors',
-                isFullySigned
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
-                  : 'bg-slate-50 text-slate-500 border-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-              )}
-            >
-              <Icons.FileSignature size={12} className={isFullySigned ? 'text-emerald-500' : 'text-slate-400'} />
+            <div className={cn(
+              "flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-colors",
+              isFullySigned
+                ? "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
+                : "bg-slate-50 text-slate-500 border-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
+            )}>
+              <Icons.FileSignature size={12} className={isFullySigned ? "text-emerald-500" : "text-slate-400"} />
               {signedCount}/{sigsCount}
             </div>
           ) : (
@@ -75,18 +80,20 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick }) =
         </div>
       </td>
 
+      {/* 5. Data de Emissão */}
       <td className="hidden p-4 align-middle text-sm font-medium text-slate-600 dark:text-slate-400 md:table-cell text-center">
         {contract.created_at ? format(new Date(contract.created_at), 'dd/MM/yyyy') : '-'}
       </td>
 
+      {/* 6. Valor */}
       <td className="p-4 align-middle text-right">
         <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
           {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(contract.contract_value || 0)}
         </span>
       </td>
 
-      {/* Coluna de Ações Rápidas */}
-      <td className="p-4 align-middle">
+      {/* 7. Ações Rápidas */}
+      <td className="p-4 align-middle text-center">
         <div className="flex items-center justify-center gap-2">
           {contract.file_url && (
             <button
