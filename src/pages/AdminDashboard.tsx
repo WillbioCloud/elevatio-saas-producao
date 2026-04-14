@@ -79,8 +79,20 @@ WIDGET_CONFIG.splice(4, 0,
   { id: 'recent-activity', label: 'Feed da Equipe', size: 'col-span-1 md:col-span-1 lg:col-span-1', adminOnly: false },
 );
 
+// Define widgets prioritários para corretores/imobiliária
+const DEFAULT_WIDGETS = [
+  'vgvTotal',
+  'vgvAnual',
+  'portfolioVenda',
+  'portfolioAluguel',
+  'funil',
+  'agenda',
+  'gamification-stats',
+  'recent-activity',
+];
+
 const getDefaultLayout = (): DashboardLayoutItem[] => (
-  WIDGET_CONFIG.map((widget) => ({ id: widget.id, visible: true }))
+  WIDGET_CONFIG.map((widget) => ({ id: widget.id, visible: DEFAULT_WIDGETS.includes(widget.id) }))
 );
 
 const syncLayoutWithConfig = (savedLayout?: DashboardLayoutItem[] | null): DashboardLayoutItem[] => {
@@ -164,6 +176,7 @@ const AdminDashboard: React.FC = () => {
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [draggedWidget, setDraggedWidget] = useState<string | null>(null);
   const [dragOverWidget, setDragOverWidget] = useState<string | null>(null);
+  const [dragSource, setDragSource] = useState<'dashboard' | 'sidebar' | null>(null);
   const [contractStatus, setContractStatus] = useState<string | null>(null);
   const [trialDaysLeft] = useState(0);
   const [trialExpiresAt, setTrialExpiresAt] = useState<string | null>(null);
@@ -490,28 +503,55 @@ const AdminDashboard: React.FC = () => {
     });
   };
 
-  const handleDragStart = (e: React.DragEvent, id: string) => {
+  const handleDragStart = (e: React.DragEvent, id: string, source: 'dashboard' | 'sidebar') => {
     setDraggedWidget(id);
+    setDragSource(source);
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDrop = (e: React.DragEvent, targetId: string) => {
+  const handleDrop = (e: React.DragEvent, targetId: string, targetArea: 'dashboard' | 'sidebar') => {
     e.preventDefault();
     setDragOverWidget(null);
-    if (!draggedWidget || draggedWidget === targetId) return;
+    if (!draggedWidget || draggedWidget === targetId) {
+      setDraggedWidget(null);
+      setDragSource(null);
+      return;
+    }
 
     setLayout(prev => {
-      const newLayout = [...prev];
+      let newLayout = [...prev];
       const draggedIdx = newLayout.findIndex(w => w.id === draggedWidget);
       const targetIdx = newLayout.findIndex(w => w.id === targetId);
-      
-      const [movedItem] = newLayout.splice(draggedIdx, 1);
-      newLayout.splice(targetIdx, 0, movedItem);
-      
+
+      // Drag de sidebar para dashboard: adicionar widget na posição
+      if (dragSource === 'sidebar' && targetArea === 'dashboard') {
+        if (draggedIdx === -1) {
+          // Adiciona widget na posição do drop
+          newLayout.splice(targetIdx, 0, { id: draggedWidget, visible: true });
+        } else {
+          // Já existe, só reordena e garante visível
+          const [movedItem] = newLayout.splice(draggedIdx, 1);
+          newLayout.splice(targetIdx, 0, { ...movedItem, visible: true });
+        }
+      }
+      // Drag de dashboard para sidebar: oculta widget
+      else if (dragSource === 'dashboard' && targetArea === 'sidebar') {
+        if (draggedIdx !== -1) {
+          newLayout[draggedIdx] = { ...newLayout[draggedIdx], visible: false };
+        }
+      }
+      // Drag dentro do dashboard: reordena
+      else if (dragSource === 'dashboard' && targetArea === 'dashboard') {
+        if (draggedIdx !== -1) {
+          const [movedItem] = newLayout.splice(draggedIdx, 1);
+          newLayout.splice(targetIdx, 0, movedItem);
+        }
+      }
       localStorage.setItem(`dashboard_layout_${user?.id}`, JSON.stringify(newLayout));
       return newLayout;
     });
     setDraggedWidget(null);
+    setDragSource(null);
   };
 
   const handleActivatePlan = () => {
@@ -744,15 +784,15 @@ const AdminDashboard: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in pb-10">
       
-      {/* HEADER E MODAL DE PERSONALIZAÇÃO */}
+      {/* HEADER E PAINEL DE WIDGETS */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative">
         <div>
           <h1 className="text-3xl font-serif font-bold text-slate-800 dark:text-white tracking-tight">Olá, {user?.name?.split(' ')[0]} 👋</h1>
           <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Resumo de performance e resultados da sua imobiliária.</p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-          <button onClick={() => setShowCustomizer(!showCustomizer)} className="flex items-center justify-center gap-2 bg-white dark:bg-dark-card px-4 py-3 sm:py-2 rounded-xl sm:rounded-lg border border-slate-200 dark:border-dark-border text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm font-bold text-sm w-full sm:w-auto">
-            <Icons.Settings size={16} /> Personalizar Painel
+          <button onClick={() => setShowCustomizer(true)} className="flex items-center justify-center gap-2 bg-white dark:bg-dark-card px-4 py-3 sm:py-2 rounded-xl sm:rounded-lg border border-slate-200 dark:border-dark-border text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-colors shadow-sm font-bold text-sm w-full sm:w-auto">
+            <Icons.Plus size={16} /> Adicionar widget
           </button>
           <div className="hidden md:flex items-center gap-2 bg-white dark:bg-dark-card px-4 py-2 rounded-lg border border-slate-200 dark:border-dark-border shadow-sm">
             <Icons.Calendar size={18} className="text-slate-400" />
@@ -762,26 +802,66 @@ const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
+        {/* PAINEL LATERAL FLUTUANTE PREMIUM */}
         {showCustomizer && (
-          <div className="absolute top-full left-0 right-0 md:left-auto mt-2 w-full md:w-72 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl z-50 p-4 animate-fade-in">
-            <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100 dark:border-slate-700">
-              <h4 className="font-bold text-slate-800 dark:text-white text-sm">Widgets Visíveis</h4>
-              <button onClick={() => setShowCustomizer(false)} className="text-slate-400 hover:text-slate-700"><Icons.X size={16}/></button>
+          <div className="fixed top-2 right-2 bottom-2 z-50 w-full max-w-xs sm:max-w-sm md:max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-6 flex flex-col gap-4 animate-fade-in" style={{ boxShadow: '0 8px 40px rgba(0,0,0,0.18)' }}>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-bold text-slate-800 dark:text-white text-base">Widgets disponíveis</h4>
+              <button onClick={() => setShowCustomizer(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white"><Icons.X size={18}/></button>
             </div>
-            <div className="space-y-3">
+            <div className="overflow-y-auto flex-1 pr-1 custom-scrollbar">
               {WIDGET_CONFIG.map(widget => {
                 if (widget.adminOnly && !isAdmin) return null;
                 const isVisible = layout.find(w => w.id === widget.id)?.visible ?? false;
+                if (isVisible) return null; // Só mostra widgets ocultos
                 return (
-                  <label key={widget.id} className="flex items-center justify-between cursor-pointer group">
-                    <span className="text-sm text-slate-600 dark:text-slate-300 font-medium group-hover:text-brand-600 transition-colors">{widget.label}</span>
-                    <div className="relative inline-flex items-center">
-                      <input type="checkbox" className="sr-only peer" checked={isVisible} onChange={() => toggleWidgetVisibility(widget.id)} />
-                      <div className="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-500"></div>
+                  <div
+                    key={widget.id}
+                    className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-800 mb-3 bg-slate-50/60 dark:bg-white/5 cursor-grab"
+                    draggable
+                    onDragStart={e => handleDragStart(e, widget.id, 'sidebar')}
+                    onDragOver={e => { e.preventDefault(); setDragOverWidget(widget.id); }}
+                    onDrop={e => handleDrop(e, widget.id, 'sidebar')}
+                  >
+                    <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800">
+                      {widget.id === 'vgvTotal' && <Icons.TrendingUp size={22} className="text-sky-400" />}
+                      {widget.id === 'vgvAnual' && <Icons.CalendarCheck size={22} className="text-sky-600 dark:text-sky-400" />}
+                      {widget.id === 'portfolioVenda' && <Icons.Home size={22} className="text-emerald-600 dark:text-emerald-400" />}
+                      {widget.id === 'portfolioAluguel' && <Icons.Building size={22} className="text-indigo-600 dark:text-indigo-400" />}
+                      {widget.id === 'funil' && <Icons.BarChart2 size={22} className="text-fuchsia-500" />}
+                      {widget.id === 'agenda' && <Icons.Calendar size={22} className="text-cyan-500" />}
+                      {widget.id === 'financeiroAdmin' && <Icons.Wallet size={22} className="text-emerald-500" />}
+                      {widget.id === 'calendario' && <Icons.Calendar size={22} className="text-slate-500" />}
+                      {widget.id === 'gamification-stats' && <Icons.Trophy size={22} className="text-amber-500" />}
+                      {widget.id === 'recent-activity' && <Icons.Activity size={22} className="text-brand-500" />}
                     </div>
-                  </label>
-                )
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-slate-700 dark:text-white text-sm truncate">{widget.label}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                        {widget.id === 'vgvTotal' && 'Soma de todas as vendas fechadas.'}
+                        {widget.id === 'vgvAnual' && 'VGV do ano atual.'}
+                        {widget.id === 'portfolioVenda' && 'Imóveis ativos para venda.'}
+                        {widget.id === 'portfolioAluguel' && 'Imóveis ativos para locação.'}
+                        {widget.id === 'funil' && 'Conversão de leads.'}
+                        {widget.id === 'agenda' && 'Suas tarefas e compromissos.'}
+                        {widget.id === 'financeiroAdmin' && 'Recebimentos, leads e top corretor.'}
+                        {widget.id === 'calendario' && 'Campanhas e eventos.'}
+                        {widget.id === 'gamification-stats' && 'Seu desempenho na gamificação.'}
+                        {widget.id === 'recent-activity' && 'Atividades recentes da equipe.'}
+                      </div>
+                    </div>
+                    <span className="ml-2 px-3 py-1 rounded-lg font-bold text-xs bg-brand-500 text-white">Arraste para adicionar</span>
+                  </div>
+                );
               })}
+              {/* Área de drop para remover widgets da dashboard */}
+              <div
+                className="mt-6 flex items-center justify-center h-16 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl text-slate-400 dark:text-slate-500 text-xs font-bold"
+                onDragOver={e => { e.preventDefault(); setDragOverWidget('sidebar-drop'); }}
+                onDrop={e => handleDrop(e, 'sidebar-drop', 'sidebar')}
+              >
+                Arraste aqui para remover widget
+              </div>
             </div>
           </div>
         )}
@@ -921,10 +1001,10 @@ const AdminDashboard: React.FC = () => {
               key={w.id}
               className={`${config.size} relative group cursor-pointer transition-transform duration-200`}
               draggable
-              onDragStart={(e) => handleDragStart(e, w.id)}
+              onDragStart={(e) => handleDragStart(e, w.id, 'dashboard')}
               onDragOver={(e) => { e.preventDefault(); setDragOverWidget(w.id); }}
               onDragLeave={() => setDragOverWidget(null)}
-              onDrop={(e) => handleDrop(e, w.id)}
+              onDrop={(e) => handleDrop(e, w.id, 'dashboard')}
             >
               {/* Indicador visual de arraste */}
               <div className={`h-full transition-all duration-300 ${dragOverWidget === w.id ? 'scale-[1.02] ring-4 ring-brand-500/50 rounded-2xl' : ''} ${draggedWidget === w.id ? 'opacity-40' : 'opacity-100'}`}>
@@ -932,7 +1012,6 @@ const AdminDashboard: React.FC = () => {
                 <div className="absolute top-4 right-4 z-20 cursor-pointer rounded-lg bg-slate-100/80 p-1.5 text-slate-400 opacity-0 shadow-sm transition-all hover:text-brand-500 group-hover:opacity-100 dark:bg-slate-700/80">
                   <Icons.GripHorizontal size={16} />
                 </div>
-                
                 {renderWidgetContent(w.id)}
               </div>
             </div>
