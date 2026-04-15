@@ -12,23 +12,24 @@ interface ContractRowProps {
 }
 
 export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick, onOpenSignatures }) => {
-  // LÓGICA BLINDADA DO BANCO DE DADOS ORIGINAL
-  const propertyTitle = contract.properties?.title || 'Contrato Administrativo';
-  const leadName = contract.leads?.name || contract.tenant_name || contract.buyer_name || 'N/A';
+  // Compatível com os dois formatos de relacionamento (original e legado)
+  const propertyTitle = contract.properties?.title || contract.property?.title || 'Contrato Administrativo';
+  const leadName = contract.leads?.name || contract.lead?.name || contract.tenant_name || contract.buyer_name || 'N/A';
 
   const statusMap: Record<string, StatusType> = { active: 'active', pending: 'pending', draft: 'draft', archived: 'archived', canceled: 'rejected', ended: 'archived' };
   const statusType = statusMap[contract.status] || 'draft';
-  const typeKey = (contract.type === 'sale' || contract.type === 'rent') ? contract.type : 'administrative';
+  const typeKey = contract.type === 'sale' || contract.type === 'rent' ? contract.type : 'administrative';
 
-  // Usa as contagens que a query original já faz perfeitamente
-  const sigsCount = contract.signatures_count || 0;
-  const signedCount = contract.signed_signatures_count || 0;
+  // Usa contagens agregadas da página; fallback em array de assinaturas para retrocompatibilidade
+  const fallbackSigs = Array.isArray(contract.signatures) ? contract.signatures : [];
+  const sigsCount = contract.signatures_count ?? fallbackSigs.length ?? 0;
+  const signedCount = contract.signed_signatures_count ?? fallbackSigs.filter((s: any) => s.status === 'signed').length ?? 0;
   const isFullySigned = sigsCount > 0 && signedCount === sigsCount;
 
   return (
     <tr
       onClick={() => onClick(contract)}
-      className="group cursor-pointer border-b border-slate-100/80 bg-white/40 transition-all duration-200 hover:bg-white hover:shadow-[0_2px_10px_rgba(0,0,0,0.02)] dark:border-slate-800/60 dark:bg-slate-900/40 dark:hover:bg-slate-800/80"
+      className="group cursor-pointer border-b border-slate-100/80 bg-white/50 transition-all duration-200 hover:bg-white hover:shadow-[0_2px_10px_rgba(0,0,0,0.02)] dark:border-slate-800/60 dark:bg-slate-900/40 dark:hover:bg-slate-800/80"
     >
       <td className="p-4 align-middle">
         <div className="flex items-center gap-3">
@@ -50,17 +51,18 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick, onO
         <StatusPill status={statusType} />
       </td>
 
-      {/* COLUNA DE ASSINATURAS FIEL AO DESIGN */}
       <td className="p-4 align-middle hidden lg:table-cell text-center">
         <div className="flex flex-col items-center justify-center">
           {sigsCount > 0 ? (
-            <div className={cn(
-              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold tracking-wide transition-colors",
-              isFullySigned
-                ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
-                : "bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
-            )}>
-              <Icons.FileSignature size={12} className={isFullySigned ? "text-emerald-500" : "text-slate-400"} />
+            <div
+              className={cn(
+                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold tracking-wide transition-colors',
+                isFullySigned
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
+                  : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20'
+              )}
+            >
+              <Icons.FileSignature size={12} className={isFullySigned ? 'text-emerald-500' : 'text-amber-500'} />
               {signedCount}/{sigsCount}
             </div>
           ) : (
