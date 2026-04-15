@@ -57,12 +57,12 @@ export const ContractQuickViewSidebar: React.FC<Props> = ({ contract, isOpen, on
           <div className="space-y-4 rounded-2xl border border-slate-100 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-900">
             <div>
               <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Imóvel</p>
-              <p className="font-medium text-slate-800 dark:text-slate-200">{contract.property?.title || 'N/A'}</p>
+              <p className="font-medium text-slate-800 dark:text-slate-200">{contract.property?.title || 'Não informado'}</p>
             </div>
             <div className="border-t border-slate-200 pt-3 dark:border-slate-700">
               <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Cliente (Lead)</p>
               <p className="font-medium text-slate-800 dark:text-slate-200">
-                {contract.lead?.name || contract.tenant_name || contract.buyer_name || 'N/A'}
+                {contract.lead?.name || contract.tenant_name || contract.buyer_name || 'Não informado'}
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4 border-t border-slate-200 pt-3 dark:border-slate-700">

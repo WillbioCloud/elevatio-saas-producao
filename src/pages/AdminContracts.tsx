@@ -875,6 +875,13 @@ const AdminContracts: React.FC = () => {
                       <td className="p-4">{renderSignatureStatus(contract)}</td>
                       <td className="p-4 text-right">
                         <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => setQuickViewContract(contract)}
+                            className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-white/10 dark:bg-[#111a2b] dark:text-slate-300"
+                            title="Resumo rápido"
+                          >
+                            <Icons.Layout size={16} />
+                          </button>
                           <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="rounded-lg border border-slate-200 bg-white p-2 text-brand-600 shadow-sm hover:bg-brand-50 dark:border-white/10 dark:bg-[#111a2b]" title="Ver detalhes"><Icons.Eye size={16} /></button>
                           <button onClick={() => setViewContractData(contract)} className="rounded-lg border border-slate-200 bg-white p-2 text-blue-600 shadow-sm hover:bg-blue-50 dark:border-white/10 dark:bg-[#111a2b]" title="Abrir formulário original"><Icons.FileText size={16} /></button>
                           {renderFinalPdfButton(contract)}
