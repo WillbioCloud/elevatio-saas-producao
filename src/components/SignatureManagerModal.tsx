@@ -71,10 +71,96 @@ export default function SignatureManagerModal({ contractId, companyId, onClose }
     }
   };
 
+  const resolvePrimarySigners = (contract: any) => {
+    const lead = contract?.leads || contract?.lead || null;
+    const property = contract?.properties || contract?.property || null;
+    const broker = contract?.broker || null;
+
+    const ownerName = property?.owner_name || property?.landlord_name || property?.proprietor_name || contract?.owner_name || contract?.landlord_name;
+    const ownerEmail = property?.owner_email || property?.landlord_email || property?.proprietor_email || contract?.owner_email || contract?.landlord_email;
+
+    const leadName = lead?.name || contract?.tenant_name || contract?.buyer_name;
+    const leadEmail = lead?.email || contract?.tenant_email || contract?.buyer_email;
+
+    const brokerName = broker?.full_name || broker?.name || contract?.broker_name;
+    const brokerEmail = broker?.email || contract?.broker_email;
+
+    if (contract?.type === 'sale') {
+      return [
+        { name: ownerName, email: ownerEmail, role: 'Vendedor' },
+        { name: leadName, email: leadEmail, role: 'Comprador' },
+        { name: brokerName, email: brokerEmail, role: 'Imobiliária' },
+      ];
+    }
+
+    return [
+      { name: ownerName, email: ownerEmail, role: 'Locador' },
+      { name: leadName, email: leadEmail, role: 'Locatário' },
+      { name: brokerName, email: brokerEmail, role: 'Imobiliária' },
+    ];
+  };
+
+  const autoPrepareSignatures = async () => {
+    const existingSignatures = await fetchSignatures();
+    if (existingSignatures.length > 0) return;
+
+    const { data: contractData, error: contractError } = await supabase
+      .from('contracts')
+      .select('*, leads(*), properties(*), broker:profiles!contracts_broker_id_fkey(*)')
+      .eq('id', contractId)
+      .maybeSingle();
+
+    if (contractError || !contractData) {
+      if (contractError) console.error('Erro ao buscar contrato para auto-preparação:', contractError);
+      return;
+    }
+
+    const rawCandidates = resolvePrimarySigners(contractData);
+
+    const candidates = rawCandidates.filter((person) => {
+      const cleanName = person.name?.trim();
+      const cleanEmail = person.email?.trim().toLowerCase();
+      return Boolean(cleanName && cleanEmail);
+    });
+
+    if (candidates.length === 0) return;
+
+    const dedupMap = new Map<string, { name: string; email: string; role: string }>();
+    for (const candidate of candidates) {
+      const normalizedEmail = candidate.email.trim().toLowerCase();
+      if (!dedupMap.has(normalizedEmail)) {
+        dedupMap.set(normalizedEmail, {
+          name: candidate.name.trim(),
+          email: normalizedEmail,
+          role: candidate.role,
+        });
+      }
+    }
+
+    const payload = Array.from(dedupMap.values()).map((signer) => ({
+      token: crypto.randomUUID(),
+      status: 'pending' as const,
+      contract_id: contractId,
+      company_id: companyId,
+      signer_name: signer.name,
+      signer_email: signer.email,
+      signer_role: signer.role,
+    }));
+
+    const { error: insertError } = await supabase.from('contract_signatures').insert(payload);
+
+    if (insertError) {
+      console.error('Erro ao auto-criar assinaturas:', insertError);
+      return;
+    }
+
+    await fetchSignatures();
+  };
+
   useEffect(() => {
     const initModal = async () => {
       setIsLoading(true);
-      await fetchSignatures();
+      await autoPrepareSignatures();
       setIsLoading(false);
     };
 
@@ -137,7 +223,6 @@ export default function SignatureManagerModal({ contractId, companyId, onClose }
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
       <div className="flex h-full max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white/95 dark:bg-slate-900/95 border border-white/20 shadow-2xl backdrop-blur-xl animate-in zoom-in-95">
-        {/* HEADER */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 p-5 backdrop-blur-md">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-brand-50 p-2.5 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400">
@@ -156,7 +241,6 @@ export default function SignatureManagerModal({ contractId, companyId, onClose }
           </button>
         </div>
 
-        {/* CONTENT */}
         <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-slate-50/30 dark:bg-slate-950/30 custom-scrollbar">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-20 text-brand-500">
@@ -165,7 +249,6 @@ export default function SignatureManagerModal({ contractId, companyId, onClose }
             </div>
           ) : (
             <>
-              {/* LISTA DE ASSINANTES */}
               <div className="space-y-4">
                 <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                   <Icons.Users size={18} className="text-slate-400" /> Participantes do Contrato
@@ -173,7 +256,7 @@ export default function SignatureManagerModal({ contractId, companyId, onClose }
 
                 {signatures.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-slate-200 bg-white/50 p-10 text-center dark:border-slate-800 dark:bg-slate-900/50">
-                    <p className="text-slate-500">Nenhum assinante cadastrado ainda.</p>
+                    <p className="text-slate-500">Não foi possível identificar assinantes automáticos para este contrato.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -223,10 +306,9 @@ export default function SignatureManagerModal({ contractId, companyId, onClose }
                 )}
               </div>
 
-              {/* ADICIONAR NOVO ASSINANTE */}
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <h3 className="mb-4 font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                  <Icons.UserPlus size={18} className="text-brand-500" /> Novo Assinante
+                  <Icons.UserPlus size={18} className="text-brand-500" /> Adicionar Assinante Extra
                 </h3>
                 <form onSubmit={handleAddSigner} className="grid grid-cols-1 gap-4 sm:grid-cols-12">
                   <div className="sm:col-span-3">

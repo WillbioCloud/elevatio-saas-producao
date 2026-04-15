@@ -3,16 +3,29 @@ import { format } from 'date-fns';
 import { Icons } from '../Icons';
 import { StatusPill, StatusType } from '../ui/StatusPill';
 import { ContractTypeBadge, ContractTypeKey } from '../ui/ContractTypeBadge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import { cn } from '../../lib/utils';
 
 interface ContractRowProps {
   contract: any;
   onClick: (contract: any) => void;
   onOpenSignatures: (contractId: string) => void;
+  onManageContract: (contractId: string) => void;
+  onDeleteContract: (contract: any) => void;
 }
 
-export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick, onOpenSignatures }) => {
-  // Compatível com os dois formatos de relacionamento (original e legado)
+export const ContractRow: React.FC<ContractRowProps> = ({
+  contract,
+  onClick,
+  onOpenSignatures,
+  onManageContract,
+  onDeleteContract,
+}) => {
   const propertyTitle = contract.properties?.title || contract.property?.title || 'Contrato Administrativo';
   const leadName = contract.leads?.name || contract.lead?.name || contract.tenant_name || contract.buyer_name || 'N/A';
 
@@ -20,11 +33,17 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick, onO
   const statusType = statusMap[contract.status] || 'draft';
   const typeKey = contract.type === 'sale' || contract.type === 'rent' ? contract.type : 'administrative';
 
-  // Usa contagens agregadas da página; fallback em array de assinaturas para retrocompatibilidade
   const fallbackSigs = Array.isArray(contract.signatures) ? contract.signatures : [];
   const sigsCount = contract.signatures_count ?? fallbackSigs.length ?? 0;
   const signedCount = contract.signed_signatures_count ?? fallbackSigs.filter((s: any) => s.status === 'signed').length ?? 0;
   const isFullySigned = sigsCount > 0 && signedCount === sigsCount;
+
+  const explicitContractValue = Number(contract.contract_value ?? 0);
+  const fallbackPropertyValue =
+    contract.type === 'rent'
+      ? Number(contract.properties?.rent_value ?? contract.property?.rent_value ?? 0)
+      : Number(contract.properties?.price ?? contract.property?.price ?? 0);
+  const contractValue = explicitContractValue > 0 ? explicitContractValue : fallbackPropertyValue;
 
   return (
     <tr
@@ -52,7 +71,7 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick, onO
       </td>
 
       <td className="p-4 align-middle hidden lg:table-cell text-center">
-        <div className="flex flex-col items-center justify-center">
+        <div className="flex items-center justify-center gap-2">
           {sigsCount > 0 ? (
             <div
               className={cn(
@@ -66,8 +85,18 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick, onO
               {signedCount}/{sigsCount}
             </div>
           ) : (
-            <span className="text-[11px] text-slate-400 font-medium italic">Sem assinaturas</span>
+            <span className="text-[11px] text-slate-400 font-medium italic">0/0</span>
           )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSignatures(contract.id);
+            }}
+            className="p-2 text-slate-400 hover:text-brand-500 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+            title="Gerenciar Assinaturas"
+          >
+            <Icons.PenTool size={16} />
+          </button>
         </div>
       </td>
 
@@ -77,17 +106,34 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick, onO
 
       <td className="p-4 align-middle text-right">
         <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
-          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(contract.contract_value || 0)}
+          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(contractValue)}
         </span>
       </td>
 
-      <td className="p-4 align-middle text-center">
-        <div className="flex items-center justify-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-          {contract.file_url && (
-            <button onClick={(e) => { e.stopPropagation(); window.open(contract.file_url, '_blank'); }} className="p-2 text-slate-400 hover:text-brand-500 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-all" title="Ver PDF"><Icons.ExternalLink size={16} /></button>
-          )}
-          <button onClick={(e) => { e.stopPropagation(); onOpenSignatures(contract.id); }} className="p-2 text-slate-400 hover:text-brand-500 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-all" title="Gerenciar Assinaturas"><Icons.PenTool size={16} /></button>
-        </div>
+      <td className="p-4 align-middle text-center" onClick={(event) => event.stopPropagation()}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors">
+              <Icons.MoreVertical size={16} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem onClick={() => onClick(contract)}>
+              <Icons.Eye size={14} className="mr-2" /> Ver Detalhes
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onManageContract(contract.id)}>
+              <Icons.Settings size={14} className="mr-2" /> Gerenciar Completo
+            </DropdownMenuItem>
+            {contract.file_url && (
+              <DropdownMenuItem onClick={() => window.open(contract.file_url, '_blank')}>
+                <Icons.ExternalLink size={14} className="mr-2" /> Visualizar PDF
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={() => onDeleteContract(contract)} className="text-destructive focus:text-destructive">
+              <Icons.Trash2 size={14} className="mr-2" /> Excluir Contrato
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </td>
     </tr>
   );
