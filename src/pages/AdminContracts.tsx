@@ -357,7 +357,12 @@ const AdminContracts: React.FC = () => {
   const filterContractsByTab = (list: ContractWithSignatureState[]) =>
     list.filter((contract) => {
       if (contractTab === 'active') return contract.status === 'active';
-      if (contractTab === 'pending') return contract.status === 'pending';
+      if (contractTab === 'pending') {
+        const pendingSignaturesCount = Number(contract.pending_signatures_count ?? 0);
+        const signaturesCount = Number(contract.signatures_count ?? 0);
+
+        return pendingSignaturesCount > 0 || (contract.status === 'pending' && signaturesCount === 0);
+      }
       if (contractTab === 'archived') return contract.status === 'canceled' || contract.status === 'archived';
       return true;
     });
