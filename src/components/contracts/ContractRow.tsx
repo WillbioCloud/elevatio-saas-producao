@@ -34,14 +34,14 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick }) =
   return (
     <tr
       onClick={() => onClick(contract)}
-      className="group cursor-pointer border-b border-slate-100 bg-white/40 transition-all duration-200 hover:bg-white dark:border-slate-800/60 dark:bg-slate-900/40 dark:hover:bg-slate-800/80"
+      className="group cursor-pointer border-b border-slate-100 bg-white/40 transition-all duration-300 hover:bg-white dark:border-slate-800/60 dark:bg-slate-900/40 dark:hover:bg-slate-800/80"
     >
       <td className="p-4 align-middle">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-transform group-hover:scale-105 dark:bg-slate-800">
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-slate-200/70 bg-white/70 text-slate-500 transition-all duration-300 group-hover:scale-[1.03] group-hover:bg-white dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-400">
             <Icons.FileText size={18} />
           </div>
-          <div className="flex min-w-0 flex-col">
+          <div className="flex min-w-0 flex-col justify-center">
             <span className="truncate text-sm font-semibold text-slate-800 dark:text-slate-200">{propertyTitle}</span>
             <span className="truncate text-xs text-slate-500">{leadName}</span>
           </div>
@@ -60,7 +60,7 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick }) =
           {sigsCount > 0 ? (
             <div
               className={cn(
-                'flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-colors',
+                'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors',
                 isFullySigned
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
                   : 'bg-slate-50 text-slate-500 border-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
@@ -70,7 +70,7 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick }) =
               {signedCount}/{sigsCount}
             </div>
           ) : (
-            <span className="text-[10px] text-slate-400 font-medium italic">Sem assinaturas</span>
+            <span className="text-[10px] font-medium italic text-slate-400">Sem assinaturas</span>
           )}
         </div>
       </td>
@@ -87,17 +87,17 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick }) =
 
       {/* Coluna de Ações Rápidas */}
       <td className="p-4 align-middle">
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex items-center justify-center gap-1.5">
           {contract.file_url && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 window.open(contract.file_url, '_blank');
               }}
-              className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded-lg transition-all"
+              className="rounded-md border border-transparent p-2 text-slate-400 transition-all duration-200 hover:border-slate-200 hover:bg-slate-100 hover:text-brand-500 dark:hover:border-slate-700 dark:hover:bg-slate-800"
               title="Visualizar PDF"
             >
-              <Icons.ExternalLink size={16} />
+              <Icons.ExternalLink size={14} />
             </button>
           )}
           <button
@@ -105,10 +105,10 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick }) =
               e.stopPropagation();
               onClick(contract);
             }}
-            className="p-2 text-slate-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded-lg transition-all"
+            className="rounded-md border border-transparent p-2 text-slate-400 transition-all duration-200 hover:border-slate-200 hover:bg-slate-100 hover:text-brand-500 dark:hover:border-slate-700 dark:hover:bg-slate-800"
             title="Ver Detalhes"
           >
-            <Icons.Eye size={16} />
+            <Icons.Eye size={14} />
           </button>
         </div>
       </td>
