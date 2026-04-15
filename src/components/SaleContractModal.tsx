@@ -6,7 +6,7 @@ import { useNotification } from '../contexts/NotificationContext';
 import { buildContractHtml, generateContract } from '../utils/contractGenerator';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
-import { SALE_DOCUMENTS, ADMIN_DOCUMENTS } from '../constants/contractTypes';
+import { SALE_DOCUMENTS } from '../constants/contractTypes';
 
 interface SaleContractModalProps {
   isOpen: boolean;
@@ -444,7 +444,6 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
       const rawTemplate =
         selectedTemplate?.content ||
         (SALE_DOCUMENTS.find((document) => document.id === documentType) as { content?: string } | undefined)?.content ||
-        (ADMIN_DOCUMENTS.find((document) => document.id === documentType) as { content?: string } | undefined)?.content ||
         '';
       const contractHtmlData = {
         ...contractDataObj,
@@ -598,25 +597,15 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                     <p className="text-slate-400 text-sm">O modelo selecionado define os campos que serão preenchidos abaixo.</p>
                   </div>
                   <div className="w-full md:w-1/2">
-                    <select
-                      value={documentType}
-                      onChange={(e) => setDocumentType(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-4 text-base font-bold text-white focus:ring-2 focus:ring-brand-500 outline-none appearance-none cursor-pointer hover:bg-slate-700 transition-colors"
-                    >
-                      {customTemplates.length > 0 && (
-                        <optgroup label="Meus Modelos Personalizados (Imobiliária)">
-                          {customTemplates.map(t => (
-                            <option key={`custom_${t.id}`} value={`custom_${t.id}`}>⭐ {t.name}</option>
-                          ))}
-                        </optgroup>
-                      )}
-                      <optgroup label="Modelos Padrão do Sistema">
-                        {SALE_DOCUMENTS.map(doc => (<option key={doc.id} value={doc.id}>{doc.title}</option>))}
-                      </optgroup>
-                      <optgroup label="Administrativos e Outros">
-                        {ADMIN_DOCUMENTS.map(doc => (<option key={doc.id} value={doc.id}>{doc.title}</option>))}
-                      </optgroup>
-                    </select>
+                <select
+                  value={documentType}
+                  onChange={(e) => setDocumentType(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-medium outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                >
+                  {SALE_DOCUMENTS.map((doc) => (
+                    <option key={doc.id} value={doc.id}>{doc.title}</option>
+                  ))}
+                </select>
                   </div>
                 </div>
               </section>
