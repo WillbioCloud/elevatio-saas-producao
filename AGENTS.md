@@ -1,9 +1,9 @@
-# TR IMÓVEIS - AI CONTEXT & GUIDELINES
+# Elevatio Vendas - AI CONTEXT & GUIDELINES
 
 Este documento serve como fonte da verdade para Agentes de IA (Codex, Copilot, etc.) que trabalham neste projeto. Leia-o antes de gerar qualquer código.
 
 ## 1. Visão Geral do Projeto
-**Nome:** Tr Imóveis CRM
+**Nome:** Elevatio Vendas Site + CRM
 **Tipo:** Plataforma Imobiliária Híbrida (Site Público + CRM Administrativo).
 **Objetivo:** Permitir que clientes busquem imóveis (Venda/Aluguel) e corretores gerenciem leads, imóveis e tarefas em um painel administrativo.
 
