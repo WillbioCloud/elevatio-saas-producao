@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Icons } from '../components/Icons';
 // Importação direta para garantir que os ícones dos botões não fiquem undefined
-import { ChevronDown, Plus, Building2, KeyRound, FileText, Search, Loader2 } from 'lucide-react';
+import { ChevronDown, Plus, Building2, KeyRound, FileText, Search, Loader2, LayoutGrid } from 'lucide-react';
 
 // UI Components
 import { GlassCard } from '../components/ui/GlassCard';
@@ -312,10 +312,10 @@ export default function AdminContracts() {
 
   // ── View mode config ──────────────────────────────────────────────────────
   const viewModes: { key: ViewMode; label: string; icon: React.ReactNode; count: number }[] = [
-    { key: 'all', label: 'Todos', icon: <Icons.LayoutGrid size={13} />, count: contracts.length },
-    { key: 'sale', label: 'Vendas', icon: <Icons.Building2 size={13} />, count: contracts.filter((c) => c.type === 'sale').length },
-    { key: 'rent', label: 'Locações', icon: <Icons.KeyRound size={13} />, count: contracts.filter((c) => c.type === 'rent').length },
-    { key: 'administrative', label: 'Administrativos', icon: <Icons.FileText size={13} />, count: contracts.filter((c) => !['sale', 'rent'].includes(c.type)).length },
+    { key: 'all', label: 'Todos', icon: <LayoutGrid size={13} />, count: contracts.length },
+    { key: 'sale', label: 'Vendas', icon: <Building2 size={13} />, count: contracts.filter((c) => c.type === 'sale').length },
+    { key: 'rent', label: 'Locações', icon: <KeyRound size={13} />, count: contracts.filter((c) => c.type === 'rent').length },
+    { key: 'administrative', label: 'Administrativos', icon: <FileText size={13} />, count: contracts.filter((c) => !['sale', 'rent'].includes(c.type)).length },
   ];
 
   const statusFilters: { key: StatusFilter; label: string }[] = [
