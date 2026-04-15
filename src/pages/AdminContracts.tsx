@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Icons } from '../components/Icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -34,8 +35,19 @@ const EMPTY_SIGNATURE_SUMMARY: ContractSignatureSummary = {
   rejected_signatures_count: 0,
 };
 
+const getMonthRange = () => {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    monthStartISO: monthStart.toISOString().split('T')[0],
+    monthEndISO: monthEnd.toISOString().split('T')[0],
+  };
+};
+
 export default function AdminContracts() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isSuperAdmin = user?.role === 'super_admin';
 
   const [contracts, setContracts] = useState<ContractWithSignatureState[]>([]);
@@ -43,7 +55,7 @@ export default function AdminContracts() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('active');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
 
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
   const [isRentModalOpen, setIsRentModalOpen] = useState(false);
@@ -53,19 +65,23 @@ export default function AdminContracts() {
   const [signatureModalState, setSignatureModalState] = useState<any>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // Mantém a conexão blindada do arquivo original (query por aliases + multi-tenant)
   const fetchContracts = async () => {
     if (!user) return;
     setLoading(true);
 
-    let contractsQuery = supabase.from('contracts').select(`
-        *,
-        lead:leads!contracts_lead_id_fkey(*),
-        property:properties(*),
-        broker:profiles!contracts_broker_id_fkey(*)
-      `);
+    const { monthStartISO, monthEndISO } = getMonthRange();
 
-    let installmentsQuery = supabase.from('installments').select('*');
+    let contractsQuery = supabase
+      .from('contracts')
+      .select('*, properties(title, price, rent_value), leads(name), broker:profiles!contracts_broker_id_fkey(*)');
+
+    let installmentsQuery = supabase
+      .from('installments')
+      .select('*')
+      .in('status', ['paid', 'pending'])
+      .gte('due_date', monthStartISO)
+      .lte('due_date', monthEndISO);
+
     let signaturesQuery = supabase.from('contract_signatures').select('contract_id, status');
 
     if (!isSuperAdmin && user.company_id) {
@@ -102,11 +118,10 @@ export default function AdminContracts() {
 
         const validContracts = contractsRes.data.filter((c: any) => c.contract_data?.document_type !== 'intermediacao');
 
-        // Compatibilidade visual: mantém aliases originais e expõe propriedades no plural para os novos componentes
         const hydratedContracts = validContracts.map((contract: any) => ({
           ...contract,
-          properties: contract.properties || contract.property || null,
-          leads: contract.leads || contract.lead || null,
+          properties: contract.properties || null,
+          leads: contract.leads || null,
           ...(signatureSummaryByContract[contract.id] ?? EMPTY_SIGNATURE_SUMMARY),
         }));
 
@@ -130,30 +145,41 @@ export default function AdminContracts() {
   }, [user?.company_id, user?.role]);
 
   const metrics = useMemo(() => {
-    const active = contracts.filter((c) => c.status === 'active');
-    const pending = contracts.filter((c) => c.status === 'pending' || c.status === 'draft');
-    const totalValue = active.reduce((sum, c) => sum + (Number(c.contract_value) || 0), 0);
-    const signedTotal = contracts.reduce((sum, c) => sum + (c.signed_signatures_count || 0), 0);
-    const signaturesTotal = contracts.reduce((sum, c) => sum + (c.signatures_count || 0), 0);
-    const health = signaturesTotal > 0 ? (signedTotal / signaturesTotal) * 100 : 0;
-    return { active: active.length, pending: pending.length, totalValue, total: contracts.length, health };
-  }, [contracts]);
+    const activeContracts = contracts.filter((c) => c.status === 'active');
+    const activeRentContracts = contracts.filter((c) => c.status === 'active' && c.type === 'rent');
 
-  const upcomingInstallments = useMemo(
-    () => installments.filter((i) => i.status !== 'paid').slice(0, 4),
-    [installments]
-  );
+    const mrr = activeRentContracts.reduce((sum, c) => sum + (Number(c.contract_value) || 0), 0);
+    const received = installments.filter((i) => i.status === 'paid').reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+    const receivable = installments.filter((i) => i.status === 'pending').reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+    const delinquency = installments
+      .filter((i) => i.status === 'pending' && i.due_date && new Date(i.due_date) < new Date())
+      .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+
+    const health = contracts.length > 0 ? (activeContracts.length / contracts.length) * 100 : 0;
+
+    return {
+      active: activeContracts.length,
+      total: contracts.length,
+      mrr,
+      received,
+      receivable,
+      delinquency,
+      health,
+    };
+  }, [contracts, installments]);
+
+  const activeContractsLimit = 50;
 
   const filteredContracts = contracts.filter((c) => {
     const searchLow = searchTerm.toLowerCase();
-    const propertyName = c.properties?.title || c.property?.title || '';
-    const leadName = c.leads?.name || c.lead?.name || '';
+    const propertyName = c.properties?.title || '';
+    const leadName = c.leads?.name || '';
 
     const matchesSearch = propertyName.toLowerCase().includes(searchLow) || leadName.toLowerCase().includes(searchLow);
 
-    if (filterType === 'signatures') return matchesSearch && c.pending_signatures_count > 0;
-
-    const matchesType = filterType === 'all' || (filterType === 'administrative' ? !['sale', 'rent'].includes(c.type) : c.type === filterType);
+    const matchesType =
+      filterType === 'all' ||
+      (filterType === 'administrative' ? !['sale', 'rent'].includes(c.type) : c.type === filterType);
 
     const matchesStatus =
       filterStatus === 'all' ||
@@ -164,6 +190,18 @@ export default function AdminContracts() {
     return matchesSearch && matchesType && matchesStatus;
   });
 
+  const handleDeleteContract = async (contract: any) => {
+    if (!window.confirm('Deseja realmente excluir este contrato?')) return;
+
+    const { error } = await supabase.from('contracts').delete().eq('id', contract.id);
+    if (error) {
+      console.error('Erro ao excluir contrato:', error);
+      return;
+    }
+
+    await fetchContracts();
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-5 animate-in fade-in pb-12">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -173,10 +211,17 @@ export default function AdminContracts() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-500">
-            <span className="font-semibold text-slate-700">Locações</span>
-            <span className="ml-2 text-brand-600 font-bold">{metrics.active}/{metrics.total}</span>
-          </div>
+          <GlassCard className="px-3 py-2 min-w-[180px]">
+            <div className="text-[11px] uppercase tracking-wide text-slate-500">Contratos Ativos</div>
+            <div className="mt-1 flex items-end justify-between gap-2">
+              <span className="text-lg font-bold text-brand-600">{metrics.active}/{activeContractsLimit}</span>
+              <span className="text-xs text-slate-500">{Math.min(100, (metrics.active / activeContractsLimit) * 100).toFixed(0)}%</span>
+            </div>
+            <div className="mt-2 h-1.5 rounded-full bg-slate-200/70 dark:bg-slate-800/80 overflow-hidden">
+              <div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.min(100, (metrics.active / activeContractsLimit) * 100)}%` }} />
+            </div>
+          </GlassCard>
+
           <div className="relative">
             <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all">
               <Icons.Plus size={18} /> Novo Contrato <Icons.ChevronDown size={16} />
@@ -205,12 +250,11 @@ export default function AdminContracts() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-        <MetricCard label="Total" value={metrics.total} icon={<Icons.FileSignature size={18} />} color="brand" />
-        <MetricCard label="Ativos" value={metrics.active} icon={<Icons.CheckCircle2 size={18} />} color="emerald" />
-        <MetricCard label="Pendentes" value={metrics.pending} icon={<Icons.Clock size={18} />} color="amber" />
-        <MetricCard label="Assinados" value={contracts.reduce((sum, c) => sum + (c.signed_signatures_count || 0), 0)} icon={<Icons.PenTool size={18} />} color="blue" />
-        <MetricCard label="Inadimplência" value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(upcomingInstallments.reduce((sum, i) => sum + (Number(i.amount || 0)), 0))} icon={<Icons.AlertTriangle size={18} />} color="red" />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <MetricCard label="MRR Ativo" value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(metrics.mrr)} icon={<Icons.TrendingUp size={18} />} color="emerald" />
+        <MetricCard label="Recebido" value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(metrics.received)} icon={<Icons.CheckCircle2 size={18} />} color="blue" />
+        <MetricCard label="A Receber" value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(metrics.receivable)} icon={<Icons.Clock size={18} />} color="amber" />
+        <MetricCard label="Inadimplência" value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(metrics.delinquency)} icon={<Icons.AlertTriangle size={18} />} color="red" />
         <GlassCard className="p-4 flex items-center justify-center">
           <div className="text-center">
             <div className="text-2xl font-bold text-emerald-600">{metrics.health.toFixed(1)}%</div>
@@ -219,63 +263,34 @@ export default function AdminContracts() {
         </GlassCard>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <GlassCard className="p-5 lg:col-span-2">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-slate-700 dark:text-slate-200">Fluxo Financeiro</h3>
-            <span className="text-xs text-slate-500">Últimos 6 meses</span>
-          </div>
-          <div className="h-36 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 flex items-center justify-center text-sm text-slate-400">
-            Visualização financeira resumida (design fiel) – dados ativos: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(metrics.totalValue)}
-          </div>
-        </GlassCard>
-
-        <GlassCard className="p-0 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-            <h3 className="font-semibold text-slate-700 dark:text-slate-200">Vencimentos</h3>
-            <span className="text-xs text-red-500 font-semibold">{upcomingInstallments.filter((i) => new Date(i.due_date) < new Date()).length} atrasados</span>
-          </div>
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {upcomingInstallments.length === 0 ? (
-              <div className="p-4 text-sm text-slate-500">Sem vencimentos pendentes.</div>
-            ) : (
-              upcomingInstallments.map((item) => (
-                <div key={item.id} className="p-4 flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{item.payer_name || 'Cliente'}</div>
-                    <div className="text-xs text-slate-500">{item.due_date ? new Date(item.due_date).toLocaleDateString('pt-BR') : '-'}</div>
-                  </div>
-                  <div className="text-sm font-bold text-orange-500">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.amount || 0))}</div>
-                </div>
-              ))
-            )}
-          </div>
-        </GlassCard>
-      </div>
-
       <GlassCard variant="default" padding="none" className="overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800/60 flex flex-col md:flex-row gap-4 justify-between items-center bg-white/50 dark:bg-slate-900/50">
-          <div className="flex gap-1.5 p-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-xl overflow-x-auto w-full md:w-auto custom-scrollbar">
-            {['all', 'sale', 'rent', 'administrative', 'signatures'].map((type) => (
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800/60 flex flex-col gap-3 bg-white/50 dark:bg-slate-900/50">
+          <div className="flex flex-wrap gap-2 p-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-xl">
+            {[
+              { key: 'all', label: 'Todos' },
+              { key: 'sale', label: 'Venda' },
+              { key: 'rent', label: 'Locação' },
+              { key: 'administrative', label: 'Administrativo' },
+            ].map((type) => (
               <button
-                key={type}
-                onClick={() => setFilterType(type)}
+                key={type.key}
+                onClick={() => setFilterType(type.key)}
                 className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
-                  filterType === type ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-[0_2px_8px_rgba(0,0,0,0.04)]' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                  filterType === type.key ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-[0_2px_8px_rgba(0,0,0,0.04)]' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
-                {type === 'all' ? 'Todos' : type === 'sale' ? 'Vendas' : type === 'rent' ? 'Locações' : type === 'administrative' ? 'Administrativos' : 'Assinaturas'}
+                {type.label}
               </button>
             ))}
           </div>
 
-          <div className="flex gap-2 w-full md:w-auto">
-            <div className="flex gap-1 rounded-lg border border-slate-200 dark:border-slate-700 p-1">
+          <div className="flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
+            <div className="flex gap-1 rounded-lg border border-slate-200 dark:border-slate-700 p-1 w-fit">
               {[
+                { key: 'all', label: 'Todos' },
                 { key: 'active', label: 'Ativos' },
                 { key: 'pending', label: 'Pendentes' },
                 { key: 'archived', label: 'Arquivados' },
-                { key: 'all', label: 'Todos' },
               ].map((item) => (
                 <button
                   key={item.key}
@@ -319,6 +334,8 @@ export default function AdminContracts() {
                     contract={contract}
                     onClick={(c) => { setSelectedContract(c); setIsSidebarOpen(true); }}
                     onOpenSignatures={(id) => setSignatureModalState({ contractId: id, companyId: user?.company_id })}
+                    onManageContract={(id) => navigate(`/admin/contratos/${id}`)}
+                    onDeleteContract={handleDeleteContract}
                   />
                 ))
               )}
