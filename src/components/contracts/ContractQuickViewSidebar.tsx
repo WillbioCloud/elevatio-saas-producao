@@ -18,6 +18,35 @@ export const ContractQuickViewSidebar: React.FC<Props> = ({ contract, isOpen, on
   const navigate = useNavigate();
   const [loadingAction, setLoadingAction] = useState(false);
 
+  const financialSummary = useMemo(() => {
+    if (!contract || !Array.isArray(contract.installments)) return { nextDue: null, totalPaid: 0 };
+    const installments = Array.isArray(contract.installments) ? contract.installments : [];
+    const nextDue = installments
+      .filter((item: any) => item.status === 'pending' && item.due_date)
+      .sort((a: any, b: any) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())[0];
+
+    const totalPaid = installments
+      .filter((item: any) => item.status === 'paid')
+      .reduce((acc: number, item: any) => acc + (Number(item.amount) || 0), 0);
+
+    return { nextDue, totalPaid };
+  }, [contract]);
+
+  const linkedDocs = useMemo(() => {
+    const docs = contract?.contract_data?.linked_documents || contract?.contract_data?.documents || [];
+    return Array.isArray(docs) ? docs : [];
+  }, [contract]);
+
+  const lastSignatureAt = useMemo(() => {
+    const signedDates = (Array.isArray(contract.signatures) ? contract.signatures : [])
+      .filter((sig: any) => sig.signed_at)
+      .map((sig: any) => new Date(sig.signed_at).getTime())
+      .filter((value: number) => Number.isFinite(value));
+
+    if (signedDates.length === 0) return null;
+    return new Date(Math.max(...signedDates));
+  }, [contract]);
+
   if (!isOpen || !contract) return null;
 
   const handleUpdateKeys = async (newStatus: string) => {
@@ -39,34 +68,6 @@ export const ContractQuickViewSidebar: React.FC<Props> = ({ contract, isOpen, on
 
   const typeKey = contract.type === 'sale' || contract.type === 'rent' ? contract.type : 'administrative';
   const statusMap: Record<string, StatusType> = { active: 'active', pending: 'pending', draft: 'draft', archived: 'archived', canceled: 'rejected' };
-
-  const financialSummary = useMemo(() => {
-    const installments = Array.isArray(contract.installments) ? contract.installments : [];
-    const nextDue = installments
-      .filter((item: any) => item.status === 'pending' && item.due_date)
-      .sort((a: any, b: any) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())[0];
-
-    const totalPaid = installments
-      .filter((item: any) => item.status === 'paid')
-      .reduce((acc: number, item: any) => acc + (Number(item.amount) || 0), 0);
-
-    return { nextDue, totalPaid };
-  }, [contract.installments]);
-
-  const linkedDocs = useMemo(() => {
-    const docs = contract?.contract_data?.linked_documents || contract?.contract_data?.documents || [];
-    return Array.isArray(docs) ? docs : [];
-  }, [contract]);
-
-  const lastSignatureAt = useMemo(() => {
-    const signedDates = (Array.isArray(contract.signatures) ? contract.signatures : [])
-      .filter((sig: any) => sig.signed_at)
-      .map((sig: any) => new Date(sig.signed_at).getTime())
-      .filter((value: number) => Number.isFinite(value));
-
-    if (signedDates.length === 0) return null;
-    return new Date(Math.max(...signedDates));
-  }, [contract.signatures]);
 
   return (
     <>

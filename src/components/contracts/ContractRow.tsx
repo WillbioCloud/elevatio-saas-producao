@@ -1,5 +1,6 @@
 import React from 'react';
 import { format } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 import { Icons } from '../Icons';
 import { StatusPill, StatusType } from '../ui/StatusPill';
 import { ContractTypeBadge, ContractTypeKey } from '../ui/ContractTypeBadge';
@@ -7,6 +8,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { cn } from '../../lib/utils';
@@ -26,6 +28,7 @@ export const ContractRow: React.FC<ContractRowProps> = ({
   onManageContract,
   onDeleteContract,
 }) => {
+  const navigate = useNavigate();
   const propertyTitle = contract.properties?.title || contract.property?.title || 'Contrato Administrativo';
   const leadName = contract.leads?.name || contract.lead?.name || contract.tenant_name || contract.buyer_name || 'N/A';
 
@@ -44,6 +47,10 @@ export const ContractRow: React.FC<ContractRowProps> = ({
       ? Number(contract.properties?.rent_value ?? contract.property?.rent_value ?? 0)
       : Number(contract.properties?.price ?? contract.property?.price ?? 0);
   const contractValue = explicitContractValue > 0 ? explicitContractValue : fallbackPropertyValue;
+  const handleDelete = (contractId: string) => {
+    if (contractId !== contract.id) return;
+    onDeleteContract(contract);
+  };
 
   return (
     <tr
@@ -117,20 +124,34 @@ export const ContractRow: React.FC<ContractRowProps> = ({
               <Icons.MoreVertical size={16} />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuItem onClick={() => onClick(contract)}>
-              <Icons.Eye size={14} className="mr-2" /> Ver Detalhes
+          <DropdownMenuContent align="end" className="w-48 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl shadow-lg">
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick(contract); }} className="cursor-pointer gap-2 py-2.5 text-slate-700 dark:text-slate-300">
+              <Icons.Eye size={16} className="text-slate-400" /> Ver Resumo (Sidebar)
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onManageContract(contract.id)}>
-              <Icons.Settings size={14} className="mr-2" /> Gerenciar Completo
+            
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/admin/contratos/${contract.id}`); onManageContract(contract.id); }} className="cursor-pointer gap-2 py-2.5 text-slate-700 dark:text-slate-300">
+              <Icons.Settings size={16} className="text-slate-400" /> Gerenciar Completo
             </DropdownMenuItem>
+
+            {contract.status === 'draft' && (
+               <DropdownMenuItem onClick={(e) => { 
+                 e.stopPropagation(); 
+                 alert('Contrato Aprovado! Adicione a função do Supabase aqui.'); 
+               }} className="cursor-pointer gap-2 py-2.5 text-emerald-600 focus:text-emerald-700">
+                 <Icons.CheckCircle2 size={16} /> Aprovar Contrato
+               </DropdownMenuItem>
+            )}
+
             {contract.file_url && (
-              <DropdownMenuItem onClick={() => window.open(contract.file_url, '_blank')}>
-                <Icons.ExternalLink size={14} className="mr-2" /> Visualizar PDF
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); window.open(contract.file_url, '_blank'); }} className="cursor-pointer gap-2 py-2.5 text-brand-600 focus:text-brand-700">
+                <Icons.ExternalLink size={16} /> Visualizar PDF Gerado
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem onClick={() => onDeleteContract(contract)} className="text-destructive focus:text-destructive">
-              <Icons.Trash2 size={14} className="mr-2" /> Excluir Contrato
+
+            <DropdownMenuSeparator className="bg-slate-100 dark:bg-slate-800" />
+            
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleDelete(contract.id); }} className="cursor-pointer gap-2 py-2.5 text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-500/10">
+              <Icons.Trash2 size={16} /> Excluir Contrato
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
