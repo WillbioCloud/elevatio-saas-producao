@@ -34,60 +34,71 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick }) =
   return (
     <tr
       onClick={() => onClick(contract)}
-      className="group cursor-pointer border-b border-slate-100 bg-white/40 transition-all duration-300 hover:bg-white dark:border-slate-800/60 dark:bg-slate-900/40 dark:hover:bg-slate-800/80"
+      className="group cursor-pointer border-b border-slate-100/80 bg-white/30 transition-all duration-200 hover:bg-white/55 dark:border-slate-800/60 dark:bg-slate-900/20 dark:hover:bg-slate-800/60"
     >
-      <td className="p-4 align-middle">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-slate-200/70 bg-white/70 text-slate-500 transition-all duration-300 group-hover:scale-[1.03] group-hover:bg-white dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-400">
-            <Icons.FileText size={18} />
+      <td className="p-5 align-middle">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <ContractTypeBadge type={typeKey as ContractTypeKey} />
+            <StatusPill status={statusType} />
           </div>
-          <div className="flex min-w-0 flex-col justify-center">
-            <span className="truncate text-sm font-semibold text-slate-800 dark:text-slate-200">{propertyTitle}</span>
-            <span className="truncate text-xs text-slate-500">{leadName}</span>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-slate-200/70 bg-white/70 text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/70 dark:text-slate-400">
+              <Icons.FileText size={14} />
+            </div>
+            <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-200">{leadName}</p>
           </div>
+          <p className="truncate text-xs text-slate-500">{propertyTitle}</p>
         </div>
       </td>
-      <td className="hidden p-4 align-middle sm:table-cell">
-        <ContractTypeBadge type={typeKey as ContractTypeKey} />
-      </td>
-      <td className="p-4 align-middle">
-        <StatusPill status={statusType} />
-      </td>
+      <td className="hidden p-4 align-middle sm:table-cell" />
+      <td className="hidden p-4 align-middle lg:table-cell" />
 
       {/* Coluna de Assinaturas */}
-      <td className="p-4 align-middle hidden lg:table-cell">
+      <td className="p-5 align-middle hidden lg:table-cell">
         <div className="flex flex-col items-center justify-center">
           {sigsCount > 0 ? (
             <div
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors',
+                'inline-flex min-w-[148px] items-center justify-center gap-1.5 rounded-full border px-3 py-[6px] text-[11px] font-medium transition-colors',
                 isFullySigned
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20'
-                  : 'bg-slate-50 text-slate-500 border-slate-100 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                  ? 'border-emerald-100 bg-emerald-50/90 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300'
+                  : 'border-amber-100 bg-amber-50/85 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300'
               )}
             >
-              <Icons.FileSignature size={12} className={isFullySigned ? 'text-emerald-500' : 'text-slate-400'} />
-              {signedCount}/{sigsCount}
+              <Icons.FileSignature size={12} className={isFullySigned ? 'text-emerald-500' : 'text-amber-500'} />
+              {isFullySigned ? 'Assinado' : 'Aguardando'}
             </div>
           ) : (
             <span className="text-[10px] font-medium italic text-slate-400">Sem assinaturas</span>
           )}
+          {sigsCount > 0 && (
+            <span className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">{signedCount}/{sigsCount}</span>
+          )}
         </div>
       </td>
 
-      <td className="hidden p-4 align-middle text-sm font-medium text-slate-600 dark:text-slate-400 md:table-cell text-center">
-        {contract.created_at ? format(new Date(contract.created_at), 'dd/MM/yyyy') : '-'}
+      <td className="hidden p-5 align-middle md:table-cell text-center">
+        <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
+          {contract.type === 'rent' ? 'Vencimento' : 'Criado em'}
+        </p>
+        <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+          {contract.created_at ? format(new Date(contract.created_at), 'dd/MM/yyyy') : '-'}
+        </p>
       </td>
 
-      <td className="p-4 align-middle text-right">
+      <td className="p-5 align-middle text-right">
+        <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
+          {contract.type === 'rent' ? 'Mensal' : 'Valor total'}
+        </p>
         <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
           {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(contract.contract_value || 0)}
         </span>
       </td>
 
       {/* Coluna de Ações Rápidas */}
-      <td className="p-4 align-middle">
-        <div className="flex items-center justify-center gap-1.5">
+      <td className="p-5 align-middle">
+        <div className="flex items-center justify-end gap-1.5">
           {contract.file_url && (
             <button
               onClick={(e) => {
@@ -110,6 +121,7 @@ export const ContractRow: React.FC<ContractRowProps> = ({ contract, onClick }) =
           >
             <Icons.Eye size={14} />
           </button>
+          <Icons.ChevronRight size={15} className="ml-1 text-slate-300 transition-colors group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-400" />
         </div>
       </td>
     </tr>

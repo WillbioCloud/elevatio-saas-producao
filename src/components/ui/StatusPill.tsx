@@ -60,7 +60,7 @@ export const StatusPill: React.FC<StatusPillProps> = ({ status, label, className
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-[5px] text-[11px] font-medium',
         config.classes,
         className,
       )}

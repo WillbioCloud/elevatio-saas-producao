@@ -60,26 +60,26 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   const colors = colorMap[color];
 
   return (
-    <GlassCard hoverable className="group h-full">
+    <GlassCard hoverable className="group h-full rounded-3xl p-4">
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-        <div className="mb-3 flex items-start justify-between">
-          <div className={cn('rounded-xl p-2.5 transition-transform group-hover:scale-110', colors.icon)}>
+        <div className="mb-2.5 flex items-start justify-between">
+          <div className={cn('rounded-xl p-2 transition-transform group-hover:scale-105', colors.icon)}>
             {icon}
           </div>
           {trend && (
-            <span className={cn('text-[11px] font-semibold tabular-nums', colors.trend)}>
+            <span className={cn('text-[10px] font-medium tabular-nums', colors.trend)}>
               {trend.value > 0 ? '+' : ''}
               {trend.value}% {trend.label}
             </span>
           )}
         </div>
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
           {label}
         </p>
         <p
           className={cn(
             'font-semibold tabular-nums tracking-tight',
-            compact ? 'text-xl' : 'text-2xl',
+            compact ? 'text-[28px]' : 'text-[32px]',
             colors.value,
           )}
         >

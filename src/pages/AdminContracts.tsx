@@ -634,14 +634,21 @@ const AdminContracts: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
-      <div className={`${glassCardClass} overflow-hidden bg-gradient-to-br from-white/90 via-sky-50/45 to-indigo-100/40 dark:from-[#0d1628]/95 dark:via-[#0b1220]/90 dark:to-[#1a2240]/80`}>
-        <div className="sticky top-0 z-20 border-b border-white/50 bg-white/60 px-5 py-5 backdrop-blur-xl dark:border-white/10 dark:bg-[#0b1220]/70 md:px-7">
+    <div className="min-h-full bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.95),rgba(241,245,249,0.92)_35%,rgba(238,242,255,0.9)_65%,rgba(243,244,246,0.95)_100%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(15,23,42,0.98),rgba(10,15,28,0.96)_35%,rgba(17,24,39,0.95)_70%,rgba(2,6,23,0.98)_100%)]">
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -top-24 left-[10%] h-72 w-72 rounded-full bg-sky-200/20 blur-3xl dark:bg-sky-500/10" />
+        <div className="absolute top-32 right-[12%] h-80 w-80 rounded-full bg-violet-200/20 blur-3xl dark:bg-violet-500/10" />
+        <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-slate-200/30 blur-3xl dark:bg-slate-500/10" />
+      </div>
+
+      <div className="relative space-y-6 animate-fade-in pb-10">
+      <div className="rounded-[32px] border border-white/60 bg-white/55 p-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur-2xl dark:border-white/10 dark:bg-[#0a0f1c]/60 dark:shadow-none sm:p-5">
+        <div className="sticky top-2 z-20 flex flex-col gap-4 rounded-[24px] border border-white/70 bg-white/72 px-5 py-4 backdrop-blur-2xl shadow-[0_10px_30px_rgba(15,23,42,0.05)] dark:border-white/10 dark:bg-[#0b1220]/72 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
             <div>
-              <h1 className="text-3xl font-serif font-bold tracking-tight text-slate-800 dark:text-white">Contratos e Recebíveis</h1>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Gestão premium de vendas, locações e acompanhamento financeiro.</p>
-              <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white/85 px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm dark:border-white/10 dark:bg-[#0a0f1c]/80 dark:text-slate-300">
+              <h1 className="text-[28px] font-semibold tracking-tight text-slate-800 dark:text-white">Contratos e Recebíveis</h1>
+              <p className="mt-1 text-[12px] text-slate-400 dark:text-slate-500">Gestão premium de vendas, locações e acompanhamento financeiro.</p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200/55 bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-600 shadow-sm dark:border-white/10 dark:bg-[#0a0f1c]/70 dark:text-slate-300">
                 <Icons.KeyRound size={14} className="text-indigo-500" />
                 <span>Locações Ativas: {activeRentContractsCount} / {contractsUsageLabel}</span>
               </div>
@@ -651,7 +658,7 @@ const AdminContracts: React.FC = () => {
               <button
                 onClick={() => handleOpenContractModal('rent')}
                 disabled={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white/85 px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-[#0a0f1c]/85 dark:text-slate-300 dark:hover:bg-white/5"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200/60 bg-white/80 px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-[#0a0f1c]/80 dark:text-slate-300 dark:hover:bg-white/5"
                 title={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts ? 'Limite de contratos de locação atingido' : 'Novo Aluguel'}
               >
                 <Icons.Plus size={16} /> Novo Aluguel
@@ -659,7 +666,7 @@ const AdminContracts: React.FC = () => {
 
               <button
                 onClick={() => handleOpenContractModal('sale')}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:shadow-lg"
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:shadow-lg"
               >
                 <Icons.Plus size={16} /> Nova Venda
               </button>
@@ -667,11 +674,11 @@ const AdminContracts: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-4 md:p-6">
+        <div className="p-4 md:px-6 md:pb-4 md:pt-5">
           <div className={`${subtlePanelClass} flex w-full flex-wrap items-center gap-2 p-2`}>
             <button
               onClick={() => setTab('geral')}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition-colors ${
                 currentTab === 'geral'
                   ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300'
                   : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5'
@@ -681,7 +688,7 @@ const AdminContracts: React.FC = () => {
             </button>
             <button
               onClick={() => setTab('vendas')}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition-colors ${
                 currentTab === 'vendas'
                   ? 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'
                   : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5'
@@ -691,7 +698,7 @@ const AdminContracts: React.FC = () => {
             </button>
             <button
               onClick={() => setTab('alugueis')}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition-colors ${
                 currentTab === 'alugueis'
                   ? 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300'
                   : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5'
@@ -713,10 +720,10 @@ const AdminContracts: React.FC = () => {
             <MetricCard label="Inadimplência" value={dashboardStats.inadimplencia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={<Icons.AlertTriangle size={18} />} color="red" compact />
 
             <GlassCard className={`${glassCardClass} p-4`}>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Saúde</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">Saúde</p>
               <div className="mt-3 flex items-center justify-between">
-                <RadialProgress value={Number(dashboardStats.saudeFinanceira)} size={70} color={Number(dashboardStats.saudeFinanceira) >= 90 ? '#10b981' : '#f59e0b'}>
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{dashboardStats.saudeFinanceira}%</span>
+                <RadialProgress value={Number(dashboardStats.saudeFinanceira)} size={62} strokeWidth={5} color={Number(dashboardStats.saudeFinanceira) >= 90 ? '#10b981' : '#f59e0b'}>
+                  <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">{dashboardStats.saudeFinanceira}%</span>
                 </RadialProgress>
                 <p className="max-w-[120px] text-xs text-slate-500 dark:text-slate-400">Taxa de adimplência da carteira atual.</p>
               </div>
@@ -724,9 +731,9 @@ const AdminContracts: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <GlassCard className={`${glassCardClass} xl:col-span-2 p-5`}>
-              <h3 className="mb-4 text-sm font-bold font-serif text-slate-700 dark:text-slate-300">Distribuição Financeira da Carteira</h3>
-              <div className="h-[240px]">
+            <GlassCard className={`${glassCardClass} xl:col-span-2 p-6`}>
+              <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Distribuição Financeira da Carteira</h3>
+              <div className="h-[260px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={dashboardStats.chartData} cx="50%" cy="50%" innerRadius={58} outerRadius={85} paddingAngle={5} dataKey="value">
@@ -734,7 +741,16 @@ const AdminContracts: React.FC = () => {
                         <Cell key={`chart-cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <RechartsTooltip formatter={(value: number) => [`${value} contratos ativos`, 'Quantidade']} />
+                    <RechartsTooltip
+                      formatter={(value: number) => [`${value} contratos ativos`, 'Quantidade']}
+                      contentStyle={{
+                        borderRadius: '16px',
+                        border: '1px solid rgba(226,232,240,0.8)',
+                        background: 'rgba(255,255,255,0.92)',
+                        boxShadow: '0 10px 30px rgba(15,23,42,0.08)',
+                        backdropFilter: 'blur(12px)',
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -806,9 +822,12 @@ const AdminContracts: React.FC = () => {
             </GlassCard>
 
             <GlassCard className={`${glassCardClass} overflow-hidden p-0`}>
-              <div className="flex items-center gap-2 border-b border-slate-200/70 px-4 py-3 dark:border-white/10">
+              <div className="flex items-center justify-between border-b border-slate-200/70 px-4 py-2.5 dark:border-white/10">
+                <div className="flex items-center gap-2">
                 <Icons.Calendar size={16} className="text-brand-500" />
-                <h3 className="text-sm font-bold font-serif text-slate-800 dark:text-white">Próximos Vencimentos</h3>
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-white">Vencimentos</h3>
+                </div>
+                <span className="text-[11px] text-red-500">{dashboardStats.atrasados.length} atrasados</span>
               </div>
               <div className="max-h-[360px] overflow-y-auto p-2">
                 {loading ? (
@@ -822,14 +841,17 @@ const AdminContracts: React.FC = () => {
                 ) : (
                   <div className="space-y-2">
                     {dashboardStats.proximos.map((inst) => (
-                      <div key={inst.id} className="flex items-center justify-between rounded-xl border border-slate-100 p-2.5 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5">
+                      <div key={inst.id} className="flex items-center justify-between rounded-xl border border-slate-100/80 px-3 py-4 hover:bg-slate-50/80 dark:border-white/10 dark:hover:bg-white/5">
                         <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200">{inst.contract?.lead?.name || 'Cliente'}</p>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">{new Date(inst.due_date).toLocaleDateString('pt-BR')} • {Number(inst.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                          <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">{inst.contract?.lead?.name || 'Cliente'}</p>
+                          <p className="text-[12px] text-slate-400 dark:text-slate-500">{new Date(inst.due_date).toLocaleDateString('pt-BR')}</p>
                         </div>
-                        <button onClick={() => navigate(`/admin/contratos/${inst.contract_id}`)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:text-brand-600 dark:border-white/10 dark:text-slate-400">
-                          <Icons.ArrowRight size={14} />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-orange-500">{Number(inst.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                          <button onClick={() => navigate(`/admin/contratos/${inst.contract_id}`)} className="rounded-lg p-1.5 text-slate-300 hover:text-slate-500 dark:text-slate-500 dark:hover:text-slate-300">
+                            <Icons.ChevronRight size={14} />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -853,10 +875,30 @@ const AdminContracts: React.FC = () => {
           </div>
 
           <GlassCard className={`${glassCardClass} overflow-hidden p-0`}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 bg-white/40 px-4 py-3 dark:border-white/10 dark:bg-white/[0.02]">
+              <div className="flex items-center gap-2">
+                <button className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white dark:bg-slate-100 dark:text-slate-900">
+                  <Icons.List size={12} /> {currentTab === 'vendas' ? 'Vendas' : 'Locações'}
+                  <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px]">{(currentTab === 'vendas' ? filteredSalesContracts : filteredRentContracts).length}</span>
+                </button>
+                <button className="inline-flex h-9 items-center rounded-xl px-3 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5">
+                  Todos
+                </button>
+              </div>
+              <div className="relative">
+                <Icons.Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  className="h-9 w-40 rounded-xl border border-slate-200/70 bg-white/75 pl-8 pr-3 text-xs text-slate-600 outline-none placeholder:text-slate-400 focus:border-slate-300 dark:border-white/10 dark:bg-[#111a2b]/80 dark:text-slate-300"
+                  placeholder="Buscar..."
+                  readOnly
+                />
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full whitespace-nowrap text-left">
                 <thead>
-                  <tr className="border-b border-slate-200/70 bg-slate-50/50 text-xs uppercase tracking-wider text-slate-500 dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-400">
+                  <tr className="border-b border-slate-200/70 bg-slate-50/40 text-[11px] uppercase tracking-[0.11em] text-slate-400 dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-500">
                     <th className="p-4">Cliente</th>
                     <th className="p-4">Tipo</th>
                     <th className="p-4">Imóvel</th>
@@ -867,7 +909,7 @@ const AdminContracts: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm dark:divide-white/5">
                   {(currentTab === 'vendas' ? filteredSalesContracts : filteredRentContracts).map((contract) => (
-                    <tr key={contract.id} className="hover:bg-slate-50/70 dark:hover:bg-white/5">
+                    <tr key={contract.id} className="hover:bg-white/45 dark:hover:bg-white/5">
                       <td className="p-4 font-semibold text-slate-800 dark:text-slate-200">{contract.lead?.name || 'Não informado'}</td>
                       <td className="p-4"><ContractTypeBadge type={getTypeBadge(contract.type)} /></td>
                       <td className="p-4 text-slate-600 dark:text-slate-300">{contract.property?.title || 'Não informado'}</td>
@@ -951,6 +993,7 @@ const AdminContracts: React.FC = () => {
         />
       )}
 
+    </div>
     </div>
   );
 };
