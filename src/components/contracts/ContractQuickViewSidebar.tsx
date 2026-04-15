@@ -33,12 +33,15 @@ export const ContractQuickViewSidebar: React.FC<Props> = ({ contract, isOpen, on
   }, [contract]);
 
   const linkedDocs = useMemo(() => {
+    if (!contract) return [];
     const docs = contract?.contract_data?.linked_documents || contract?.contract_data?.documents || [];
     return Array.isArray(docs) ? docs : [];
   }, [contract]);
 
   const lastSignatureAt = useMemo(() => {
-    const signedDates = (Array.isArray(contract.signatures) ? contract.signatures : [])
+    if (!contract) return null;
+
+    const signedDates = (Array.isArray(contract?.signatures) ? contract.signatures : [])
       .filter((sig: any) => sig.signed_at)
       .map((sig: any) => new Date(sig.signed_at).getTime())
       .filter((value: number) => Number.isFinite(value));
