@@ -8,13 +8,6 @@ import SignatureManagerModal from '../components/SignatureManagerModal';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { appendSignatureManifest, injectSignatureStamps } from '../utils/contractGenerator';
-import { GlassCard } from '../components/ui/GlassCard';
-import { MetricCard } from '../components/ui/MetricCard';
-import { RadialProgress } from '../components/ui/RadialProgress';
-import { ContractRow } from '../components/contracts/ContractRow';
-import { ContractQuickViewSidebar } from '../components/contracts/ContractQuickViewSidebar';
-import { StatusPill, StatusType } from '../components/ui/StatusPill';
-import { ContractTypeBadge, ContractTypeKey } from '../components/ui/ContractTypeBadge';
 
 interface ContractSignatureRow {
   contract_id: string | null;
@@ -36,12 +29,6 @@ const EMPTY_SIGNATURE_SUMMARY: ContractSignatureSummary = {
   signed_signatures_count: 0,
   rejected_signatures_count: 0,
 };
-
-const glassCardClass =
-  'rounded-3xl border border-white/60 dark:border-white/10 bg-white/75 dark:bg-[#0b1220]/75 backdrop-blur-xl shadow-[0_12px_30px_rgba(15,23,42,0.08)] dark:shadow-none';
-
-const subtlePanelClass =
-  'rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/85 dark:bg-[#111a2b]/70 backdrop-blur-md shadow-sm';
 
 const AdminContracts: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -65,7 +52,6 @@ const AdminContracts: React.FC = () => {
   const [loadingPlanLimit, setLoadingPlanLimit] = useState(true);
   const [signatureModalState, setSignatureModalState] = useState<{ contractId: string; companyId: string } | null>(null);
   const [downloadingContractId, setDownloadingContractId] = useState<string | null>(null);
-  const [quickViewContract, setQuickViewContract] = useState<ContractWithSignatureState | null>(null);
 
   const fetchContracts = async () => {
     if (!user) return;
@@ -599,23 +585,6 @@ const AdminContracts: React.FC = () => {
     );
   };
 
-
-  const getStatusPillType = (status?: string): StatusType => {
-    if (status === 'active') return 'active';
-    if (status === 'pending') return 'pending';
-    if (status === 'archived') return 'archived';
-    if (status === 'canceled') return 'rejected';
-    return 'draft';
-  };
-
-  const getTypeBadge = (type?: string): ContractTypeKey => {
-    if (type === 'sale' || type === 'rent') {
-      return type;
-    }
-
-    return 'administrative';
-  };
-
   const renderFinalPdfButton = (contract: ContractWithSignatureState) => {
     const isDownloading = downloadingContractId === contract.id;
 
@@ -635,289 +604,405 @@ const AdminContracts: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in pb-10">
-      <div className={`${glassCardClass} overflow-hidden bg-gradient-to-br from-white/90 via-sky-50/45 to-indigo-100/40 dark:from-[#0d1628]/95 dark:via-[#0b1220]/90 dark:to-[#1a2240]/80`}>
-        <div className="sticky top-0 z-20 border-b border-white/50 bg-white/60 px-5 py-5 backdrop-blur-xl dark:border-white/10 dark:bg-[#0b1220]/70 md:px-7">
-          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-            <div>
-              <h1 className="text-3xl font-serif font-bold tracking-tight text-slate-800 dark:text-white">Contratos e Recebíveis</h1>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Gestão premium de vendas, locações e acompanhamento financeiro.</p>
-              <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200/70 bg-white/85 px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm dark:border-white/10 dark:bg-[#0a0f1c]/80 dark:text-slate-300">
-                <Icons.KeyRound size={14} className="text-indigo-500" />
-                <span>Locações Ativas: {activeRentContractsCount} / {contractsUsageLabel}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => handleOpenContractModal('rent')}
-                disabled={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white/85 px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-[#0a0f1c]/85 dark:text-slate-300 dark:hover:bg-white/5"
-                title={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts ? 'Limite de contratos de locação atingido' : 'Novo Aluguel'}
-              >
-                <Icons.Plus size={16} /> Novo Aluguel
-              </button>
-
-              <button
-                onClick={() => handleOpenContractModal('sale')}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand-600 to-sky-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:shadow-lg"
-              >
-                <Icons.Plus size={16} /> Nova Venda
-              </button>
-            </div>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-serif font-bold tracking-tight text-slate-800 dark:text-white">
+            Contratos e Recebíveis
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Gestão de vendas, locações e acompanhamento de parcelas.
+          </p>
+          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-white/10 bg-white/80 dark:bg-[#0a0f1c]/80 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
+            <Icons.KeyRound size={14} className="text-indigo-500" />
+            <span>Locações Ativas: {activeRentContractsCount} / {contractsUsageLabel}</span>
           </div>
         </div>
 
-        <div className="p-4 md:p-6">
-          <div className={`${subtlePanelClass} flex w-full flex-wrap items-center gap-2 p-2`}>
-            <button
-              onClick={() => setTab('geral')}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
-                currentTab === 'geral'
-                  ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300'
-                  : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5'
-              }`}
-            >
-              <Icons.LayoutDashboard size={16} /> Geral
-            </button>
-            <button
-              onClick={() => setTab('vendas')}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
-                currentTab === 'vendas'
-                  ? 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'
-                  : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5'
-              }`}
-            >
-              <Icons.Building size={16} /> Vendas
-            </button>
-            <button
-              onClick={() => setTab('alugueis')}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-colors ${
-                currentTab === 'alugueis'
-                  ? 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300'
-                  : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5'
-              }`}
-            >
-              <Icons.KeyRound size={16} /> Aluguéis
-            </button>
-          </div>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => handleOpenContractModal('rent')}
+            disabled={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts}
+            className="inline-flex items-center gap-2 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl border border-slate-200/60 dark:border-white/5 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts ? 'Limite de contratos de locação atingido' : 'Novo Aluguel'}
+          >
+            <Icons.Plus size={16} /> Novo Aluguel
+          </button>
+          
+          <button 
+            onClick={() => handleOpenContractModal('sale')}
+            className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-600 to-sky-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:shadow-lg transition-all shadow-sm"
+          >
+            <Icons.Plus size={16} /> Nova Venda
+          </button>
         </div>
       </div>
 
-      {currentTab === 'geral' && (
-        <div className="space-y-6 animate-fade-in">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
-            <MetricCard label="VGV do Ano" value={dashboardStats.vgvAno.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={<Icons.Building size={18} />} color="brand" compact />
-            <MetricCard label="MRR Ativo" value={dashboardStats.mrrAtivo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={<Icons.KeyRound size={18} />} color="violet" compact />
-            <MetricCard label="Recebido" value={dashboardStats.recebidoMes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={<Icons.TrendingUp size={18} />} color="emerald" compact />
-            <MetricCard label="A Receber" value={dashboardStats.aReceberMes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={<Icons.Clock size={18} />} color="blue" compact />
-            <MetricCard label="Inadimplência" value={dashboardStats.inadimplencia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={<Icons.AlertTriangle size={18} />} color="red" compact />
+      {/* Navegação Interna (Tabs) */}
+      <div className="flex gap-6 border-b border-slate-200/60 dark:border-white/5 overflow-x-auto custom-scrollbar">
+        <button
+          onClick={() => setTab('geral')}
+          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
+            currentTab === 'geral' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <Icons.LayoutDashboard size={18} /> Visão Geral
+        </button>
+        <button
+          onClick={() => setTab('vendas')}
+          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
+            currentTab === 'vendas' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <Icons.Building size={18} /> Vendas (Recebíveis)
+        </button>
+        <button
+          onClick={() => setTab('alugueis')}
+          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
+            currentTab === 'alugueis' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <Icons.KeyRound size={18} /> Locações Ativas
+        </button>
+      </div>
 
-            <GlassCard className={`${glassCardClass} p-4`}>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Saúde</p>
-              <div className="mt-3 flex items-center justify-between">
-                <RadialProgress value={Number(dashboardStats.saudeFinanceira)} size={70} color={Number(dashboardStats.saudeFinanceira) >= 90 ? '#10b981' : '#f59e0b'}>
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{dashboardStats.saudeFinanceira}%</span>
-                </RadialProgress>
-                <p className="max-w-[120px] text-xs text-slate-500 dark:text-slate-400">Taxa de adimplência da carteira atual.</p>
-              </div>
-            </GlassCard>
+      {/* CONTEÚDO DA ABA GERAL */}
+      {currentTab === 'geral' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+
+          {/* Coluna Esquerda: Métricas Financeiras e Gráficos */}
+          <div className="lg:col-span-2 flex flex-col gap-6">
+
+            {loading ? (
+               <div className="flex-1 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex items-center justify-center min-h-[300px]"><Icons.Loader2 className="animate-spin text-brand-500" size={32} /></div>
+            ) : (
+              <>
+                {/* Linha 1: 4 Cards de Métricas Core */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {/* Card: VGV */}
+                  <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between hover:border-sky-300 dark:hover:border-sky-500/30 transition-colors">
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <Icons.Building size={12}/> VGV do Ano
+                    </p>
+                    <h3 className="text-xl md:text-2xl font-bold font-serif text-slate-800 dark:text-white truncate">
+                      {dashboardStats.vgvAno.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </h3>
+                  </div>
+
+                  {/* Card: MRR */}
+                  <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between hover:border-violet-300 dark:hover:border-violet-500/30 transition-colors">
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <Icons.KeyRound size={12}/> MRR (Ativos)
+                    </p>
+                    <h3 className="text-xl md:text-2xl font-bold font-serif text-slate-800 dark:text-white truncate">
+                      {dashboardStats.mrrAtivo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </h3>
+                  </div>
+
+                  {/* Card: Recebido no Mês */}
+                  <div className="bg-emerald-50/50 dark:bg-emerald-500/10 rounded-3xl border border-emerald-200 dark:border-emerald-500/20 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between">
+                    <p className="text-[10px] font-bold text-emerald-600/70 dark:text-emerald-400/70 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <Icons.TrendingUp size={12}/> Recebido (Mês)
+                    </p>
+                    <h3 className="text-xl md:text-2xl font-bold font-serif text-emerald-600 dark:text-emerald-400 truncate">
+                      {dashboardStats.recebidoMes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </h3>
+                  </div>
+
+                  {/* Card: A Receber no Mês */}
+                  <div className="bg-blue-50/50 dark:bg-blue-500/10 rounded-3xl border border-blue-200 dark:border-blue-500/20 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between">
+                    <p className="text-[10px] font-bold text-blue-600/70 dark:text-blue-400/70 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <Icons.Clock size={12}/> A Receber (Mês)
+                    </p>
+                    <h3 className="text-xl md:text-2xl font-bold font-serif text-blue-600 dark:text-blue-400 truncate">
+                      {dashboardStats.aReceberMes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Linha 2: Gráfico e Controle de Inadimplência */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Gráfico de Carteira */}
+                  <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-5 flex flex-col">
+                    <h3 className="text-sm font-bold font-serif text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                      <Icons.PieChart size={16} className="text-brand-500" /> Distribuição da Carteira
+                    </h3>
+                    <div className="flex-1 min-h-[180px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={dashboardStats.chartData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={50}
+                            outerRadius={70}
+                            paddingAngle={5}
+                            dataKey="value"
+                          >
+                            {dashboardStats.chartData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip 
+                            formatter={(value: number) => [`${value} contratos ativos`, 'Quantidade']}
+                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex justify-center gap-4 mt-2">
+                      {dashboardStats.chartData.map(item => (
+                        <div key={item.name} className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
+                          <span className="text-xs font-bold text-slate-600 dark:text-slate-400">{item.name} ({item.value})</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Box de Análise de Risco */}
+                  <div className="flex flex-col gap-4">
+                    {/* Saúde Financeira (Adimplência) */}
+                    <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-5 flex items-center justify-between h-auto">
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Saúde da Carteira</p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">Taxa de Adimplência Geral</p>
+                      </div>
+                      <div className={`text-3xl font-bold font-serif ${Number(dashboardStats.saudeFinanceira) >= 90 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                        {dashboardStats.saudeFinanceira}%
+                      </div>
+                    </div>
+
+                    {/* Inadimplência Expansível */}
+                    <div onClick={() => setShowOverdue(!showOverdue)} className="bg-red-50/50 dark:bg-red-500/10 rounded-3xl border border-red-200 dark:border-red-500/20 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-5 flex flex-col cursor-pointer hover:border-red-300 dark:hover:border-red-500/30 transition-colors relative flex-1 justify-center">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                            <Icons.AlertTriangle size={14}/> Inadimplência Total <Icons.ChevronDown size={14} className={`transition-transform ml-1 ${showOverdue ? 'rotate-180' : ''}`} />
+                          </p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400">Parcelas vencidas (Histórico)</p>
+                        </div>
+                        <h3 className="text-2xl font-bold font-serif text-red-600 dark:text-red-400">
+                          {dashboardStats.inadimplencia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </h3>
+                      </div>
+
+                      {showOverdue && (
+                        <div className="absolute top-[100%] left-0 right-0 mt-2 bg-white dark:bg-[#0a0f1c] rounded-xl shadow-2xl border border-red-100 dark:border-red-500/20 z-50 p-2 max-h-[250px] overflow-y-auto cursor-default" onClick={e => e.stopPropagation()}>
+                          {dashboardStats.atrasados.length === 0 ? (
+                            <p className="text-center text-sm text-slate-500 dark:text-slate-400 p-4">Excelente! Nenhum contrato atrasado.</p>
+                          ) : dashboardStats.atrasados.map(inst => (
+                            <div key={inst.id} className="flex justify-between items-center p-3 border-b border-red-50 dark:border-red-500/10 hover:bg-red-50 dark:hover:bg-red-500/5 transition-colors">
+                              <div>
+                                <p className="text-sm font-bold font-serif text-slate-800 dark:text-white">{inst.contract?.lead?.name || 'Cliente'}</p>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400">{new Date(inst.due_date).toLocaleDateString('pt-BR')} • {inst.contract?.property?.title}</p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm font-bold text-red-600 dark:text-red-400">{Number(inst.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                                <button onClick={() => navigate(`/admin/contratos/${inst.contract_id}`)} className="p-2 bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border rounded text-slate-400 hover:text-red-600"><Icons.ArrowRight size={14} /></button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
           </div>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <GlassCard className={`${glassCardClass} xl:col-span-2 p-5`}>
-              <h3 className="mb-4 text-sm font-bold font-serif text-slate-700 dark:text-slate-300">Distribuição Financeira da Carteira</h3>
-              <div className="h-[240px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={dashboardStats.chartData} cx="50%" cy="50%" innerRadius={58} outerRadius={85} paddingAngle={5} dataKey="value">
-                      {dashboardStats.chartData.map((entry, index) => (
-                        <Cell key={`chart-cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip formatter={(value: number) => [`${value} contratos ativos`, 'Quantidade']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="mt-2 flex flex-wrap justify-center gap-4">
-                {dashboardStats.chartData.map((item) => (
-                  <div key={item.name} className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                    {item.name} ({item.value})
-                  </div>
-                ))}
-              </div>
-            </GlassCard>
+          {/* Coluna Direita: Próximos Vencimentos */}
+          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col h-full overflow-hidden">
+            <div className="p-5 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.02] flex items-center gap-2">
+              <Icons.Calendar size={18} className="text-brand-500" />
+              <h3 className="font-bold font-serif text-slate-800 dark:text-white">Próximos Vencimentos</h3>
+            </div>
 
-            <div className="space-y-4">
-              <GlassCard className={`${subtlePanelClass} p-5`}>
-                <h3 className="text-sm font-bold font-serif text-slate-700 dark:text-slate-200">Saúde Financeira</h3>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Recebido + previsto vs total esperado do mês.</p>
-                <p className={`mt-3 text-3xl font-bold font-serif ${Number(dashboardStats.saudeFinanceira) >= 90 ? 'text-emerald-500' : 'text-amber-500'}`}>{dashboardStats.saudeFinanceira}%</p>
-              </GlassCard>
-
-              <GlassCard onClick={() => setShowOverdue(!showOverdue)} className={`${subtlePanelClass} cursor-pointer p-5 transition-colors hover:border-red-200 dark:hover:border-red-400/30`}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="inline-flex items-center gap-2 text-sm font-bold font-serif text-red-600 dark:text-red-400">
-                      <Icons.AlertTriangle size={14} /> Inadimplência
-                    </h3>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Clique para {showOverdue ? 'ocultar' : 'expandir'} detalhes.</p>
-                  </div>
-                  <Icons.ChevronDown size={16} className={`text-red-500 transition-transform ${showOverdue ? 'rotate-180' : ''}`} />
+            <div className="flex-1 overflow-y-auto p-2">
+              {loading ? (
+                <div className="flex justify-center py-10"><Icons.Loader2 className="animate-spin text-slate-300" /></div>
+              ) : dashboardStats.proximos.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-10 px-4">
+                  <Icons.CheckCircle size={32} className="text-emerald-400 mb-3" />
+                  <p className="text-sm font-bold font-serif text-slate-700 dark:text-slate-300">Tudo limpo!</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Nenhuma parcela a vencer nos próximos dias.</p>
                 </div>
-                <p className="mt-3 text-xl font-bold font-serif text-red-600 dark:text-red-400">{dashboardStats.inadimplencia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
-                {showOverdue && (
-                  <div className="mt-3 space-y-2 border-t border-red-100 pt-3 dark:border-red-500/20" onClick={(event) => event.stopPropagation()}>
-                    {dashboardStats.atrasados.length === 0 ? (
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Excelente! Nenhum contrato atrasado.</p>
-                    ) : (
-                      dashboardStats.atrasados.slice(0, 6).map((inst) => (
-                        <div key={inst.id} className="flex items-center justify-between rounded-lg border border-red-100/70 bg-white/70 p-2 dark:border-red-500/20 dark:bg-[#0b1220]/80">
-                          <div className="min-w-0">
-                            <p className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200">{inst.contract?.lead?.name || 'Cliente'}</p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">{new Date(inst.due_date).toLocaleDateString('pt-BR')}</p>
-                          </div>
-                          <button onClick={() => navigate(`/admin/contratos/${inst.contract_id}`)} className="rounded-lg border border-red-100 p-1.5 text-red-600 hover:bg-red-50 dark:border-red-500/20 dark:hover:bg-red-500/10">
-                            <Icons.ArrowRight size={12} />
-                          </button>
+              ) : (
+                <div className="space-y-1">
+                  {dashboardStats.proximos.map(inst => (
+                    <div key={inst.id} className="p-3 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl transition-colors border border-transparent hover:border-slate-100 dark:hover:border-white/5 flex items-center justify-between group">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold font-serif text-slate-800 dark:text-white truncate">
+                          {inst.contract?.lead?.name || 'Cliente'}
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                          {inst.contract?.property?.title || 'Contrato'}
+                        </p>
+                        <div className="flex gap-2 mt-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">{new Date(inst.due_date).toLocaleDateString('pt-BR')}</span>
+                          <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-1.5 rounded">{Number(inst.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                         </div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </GlassCard>
+                      </div>
+                      <button
+                        onClick={() => navigate(`/admin/contratos/${inst.contract_id}`)}
+                        className="p-2 text-slate-300 hover:text-brand-600 hover:bg-white dark:hover:bg-white/5 rounded-lg transition-all shadow-sm opacity-0 group-hover:opacity-100"
+                        title="Ver Contrato"
+                      >
+                        <Icons.ArrowRight size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+        </div>
+      )}
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <GlassCard className={`${glassCardClass} xl:col-span-2 overflow-hidden p-0`}>
-              <div className="flex items-center justify-between border-b border-slate-200/70 px-4 py-3 dark:border-white/10">
-                <h3 className="text-sm font-bold font-serif text-slate-700 dark:text-slate-200">Contratos Recentes</h3>
-              </div>
+      {/* CONTEÚDO DA ABA VENDAS */}
+      {currentTab === 'vendas' && (
+        <div className="animate-fade-in space-y-4">
+          <div className="flex justify-between items-end mb-4">
+            <h2 className="text-lg font-bold font-serif text-slate-800 dark:text-white">Contratos de Venda</h2>
+          </div>
+
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex gap-2 mb-4 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-2 rounded-xl border border-slate-200/60 dark:border-white/5 w-fit shadow-sm">
+              <button onClick={() => setContractTab('active')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'active' ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Ativos / Vigentes</button>
+              <button onClick={() => setContractTab('pending')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'pending' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Pendentes</button>
+              <button onClick={() => setContractTab('archived')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'archived' ? 'bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Arquivados</button>
+            </div>
+
+            <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full">
-                  <tbody>
-                    {contracts.slice(0, 5).map((contract) => (
-                      <ContractRow key={contract.id} contract={contract} onClick={setQuickViewContract} />
+                <table className="w-full text-left whitespace-nowrap">
+                  <thead>
+                    <tr className="bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
+                      <th className="p-4">Cliente</th>
+                      <th className="p-4">Imóvel</th>
+                      <th className="p-4">Valor</th>
+                      <th className="p-4">Assinaturas</th>
+                      <th className="p-4 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-white/5 text-sm text-slate-600 dark:text-slate-300">
+                    {filteredSalesContracts.map((contract) => (
+                      <tr key={contract.id} className="hover:bg-slate-50 dark:hover:bg-white/5">
+                        <td className="p-4 font-semibold font-serif">{contract.lead?.name || 'Não informado'}</td>
+                        <td className="p-4">{contract.property?.title || 'Não informado'}</td>
+                        <td className="p-4 font-bold font-serif text-slate-700 dark:text-slate-200">{Number(contract.sale_total_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="p-4 align-middle">{renderSignatureStatus(contract)}</td>
+                        <td className="p-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Detalhes (Gestão)"><Icons.Eye size={16} /></button>
+                            <button onClick={() => setViewContractData(contract)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Formulário Original"><Icons.FileText size={16} /></button>
+                            {renderFinalPdfButton(contract)}
+                            {renderApproveAction(contract)}
+
+                            {isAdmin && (
+                              <>
+                                <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
+                                <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </GlassCard>
-
-            <GlassCard className={`${glassCardClass} overflow-hidden p-0`}>
-              <div className="flex items-center gap-2 border-b border-slate-200/70 px-4 py-3 dark:border-white/10">
-                <Icons.Calendar size={16} className="text-brand-500" />
-                <h3 className="text-sm font-bold font-serif text-slate-800 dark:text-white">Próximos Vencimentos</h3>
-              </div>
-              <div className="max-h-[360px] overflow-y-auto p-2">
-                {loading ? (
-                  <div className="flex items-center justify-center py-10"><Icons.Loader2 className="animate-spin text-slate-300" /></div>
-                ) : dashboardStats.proximos.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-center">
-                    <Icons.CheckCircle size={28} className="text-emerald-400" />
-                    <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Tudo limpo!</p>
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Nenhuma parcela a vencer nos próximos 14 dias.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {dashboardStats.proximos.map((inst) => (
-                      <div key={inst.id} className="flex items-center justify-between rounded-xl border border-slate-100 p-2.5 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5">
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200">{inst.contract?.lead?.name || 'Cliente'}</p>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">{new Date(inst.due_date).toLocaleDateString('pt-BR')} • {Number(inst.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
-                        </div>
-                        <button onClick={() => navigate(`/admin/contratos/${inst.contract_id}`)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:text-brand-600 dark:border-white/10 dark:text-slate-400">
-                          <Icons.ArrowRight size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </GlassCard>
+            </div>
           </div>
         </div>
       )}
 
-      {(currentTab === 'vendas' || currentTab === 'alugueis') && (
-        <div className="animate-fade-in space-y-4">
-          <div className="flex items-end justify-between">
-            <h2 className="text-lg font-bold font-serif text-slate-800 dark:text-white">{currentTab === 'vendas' ? 'Contratos de Venda' : 'Contratos de Locação'}</h2>
+      {/* CONTEÚDO DA ABA ALUGUÉIS */}
+      {currentTab === 'alugueis' && (
+        <div className="animate-fade-in space-y-4"> 
+          <div className="flex justify-between items-end mb-4"> 
+            <h2 className="text-lg font-bold font-serif text-slate-800 dark:text-white">Contratos de Locação</h2>
           </div>
 
-          <div className={`${subtlePanelClass} flex w-fit gap-2 p-2`}>
-            <button onClick={() => setContractTab('active')} className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${contractTab === 'active' ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5'}`}>Ativos</button>
-            <button onClick={() => setContractTab('pending')} className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${contractTab === 'pending' ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5'}`}>Pendentes</button>
-            <button onClick={() => setContractTab('archived')} className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${contractTab === 'archived' ? 'bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-200' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5'}`}>Arquivados</button>
-          </div>
-
-          <GlassCard className={`${glassCardClass} overflow-hidden p-0`}>
-            <div className="overflow-x-auto">
-              <table className="w-full whitespace-nowrap text-left">
-                <thead>
-                  <tr className="border-b border-slate-200/70 bg-slate-50/50 text-xs uppercase tracking-wider text-slate-500 dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-400">
-                    <th className="p-4">Cliente</th>
-                    <th className="p-4">Tipo</th>
-                    <th className="p-4">Imóvel</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4">Assinaturas</th>
-                    <th className="p-4 text-right">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-sm dark:divide-white/5">
-                  {(currentTab === 'vendas' ? filteredSalesContracts : filteredRentContracts).map((contract) => (
-                    <tr key={contract.id} className="hover:bg-slate-50/70 dark:hover:bg-white/5">
-                      <td className="p-4 font-semibold text-slate-800 dark:text-slate-200">{contract.lead?.name || 'Não informado'}</td>
-                      <td className="p-4"><ContractTypeBadge type={getTypeBadge(contract.type)} /></td>
-                      <td className="p-4 text-slate-600 dark:text-slate-300">{contract.property?.title || 'Não informado'}</td>
-                      <td className="p-4"><StatusPill status={getStatusPillType(contract.status)} /></td>
-                      <td className="p-4">{renderSignatureStatus(contract)}</td>
-                      <td className="p-4 text-right">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => setQuickViewContract(contract)}
-                            className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-100 dark:border-white/10 dark:bg-[#111a2b] dark:text-slate-300"
-                            title="Resumo rápido"
-                          >
-                            <Icons.Layout size={16} />
-                          </button>
-                          <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="rounded-lg border border-slate-200 bg-white p-2 text-brand-600 shadow-sm hover:bg-brand-50 dark:border-white/10 dark:bg-[#111a2b]" title="Ver detalhes"><Icons.Eye size={16} /></button>
-                          <button onClick={() => setViewContractData(contract)} className="rounded-lg border border-slate-200 bg-white p-2 text-blue-600 shadow-sm hover:bg-blue-50 dark:border-white/10 dark:bg-[#111a2b]" title="Abrir formulário original"><Icons.FileText size={16} /></button>
-                          {renderFinalPdfButton(contract)}
-                          {renderApproveAction(contract)}
-                          {isAdmin && (
-                            <>
-                              <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm hover:bg-slate-100 dark:border-white/10 dark:bg-[#111a2b]" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
-                              <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="rounded-lg border border-red-100 bg-white p-2 text-red-600 shadow-sm hover:bg-red-50 dark:border-red-500/20 dark:bg-[#111a2b]" title="Excluir"><Icons.Trash2 size={16} /></button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <div className="space-y-4 animate-fade-in"> 
+            <div className="flex gap-2 mb-4 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-2 rounded-xl border border-slate-200/60 dark:border-white/5 w-fit shadow-sm"> 
+              <button onClick={() => setContractTab('active')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'active' ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Ativos / Vigentes</button>
+              <button onClick={() => setContractTab('pending')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'pending' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Pendentes</button>
+              <button onClick={() => setContractTab('archived')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'archived' ? 'bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Arquivados</button>
             </div>
 
-            {!loading && (currentTab === 'vendas' ? filteredSalesContracts : filteredRentContracts).length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-                <div className="rounded-full bg-slate-100 p-4 text-slate-500 dark:bg-white/10 dark:text-slate-300">
-                  {currentTab === 'vendas' ? <Icons.Building size={28} /> : <Icons.KeyRound size={28} />}
+            {loading ? (
+              <div className="flex justify-center py-10"><Icons.Loader2 className="animate-spin text-indigo-500" size={32} /></div>
+            ) : rentContracts.length === 0 ? (
+              <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-10 flex flex-col items-center text-center">
+                <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-500/10 rounded-full flex items-center justify-center text-indigo-500 mb-4">
+                  <Icons.KeyRound size={40} />
                 </div>
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Nenhum contrato encontrado nesta categoria.</p>
-                {currentTab === 'alugueis' && (
-                  <button onClick={() => handleOpenContractModal('rent')} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700">
-                    <Icons.Plus size={16} /> Novo Contrato de Locação
-                  </button>
-                )}
+                <h3 className="text-xl font-bold font-serif text-slate-800 dark:text-white">Nenhuma locação</h3>
+                <p className="text-slate-500 dark:text-slate-400 mt-2 mb-6 max-w-md">Registre os contratos de aluguel para acompanhar mensalidades, garantias e reajustes.</p>
+                <button onClick={() => handleOpenContractModal('rent')} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                  <Icons.Plus size={20} /> Novo Contrato de Locação
+                </button>
+              </div>
+            ) : (
+              <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
+                        <th className="p-4">Imóvel & Locatário</th>
+                        <th className="p-4">Vencimento Contrato</th>
+                        <th className="p-4 text-right">Aluguel Mensal</th>
+                        <th className="p-4">Assinaturas</th>
+                        <th className="p-4 text-center">Garantia</th>
+                        <th className="p-4 text-right">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-white/5 text-sm">
+                      {filteredRentContracts.length === 0 ? (
+                        <tr><td colSpan={6} className="p-8 text-center text-slate-400">Nenhum contrato encontrado nesta categoria.</td></tr>
+                      ) : (
+                        filteredRentContracts.map((contract) => (
+                          <tr key={contract.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                            <td className="p-4">
+                              <p className="font-bold font-serif text-slate-800 dark:text-white">{contract.property?.title || 'Imóvel Excluído'}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5"><Icons.User size={12}/> {contract.lead?.name || 'Cliente Excluído'}</p>
+                            </td>
+                            <td className="p-4 text-slate-600 dark:text-slate-300">{new Date(contract.end_date).toLocaleDateString('pt-BR')}</td>
+                            <td className="p-4 text-right font-bold font-serif text-slate-800 dark:text-white">
+                              {Number(contract.rent_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </td>
+                            <td className="p-4 align-middle">{renderSignatureStatus(contract)}</td>
+                            <td className="p-4 text-center text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                              {contract.rent_guarantee_type?.replace('_', ' ')}
+                            </td>
+                            <td className="p-4 text-right">
+                              <div className="flex justify-end gap-2">
+                                <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Detalhes (Gestão)"><Icons.Eye size={16} /></button>
+                                <button onClick={() => setViewContractData(contract)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Formulário Original"><Icons.FileText size={16} /></button>
+                                {renderFinalPdfButton(contract)}
+                                {renderApproveAction(contract)}
+
+                                {isAdmin && (
+                                  <>
+                                    <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
+                                    <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
-          </GlassCard>
+          </div>
         </div>
       )}
-
-      <ContractQuickViewSidebar contract={quickViewContract} isOpen={Boolean(quickViewContract)} onClose={() => setQuickViewContract(null)} />
 
       {/* Modais */}
       <SaleContractModal 
