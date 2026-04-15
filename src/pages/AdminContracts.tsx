@@ -1,40 +1,26 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { Icons } from '../components/Icons';
-// Importação direta para garantir que os ícones dos botões não fiquem undefined
-import { ChevronDown, Plus, Building2, KeyRound, FileText, Search, Loader2, LayoutGrid } from 'lucide-react';
-
-// UI Components
-import { GlassCard } from '../components/ui/GlassCard';
-import { MetricCard } from '../components/ui/MetricCard';
-import { ContractRow } from '../components/contracts/ContractRow';
-import { ContractQuickViewSidebar } from '../components/contracts/ContractQuickViewSidebar';
-
-// Modais (Importações Default rigorosas)
 import SaleContractModal from '../components/SaleContractModal';
 import RentContractModal from '../components/RentContractModal';
-import AdministrativeContractModal from '../components/AdministrativeContractModal';
 import SignatureManagerModal from '../components/SignatureManagerModal';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { appendSignatureManifest, injectSignatureStamps } from '../utils/contractGenerator';
 
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  ResponsiveContainer, Tooltip as RechartsTooltip,
-} from 'recharts';
-import { RadialProgress } from '../components/ui/RadialProgress';
-
-// ─── Tipos ────────────────────────────────────────────────────────────────────
 interface ContractSignatureRow {
   contract_id: string | null;
   status: 'pending' | 'signed' | 'rejected' | null;
 }
+
 interface ContractSignatureSummary {
   signatures_count: number;
   pending_signatures_count: number;
   signed_signatures_count: number;
   rejected_signatures_count: number;
 }
+
 type ContractWithSignatureState = any & ContractSignatureSummary;
 
 const EMPTY_SIGNATURE_SUMMARY: ContractSignatureSummary = {
@@ -44,89 +30,51 @@ const EMPTY_SIGNATURE_SUMMARY: ContractSignatureSummary = {
   rejected_signatures_count: 0,
 };
 
-type ViewMode = 'all' | 'sale' | 'rent' | 'administrative';
-type StatusFilter = 'active' | 'pending' | 'archived' | 'all';
-
-// ─── Formatação ───────────────────────────────────────────────────────────────
-const currency = (v: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
-
-const shortCurrency = (v: number) => {
-  if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `R$ ${(v / 1_000).toFixed(0)}k`;
-  return currency(v);
-};
-
-const cn = (...classes: (string | boolean | undefined | null)[]) =>
-  classes.filter(Boolean).join(' ');
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
-const getMonthRange = () => {
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return {
-    monthStartISO: monthStart.toISOString().split('T')[0],
-    monthEndISO: monthEnd.toISOString().split('T')[0],
-  };
-};
-
-// ─── Componente principal ─────────────────────────────────────────────────────
-export default function AdminContracts() {
-  const { user } = useAuth();
+const AdminContracts: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user, isAdmin } = useAuth();
+  const currentTab = searchParams.get('tab') || 'geral';
   const isSuperAdmin = user?.role === 'super_admin';
-
-  // ── Estado de dados ──
-  const [contracts, setContracts] = useState<ContractWithSignatureState[]>([]);
-  const [installments, setInstallments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // ── Filtros ──
-  const [searchTerm, setSearchTerm] = useState('');
-  const [viewMode, setViewMode] = useState<ViewMode>('all');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
-
-  // ── Modais ──
+  const directUserPlan = typeof (user as { plan?: string } | null)?.plan === 'string'
+    ? (user as { plan?: string }).plan ?? ''
+    : '';
+  
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
   const [isRentModalOpen, setIsRentModalOpen] = useState(false);
-  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
-  const [selectedContract, setSelectedContract] = useState<any>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [signatureModalState, setSignatureModalState] = useState<any>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [viewContractData, setViewContractData] = useState<any | null>(null);
+  const [contracts, setContracts] = useState<ContractWithSignatureState[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [installments, setInstallments] = useState<any[]>([]);
+  const [showOverdue, setShowOverdue] = useState(false);
+  const [contractTab, setContractTab] = useState<'pending' | 'active' | 'archived'>('active');
+  const [maxContracts, setMaxContracts] = useState<number | null>(null);
+  const [loadingPlanLimit, setLoadingPlanLimit] = useState(true);
+  const [signatureModalState, setSignatureModalState] = useState<{ contractId: string; companyId: string } | null>(null);
+  const [downloadingContractId, setDownloadingContractId] = useState<string | null>(null);
 
-  // ── UI ──
-  const [showOverduePanel, setShowOverduePanel] = useState(false);
-
-  // ── Busca de dados ────────────────────────────────────────────────────────
   const fetchContracts = async () => {
     if (!user) return;
     setLoading(true);
-
-    const { monthStartISO, monthEndISO } = getMonthRange();
-
-    let contractsQuery = supabase.from('contracts').select(`
-      *,
-      lead:leads!contracts_lead_id_fkey(name, email),
-      property:properties(*),
-      broker:profiles!contracts_broker_id_fkey(*)
-    `);
-
-    // Busca TODOS os installments (para gráfico mensal)
-    let installmentsQuery = supabase
-      .from('installments')
-      .select('*')
-      .in('status', ['paid', 'pending']);
-
+    
+    // Multi-Tenant: Filtra por company_id se não for super admin
+    let contractsQuery = supabase
+      .from('contracts')
+      .select(`
+        *,
+        lead:leads!contracts_lead_id_fkey(*),
+        property:properties(*),
+        broker:profiles!contracts_broker_id_fkey(*)
+      `);
+    let installmentsQuery = supabase.from('installments').select('*');
     let signaturesQuery = supabase.from('contract_signatures').select('contract_id, status');
-
+    
     if (!isSuperAdmin && user.company_id) {
       contractsQuery = contractsQuery.eq('company_id', user.company_id);
       installmentsQuery = installmentsQuery.eq('company_id', user.company_id);
       signaturesQuery = signaturesQuery.eq('company_id', user.company_id);
     }
-
+    
     try {
       const [contractsRes, installmentsRes, signaturesRes] = await Promise.all([
         contractsQuery.order('created_at', { ascending: false }),
@@ -134,41 +82,57 @@ export default function AdminContracts() {
         signaturesQuery,
       ]);
 
-      if (!contractsRes.error && contractsRes.data) {
+      if (contractsRes.error) {
+        console.error('Erro contratos:', contractsRes.error);
+      } else if (contractsRes.data) {
         const signatureRows = (signaturesRes.data as ContractSignatureRow[] | null) ?? [];
         const signatureSummaryByContract = signatureRows.reduce<Record<string, ContractSignatureSummary>>(
-          (acc, sig) => {
-            if (!sig.contract_id) return acc;
-            const summary = acc[sig.contract_id] ?? { ...EMPTY_SIGNATURE_SUMMARY };
-            summary.signatures_count += 1;
-            if (sig.status === 'signed') {
-              summary.signed_signatures_count += 1;
-            } else {
-              summary.pending_signatures_count += 1;
-              if (sig.status === 'rejected') summary.rejected_signatures_count += 1;
+          (accumulator, signature) => {
+            if (!signature.contract_id) {
+              return accumulator;
             }
-            acc[sig.contract_id] = summary;
-            return acc;
+
+            const currentSummary = accumulator[signature.contract_id] ?? {
+              ...EMPTY_SIGNATURE_SUMMARY,
+            };
+
+            currentSummary.signatures_count += 1;
+
+            if (signature.status === 'signed') {
+              currentSummary.signed_signatures_count += 1;
+            } else {
+              currentSummary.pending_signatures_count += 1;
+
+              if (signature.status === 'rejected') {
+                currentSummary.rejected_signatures_count += 1;
+              }
+            }
+
+            accumulator[signature.contract_id] = currentSummary;
+            return accumulator;
           },
           {}
         );
 
-        const validContracts = contractsRes.data.filter(
-          (c: any) => c.contract_data?.document_type !== 'intermediacao'
+        // O SEGREDO ESTÁ AQUI: Filtramos ANTES de definir o estado
+        const validContracts = contractsRes.data.filter(c => c.contract_data?.document_type !== 'intermediacao');
+
+        setContracts(
+          validContracts.map((contract) => ({
+            ...contract,
+            ...(signatureSummaryByContract[contract.id] ?? EMPTY_SIGNATURE_SUMMARY),
+          }))
         );
-
-        const hydratedContracts = validContracts.map((contract: any) => ({
-          ...contract,
-          properties: contract.properties || contract.property || null,
-          leads: contract.leads || contract.lead || null,
-          ...(signatureSummaryByContract[contract.id] ?? EMPTY_SIGNATURE_SUMMARY),
-        }));
-
-        setContracts(hydratedContracts);
       }
 
-      if (!installmentsRes.error && installmentsRes.data) {
+      if (installmentsRes.error) {
+        console.error('Erro parcelas:', installmentsRes.error);
+      } else if (installmentsRes.data) {
         setInstallments(installmentsRes.data);
+      }
+
+      if (signaturesRes.error) {
+        console.error('Erro assinaturas:', signaturesRes.error);
       }
     } catch (error) {
       console.error('Erro ao carregar contratos:', error);
@@ -178,618 +142,902 @@ export default function AdminContracts() {
   };
 
   useEffect(() => {
-    if (user) fetchContracts();
-  }, [user]);
+    if (user) {
+      fetchContracts();
+    }
+  }, [user?.company_id, user?.role]);
 
-  // ── Métricas calculadas ───────────────────────────────────────────────────
-  const stats = useMemo(() => {
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchPlanLimit = async () => {
+      if (!user) return;
+
+      if (isSuperAdmin) {
+        if (isMounted) {
+          setMaxContracts(null);
+          setLoadingPlanLimit(false);
+        }
+        return;
+      }
+
+      if (!user.company_id) {
+        if (isMounted) {
+          setMaxContracts(0);
+          setLoadingPlanLimit(false);
+        }
+        return;
+      }
+
+      setLoadingPlanLimit(true);
+
+      try {
+        const { data: currentSaasContract, error: contractError } = await supabase
+          .from('saas_contracts')
+          .select('plan_id, plan_name, companies(plan)')
+          .eq('company_id', user.company_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (contractError) {
+          console.error('Erro ao buscar contrato SaaS atual:', contractError);
+        }
+
+        const planCandidates = [
+          currentSaasContract?.plan_id,
+          currentSaasContract?.plan_name,
+          currentSaasContract?.companies?.plan,
+          user.company?.plan,
+          directUserPlan,
+        ]
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          .map((value) => value.trim().toLowerCase());
+
+        if (planCandidates.length === 0) {
+          if (isMounted) setMaxContracts(0);
+          return;
+        }
+
+        const { data: plansData, error: plansError } = await supabase
+          .from('saas_plans')
+          .select('id, name, max_contracts');
+
+        if (plansError) throw plansError;
+
+        const matchedPlan = (plansData || []).find((plan) => {
+          const planId = String(plan.id || '').toLowerCase();
+          const planName = String(plan.name || '').toLowerCase();
+          return planCandidates.some((candidate) => candidate === planId || candidate === planName);
+        });
+
+        if (isMounted) {
+          setMaxContracts(Number(matchedPlan?.max_contracts ?? 0));
+        }
+      } catch (error) {
+        console.error('Erro ao buscar limite de contratos do plano:', error);
+        if (isMounted) {
+          setMaxContracts(0);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingPlanLimit(false);
+        }
+      }
+    };
+
+    fetchPlanLimit();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [directUserPlan, isSuperAdmin, user?.company?.plan, user?.company_id, user?.id]);
+
+  const handleDeleteContract = async (id: string, propertyId?: string) => {
+    if (window.confirm('CUIDADO: Deseja excluir permanentemente este contrato e liberar o imóvel de volta para a vitrine?')) {
+      try {
+        // 1. Libera o imóvel (Usando APENAS a coluna status)
+        if (propertyId) {
+          const { error: propertyError } = await supabase
+            .from('properties')
+            .update({ status: 'Disponível' })
+            .eq('id', propertyId);
+
+          if (propertyError) {
+            console.error('Erro ao liberar imóvel no banco:', propertyError);
+          }
+        }
+
+        // 2. Limpa as faturas e parcelas
+        await supabase.from('installments').delete().eq('contract_id', id);
+        await supabase.from('invoices').delete().eq('contract_id', id);
+
+        // 3. Exclui o contrato
+        const { error: contractError } = await supabase.from('contracts').delete().eq('id', id);
+        if (contractError) throw contractError;
+
+        alert('Contrato excluído com sucesso! O imóvel voltou a ficar Disponível.');
+        fetchContracts();
+      } catch (error: any) {
+        console.error('Falha na exclusão:', error);
+        alert('Falha ao excluir o contrato: ' + error.message);
+      }
+    }
+  };
+
+  const handleArchiveContract = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'archived' ? 'active' : 'archived';
+    if (window.confirm(`Deseja ${currentStatus === 'archived' ? 'reativar' : 'arquivar'} este contrato?`)) {
+      await supabase.from('contracts').update({ status: newStatus }).eq('id', id);
+      fetchContracts();
+    }
+  };
+
+  const dashboardStats = useMemo(() => {
     const now = new Date();
-    const cm = now.getMonth();
-    const cy = now.getFullYear();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
 
-    const activeContracts = contracts.filter((c) => c.status === 'active');
-    const activeRentContracts = activeContracts.filter((c) => c.type === 'rent');
-    const activeRentCount = activeRentContracts.length;
+    let recebidoMes = 0;
+    let aReceberMes = 0;
+    let inadimplencia = 0;
+    let vgvAno = 0;
+    let mrrAtivo = 0;
+    let contratosVendaAtivos = 0;
+    let contratosLocacaoAtivos = 0;
 
-    // VGV: soma de vendas ativas criadas neste ano
-    const vgv = activeContracts
-      .filter((c) => c.type === 'sale' && new Date(c.created_at).getFullYear() === cy)
-      .reduce((sum, c) => sum + (Number(c.sale_total_value || c.contract_value) || 0), 0);
+    installments.forEach(inst => {
+      const dueDate = new Date(inst.due_date);
+      const isCurrentMonth = dueDate.getMonth() === currentMonth && dueDate.getFullYear() === currentYear;
 
-    // MRR: soma de valores mensais de locações ativas
-    const mrr = activeRentContracts.reduce(
-      (sum, c) => sum + (Number(c.rent_value || c.contract_value) || 0),
-      0
-    );
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const isOverdue = dueDate < today && inst.status !== 'paid';
 
-    // Received/receivable do mês corrente
-    let recebido = 0, aReceber = 0, inadimplencia = 0;
-    installments.forEach((i) => {
-      const due = new Date(i.due_date);
-      const isCM = due.getMonth() === cm && due.getFullYear() === cy;
-      const isOverdue = due < today && i.status !== 'paid';
-      if (i.status === 'paid' && isCM) recebido += Number(i.amount);
-      if (i.status === 'pending' && isCM && !isOverdue) aReceber += Number(i.amount);
-      if (isOverdue) inadimplencia += Number(i.amount);
+      if (inst.status === 'paid' && isCurrentMonth) recebidoMes += Number(inst.amount);
+      if (inst.status === 'pending' && isCurrentMonth && !isOverdue) aReceberMes += Number(inst.amount);
+      if (isOverdue) inadimplencia += Number(inst.amount);
     });
 
-    // Saúde financeira
-    const totalEsperado = recebido + aReceber + inadimplencia;
-    const saude =
-      totalEsperado > 0
-        ? Number((((recebido + aReceber) / totalEsperado) * 100).toFixed(1))
-        : 100;
+    contracts.forEach(contract => {
+      const createdDate = new Date(contract.created_at);
+      const isCurrentYear = createdDate.getFullYear() === currentYear;
 
-    // Próximos vencimentos (14 dias)
-    const limite14 = new Date();
-    limite14.setDate(limite14.getDate() + 14);
-    limite14.setHours(23, 59, 59, 999);
-    const proximos = installments
-      .filter((i) => {
-        if (i.status === 'paid') return false;
-        const d = new Date(i.due_date);
-        return d >= today && d <= limite14;
-      })
-      .slice(0, 8);
-
-    // Atrasados
-    const atrasados = installments
-      .filter((i) => i.status !== 'paid' && new Date(i.due_date) < today)
-      .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
-
-    // Dados mensais para gráfico (6 meses)
-    const monthlyData: { month: string; recebido: number; aReceber: number }[] = [];
-    for (let m = 0; m < 6; m++) {
-      const date = new Date(cy, cm - 5 + m);
-      const monthName = date
-        .toLocaleString('pt-BR', { month: 'short' })
-        .replace('.', '');
-      let rec = 0, ar = 0;
-      installments.forEach((i) => {
-        const d = new Date(i.due_date);
-        if (d.getMonth() === date.getMonth() && d.getFullYear() === date.getFullYear()) {
-          if (i.status === 'paid') rec += Number(i.amount);
-          else ar += Number(i.amount);
+      if (contract.status === 'active') {
+        if (contract.type === 'sale') {
+          if (isCurrentYear) vgvAno += Number(contract.sale_total_value || 0);
+          contratosVendaAtivos++;
+        } else if (contract.type === 'rent') {
+          mrrAtivo += Number(contract.rent_value || 0);
+          contratosLocacaoAtivos++;
         }
+      }
+    });
+
+    const limite14Dias = new Date();
+    limite14Dias.setDate(limite14Dias.getDate() + 14);
+    limite14Dias.setHours(23, 59, 59, 999);
+
+    const proximos = installments
+      .filter(inst => {
+        if (inst.status === 'paid') return false;
+        const due = new Date(inst.due_date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return due >= today && due <= limite14Dias;
+      })
+      .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+      .slice(0, 10)
+      .map(inst => {
+        const contract = contracts.find(c => c.id === inst.contract_id);
+        return { ...inst, contract };
       });
-      monthlyData.push({
-        month: monthName.charAt(0).toUpperCase() + monthName.slice(1),
-        recebido: rec,
-        aReceber: ar,
+
+    const atrasados = installments
+      .filter(inst => inst.status !== 'paid' && new Date(inst.due_date) < new Date(new Date().setHours(0,0,0,0)))
+      .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+      .map(inst => {
+        const contract = contracts.find(c => c.id === inst.contract_id);
+        return { ...inst, contract };
       });
+
+    const chartData = [
+      { name: 'Vendas', value: contratosVendaAtivos, color: '#0ea5e9' },
+      { name: 'Locações', value: contratosLocacaoAtivos, color: '#8b5cf6' },
+    ];
+
+    const totalEsperado = recebidoMes + aReceberMes + inadimplencia;
+    const saudeFinanceira = totalEsperado > 0 ? (((recebidoMes + aReceberMes) / totalEsperado) * 100).toFixed(1) : 100;
+
+    return { recebidoMes, aReceberMes, inadimplencia, proximos, atrasados, vgvAno, mrrAtivo, chartData, saudeFinanceira };
+  }, [installments, contracts]);
+
+  const salesContracts = contracts.filter((c) => c.type === 'sale');
+  const rentContracts = contracts.filter((c) => c.type === 'rent');
+  const filterContractsByTab = (list: ContractWithSignatureState[]) =>
+    list.filter((contract) => {
+      if (contractTab === 'active') return contract.status === 'active';
+      if (contractTab === 'pending') return contract.status === 'pending';
+      if (contractTab === 'archived') return contract.status === 'canceled' || contract.status === 'archived';
+      return true;
+    });
+  const filteredSalesContracts = useMemo(() => filterContractsByTab(salesContracts), [contractTab, salesContracts]);
+  const filteredRentContracts = useMemo(() => filterContractsByTab(rentContracts), [contractTab, rentContracts]);
+  const activeRentContractsCount = useMemo(
+    () => contracts.filter((contract) => contract.type === 'rent' && contract.status === 'active').length,
+    [contracts]
+  );
+  const contractsUsageLabel = isSuperAdmin
+    ? 'Sem limite'
+    : loadingPlanLimit
+      ? '...'
+      : maxContracts === 0
+        ? 'Bloqueado'
+        : String(maxContracts ?? '--');
+
+  const handleOpenContractModal = (type: 'sale' | 'rent') => {
+    if (loadingPlanLimit) {
+      alert('Estamos carregando os limites do seu plano. Tente novamente em alguns segundos.');
+      return;
     }
 
-    const vendas = activeContracts.filter((c) => c.type === 'sale').length;
-    const locacoes = activeRentCount;
+    if (type === 'rent') {
+      if (!isSuperAdmin && maxContracts === 0) {
+        alert('O seu plano atual não inclui o módulo de Gestão de Locações. Faça o upgrade para desbloquear.');
+        return;
+      }
+
+      if (!isSuperAdmin && typeof maxContracts === 'number' && activeRentContractsCount >= maxContracts) {
+        alert(`Você atingiu o limite de locações ativas do seu plano (${maxContracts}). Faça o upgrade para adicionar novos aluguéis.`);
+        return;
+      }
+
+      setIsRentModalOpen(true);
+      return;
+    }
+
+    // Vendas são ilimitadas, sempre abre o modal
+    setIsSaleModalOpen(true);
+    return;
+  };
+
+  const setTab = (tab: string) => {
+    setSearchParams({ tab });
+  };
+
+  const handleOpenSignatureManager = (contractId: string, companyId?: string | null) => {
+    if (!companyId) {
+      alert('Este contrato nao possui uma empresa vinculada para gerar links de assinatura.');
+      return;
+    }
+
+    setSignatureModalState({ contractId, companyId });
+  };
+
+  const handleDownloadFinalPDF = async (contract: ContractWithSignatureState) => {
+    setDownloadingContractId(contract.id);
+
+    try {
+      const { data: fullContract, error } = await supabase
+        .from('contracts')
+        .select('*')
+        .eq('id', contract.id)
+        .single();
+
+      if (error) throw error;
+
+      let adminUrl = '';
+      let companyName = '';
+
+      if (user?.company_id) {
+        const { data: companyInfo } = await supabase
+          .from('companies')
+          .select('name, admin_signature_url')
+          .eq('id', user.company_id)
+          .single();
+
+        if (companyInfo?.admin_signature_url) {
+          adminUrl = companyInfo.admin_signature_url;
+        }
+
+        if (companyInfo?.name) {
+          companyName = companyInfo.name;
+        }
+      }
+
+      const { data: signatures } = await supabase
+        .from('contract_signatures')
+        .select('*')
+        .eq('contract_id', fullContract.id);
+
+      let finalHtml = fullContract.html_content || fullContract.content || '';
+      const safeSignatures = signatures || [];
+
+      finalHtml = await injectSignatureStamps(finalHtml, safeSignatures, adminUrl);
+
+      if (safeSignatures.length > 0) {
+        finalHtml = appendSignatureManifest(
+          finalHtml,
+          {
+            name: companyName || null,
+            admin_signature_url: adminUrl || null,
+          },
+          safeSignatures
+        );
+      }
+
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        throw new Error('Por favor, permita os pop-ups para gerar o PDF final.');
+      }
+
+      printWindow.document.write(finalHtml);
+      printWindow.document.close();
+      setTimeout(() => {
+        if (!printWindow.closed) {
+          printWindow.print();
+        }
+      }, 500);
+    } catch (err) {
+      console.error('Erro ao gerar PDF:', err);
+      alert('Erro ao gerar PDF do contrato.');
+    } finally {
+      setDownloadingContractId(null);
+    }
+  };
+
+  const getSignatureState = (contract: ContractWithSignatureState) => {
+    const signaturesCount = Number(contract.signatures_count ?? 0);
+    const pendingSignaturesCount = Number(contract.pending_signatures_count ?? 0);
+    const signedSignaturesCount = Number(contract.signed_signatures_count ?? 0);
+    const rejectedSignaturesCount = Number(contract.rejected_signatures_count ?? 0);
+    const hasSignatures = signaturesCount > 0;
+    const isFullySigned = hasSignatures && pendingSignaturesCount === 0;
 
     return {
-      vgv, mrr, recebido, aReceber, inadimplencia, saude,
-      proximos, atrasados, monthlyData, vendas, locacoes,
-      active: activeContracts.length,
-      total: contracts.length,
-      activeRentCount,
+      signaturesCount,
+      pendingSignaturesCount,
+      signedSignaturesCount,
+      rejectedSignaturesCount,
+      hasSignatures,
+      isFullySigned,
     };
-  }, [contracts, installments]);
+  };
 
-  const activeContractsLimit = 50;
+  const handleApproveContract = async (contractId: string) => {
+    if (!window.confirm('Aprovar este contrato?')) {
+      return;
+    }
 
-  // ── Filtros de contratos ──────────────────────────────────────────────────
-  const filteredContracts = useMemo(() => {
-    let list = contracts;
+    await supabase.from('contracts').update({ status: 'active' }).eq('id', contractId);
+    fetchContracts();
+  };
 
-    if (viewMode === 'sale') list = list.filter((c) => c.type === 'sale');
-    else if (viewMode === 'rent') list = list.filter((c) => c.type === 'rent');
-    else if (viewMode === 'administrative')
-      list = list.filter((c) => !['sale', 'rent'].includes(c.type));
+  const renderSignatureStatus = (contract: ContractWithSignatureState) => {
+    const signatureState = getSignatureState(contract);
 
-    if (statusFilter === 'active') list = list.filter((c) => c.status === 'active');
-    else if (statusFilter === 'pending')
-      list = list.filter((c) => c.status === 'pending' || c.status === 'draft');
-    else if (statusFilter === 'archived')
-      list = list.filter((c) => ['archived', 'ended'].includes(c.status));
-
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      list = list.filter(
-        (c) =>
-          (c.properties?.title || '').toLowerCase().includes(q) ||
-          (c.leads?.name || '').toLowerCase().includes(q)
+    if (!signatureState.hasSignatures) {
+      return (
+        <button
+          type="button"
+          onClick={() => handleOpenSignatureManager(contract.id, contract.company_id)}
+          className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-100"
+        >
+          <Icons.PenTool size={14} /> Solicitar Assinaturas
+        </button>
       );
     }
 
-    return list;
-  }, [contracts, viewMode, statusFilter, searchTerm]);
+    const hasRejectedSignature = signatureState.rejectedSignaturesCount > 0;
+    const badgeClasses = hasRejectedSignature
+      ? 'border-red-200 bg-red-50 text-red-700'
+      : signatureState.isFullySigned
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+        : 'border-amber-200 bg-amber-50 text-amber-700';
+    const statusLabel = hasRejectedSignature
+      ? 'Assinatura recusada'
+      : signatureState.isFullySigned
+        ? 'Assinado'
+        : 'Pendente de Assinatura';
+    const StatusIcon = hasRejectedSignature
+      ? Icons.AlertTriangle
+      : signatureState.isFullySigned
+        ? Icons.CheckCircle2
+        : Icons.Clock;
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
-  const handleDeleteContract = async (contract: any) => {
-    if (!window.confirm('Deseja realmente excluir este contrato?')) return;
-    const { error } = await supabase.from('contracts').delete().eq('id', contract.id);
-    if (error) { console.error('Erro ao excluir contrato:', error); return; }
-    await fetchContracts();
+    return (
+      <div className="flex flex-col items-start gap-2">
+        <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeClasses}`}>
+          <StatusIcon size={13} />
+          <span>{statusLabel}</span>
+        </div>
+        <span className="text-xs text-slate-500 dark:text-slate-400">
+          {signatureState.signedSignaturesCount}/{signatureState.signaturesCount} assinaturas
+        </span>
+        <button
+          type="button"
+          onClick={() => handleOpenSignatureManager(contract.id, contract.company_id)}
+          className="text-xs font-semibold text-brand-600 transition-colors hover:text-brand-700"
+        >
+          {signatureState.isFullySigned ? 'Ver assinaturas' : 'Gerenciar'}
+        </button>
+      </div>
+    );
   };
 
-  // ── View mode config ──────────────────────────────────────────────────────
-  const viewModes: { key: ViewMode; label: string; icon: React.ReactNode; count: number }[] = [
-    { key: 'all', label: 'Todos', icon: <LayoutGrid size={13} />, count: contracts.length },
-    { key: 'sale', label: 'Vendas', icon: <Building2 size={13} />, count: contracts.filter((c) => c.type === 'sale').length },
-    { key: 'rent', label: 'Locações', icon: <KeyRound size={13} />, count: contracts.filter((c) => c.type === 'rent').length },
-    { key: 'administrative', label: 'Administrativos', icon: <FileText size={13} />, count: contracts.filter((c) => !['sale', 'rent'].includes(c.type)).length },
-  ];
+  const renderApproveAction = (contract: ContractWithSignatureState) => {
+    if (contract.status !== 'pending' || !isAdmin) {
+      return null;
+    }
 
-  const statusFilters: { key: StatusFilter; label: string }[] = [
-    { key: 'active', label: 'Ativos' },
-    { key: 'pending', label: 'Pendentes' },
-    { key: 'archived', label: 'Arquivados' },
-    { key: 'all', label: 'Todos' },
-  ];
+    const { isFullySigned } = getSignatureState(contract);
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+    return (
+      <button
+        type="button"
+        onClick={() => void handleApproveContract(contract.id)}
+        disabled={!isFullySigned}
+        className="rounded-lg border border-slate-200 bg-white p-2 text-emerald-600 shadow-sm transition-colors hover:bg-emerald-50 dark:border-dark-border dark:bg-dark-card dark:hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:border-amber-100 disabled:bg-amber-50 disabled:text-amber-400 disabled:hover:bg-amber-50"
+        title={!isFullySigned ? 'Aguardando assinaturas do cliente' : 'Aprovar Contrato'}
+      >
+        <Icons.CheckCircle size={16} />
+      </button>
+    );
+  };
+
+  const renderFinalPdfButton = (contract: ContractWithSignatureState) => {
+    const isDownloading = downloadingContractId === contract.id;
+
+    return (
+      <button
+        type="button"
+        onClick={() => void handleDownloadFinalPDF(contract)}
+        disabled={isDownloading}
+        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+        title="Gerar PDF com Manifesto de Assinaturas"
+      >
+        {isDownloading ? <Icons.Loader2 className="animate-spin" size={14} /> : <Icons.Download size={14} />}
+        <span>PDF Final</span>
+      </button>
+    );
+  };
+
   return (
-    <div className="relative animate-in fade-in pb-12">
-
-      {/* Orbs de atmosfera */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden -z-10">
-        <div className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full bg-indigo-100/25 blur-3xl dark:bg-indigo-900/10" />
-        <div className="absolute top-1/2 -left-40 w-[400px] h-[400px] rounded-full bg-violet-100/20 blur-3xl dark:bg-violet-900/10" />
-        <div className="absolute bottom-0 right-1/3 w-[350px] h-[350px] rounded-full bg-sky-100/20 blur-3xl dark:bg-sky-900/10" />
-      </div>
-
-      {/* ── HEADER ── */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
+    <div className="space-y-6 animate-fade-in pb-10">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-            Contratos
+          <h1 className="text-3xl font-serif font-bold tracking-tight text-slate-800 dark:text-white">
+            Contratos e Recebíveis
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            Gerencie vendas, locações e documentos administrativos
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Gestão de vendas, locações e acompanhamento de parcelas.
           </p>
+          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-white/10 bg-white/80 dark:bg-[#0a0f1c]/80 px-3 py-1.5 text-xs font-bold text-slate-600 dark:text-slate-300 shadow-sm">
+            <Icons.KeyRound size={14} className="text-indigo-500" />
+            <span>Locações Ativas: {activeRentContractsCount} / {contractsUsageLabel}</span>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Indicador de uso */}
-          <GlassCard padding="none" className="px-3 py-2 flex items-center gap-2.5 min-w-[160px]">
-            <RadialProgress
-              value={(stats.activeRentCount / 10) * 100}
-              size={32}
-              strokeWidth={3}
-              color={stats.activeRentCount < 10 ? '#6366f1' : '#ef4444'}
-              trackColor="rgba(0,0,0,0.06)"
-            >
-              <span className="text-[8px] font-bold tabular-nums text-slate-600 dark:text-slate-300">
-                {stats.activeRentCount}
-              </span>
-            </RadialProgress>
-            <div className="text-[11px]">
-              <p className="font-semibold text-slate-700 dark:text-slate-200">Locações</p>
-              <p className="text-slate-400 tabular-nums">{stats.activeRentCount}/10</p>
-            </div>
-          </GlassCard>
+          <button 
+            onClick={() => handleOpenContractModal('rent')}
+            disabled={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts}
+            className="inline-flex items-center gap-2 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl border border-slate-200/60 dark:border-white/5 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!isSuperAdmin && maxContracts !== null && activeRentContractsCount >= maxContracts ? 'Limite de contratos de locação atingido' : 'Novo Aluguel'}
+          >
+            <Icons.Plus size={16} /> Novo Aluguel
+          </button>
+          
+          <button 
+            onClick={() => handleOpenContractModal('sale')}
+            className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-600 to-sky-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:shadow-lg transition-all shadow-sm"
+          >
+            <Icons.Plus size={16} /> Nova Venda
+          </button>
+        </div>
+      </div>
 
-          <div className="relative">
-            <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-brand-500/20 transition-all">
-              <Plus size={18} /> Novo Contrato <ChevronDown size={16} />
-            </button>
-            {isDropdownOpen && (
+      {/* Navegação Interna (Tabs) */}
+      <div className="flex gap-6 border-b border-slate-200/60 dark:border-white/5 overflow-x-auto custom-scrollbar">
+        <button
+          onClick={() => setTab('geral')}
+          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
+            currentTab === 'geral' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <Icons.LayoutDashboard size={18} /> Visão Geral
+        </button>
+        <button
+          onClick={() => setTab('vendas')}
+          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
+            currentTab === 'vendas' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <Icons.Building size={18} /> Vendas (Recebíveis)
+        </button>
+        <button
+          onClick={() => setTab('alugueis')}
+          className={`pb-4 px-2 text-sm font-bold transition-colors border-b-2 flex items-center gap-2 whitespace-nowrap ${
+            currentTab === 'alugueis' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <Icons.KeyRound size={18} /> Locações Ativas
+        </button>
+      </div>
+
+      {/* CONTEÚDO DA ABA GERAL */}
+      {currentTab === 'geral' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+
+          {/* Coluna Esquerda: Métricas Financeiras e Gráficos */}
+          <div className="lg:col-span-2 flex flex-col gap-6">
+
+            {loading ? (
+               <div className="flex-1 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex items-center justify-center min-h-[300px]"><Icons.Loader2 className="animate-spin text-brand-500" size={32} /></div>
+            ) : (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setIsDropdownOpen(false)} />
-                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 z-20 overflow-hidden animate-in fade-in slide-in-from-top-2">
-                  <button onClick={() => { setIsSaleModalOpen(true); setIsDropdownOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                    <div className="p-1.5 bg-sky-100 text-sky-600 rounded-lg dark:bg-sky-500/10"><Building2 size={16} /></div>
-                    <span className="font-medium text-slate-700 dark:text-slate-200">Compra e Venda</span>
-                  </button>
-                  <button onClick={() => { setIsRentModalOpen(true); setIsDropdownOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                    <div className="p-1.5 bg-violet-100 text-violet-600 rounded-lg dark:bg-violet-500/10"><KeyRound size={16} /></div>
-                    <span className="font-medium text-slate-700 dark:text-slate-200">Locação</span>
-                  </button>
-                  <div className="h-px bg-slate-100 dark:bg-slate-800" />
-                  <button onClick={() => { setIsAdminModalOpen(true); setIsDropdownOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                    <div className="p-1.5 bg-slate-100 text-slate-600 rounded-lg dark:bg-slate-800"><FileText size={16} /></div>
-                    <span className="font-medium text-slate-700 dark:text-slate-200">Documento Administrativo</span>
-                  </button>
+                {/* Linha 1: 4 Cards de Métricas Core */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {/* Card: VGV */}
+                  <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between hover:border-sky-300 dark:hover:border-sky-500/30 transition-colors">
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <Icons.Building size={12}/> VGV do Ano
+                    </p>
+                    <h3 className="text-xl md:text-2xl font-bold font-serif text-slate-800 dark:text-white truncate">
+                      {dashboardStats.vgvAno.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </h3>
+                  </div>
+
+                  {/* Card: MRR */}
+                  <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between hover:border-violet-300 dark:hover:border-violet-500/30 transition-colors">
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <Icons.KeyRound size={12}/> MRR (Ativos)
+                    </p>
+                    <h3 className="text-xl md:text-2xl font-bold font-serif text-slate-800 dark:text-white truncate">
+                      {dashboardStats.mrrAtivo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </h3>
+                  </div>
+
+                  {/* Card: Recebido no Mês */}
+                  <div className="bg-emerald-50/50 dark:bg-emerald-500/10 rounded-3xl border border-emerald-200 dark:border-emerald-500/20 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between">
+                    <p className="text-[10px] font-bold text-emerald-600/70 dark:text-emerald-400/70 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <Icons.TrendingUp size={12}/> Recebido (Mês)
+                    </p>
+                    <h3 className="text-xl md:text-2xl font-bold font-serif text-emerald-600 dark:text-emerald-400 truncate">
+                      {dashboardStats.recebidoMes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </h3>
+                  </div>
+
+                  {/* Card: A Receber no Mês */}
+                  <div className="bg-blue-50/50 dark:bg-blue-500/10 rounded-3xl border border-blue-200 dark:border-blue-500/20 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-4 relative overflow-hidden flex flex-col justify-between">
+                    <p className="text-[10px] font-bold text-blue-600/70 dark:text-blue-400/70 uppercase tracking-wider mb-1 flex items-center gap-1">
+                      <Icons.Clock size={12}/> A Receber (Mês)
+                    </p>
+                    <h3 className="text-xl md:text-2xl font-bold font-serif text-blue-600 dark:text-blue-400 truncate">
+                      {dashboardStats.aReceberMes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Linha 2: Gráfico e Controle de Inadimplência */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Gráfico de Carteira */}
+                  <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-5 flex flex-col">
+                    <h3 className="text-sm font-bold font-serif text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                      <Icons.PieChart size={16} className="text-brand-500" /> Distribuição da Carteira
+                    </h3>
+                    <div className="flex-1 min-h-[180px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={dashboardStats.chartData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={50}
+                            outerRadius={70}
+                            paddingAngle={5}
+                            dataKey="value"
+                          >
+                            {dashboardStats.chartData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip 
+                            formatter={(value: number) => [`${value} contratos ativos`, 'Quantidade']}
+                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex justify-center gap-4 mt-2">
+                      {dashboardStats.chartData.map(item => (
+                        <div key={item.name} className="flex items-center gap-1.5">
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
+                          <span className="text-xs font-bold text-slate-600 dark:text-slate-400">{item.name} ({item.value})</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Box de Análise de Risco */}
+                  <div className="flex flex-col gap-4">
+                    {/* Saúde Financeira (Adimplência) */}
+                    <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-5 flex items-center justify-between h-auto">
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Saúde da Carteira</p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">Taxa de Adimplência Geral</p>
+                      </div>
+                      <div className={`text-3xl font-bold font-serif ${Number(dashboardStats.saudeFinanceira) >= 90 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                        {dashboardStats.saudeFinanceira}%
+                      </div>
+                    </div>
+
+                    {/* Inadimplência Expansível */}
+                    <div onClick={() => setShowOverdue(!showOverdue)} className="bg-red-50/50 dark:bg-red-500/10 rounded-3xl border border-red-200 dark:border-red-500/20 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-5 flex flex-col cursor-pointer hover:border-red-300 dark:hover:border-red-500/30 transition-colors relative flex-1 justify-center">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                            <Icons.AlertTriangle size={14}/> Inadimplência Total <Icons.ChevronDown size={14} className={`transition-transform ml-1 ${showOverdue ? 'rotate-180' : ''}`} />
+                          </p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400">Parcelas vencidas (Histórico)</p>
+                        </div>
+                        <h3 className="text-2xl font-bold font-serif text-red-600 dark:text-red-400">
+                          {dashboardStats.inadimplencia.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </h3>
+                      </div>
+
+                      {showOverdue && (
+                        <div className="absolute top-[100%] left-0 right-0 mt-2 bg-white dark:bg-[#0a0f1c] rounded-xl shadow-2xl border border-red-100 dark:border-red-500/20 z-50 p-2 max-h-[250px] overflow-y-auto cursor-default" onClick={e => e.stopPropagation()}>
+                          {dashboardStats.atrasados.length === 0 ? (
+                            <p className="text-center text-sm text-slate-500 dark:text-slate-400 p-4">Excelente! Nenhum contrato atrasado.</p>
+                          ) : dashboardStats.atrasados.map(inst => (
+                            <div key={inst.id} className="flex justify-between items-center p-3 border-b border-red-50 dark:border-red-500/10 hover:bg-red-50 dark:hover:bg-red-500/5 transition-colors">
+                              <div>
+                                <p className="text-sm font-bold font-serif text-slate-800 dark:text-white">{inst.contract?.lead?.name || 'Cliente'}</p>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400">{new Date(inst.due_date).toLocaleDateString('pt-BR')} • {inst.contract?.property?.title}</p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm font-bold text-red-600 dark:text-red-400">{Number(inst.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                                <button onClick={() => navigate(`/admin/contratos/${inst.contract_id}`)} className="p-2 bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border rounded text-slate-400 hover:text-red-600"><Icons.ArrowRight size={14} /></button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </>
             )}
+
           </div>
-        </div>
-      </div>
 
-      {/* ── MÉTRICAS (6 cards) ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
-        <MetricCard label="VGV do Ano"    value={shortCurrency(stats.vgv)}          icon={<Icons.Building2 size={17} />}      color="default"  compact />
-        <MetricCard label="MRR Ativo"     value={shortCurrency(stats.mrr)}          icon={<Icons.KeyRound size={17} />}       color="violet"   compact />
-        <MetricCard label="Recebido"      value={shortCurrency(stats.recebido)}     icon={<Icons.TrendingUp size={17} />}     color="emerald"  compact />
-        <MetricCard label="A Receber"     value={shortCurrency(stats.aReceber)}     icon={<Icons.Clock size={17} />}          color="blue"     compact />
-        <MetricCard label="Inadimplência" value={shortCurrency(stats.inadimplencia)} icon={<Icons.AlertTriangle size={17} />} color="red"      compact />
-
-        {/* Saúde Financeira */}
-        <div onClick={() => setShowOverduePanel((v) => !v)} className="cursor-pointer">
-          <GlassCard hoverable className="h-full flex flex-col items-center justify-center py-3">
-            <RadialProgress
-              value={stats.saude}
-              size={54}
-              strokeWidth={5}
-              color={stats.saude >= 90 ? '#10b981' : stats.saude >= 70 ? '#f59e0b' : '#ef4444'}
-              trackColor="rgba(0,0,0,0.06)"
-            >
-              <span className={cn(
-                'text-[13px] font-bold tabular-nums',
-                stats.saude >= 90 ? 'text-emerald-600 dark:text-emerald-400' :
-                stats.saude >= 70 ? 'text-amber-600 dark:text-amber-400' :
-                'text-red-600 dark:text-red-400'
-              )}>
-                {stats.saude}%
-              </span>
-            </RadialProgress>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mt-2">Saúde</p>
-          </GlassCard>
-        </div>
-      </div>
-
-      {/* ── GRÁFICO + VENCIMENTOS ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-5">
-
-        {/* Gráfico de área */}
-        <GlassCard variant="elevated" padding="lg" className="lg:col-span-3">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Fluxo Financeiro</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">Últimos 6 meses</p>
+          {/* Coluna Direita: Próximos Vencimentos */}
+          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col h-full overflow-hidden">
+            <div className="p-5 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-white/[0.02] flex items-center gap-2">
+              <Icons.Calendar size={18} className="text-brand-500" />
+              <h3 className="font-bold font-serif text-slate-800 dark:text-white">Próximos Vencimentos</h3>
             </div>
-            <div className="flex items-center gap-4 text-[11px] text-slate-500">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" /> Recebido
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-400" /> A Receber
-              </span>
-            </div>
-          </div>
-          <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={stats.monthlyData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="gradRec" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.18} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gradAR" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.13} />
-                    <stop offset="100%" stopColor="#60a5fa" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis
-                  tick={{ fontSize: 11, fill: '#94a3b8' }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v: number) => shortCurrency(v)}
-                  width={62}
-                />
-                <RechartsTooltip
-                  contentStyle={{
-                    borderRadius: 12, border: 'none',
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
-                    background: 'rgba(255,255,255,0.95)',
-                    fontSize: 12,
-                  }}
-                  formatter={(value: any) => [
-                    typeof value === 'number' ? currency(value as number) : String(value),
-                  ]}
-                />
-                <Area type="monotone" dataKey="recebido" stroke="#10b981" strokeWidth={2} fill="url(#gradRec)" dot={false} name="Recebido" />
-                <Area type="monotone" dataKey="aReceber" stroke="#60a5fa" strokeWidth={2} fill="url(#gradAR)" dot={false} name="A Receber" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </GlassCard>
 
-        {/* Próximos vencimentos */}
-        <GlassCard variant="elevated" padding="none" className="lg:col-span-2 flex flex-col overflow-hidden" style={{ maxHeight: 340 }}>
-          <div className="px-5 py-3.5 border-b border-slate-100/80 dark:border-slate-800/60 flex items-center justify-between flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 p-1.5 text-amber-600 dark:text-amber-400">
-                <Icons.Calendar size={14} />
-              </div>
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Vencimentos</h3>
-              <span className="text-[11px] text-slate-400">(14 dias)</span>
-            </div>
-            {stats.atrasados.length > 0 && (
-              <button
-                onClick={() => setShowOverduePanel((v) => !v)}
-                className="text-[11px] font-semibold text-red-500 hover:text-red-600 transition-colors flex items-center gap-1.5"
-              >
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-                </span>
-                {stats.atrasados.length} atrasados
-              </button>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {stats.proximos.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
-                <div className="rounded-full bg-emerald-50 dark:bg-emerald-500/10 p-3 mb-3">
-                  <Icons.CheckCircle2 size={18} className="text-emerald-500" />
+            <div className="flex-1 overflow-y-auto p-2">
+              {loading ? (
+                <div className="flex justify-center py-10"><Icons.Loader2 className="animate-spin text-slate-300" /></div>
+              ) : dashboardStats.proximos.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-10 px-4">
+                  <Icons.CheckCircle size={32} className="text-emerald-400 mb-3" />
+                  <p className="text-sm font-bold font-serif text-slate-700 dark:text-slate-300">Tudo limpo!</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Nenhuma parcela a vencer nos próximos dias.</p>
                 </div>
-                <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">Tudo em dia!</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Nenhuma parcela próxima</p>
+              ) : (
+                <div className="space-y-1">
+                  {dashboardStats.proximos.map(inst => (
+                    <div key={inst.id} className="p-3 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl transition-colors border border-transparent hover:border-slate-100 dark:hover:border-white/5 flex items-center justify-between group">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold font-serif text-slate-800 dark:text-white truncate">
+                          {inst.contract?.lead?.name || 'Cliente'}
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                          {inst.contract?.property?.title || 'Contrato'}
+                        </p>
+                        <div className="flex gap-2 mt-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">{new Date(inst.due_date).toLocaleDateString('pt-BR')}</span>
+                          <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-1.5 rounded">{Number(inst.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => navigate(`/admin/contratos/${inst.contract_id}`)}
+                        className="p-2 text-slate-300 hover:text-brand-600 hover:bg-white dark:hover:bg-white/5 rounded-lg transition-all shadow-sm opacity-0 group-hover:opacity-100"
+                        title="Ver Contrato"
+                      >
+                        <Icons.ArrowRight size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONTEÚDO DA ABA VENDAS */}
+      {currentTab === 'vendas' && (
+        <div className="animate-fade-in space-y-4">
+          <div className="flex justify-between items-end mb-4">
+            <h2 className="text-lg font-bold font-serif text-slate-800 dark:text-white">Contratos de Venda</h2>
+          </div>
+
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex gap-2 mb-4 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-2 rounded-xl border border-slate-200/60 dark:border-white/5 w-fit shadow-sm">
+              <button onClick={() => setContractTab('active')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'active' ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Ativos / Vigentes</button>
+              <button onClick={() => setContractTab('pending')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'pending' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Pendentes</button>
+              <button onClick={() => setContractTab('archived')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'archived' ? 'bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Arquivados</button>
+            </div>
+
+            <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left whitespace-nowrap">
+                  <thead>
+                    <tr className="bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
+                      <th className="p-4">Cliente</th>
+                      <th className="p-4">Imóvel</th>
+                      <th className="p-4">Valor</th>
+                      <th className="p-4">Assinaturas</th>
+                      <th className="p-4 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-white/5 text-sm text-slate-600 dark:text-slate-300">
+                    {filteredSalesContracts.map((contract) => (
+                      <tr key={contract.id} className="hover:bg-slate-50 dark:hover:bg-white/5">
+                        <td className="p-4 font-semibold font-serif">{contract.lead?.name || 'Não informado'}</td>
+                        <td className="p-4">{contract.property?.title || 'Não informado'}</td>
+                        <td className="p-4 font-bold font-serif text-slate-700 dark:text-slate-200">{Number(contract.sale_total_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="p-4 align-middle">{renderSignatureStatus(contract)}</td>
+                        <td className="p-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Detalhes (Gestão)"><Icons.Eye size={16} /></button>
+                            <button onClick={() => setViewContractData(contract)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Formulário Original"><Icons.FileText size={16} /></button>
+                            {renderFinalPdfButton(contract)}
+                            {renderApproveAction(contract)}
+
+                            {isAdmin && (
+                              <>
+                                <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
+                                <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONTEÚDO DA ABA ALUGUÉIS */}
+      {currentTab === 'alugueis' && (
+        <div className="animate-fade-in space-y-4"> 
+          <div className="flex justify-between items-end mb-4"> 
+            <h2 className="text-lg font-bold font-serif text-slate-800 dark:text-white">Contratos de Locação</h2>
+          </div>
+
+          <div className="space-y-4 animate-fade-in"> 
+            <div className="flex gap-2 mb-4 bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl p-2 rounded-xl border border-slate-200/60 dark:border-white/5 w-fit shadow-sm"> 
+              <button onClick={() => setContractTab('active')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'active' ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Ativos / Vigentes</button>
+              <button onClick={() => setContractTab('pending')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'pending' ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Pendentes</button>
+              <button onClick={() => setContractTab('archived')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${contractTab === 'archived' ? 'bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5'}`}>Arquivados</button>
+            </div>
+
+            {loading ? (
+              <div className="flex justify-center py-10"><Icons.Loader2 className="animate-spin text-indigo-500" size={32} /></div>
+            ) : rentContracts.length === 0 ? (
+              <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none p-10 flex flex-col items-center text-center">
+                <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-500/10 rounded-full flex items-center justify-center text-indigo-500 mb-4">
+                  <Icons.KeyRound size={40} />
+                </div>
+                <h3 className="text-xl font-bold font-serif text-slate-800 dark:text-white">Nenhuma locação</h3>
+                <p className="text-slate-500 dark:text-slate-400 mt-2 mb-6 max-w-md">Registre os contratos de aluguel para acompanhar mensalidades, garantias e reajustes.</p>
+                <button onClick={() => handleOpenContractModal('rent')} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                  <Icons.Plus size={20} /> Novo Contrato de Locação
+                </button>
               </div>
             ) : (
-              <div className="divide-y divide-slate-50 dark:divide-slate-800/40">
-                {stats.proximos.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between px-5 py-3 hover:bg-slate-50/60 dark:hover:bg-slate-800/30 transition-colors cursor-pointer group"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-semibold text-slate-700 dark:text-slate-200 truncate">
-                        {item.payer_name || 'Cliente'}
-                      </p>
-                      <p className="text-[11px] text-slate-400 tabular-nums">
-                        {item.due_date ? new Date(item.due_date).toLocaleDateString('pt-BR') : '-'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-semibold tabular-nums text-amber-600 dark:text-amber-400">
-                        {currency(Number(item.amount || 0))}
-                      </span>
-                      <Icons.ChevronRight size={13} className="text-slate-300 group-hover:text-slate-500 transition-colors" />
-                    </div>
-                  </div>
-                ))}
+              <div className="bg-white/80 dark:bg-[#0a0f1c]/80 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
+                        <th className="p-4">Imóvel & Locatário</th>
+                        <th className="p-4">Vencimento Contrato</th>
+                        <th className="p-4 text-right">Aluguel Mensal</th>
+                        <th className="p-4">Assinaturas</th>
+                        <th className="p-4 text-center">Garantia</th>
+                        <th className="p-4 text-right">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-white/5 text-sm">
+                      {filteredRentContracts.length === 0 ? (
+                        <tr><td colSpan={6} className="p-8 text-center text-slate-400">Nenhum contrato encontrado nesta categoria.</td></tr>
+                      ) : (
+                        filteredRentContracts.map((contract) => (
+                          <tr key={contract.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                            <td className="p-4">
+                              <p className="font-bold font-serif text-slate-800 dark:text-white">{contract.property?.title || 'Imóvel Excluído'}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5"><Icons.User size={12}/> {contract.lead?.name || 'Cliente Excluído'}</p>
+                            </td>
+                            <td className="p-4 text-slate-600 dark:text-slate-300">{new Date(contract.end_date).toLocaleDateString('pt-BR')}</td>
+                            <td className="p-4 text-right font-bold font-serif text-slate-800 dark:text-white">
+                              {Number(contract.rent_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </td>
+                            <td className="p-4 align-middle">{renderSignatureStatus(contract)}</td>
+                            <td className="p-4 text-center text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                              {contract.rent_guarantee_type?.replace('_', ' ')}
+                            </td>
+                            <td className="p-4 text-right">
+                              <div className="flex justify-end gap-2">
+                                <button onClick={() => navigate(`/admin/contratos/${contract.id}`)} className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Detalhes (Gestão)"><Icons.Eye size={16} /></button>
+                                <button onClick={() => setViewContractData(contract)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title="Ver Formulário Original"><Icons.FileText size={16} /></button>
+                                {renderFinalPdfButton(contract)}
+                                {renderApproveAction(contract)}
+
+                                {isAdmin && (
+                                  <>
+                                    <button onClick={() => handleArchiveContract(contract.id, contract.status)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg bg-white dark:bg-dark-card border border-slate-200 dark:border-dark-border shadow-sm" title={contract.status === 'archived' ? 'Reativar' : 'Arquivar'}><Icons.Archive size={16} /></button>
+                                    <button onClick={() => handleDeleteContract(contract.id, contract.property_id)} className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg bg-white dark:bg-dark-card border border-red-100 dark:border-red-500/20 shadow-sm" title="Excluir"><Icons.Trash2 size={16} /></button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
-        </GlassCard>
-      </div>
-
-      {/* ── PAINEL DE INADIMPLÊNCIA (expansível) ── */}
-      {showOverduePanel && stats.atrasados.length > 0 && (
-        <div className="mb-5 animate-in fade-in slide-in-from-top-2 duration-200">
-          <GlassCard padding="none" className="border-red-200/50 dark:border-red-500/20 overflow-hidden">
-            <div className="px-5 py-3 bg-red-50/60 dark:bg-red-500/10 border-b border-red-100/50 dark:border-red-500/20 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Icons.AlertTriangle size={14} className="text-red-500" />
-                <h3 className="text-sm font-semibold text-red-700 dark:text-red-400">
-                  Parcelas em Atraso ({stats.atrasados.length})
-                </h3>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] font-bold text-red-600 dark:text-red-400 tabular-nums">
-                  Total: {currency(stats.inadimplencia)}
-                </span>
-                <button
-                  onClick={() => setShowOverduePanel(false)}
-                  className="p-1 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
-                >
-                  <Icons.X size={14} className="text-red-400" />
-                </button>
-              </div>
-            </div>
-            <div className="max-h-[220px] overflow-y-auto divide-y divide-red-50 dark:divide-red-500/10">
-              {stats.atrasados.map((item) => {
-                const daysLate = Math.floor(
-                  (new Date().getTime() - new Date(item.due_date).getTime()) / 86400000
-                );
-                return (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between px-5 py-3 hover:bg-red-50/30 dark:hover:bg-red-500/5 transition-colors cursor-pointer"
-                  >
-                    <div>
-                      <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-200">
-                        {item.payer_name || 'Cliente'}
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        Venceu em {new Date(item.due_date).toLocaleDateString('pt-BR')}
-                        <span className="ml-1.5 text-red-500 font-semibold">· {daysLate}d atraso</span>
-                      </p>
-                    </div>
-                    <span className="text-sm font-semibold tabular-nums text-red-600 dark:text-red-400">
-                      {currency(Number(item.amount || 0))}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </GlassCard>
         </div>
       )}
 
-      {/* ── LISTA UNIFICADA DE CONTRATOS ── */}
-      <GlassCard variant="elevated" padding="none" className="overflow-hidden">
-
-        {/* Toolbar */}
-        <div className="px-5 py-3.5 border-b border-slate-100/80 dark:border-slate-800/60 flex flex-col sm:flex-row sm:items-center gap-3 bg-white/40 dark:bg-slate-900/40">
-
-          {/* Chips de tipo com contadores */}
-          <div className="flex items-center gap-1.5 flex-1 overflow-x-auto pb-0.5 scrollbar-none">
-            {viewModes.map((vm) => (
-              <button
-                key={vm.key}
-                onClick={() => setViewMode(vm.key)}
-                className={cn(
-                  'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold transition-all whitespace-nowrap',
-                  viewMode === vm.key
-                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
-                    : 'text-slate-500 hover:bg-slate-100/80 dark:hover:bg-slate-800/60 hover:text-slate-700 dark:hover:text-slate-300'
-                )}
-              >
-                {vm.icon}
-                {vm.label}
-                <span className={cn(
-                  'tabular-nums rounded-md px-1.5 py-0.5 text-[10px] font-bold',
-                  viewMode === vm.key
-                    ? 'bg-white/20 dark:bg-black/20'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                )}>
-                  {vm.count}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {/* Status + busca */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="flex items-center rounded-lg border border-slate-200/60 dark:border-slate-700/60 bg-white/60 dark:bg-slate-900/60 p-0.5">
-              {statusFilters.map((sf) => (
-                <button
-                  key={sf.key}
-                  onClick={() => setStatusFilter(sf.key)}
-                  className={cn(
-                    'px-2.5 py-1.5 rounded-md text-[11px] font-semibold transition-all',
-                    statusFilter === sf.key
-                      ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                  )}
-                >
-                  {sf.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="relative">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-              <input
-                type="text"
-                placeholder="Buscar..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-40 rounded-lg border border-slate-200/60 dark:border-slate-700/60 bg-white/60 dark:bg-slate-900/60 pl-8 pr-3 py-2 text-[12px] text-slate-600 dark:text-slate-300 placeholder:text-slate-300 dark:placeholder:text-slate-600 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10 transition-all"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Header da tabela — desktop */}
-        <div className="hidden md:grid grid-cols-[2.2fr_1fr_1fr_1fr_1fr_auto] items-center gap-4 px-5 py-2.5 bg-slate-50/50 dark:bg-slate-800/30 border-b border-slate-100/50 dark:border-slate-800/40">
-          {['Contrato', 'Tipo', 'Status', 'Assinaturas', 'Data', ''].map((h, i) => (
-            <span
-              key={i}
-              className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400"
-            >
-              {h}
-            </span>
-          ))}
-        </div>
-
-        {/* Rows */}
-        <div className="overflow-x-auto custom-scrollbar">
-          <table className="w-full text-left border-collapse min-w-[900px]">
-            <thead className="sr-only">
-              <tr>
-                <th>Contrato</th>
-                <th>Tipo</th>
-                <th>Status</th>
-                <th>Assinaturas</th>
-                <th>Data</th>
-                <th>Valor</th>
-                <th>Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className="p-12 text-center">
-                    <Loader2 className="animate-spin mx-auto text-brand-500 mb-2" size={28} />
-                    <p className="text-sm text-slate-400">Carregando contratos...</p>
-                  </td>
-                </tr>
-              ) : filteredContracts.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="p-12 text-center">
-                    <div className="inline-flex rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4 mb-4">
-                      <Icons.FileText size={26} className="text-slate-300" />
-                    </div>
-                    <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
-                      Nenhum contrato encontrado
-                    </p>
-                    <p className="text-[12px] text-slate-400 mt-1 max-w-xs mx-auto">
-                      {searchTerm
-                        ? 'Tente buscar com outros termos'
-                        : 'Crie seu primeiro contrato usando o botão acima'}
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                filteredContracts.map((contract) => (
-                  <ContractRow
-                    key={contract.id}
-                    contract={contract}
-                    onClick={(c) => { setSelectedContract(c); setIsSidebarOpen(true); }}
-                    onOpenSignatures={(id) =>
-                      setSignatureModalState({ contractId: id, companyId: user?.company_id })
-                    }
-                    onManageContract={(id) => navigate(`/admin/contratos/${id}`)}
-                    onDeleteContract={handleDeleteContract}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Footer */}
-        {filteredContracts.length > 0 && (
-          <div className="px-5 py-3 border-t border-slate-100/80 dark:border-slate-800/40 bg-slate-50/30 dark:bg-slate-900/20 flex items-center justify-between">
-            <p className="text-[11px] text-slate-400 tabular-nums">
-              {filteredContracts.length} contrato{filteredContracts.length !== 1 ? 's' : ''} encontrado{filteredContracts.length !== 1 ? 's' : ''}
-            </p>
-            <div className="flex items-center gap-4 text-[11px]">
-              <span className="flex items-center gap-1.5 text-sky-600 dark:text-sky-400 font-semibold">
-                <span className="w-2 h-2 rounded-full bg-sky-500" />
-                {stats.vendas} venda{stats.vendas !== 1 ? 's' : ''}
-              </span>
-              <span className="flex items-center gap-1.5 text-violet-600 dark:text-violet-400 font-semibold">
-                <span className="w-2 h-2 rounded-full bg-violet-500" />
-                {stats.locacoes} locaç{stats.locacoes !== 1 ? 'ões' : 'ão'}
-              </span>
-            </div>
-          </div>
-        )}
-      </GlassCard>
-
-      {/* ── MODAIS E SIDEBAR ── */}
-      <ContractQuickViewSidebar
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        contract={selectedContract}
-        onOpenSignatures={(id) => {
-          setIsSidebarOpen(false);
-          setSignatureModalState({ contractId: id, companyId: user?.company_id });
-        }}
-        onRefresh={fetchContracts}
+      {/* Modais */}
+      <SaleContractModal 
+        isOpen={isSaleModalOpen || (viewContractData?.type === 'sale')} 
+        contractData={viewContractData?.type === 'sale' ? viewContractData : undefined}
+        onClose={() => { setIsSaleModalOpen(false); setViewContractData(null); }} 
+        onSuccess={() => {
+          alert('Contrato de venda salvo com sucesso!');
+          fetchContracts();
+        }} 
       />
 
-      <SaleContractModal
-        isOpen={isSaleModalOpen}
-        onClose={() => setIsSaleModalOpen(false)}
-        onSuccess={fetchContracts}
+      <RentContractModal 
+        isOpen={isRentModalOpen || (viewContractData?.type === 'rent')} 
+        contractData={viewContractData?.type === 'rent' ? viewContractData : undefined}
+        onClose={() => { setIsRentModalOpen(false); setViewContractData(null); }} 
+        onSuccess={() => {
+          alert('Contrato de locação salvo com sucesso!');
+          fetchContracts();
+        }} 
       />
-      <RentContractModal
-        isOpen={isRentModalOpen}
-        onClose={() => setIsRentModalOpen(false)}
-        onSuccess={fetchContracts}
-      />
-      {isAdminModalOpen && (
-        <AdministrativeContractModal
-          isOpen={isAdminModalOpen}
-          onClose={() => setIsAdminModalOpen(false)}
-          onSuccess={fetchContracts}
-        />
-      )}
+
       {signatureModalState && (
         <SignatureManagerModal
           contractId={signatureModalState.contractId}
           companyId={signatureModalState.companyId}
-          onClose={() => { setSignatureModalState(null); fetchContracts(); }}
+          onClose={() => {
+            setSignatureModalState(null);
+            fetchContracts();
+          }}
         />
       )}
+
     </div>
   );
-}
+};
+
+export default AdminContracts;
