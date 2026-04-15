@@ -1,23 +1,28 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  ResponsiveContainer, Tooltip as RechartsTooltip,
-} from 'recharts';
-import { Icons } from '../components/Icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { Icons } from '../components/Icons';
+// Importação direta para garantir que os ícones dos botões não fiquem undefined
+import { ChevronDown, Plus, Building2, KeyRound, FileText, Search, Loader2 } from 'lucide-react';
 
+// UI Components
 import { GlassCard } from '../components/ui/GlassCard';
 import { MetricCard } from '../components/ui/MetricCard';
-import { RadialProgress } from '../components/ui/RadialProgress';
 import { ContractRow } from '../components/contracts/ContractRow';
 import { ContractQuickViewSidebar } from '../components/contracts/ContractQuickViewSidebar';
 
+// Modais (Importações Default rigorosas)
 import SaleContractModal from '../components/SaleContractModal';
 import RentContractModal from '../components/RentContractModal';
 import AdministrativeContractModal from '../components/AdministrativeContractModal';
 import SignatureManagerModal from '../components/SignatureManagerModal';
+
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  ResponsiveContainer, Tooltip as RechartsTooltip,
+} from 'recharts';
+import { RadialProgress } from '../components/ui/RadialProgress';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 interface ContractSignatureRow {
@@ -95,7 +100,7 @@ export default function AdminContracts() {
   const [showOverduePanel, setShowOverduePanel] = useState(false);
 
   // ── Busca de dados ────────────────────────────────────────────────────────
-  const fetchContracts = useCallback(async () => {
+  const fetchContracts = async () => {
     if (!user) return;
     setLoading(true);
 
@@ -170,11 +175,11 @@ export default function AdminContracts() {
     } finally {
       setLoading(false);
     }
-  }, [user?.company_id, user?.role]);
+  };
 
   useEffect(() => {
     if (user) fetchContracts();
-  }, [fetchContracts]);
+  }, [user]);
 
   // ── Métricas calculadas ───────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -362,54 +367,26 @@ export default function AdminContracts() {
             </div>
           </GlassCard>
 
-          {/* Dropdown Novo Contrato */}
           <div className="relative">
-            <button
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-lg shadow-slate-900/20 hover:bg-slate-800 dark:hover:bg-slate-100 transition-all"
-            >
-              <Icons.Plus size={16} />
-              Novo Contrato
-              <Icons.ChevronDown
-                size={14}
-                className={cn('transition-transform duration-200', isDropdownOpen && 'rotate-180')}
-              />
+            <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-brand-500/20 transition-all">
+              <Plus size={18} /> Novo Contrato <ChevronDown size={16} />
             </button>
-
             {isDropdownOpen && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} />
-                <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl shadow-2xl shadow-black/10 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                  {[
-                    { action: () => { setIsSaleModalOpen(true); setIsDropdownOpen(false); }, icon: <Icons.Building2 size={17} />, color: 'bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-400', label: 'Contrato de Venda', desc: 'Compra e venda de imóvel' },
-                    { action: () => { setIsRentModalOpen(true); setIsDropdownOpen(false); }, icon: <Icons.KeyRound size={17} />, color: 'bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400', label: 'Contrato de Locação', desc: 'Aluguel de imóvel' },
-                  ].map((item, i) => (
-                    <button
-                      key={i}
-                      onClick={item.action}
-                      className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors group"
-                    >
-                      <div className={cn('rounded-lg p-2 transition-transform group-hover:scale-110', item.color)}>
-                        {item.icon}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{item.label}</p>
-                        <p className="text-[11px] text-slate-400">{item.desc}</p>
-                      </div>
-                    </button>
-                  ))}
-                  <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-                  <button
-                    onClick={() => { setIsAdminModalOpen(true); setIsDropdownOpen(false); }}
-                    className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors group"
-                  >
-                    <div className="rounded-lg p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 transition-transform group-hover:scale-110">
-                      <Icons.FilePlus size={17} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Contrato Administrativo</p>
-                      <p className="text-[11px] text-slate-400">Documento personalizado</p>
-                    </div>
+                <div className="fixed inset-0 z-10" onClick={() => setIsDropdownOpen(false)} />
+                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 z-20 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                  <button onClick={() => { setIsSaleModalOpen(true); setIsDropdownOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <div className="p-1.5 bg-sky-100 text-sky-600 rounded-lg dark:bg-sky-500/10"><Building2 size={16} /></div>
+                    <span className="font-medium text-slate-700 dark:text-slate-200">Compra e Venda</span>
+                  </button>
+                  <button onClick={() => { setIsRentModalOpen(true); setIsDropdownOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <div className="p-1.5 bg-violet-100 text-violet-600 rounded-lg dark:bg-violet-500/10"><KeyRound size={16} /></div>
+                    <span className="font-medium text-slate-700 dark:text-slate-200">Locação</span>
+                  </button>
+                  <div className="h-px bg-slate-100 dark:bg-slate-800" />
+                  <button onClick={() => { setIsAdminModalOpen(true); setIsDropdownOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <div className="p-1.5 bg-slate-100 text-slate-600 rounded-lg dark:bg-slate-800"><FileText size={16} /></div>
+                    <span className="font-medium text-slate-700 dark:text-slate-200">Documento Administrativo</span>
                   </button>
                 </div>
               </>
@@ -677,7 +654,7 @@ export default function AdminContracts() {
             </div>
 
             <div className="relative">
-              <Icons.Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
               <input
                 type="text"
                 placeholder="Buscar..."
@@ -719,7 +696,7 @@ export default function AdminContracts() {
               {loading ? (
                 <tr>
                   <td colSpan={7} className="p-12 text-center">
-                    <Icons.Loader2 className="animate-spin mx-auto text-brand-500 mb-2" size={28} />
+                    <Loader2 className="animate-spin mx-auto text-brand-500 mb-2" size={28} />
                     <p className="text-sm text-slate-400">Carregando contratos...</p>
                   </td>
                 </tr>
