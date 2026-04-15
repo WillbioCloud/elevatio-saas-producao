@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Icons } from '../components/Icons';
 // Importação direta para garantir que os ícones dos botões não fiquem undefined
-import { ChevronDown, Plus, Building2, KeyRound, FileText, Search, Loader2, LayoutGrid } from 'lucide-react';
+import { ChevronDown, Plus, Building2, KeyRound, FileText, Loader2 } from 'lucide-react';
 
 // UI Components
 import { GlassCard } from '../components/ui/GlassCard';
@@ -44,9 +44,6 @@ const EMPTY_SIGNATURE_SUMMARY: ContractSignatureSummary = {
   rejected_signatures_count: 0,
 };
 
-type ViewMode = 'all' | 'sale' | 'rent' | 'administrative';
-type StatusFilter = 'active' | 'pending' | 'archived' | 'all';
-
 // ─── Formatação ───────────────────────────────────────────────────────────────
 const currency = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
@@ -84,8 +81,8 @@ export default function AdminContracts() {
 
   // ── Filtros ──
   const [searchTerm, setSearchTerm] = useState('');
-  const [viewMode, setViewMode] = useState<ViewMode>('all');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
 
   // ── Modais ──
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
@@ -277,30 +274,29 @@ export default function AdminContracts() {
 
   // ── Filtros de contratos ──────────────────────────────────────────────────
   const filteredContracts = useMemo(() => {
-    let list = contracts;
+    return contracts.filter((c) => {
+      const searchLow = searchTerm.toLowerCase();
+      const matchesSearch =
+        (c.properties?.title || '').toLowerCase().includes(searchLow) ||
+        (c.leads?.name || '').toLowerCase().includes(searchLow);
 
-    if (viewMode === 'sale') list = list.filter((c) => c.type === 'sale');
-    else if (viewMode === 'rent') list = list.filter((c) => c.type === 'rent');
-    else if (viewMode === 'administrative')
-      list = list.filter((c) => !['sale', 'rent'].includes(c.type));
+      const matchesType =
+        filterType === 'all' ||
+        (filterType === 'administrative' ? !['sale', 'rent'].includes(c.type) : c.type === filterType);
 
-    if (statusFilter === 'active') list = list.filter((c) => c.status === 'active');
-    else if (statusFilter === 'pending')
-      list = list.filter((c) => c.status === 'pending' || c.status === 'draft');
-    else if (statusFilter === 'archived')
-      list = list.filter((c) => ['archived', 'ended'].includes(c.status));
+      const matchesStatus =
+        filterStatus === 'all' ||
+        (filterStatus === 'pending'
+          ? c.status === 'pending' || c.status === 'draft'
+          : filterStatus === 'archived'
+            ? ['archived', 'ended'].includes(c.status)
+            : c.status === filterStatus);
 
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      list = list.filter(
-        (c) =>
-          (c.properties?.title || '').toLowerCase().includes(q) ||
-          (c.leads?.name || '').toLowerCase().includes(q)
-      );
-    }
+      if (filterType === 'signatures') return matchesSearch && c.pending_signatures_count > 0;
 
-    return list;
-  }, [contracts, viewMode, statusFilter, searchTerm]);
+      return matchesSearch && matchesType && matchesStatus;
+    });
+  }, [contracts, filterType, filterStatus, searchTerm]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleDeleteContract = async (contract: any) => {
@@ -309,21 +305,6 @@ export default function AdminContracts() {
     if (error) { console.error('Erro ao excluir contrato:', error); return; }
     await fetchContracts();
   };
-
-  // ── View mode config ──────────────────────────────────────────────────────
-  const viewModes: { key: ViewMode; label: string; icon: React.ReactNode; count: number }[] = [
-    { key: 'all', label: 'Todos', icon: <LayoutGrid size={13} />, count: contracts.length },
-    { key: 'sale', label: 'Vendas', icon: <Building2 size={13} />, count: contracts.filter((c) => c.type === 'sale').length },
-    { key: 'rent', label: 'Locações', icon: <KeyRound size={13} />, count: contracts.filter((c) => c.type === 'rent').length },
-    { key: 'administrative', label: 'Administrativos', icon: <FileText size={13} />, count: contracts.filter((c) => !['sale', 'rent'].includes(c.type)).length },
-  ];
-
-  const statusFilters: { key: StatusFilter; label: string }[] = [
-    { key: 'active', label: 'Ativos' },
-    { key: 'pending', label: 'Pendentes' },
-    { key: 'archived', label: 'Arquivados' },
-    { key: 'all', label: 'Todos' },
-  ];
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -604,66 +585,48 @@ export default function AdminContracts() {
       {/* ── LISTA UNIFICADA DE CONTRATOS ── */}
       <GlassCard variant="elevated" padding="none" className="overflow-hidden">
 
-        {/* Toolbar */}
-        <div className="px-5 py-3.5 border-b border-slate-100/80 dark:border-slate-800/60 flex flex-col sm:flex-row sm:items-center gap-3 bg-white/40 dark:bg-slate-900/40">
-
-          {/* Chips de tipo com contadores */}
-          <div className="flex items-center gap-1.5 flex-1 overflow-x-auto pb-0.5 scrollbar-none">
-            {viewModes.map((vm) => (
-              <button
-                key={vm.key}
-                onClick={() => setViewMode(vm.key)}
-                className={cn(
-                  'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold transition-all whitespace-nowrap',
-                  viewMode === vm.key
-                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
-                    : 'text-slate-500 hover:bg-slate-100/80 dark:hover:bg-slate-800/60 hover:text-slate-700 dark:hover:text-slate-300'
-                )}
-              >
-                {vm.icon}
-                {vm.label}
-                <span className={cn(
-                  'tabular-nums rounded-md px-1.5 py-0.5 text-[10px] font-bold',
-                  viewMode === vm.key
-                    ? 'bg-white/20 dark:bg-black/20'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                )}>
-                  {vm.count}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {/* Status + busca */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="flex items-center rounded-lg border border-slate-200/60 dark:border-slate-700/60 bg-white/60 dark:bg-slate-900/60 p-0.5">
-              {statusFilters.map((sf) => (
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800/60 bg-white/50 dark:bg-slate-900/50 space-y-4">
+          <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+            {/* Linha 1: Tipos */}
+            <div className="flex gap-1.5 p-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-xl overflow-x-auto w-full md:w-auto custom-scrollbar">
+              {['all', 'sale', 'rent', 'administrative', 'signatures'].map(type => (
                 <button
-                  key={sf.key}
-                  onClick={() => setStatusFilter(sf.key)}
-                  className={cn(
-                    'px-2.5 py-1.5 rounded-md text-[11px] font-semibold transition-all',
-                    statusFilter === sf.key
-                      ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                  )}
+                  key={type}
+                  onClick={() => setFilterType(type)}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
+                    filterType === type ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
                 >
-                  {sf.label}
+                  {type === 'all' ? 'Todos' : type === 'sale' ? 'Vendas' : type === 'rent' ? 'Locações' : type === 'administrative' ? 'Administrativo' : 'Assinaturas'}
                 </button>
               ))}
             </div>
 
-            <div className="relative">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-              <input
-                type="text"
-                placeholder="Buscar..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-40 rounded-lg border border-slate-200/60 dark:border-slate-700/60 bg-white/60 dark:bg-slate-900/60 pl-8 pr-3 py-2 text-[12px] text-slate-600 dark:text-slate-300 placeholder:text-slate-300 dark:placeholder:text-slate-600 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10 transition-all"
-              />
+            <div className="relative w-full md:w-64 shrink-0">
+              <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input type="text" placeholder="Buscar cont..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none transition-all" />
             </div>
           </div>
+
+          {/* Linha 2: Status (Aparece se não for filtro de assinaturas) */}
+          {filterType !== 'signatures' && (
+            <div className="flex gap-2 items-center">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mr-2">Filtrar por Status:</span>
+              {['all', 'active', 'pending', 'archived'].map(status => (
+                <button
+                  key={status}
+                  onClick={() => setFilterStatus(status)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                    filterStatus === status
+                    ? 'bg-brand-50 border-brand-200 text-brand-700 dark:bg-brand-500/10 dark:border-brand-500/20 dark:text-brand-400'
+                    : 'bg-transparent border-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {status === 'all' ? 'Todos' : status === 'active' ? 'Ativos' : status === 'pending' ? 'Pendentes' : 'Arquivados'}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Header da tabela — desktop */}
