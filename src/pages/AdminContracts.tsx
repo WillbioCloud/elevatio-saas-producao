@@ -73,7 +73,12 @@ export default function AdminContracts() {
 
     let contractsQuery = supabase
       .from('contracts')
-      .select('*, properties(title, price, rent_value), leads(name), broker:profiles!contracts_broker_id_fkey(*)');
+      .select(`
+        *,
+        lead:leads!contracts_lead_id_fkey(name, email),
+        property:properties(*),
+        broker:profiles!contracts_broker_id_fkey(*)
+      `);
 
     let installmentsQuery = supabase
       .from('installments')
@@ -120,8 +125,8 @@ export default function AdminContracts() {
 
         const hydratedContracts = validContracts.map((contract: any) => ({
           ...contract,
-          properties: contract.properties || null,
-          leads: contract.leads || null,
+          properties: contract.properties || contract.property || null,
+          leads: contract.leads || contract.lead || null,
           ...(signatureSummaryByContract[contract.id] ?? EMPTY_SIGNATURE_SUMMARY),
         }));
 
@@ -169,6 +174,11 @@ export default function AdminContracts() {
   }, [contracts, installments]);
 
   const activeContractsLimit = 50;
+
+  const upcomingInstallments = useMemo(
+    () => installments.filter((i) => i.status !== 'paid').slice(0, 4),
+    [installments]
+  );
 
   const filteredContracts = contracts.filter((c) => {
     const searchLow = searchTerm.toLowerCase();
@@ -263,8 +273,42 @@ export default function AdminContracts() {
         </GlassCard>
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <GlassCard className="p-5 lg:col-span-2">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-slate-700 dark:text-slate-200">Fluxo Financeiro</h3>
+            <span className="text-xs text-slate-500">Últimos 6 meses</span>
+          </div>
+          <div className="h-36 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 flex items-center justify-center text-sm text-slate-400">
+            Visualização financeira resumida (design fiel) – dados ativos: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(metrics.mrr)}
+          </div>
+        </GlassCard>
+
+        <GlassCard className="p-0 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <h3 className="font-semibold text-slate-700 dark:text-slate-200">Vencimentos</h3>
+            <span className="text-xs text-red-500 font-semibold">{upcomingInstallments.filter((i) => new Date(i.due_date) < new Date()).length} atrasados</span>
+          </div>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {upcomingInstallments.length === 0 ? (
+              <div className="p-4 text-sm text-slate-500">Sem vencimentos pendentes.</div>
+            ) : (
+              upcomingInstallments.map((item) => (
+                <div key={item.id} className="p-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{item.payer_name || 'Cliente'}</div>
+                    <div className="text-xs text-slate-500">{item.due_date ? new Date(item.due_date).toLocaleDateString('pt-BR') : '-'}</div>
+                  </div>
+                  <div className="text-sm font-bold text-orange-500">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.amount || 0))}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </GlassCard>
+      </div>
+
       <GlassCard variant="default" padding="none" className="overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800/60 flex flex-col gap-3 bg-white/50 dark:bg-slate-900/50">
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800/60 flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between bg-white/50 dark:bg-slate-900/50">
           <div className="flex flex-wrap gap-2 p-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-xl">
             {[
               { key: 'all', label: 'Todos' },
@@ -284,7 +328,7 @@ export default function AdminContracts() {
             ))}
           </div>
 
-          <div className="flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
+          <div className="flex flex-wrap lg:flex-nowrap gap-2 items-center">
             <div className="flex gap-1 rounded-lg border border-slate-200 dark:border-slate-700 p-1 w-fit">
               {[
                 { key: 'all', label: 'Todos' },
@@ -302,7 +346,7 @@ export default function AdminContracts() {
               ))}
             </div>
 
-            <div className="relative w-full md:w-56 shrink-0">
+            <div className="relative w-full lg:w-56 shrink-0">
               <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 outline-none transition-all" />
             </div>
