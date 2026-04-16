@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Icons } from './Icons';
 import { Lead, Property } from '../types';
-import { useNotification } from '../contexts/NotificationContext';
+import { useToast } from '../contexts/ToastContext';
 import { buildContractHtml, generateContract } from '../utils/contractGenerator';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
@@ -26,7 +26,8 @@ const formatRgWithIssuer = (rg?: string | null, org?: string | null, uf?: string
 const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, onSuccess, contractData }) => {
   const { user } = useAuth();
   const { tenant } = useTenant();
-  const { addNotification } = useNotification();
+  const { addToast } = useToast();
+  const userAvatar = user?.user_metadata?.avatar_url || user?.avatar_url || null;
   const [loading, setLoading] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -344,7 +345,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         buyer_rg: contractDetails.buyer_rg,
         buyer_profession: contractDetails.buyer_profession,
         buyer_marital_status: contractDetails.buyer_marital_status,
-        buyer_address: contractDetails.buyer_address,
+        buyer_address: contractDetails.buyer_address || selectedLeadRecord?.address,
         buyer_spouse_name: contractDetails.buyer_spouse_name,
         buyer_spouse_document: contractDetails.buyer_spouse_document,
         buyer_spouse_profession: contractDetails.buyer_spouse_profession,
@@ -355,7 +356,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         seller_rg: contractDetails.seller_rg,
         seller_profession: contractDetails.seller_profession,
         seller_marital_status: contractDetails.seller_marital_status,
-        seller_address: contractDetails.seller_address,
+        seller_address: contractDetails.seller_address || selectedPropertyData?.owner_address || properties.find(p => p.id === formData.property_id)?.owner_address,
         seller_spouse_name: contractDetails.seller_spouse_name,
         seller_spouse_document: contractDetails.seller_spouse_document,
         seller_spouse_rg: contractDetails.seller_spouse_rg,
@@ -388,7 +389,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
       );
     } catch (error) {
       console.error('Erro ao gerar PDF:', error);
-      addNotification({ title: 'Erro ao gerar documento PDF', message: '', type: 'property' });
+      addToast('Erro ao gerar documento PDF', 'error', { avatar: userAvatar });
     } finally {
       setLoading(false);
     }
@@ -411,7 +412,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         buyer_rg: contractDetails.buyer_rg,
         buyer_profession: contractDetails.buyer_profession,
         buyer_marital_status: contractDetails.buyer_marital_status,
-        buyer_address: contractDetails.buyer_address,
+        buyer_address: contractDetails.buyer_address || selectedLeadForSave?.address,
         buyer_spouse_name: contractDetails.buyer_spouse_name,
         buyer_spouse_document: contractDetails.buyer_spouse_document,
         buyer_spouse_profession: contractDetails.buyer_spouse_profession,
@@ -422,7 +423,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         seller_rg: contractDetails.seller_rg,
         seller_profession: contractDetails.seller_profession,
         seller_marital_status: contractDetails.seller_marital_status,
-        seller_address: contractDetails.seller_address,
+        seller_address: contractDetails.seller_address || selectedPropForSave?.owner_address || properties.find(p => p.id === formData.property_id)?.owner_address,
         seller_spouse_name: contractDetails.seller_spouse_name,
         seller_spouse_document: contractDetails.seller_spouse_document,
         seller_spouse_rg: contractDetails.seller_spouse_rg,
@@ -476,6 +477,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         client_id: resolvedClientId,
         property_id: formData.property_id || null,
         broker_id: formData.broker_id || null,
+        created_by: user?.id, // ADICIONADO: Garante a autoria
         start_date: formData.sale_date,
         sale_total_value: totalValue,
         sale_down_payment: downPayment,
@@ -552,11 +554,11 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
       if (formData.property_id) {
         await supabase.from('properties').update({ status: 'Vendido' }).eq('id', formData.property_id);
       }
-      addNotification({ title: 'Contrato Gerado', message: 'Novo contrato de venda gerado com sucesso.', type: 'property' });
+      addToast('Novo contrato de venda gerado com sucesso.', 'success', { avatar: userAvatar });
       onSuccess();
       onClose();
     } catch (error: any) {
-      alert('Erro ao salvar contrato: ' + error.message);
+      addToast('Erro ao salvar contrato: ' + error.message, 'error', { avatar: userAvatar });
     } finally {
       setLoading(false);
     }
@@ -565,28 +567,34 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-fade-in">
-      <div className="relative flex min-h-full items-start justify-center p-4 pt-16 sm:items-center sm:pt-4">
-        <div className="bg-white/95 dark:bg-[#0a0f1c]/95 backdrop-blur-2xl rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm">
+      <div className="flex h-full max-h-[92vh] w-full max-w-4xl flex-col animate-in zoom-in-95 overflow-hidden rounded-3xl bg-white shadow-2xl duration-200 dark:bg-slate-900 border border-white/10">
 
-        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
-          <div>
-            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              <Icons.FileText size={24} className="text-brand-600" /> {contractData ? 'Visualização do Contrato' : 'Novo Contrato de Venda'}
-            </h2>
-            <p className="text-sm text-slate-500">Preencha os dados do negócio fechado.</p>
+        {/* Header Elegante */}
+        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-800/50">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-brand-500 p-2.5 text-white shadow-lg shadow-brand-500/20">
+              <Icons.FileText size={24} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white leading-tight">Contrato de Compra e Venda</h2>
+              <p className="text-sm font-medium text-slate-500 italic">Geração de documento jurídico para comercialização.</p>
+            </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-colors"><Icons.X size={20} /></button>
+          <button onClick={onClose} className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-slate-700">
+            <Icons.X size={24} />
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-slate-50/50 p-6 custom-scrollbar">
+        {/* Body com Scroll e Seções */}
+        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-8 bg-white dark:bg-slate-900">
           <form id="sale-form" onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-5xl mx-auto">
             <fieldset disabled={!!contractData} className="contents">
 
               {/* SECTION 1: TIPO DE CONTRATO */}
-              <section className="order-3 bg-slate-900 text-white p-6 rounded-2xl shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-6 opacity-10 pointer-events-none">
-                  <Icons.FileText size={120} />
+              <section className="order-3 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 rounded-2xl shadow-xl relative overflow-hidden border border-slate-700">
+                <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
+                  <Icons.FileText size={140} />
                 </div>
                 <div className="relative z-10 flex flex-col md:flex-row gap-6 items-center">
                   <div className="flex-1">
@@ -594,13 +602,13 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                       <Icons.FileText size={24} className="text-brand-400" />
                       Qual o tipo de contrato?
                     </h3>
-                    <p className="text-slate-400 text-sm">O modelo selecionado define os campos que serão preenchidos abaixo.</p>
+                    <p className="text-slate-300 text-sm">O modelo selecionado define os campos que serão preenchidos abaixo.</p>
                   </div>
                   <div className="w-full md:w-1/2">
                 <select
                   value={documentType}
                   onChange={(e) => setDocumentType(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-medium outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                  className="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm font-medium text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 >
                   {SALE_DOCUMENTS.map((doc) => (
                     <option key={doc.id} value={doc.id}>{doc.title}</option>
@@ -610,28 +618,28 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                 </div>
               </section>
 
-              <section className="order-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-2">
+              <section className="order-4 bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-3 flex items-center gap-2 dark:text-white dark:border-slate-800">
                   <Icons.FileText size={16} className="text-brand-500" /> Dados do Comprador e do Vendedor
                 </h3>
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <p className="text-xs font-bold text-slate-500 mb-3 uppercase flex items-center justify-between">
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 dark:bg-slate-900 dark:border-slate-700">
+                    <p className="text-xs font-bold text-slate-500 mb-4 uppercase flex items-center justify-between dark:text-slate-400">
                       Dados do Comprador
-                      <span className="text-[10px] text-brand-500 bg-brand-50 px-2 py-1 rounded-md">Auto do Lead</span>
+                      <span className="text-[10px] text-brand-600 bg-brand-50 px-2.5 py-1 rounded-md font-semibold dark:bg-brand-500/10 dark:text-brand-400">Auto do Lead</span>
                     </p>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[10px] uppercase text-slate-500 mb-1">CPF/CNPJ</label>
-                        <input type="text" value={contractDetails.buyer_document} onChange={e => setContractDetails({ ...contractDetails, buyer_document: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">CPF/CNPJ</label>
+                        <input type="text" value={contractDetails.buyer_document} onChange={e => setContractDetails({ ...contractDetails, buyer_document: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
                       </div>
                       <div>
-                        <label className="block text-[10px] uppercase text-slate-500 mb-1">RG</label>
-                        <input type="text" value={contractDetails.buyer_rg} onChange={e => setContractDetails({ ...contractDetails, buyer_rg: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">RG</label>
+                        <input type="text" value={contractDetails.buyer_rg} onChange={e => setContractDetails({ ...contractDetails, buyer_rg: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
                       </div>
                       <div>
-                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Estado Civil</label>
-                        <select value={contractDetails.buyer_marital_status} onChange={e => setContractDetails({ ...contractDetails, buyer_marital_status: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none">
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">Estado Civil</label>
+                        <select value={contractDetails.buyer_marital_status} onChange={e => setContractDetails({ ...contractDetails, buyer_marital_status: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                           <option value="">Selecione...</option>
                           <option value="Solteiro(a)">Solteiro(a)</option>
                           <option value="Casado(a)">Casado(a)</option>
@@ -641,12 +649,12 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Profissão</label>
-                        <input type="text" value={contractDetails.buyer_profession} onChange={e => setContractDetails({ ...contractDetails, buyer_profession: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">Profissão</label>
+                        <input type="text" value={contractDetails.buyer_profession} onChange={e => setContractDetails({ ...contractDetails, buyer_profession: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
                       </div>
                       <div className="col-span-2">
-                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Endereço</label>
-                        <input type="text" value={contractDetails.buyer_address} onChange={e => setContractDetails({ ...contractDetails, buyer_address: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">Endereço</label>
+                        <input type="text" value={contractDetails.buyer_address} onChange={e => setContractDetails({ ...contractDetails, buyer_address: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
                       </div>
                     </div>
                     {(contractDetails.buyer_marital_status === 'Casado(a)' || contractDetails.buyer_marital_status === 'União Estável') && (
@@ -667,23 +675,23 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                     )}
                   </div>
 
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <p className="text-xs font-bold text-slate-500 mb-3 uppercase flex items-center justify-between">
+                  <div className="bg-white p-5 rounded-xl border border-slate-200 dark:bg-slate-900 dark:border-slate-700">
+                    <p className="text-xs font-bold text-slate-500 mb-4 uppercase flex items-center justify-between dark:text-slate-400">
                       Dados do Vendedor
-                      <span className="text-[10px] text-brand-500 bg-brand-50 px-2 py-1 rounded-md">Auto do Imóvel</span>
+                      <span className="text-[10px] text-brand-600 bg-brand-50 px-2.5 py-1 rounded-md font-semibold dark:bg-brand-500/10 dark:text-brand-400">Auto do Imóvel</span>
                     </p>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[10px] uppercase text-slate-500 mb-1">CPF/CNPJ</label>
-                        <input type="text" value={contractDetails.seller_document} onChange={e => setContractDetails({ ...contractDetails, seller_document: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">CPF/CNPJ</label>
+                        <input type="text" value={contractDetails.seller_document} onChange={e => setContractDetails({ ...contractDetails, seller_document: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
                       </div>
                       <div>
-                        <label className="block text-[10px] uppercase text-slate-500 mb-1">RG</label>
-                        <input type="text" value={contractDetails.seller_rg} onChange={e => setContractDetails({ ...contractDetails, seller_rg: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">RG</label>
+                        <input type="text" value={contractDetails.seller_rg} onChange={e => setContractDetails({ ...contractDetails, seller_rg: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
                       </div>
                       <div>
-                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Estado Civil</label>
-                        <select value={contractDetails.seller_marital_status} onChange={e => setContractDetails({ ...contractDetails, seller_marital_status: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none">
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">Estado Civil</label>
+                        <select value={contractDetails.seller_marital_status} onChange={e => setContractDetails({ ...contractDetails, seller_marital_status: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                           <option value="">Selecione...</option>
                           <option value="Solteiro(a)">Solteiro(a)</option>
                           <option value="Casado(a)">Casado(a)</option>
@@ -693,12 +701,12 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Profissão</label>
-                        <input type="text" value={contractDetails.seller_profession} onChange={e => setContractDetails({ ...contractDetails, seller_profession: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">Profissão</label>
+                        <input type="text" value={contractDetails.seller_profession} onChange={e => setContractDetails({ ...contractDetails, seller_profession: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
                       </div>
                       <div className="col-span-2">
-                        <label className="block text-[10px] uppercase text-slate-500 mb-1">Endereço</label>
-                        <input type="text" value={contractDetails.seller_address} onChange={e => setContractDetails({ ...contractDetails, seller_address: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">Endereço</label>
+                        <input type="text" value={contractDetails.seller_address} onChange={e => setContractDetails({ ...contractDetails, seller_address: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
                       </div>
                     </div>
                     {(contractDetails.seller_marital_status === 'Casado(a)' || contractDetails.seller_marital_status === 'União Estável') && (
@@ -741,73 +749,73 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                   </div>
                 </section>
               ) : (
-                <section className="order-5 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm animate-in fade-in slide-in-from-right-4">
-                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-2">
+                <section className="order-5 bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 p-5 rounded-2xl shadow-sm animate-in fade-in slide-in-from-right-4">
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-3 flex items-center gap-2 dark:text-white dark:border-slate-800">
                     <Icons.CreditCard size={16} className="text-brand-500" /> Formas de Pagamento
                   </h3>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Sinal / Entrada (R$)</label>
-                      <input type="number" value={formData.sale_down_payment} onChange={e => setFormData({ ...formData, sale_down_payment: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 text-sm font-bold text-slate-800 bg-slate-50" placeholder="0.00" />
+                      <label className="block text-xs font-bold text-slate-600 mb-2 dark:text-slate-300">Sinal / Entrada (R$)</label>
+                      <input type="number" value={formData.sale_down_payment} onChange={e => setFormData({ ...formData, sale_down_payment: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 text-sm font-bold text-slate-800 bg-white transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" placeholder="0.00" />
                     </div>
                     {(isStandardContract || !isPermutaContract) && (
                       <div className="grid grid-cols-2 gap-4">
                         <div className="col-span-2">
-                          <label className="block text-xs font-bold text-slate-600 mb-1">Financiamento Bancário (R$)</label>
-                          <input type="number" value={formData.sale_financing_value} onChange={e => setFormData({ ...formData, sale_financing_value: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 text-sm" placeholder="0.00" />
+                          <label className="block text-xs font-bold text-slate-600 mb-2 dark:text-slate-300">Financiamento Bancário (R$)</label>
+                          <input type="number" value={formData.sale_financing_value} onChange={e => setFormData({ ...formData, sale_financing_value: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 text-sm transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" placeholder="0.00" />
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-slate-600 mb-1">Banco Financiador</label>
-                          <input type="text" value={formData.sale_financing_bank} onChange={e => setFormData({ ...formData, sale_financing_bank: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 text-sm" placeholder="Ex: Caixa" />
+                          <label className="block text-xs font-bold text-slate-600 mb-2 dark:text-slate-300">Banco Financiador</label>
+                          <input type="text" value={formData.sale_financing_bank} onChange={e => setFormData({ ...formData, sale_financing_bank: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 text-sm transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" placeholder="Ex: Caixa" />
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-slate-600 mb-1">FGTS / Consórcio (R$)</label>
-                          <input type="number" value={formData.sale_consortium_value} onChange={e => setFormData({ ...formData, sale_consortium_value: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 text-sm" placeholder="0.00" />
+                          <label className="block text-xs font-bold text-slate-600 mb-2 dark:text-slate-300">FGTS / Consórcio (R$)</label>
+                          <input type="number" value={formData.sale_consortium_value} onChange={e => setFormData({ ...formData, sale_consortium_value: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 text-sm transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" placeholder="0.00" />
                         </div>
                       </div>
                     )}
 
                     {(isPermutaContract || formData.has_permutation) && (
-                      <div className="bg-brand-50 border border-brand-200 p-4 rounded-xl animate-in fade-in">
-                        <div className="flex justify-between items-center mb-3">
-                          <p className="text-xs font-bold text-brand-700 uppercase">Imóvel como Parte de Pagamento</p>
+                      <div className="bg-brand-50 border border-brand-200 p-5 rounded-xl animate-in fade-in dark:bg-brand-900/10 dark:border-brand-800/30">
+                        <div className="flex justify-between items-center mb-4">
+                          <p className="text-xs font-bold text-brand-700 uppercase tracking-wide dark:text-brand-400">Imóvel como Parte de Pagamento</p>
                           {!isPermutaContract && (
-                            <button type="button" onClick={() => setFormData({ ...formData, has_permutation: false })} className="text-xs text-red-500 hover:underline">Remover</button>
+                            <button type="button" onClick={() => setFormData({ ...formData, has_permutation: false })} className="text-xs text-red-500 hover:text-red-700 hover:underline font-semibold transition-colors">Remover</button>
                           )}
                         </div>
                         <div className="space-y-3">
                           <div>
-                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Endereço / Descrição</label>
-                            <input type="text" value={contractDetails.permuta_address} onChange={e => setContractDetails({ ...contractDetails, permuta_address: e.target.value })} className="w-full bg-white border border-brand-200 rounded-lg px-3 py-2 text-sm outline-none" placeholder="Ex: Lote 12, Quadra B..." />
+                            <label className="block text-[10px] font-bold text-slate-600 mb-1.5 uppercase tracking-wide dark:text-slate-400">Endereço / Descrição</label>
+                            <input type="text" value={contractDetails.permuta_address} onChange={e => setContractDetails({ ...contractDetails, permuta_address: e.target.value })} className="w-full bg-white border border-brand-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-brand-700 dark:text-slate-100" placeholder="Ex: Lote 12, Quadra B..." />
                           </div>
                           <div>
-                            <label className="block text-[10px] font-bold text-slate-500 mb-1">Valor Atribuído (R$)</label>
-                            <input type="number" value={formData.permutation_value} onChange={e => setFormData({ ...formData, permutation_value: e.target.value })} className="w-full bg-white border border-brand-200 rounded-lg px-3 py-2 text-sm outline-none font-bold" placeholder="0.00" />
+                            <label className="block text-[10px] font-bold text-slate-600 mb-1.5 uppercase tracking-wide dark:text-slate-400">Valor Atribuído (R$)</label>
+                            <input type="number" value={formData.permutation_value} onChange={e => setFormData({ ...formData, permutation_value: e.target.value })} className="w-full bg-white border border-brand-200 rounded-lg px-3 py-2.5 text-sm outline-none font-bold focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-brand-700 dark:text-slate-100" placeholder="0.00" />
                           </div>
                         </div>
                       </div>
                     )}
 
                     {!isPermutaContract && !formData.has_permutation && (
-                      <button type="button" onClick={() => setFormData({ ...formData, has_permutation: true })} className="w-full py-2 border border-dashed border-slate-300 text-slate-500 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors">
+                      <button type="button" onClick={() => setFormData({ ...formData, has_permutation: true })} className="w-full py-3 border-2 border-dashed border-slate-300 text-slate-500 text-sm font-bold rounded-xl hover:bg-slate-50 hover:border-brand-500 hover:text-brand-600 transition-all dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:border-brand-500 dark:hover:text-brand-400">
                         + Adicionar Imóvel/Veículo como Permuta
                       </button>
                     )}
 
-                    <div className={`mt-2 p-4 rounded-xl border ${saldoDevedor > 0 ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
-                      <p className={`text-[10px] font-bold uppercase ${saldoDevedor > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>Saldo Restante</p>
-                      <p className={`text-2xl font-black ${saldoDevedor > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    <div className={`mt-2 p-5 rounded-xl border-2 transition-all ${saldoDevedor > 0 ? 'bg-amber-50 border-amber-200 dark:bg-amber-900/10 dark:border-amber-800/30' : 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/10 dark:border-emerald-800/30'}`}>
+                      <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${saldoDevedor > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400'}`}>Saldo Restante</p>
+                      <p className={`text-3xl font-black ${saldoDevedor > 0 ? 'text-amber-600 dark:text-amber-500' : 'text-emerald-600 dark:text-emerald-500'}`}>
                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(saldoDevedor)}
                       </p>
                       {saldoDevedor > 0 && (
-                        <div className="mt-4 pt-4 border-t border-amber-200/50 grid grid-cols-2 gap-3">
+                        <div className="mt-4 pt-4 border-t border-amber-200/50 grid grid-cols-2 gap-3 dark:border-amber-800/30">
                           <div>
-                            <label className="block text-[10px] font-bold text-amber-700 mb-1">Nº de Parcelas Diretas</label>
-                            <input type="number" min="1" value={formData.installments_count} onChange={e => setFormData({ ...formData, installments_count: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-amber-200 outline-none focus:border-amber-500 text-sm bg-white" />
+                            <label className="block text-[10px] font-bold text-amber-700 mb-1.5 uppercase tracking-wide dark:text-amber-400">Nº de Parcelas Diretas</label>
+                            <input type="number" min="1" value={formData.installments_count} onChange={e => setFormData({ ...formData, installments_count: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-amber-200 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 text-sm bg-white transition-all dark:bg-slate-900 dark:border-amber-700 dark:text-slate-100" />
                           </div>
                           <div>
-                            <label className="block text-[10px] font-bold text-amber-700 mb-1">Índice Correção</label>
-                            <select value={formData.readjustment_index} onChange={e => setFormData({ ...formData, readjustment_index: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-amber-200 outline-none focus:border-amber-500 text-sm bg-white">
+                            <label className="block text-[10px] font-bold text-amber-700 mb-1.5 uppercase tracking-wide dark:text-amber-400">Índice Correção</label>
+                            <select value={formData.readjustment_index} onChange={e => setFormData({ ...formData, readjustment_index: e.target.value })} className="w-full px-3 py-2.5 rounded-lg border border-amber-200 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 text-sm bg-white text-slate-900 transition-all dark:border-amber-700 dark:bg-slate-900 dark:text-slate-100">
                               <option value="FIXO">Fixo (Sem Juros)</option>
                               <option value="IPCA">IPCA</option>
                               <option value="INCC">INCC</option>
@@ -826,59 +834,59 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                 <div className="lg:col-span-12 flex flex-col gap-6">
 
                   {/* IMÓVEL E VALORES */}
-                  <section className="order-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-2">
+                  <section className="order-2 bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-3 flex items-center gap-2 dark:text-white dark:border-slate-800">
                       <Icons.Home size={16} className="text-brand-500" /> Imóvel e Valor
                     </h3>
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Imóvel Negociado *</label>
-                        <select required value={formData.property_id} onChange={handlePropertyChange} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 bg-slate-50 text-sm font-medium">
+                        <label className="block text-xs font-bold text-slate-600 mb-2 dark:text-slate-300">Imóvel Negociado *</label>
+                        <select required value={formData.property_id} onChange={handlePropertyChange} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 bg-white text-sm font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                           <option value="">Selecione o imóvel...</option>
                           {properties.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Valor Total Fechado (R$) *</label>
-                        <input type="number" required value={formData.sale_total_value} onChange={e => handleTotalValueChange(e.target.value)} className="w-full px-4 py-4 rounded-xl border-2 border-brand-200 bg-brand-50 text-brand-900 font-black text-2xl outline-none focus:border-brand-500 transition-colors" placeholder="0.00" />
+                        <label className="block text-xs font-bold text-slate-600 mb-2 dark:text-slate-300">Valor Total Fechado (R$) *</label>
+                        <input type="number" required value={formData.sale_total_value} onChange={e => handleTotalValueChange(e.target.value)} className="w-full px-4 py-4 rounded-xl border-2 border-brand-200 bg-brand-50 text-brand-900 font-black text-2xl outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-brand-900/20 dark:border-brand-700 dark:text-brand-400" placeholder="0.00" />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-bold text-slate-600 mb-1">Comissão (%)</label>
-                          <input type="number" step="0.1" value={formData.commission_percentage} onChange={e => handleCommissionPctChange(e.target.value)} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 text-sm bg-slate-50" placeholder="0" />
+                          <label className="block text-xs font-bold text-slate-600 mb-2 dark:text-slate-300">Comissão (%)</label>
+                          <input type="number" step="0.1" value={formData.commission_percentage} onChange={e => handleCommissionPctChange(e.target.value)} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 text-sm bg-white transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" placeholder="0" />
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-slate-600 mb-1">Comissão (R$)</label>
-                          <input type="number" value={formData.commission_value} onChange={e => handleCommissionValChange(e.target.value)} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 text-sm font-bold text-brand-700 bg-slate-50" placeholder="0.00" />
+                          <label className="block text-xs font-bold text-slate-600 mb-2 dark:text-slate-300">Comissão (R$)</label>
+                          <input type="number" value={formData.commission_value} onChange={e => handleCommissionValChange(e.target.value)} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 text-sm font-bold text-brand-700 bg-white transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-brand-400" placeholder="0.00" />
                         </div>
                       </div>
                     </div>
                   </section>
 
                   {/* PARTES ENVOLVIDAS */}
-                  <section className="order-1 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2 flex items-center gap-2">
+                  <section className="order-1 bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-3 flex items-center gap-2 dark:text-white dark:border-slate-800">
                       <Icons.Users size={16} className="text-brand-500" /> Envolvidos
                     </h3>
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Comprador (Lead) *</label>
-                        <select required value={formData.lead_id} onChange={e => setFormData({ ...formData, lead_id: e.target.value, client_id: e.target.value || null })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 bg-slate-50 text-sm font-medium">
+                        <label className="block text-xs font-bold text-slate-600 mb-2 dark:text-slate-300">Comprador (Lead) *</label>
+                        <select required value={formData.lead_id} onChange={e => setFormData({ ...formData, lead_id: e.target.value, client_id: e.target.value || null })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 bg-white text-sm font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                           <option value="">Selecione o cliente...</option>
                           {leads.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                         </select>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-bold text-slate-600 mb-1">Corretor Responsável *</label>
-                          <select required value={formData.broker_id} onChange={e => setFormData({ ...formData, broker_id: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 bg-slate-50 text-sm">
+                          <label className="block text-xs font-bold text-slate-600 mb-2 dark:text-slate-300">Corretor Responsável *</label>
+                          <select required value={formData.broker_id} onChange={e => setFormData({ ...formData, broker_id: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 bg-white text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                             <option value="">Selecione...</option>
                             {brokers.map(b => <option key={b.id} value={b.id}>{b.name.split(' ')[0]}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-slate-600 mb-1">Data da Venda *</label>
-                          <input type="date" required value={formData.sale_date} onChange={e => setFormData({ ...formData, sale_date: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 bg-slate-50 text-sm" />
+                          <label className="block text-xs font-bold text-slate-600 mb-2 dark:text-slate-300">Data da Venda *</label>
+                          <input type="date" required value={formData.sale_date} onChange={e => setFormData({ ...formData, sale_date: e.target.value })} className="w-full px-3 py-3 rounded-xl border border-slate-200 outline-none focus:border-brand-500 bg-white text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
                         </div>
                       </div>
 
@@ -896,7 +904,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                           </div>
                           <div>
                             <label className="block text-[10px] uppercase text-slate-500 mb-1">Estado Civil</label>
-                            <select value={contractDetails.buyer_marital_status} onChange={e => setContractDetails({...contractDetails, buyer_marital_status: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none">
+                            <select value={contractDetails.buyer_marital_status} onChange={e => setContractDetails({...contractDetails, buyer_marital_status: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                               <option value="">Selecione...</option>
                               <option value="Solteiro(a)">Solteiro(a)</option>
                               <option value="Casado(a)">Casado(a)</option>
@@ -949,7 +957,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                           </div>
                           <div>
                             <label className="block text-[10px] uppercase text-slate-500 mb-1">Estado Civil</label>
-                            <select value={contractDetails.seller_marital_status} onChange={e => setContractDetails({...contractDetails, seller_marital_status: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none">
+                            <select value={contractDetails.seller_marital_status} onChange={e => setContractDetails({...contractDetails, seller_marital_status: e.target.value})} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                               <option value="">Selecione...</option>
                               <option value="Solteiro(a)">Solteiro(a)</option>
                               <option value="Casado(a)">Casado(a)</option>
@@ -1058,7 +1066,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                         )}
 
                         {!isPermutaContract && !formData.has_permutation && (
-                          <button type="button" onClick={() => setFormData({ ...formData, has_permutation: true })} className="w-full py-2 border border-dashed border-slate-300 text-slate-500 text-sm font-bold rounded-xl hover:bg-slate-50 transition-colors">
+                          <button type="button" onClick={() => setFormData({ ...formData, has_permutation: true })} className="w-full py-3 border-2 border-dashed border-slate-300 text-slate-500 text-sm font-bold rounded-xl hover:bg-slate-50 hover:border-brand-500 hover:text-brand-600 transition-all dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:border-brand-500 dark:hover:text-brand-400">
                             + Adicionar Imóvel/Veículo como Permuta
                           </button>
                         )}
@@ -1077,7 +1085,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                               </div>
                               <div>
                                 <label className="block text-[10px] font-bold text-amber-700 mb-1">Índice Correção</label>
-                                <select value={formData.readjustment_index} onChange={e => setFormData({ ...formData, readjustment_index: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-amber-200 outline-none focus:border-amber-500 text-sm bg-white">
+                                <select value={formData.readjustment_index} onChange={e => setFormData({ ...formData, readjustment_index: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-amber-200 outline-none focus:border-amber-500 text-sm bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
                                   <option value="FIXO">Fixo (Sem Juros)</option>
                                   <option value="IPCA">IPCA</option>
                                   <option value="INCC">INCC</option>
@@ -1096,23 +1104,21 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
           </form>
         </div>
 
-        <div className="p-5 border-t border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-          {!contractData ? (
-            <button type="button" onClick={handleGeneratePDF} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors text-sm font-bold">
-              <Icons.FileText size={16} /> Gerar PDF (Pré-visualização)
-            </button>
-          ) : <div />}
+        {/* Footer com Glassmorphism */}
+        <div className="flex shrink-0 items-center justify-between border-t border-slate-100 bg-slate-50/80 p-5 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-800/80">
+          <button type="button" onClick={handleGeneratePDF} disabled={!formData.lead_id || !formData.property_id} className="flex items-center gap-2 rounded-xl border-2 border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 transition-all hover:border-brand-500 hover:text-brand-600 dark:bg-slate-900 dark:text-slate-300">
+            <Icons.FileText size={18} /> Pré-visualizar PDF
+          </button>
           <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors text-sm font-bold">Cancelar</button>
-            {!contractData && (
-              <button type="submit" form="sale-form" disabled={loading} className="px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-bold disabled:opacity-50 flex items-center gap-2">
-                {loading ? <><Icons.Loader2 size={16} className="animate-spin" /> Salvando...</> : <><Icons.Save size={16} /> Salvar Contrato</>}
-              </button>
-            )}
+            <button onClick={onClose} className="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-700">
+              Cancelar
+            </button>
+            <button type="submit" form="sale-form" disabled={loading} className="flex items-center gap-2 rounded-xl bg-brand-600 px-8 py-2.5 text-sm font-bold text-white shadow-lg shadow-brand-500/20 hover:bg-brand-700 transition-all">
+              {loading ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.Save size={18} />} Salvar Contrato
+            </button>
           </div>
         </div>
 
-        </div>
       </div>
     </div>
   );

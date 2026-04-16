@@ -57,63 +57,18 @@ export default function SignatureManagerModal({
   const [isGeneratingBulk, setIsGeneratingBulk] = useState(false);
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [newSigner, setNewSigner] = useState<NewSignerState>(INITIAL_SIGNER);
+  const isGeneratingRef = React.useRef(false);
+  const [suggestedSigners, setSuggestedSigners] = useState<any[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => {
-    const initModal = async () => {
-      setIsLoading(true);
-      try {
-        const { data: contract } = await supabase
-          .from('contracts')
-          .select('*, lead:leads!contracts_lead_id_fkey(*)')
-          .eq('id', contractId)
-          .single();
-
-        const existingSignatures = await fetchSignatures();
-
-        // Extrai dados automaticamente do contrato
-        if (contract?.contract_data) {
-          const cData = contract.contract_data as any;
-          const detected: NewSignerState[] = [];
-
-          const addIfValid = (name?: string, email?: string, role?: string) => {
-            if (name && email && role) {
-              // Verifica se já não existe uma assinatura gerada para este email e papel
-              const alreadyExists = existingSignatures.some(
-                (sig) => sig.signer_email.toLowerCase() === email.toLowerCase() && sig.signer_role === role
-              );
-              if (!alreadyExists) {
-                detected.push({ name, email, role });
-              }
-            }
-          };
-
-          // Mapeamento de Vendas
-          addIfValid(cData.seller_name, cData.seller_email, 'Vendedor');
-          addIfValid(cData.buyer_name, cData.buyer_email, 'Comprador');
-
-          // Mapeamento de Locação
-          addIfValid(cData.landlord_name, cData.landlord_email, 'Locador');
-          addIfValid(cData.tenant_name, cData.tenant_email, 'Locatário');
-          addIfValid(cData.guarantor_name, cData.guarantor_email, 'Fiador');
-
-          setAutoSigners(detected);
-
-          // Se não detectou nada e não tem assinaturas, abre o manual por padrão
-          if (detected.length === 0 && existingSignatures.length === 0) {
-            setShowManualAdd(true);
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao inicializar modal:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    void initModal();
+    if (contractId) {
+      void fetchSignatures();
+    }
   }, [contractId]);
 
   const fetchSignatures = async (): Promise<SignatureRecord[]> => {
+    setIsLoading(true);
     try {
       const { data, error } = await supabase
         .from('contract_signatures')
@@ -121,15 +76,138 @@ export default function SignatureManagerModal({
         .eq('contract_id', contractId)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        addToast('Erro ao carregar assinaturas', 'error');
+        return [];
+      }
 
       const nextSignatures = (data as SignatureRecord[] | null) ?? [];
       setSignatures(nextSignatures);
+
+      // Se não há assinaturas geradas, aciona o Scanner para procurar no texto
+      if (!data || data.length === 0) {
+        await scanContractForSigners();
+      }
+
       return nextSignatures;
     } catch (error) {
       console.error('Erro ao buscar assinaturas:', error);
       return [];
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const scanContractForSigners = async () => {
+    setIsScanning(true);
+    try {
+      const { data: contractData } = await supabase
+        .from('contracts')
+        .select('type, contract_data, html_content, content')
+        .eq('id', contractId)
+        .single();
+
+      if (!contractData) return;
+
+      const cData = contractData.contract_data || {};
+      // Lemos o texto real do contrato para encontrar palavras-chave
+      const fullText = String(contractData.html_content || contractData.content || '').toLowerCase();
+      const suggestions = [];
+
+      if (contractData.type === 'sale') {
+        suggestions.push({
+          contract_id: contractId,
+          signer_name: cData.owner_name || 'Vendedor',
+          signer_email: cData.owner_email || '',
+          signer_role: 'Vendedor',
+          status: 'pending'
+        });
+        suggestions.push({
+          contract_id: contractId,
+          signer_name: cData.buyer_name || cData.tenant_name || 'Comprador',
+          signer_email: cData.buyer_email || cData.tenant_email || '',
+          signer_role: 'Comprador',
+          status: 'pending'
+        });
+      } else {
+        suggestions.push({
+          contract_id: contractId,
+          signer_name: cData.owner_name || 'Locador',
+          signer_email: cData.owner_email || '',
+          signer_role: 'Locador',
+          status: 'pending'
+        });
+        suggestions.push({
+          contract_id: contractId,
+          signer_name: cData.tenant_name || 'Locatário',
+          signer_email: cData.tenant_email || '',
+          signer_role: 'Locatário',
+          status: 'pending'
+        });
+      }
+
+      if (fullText.includes('fiador') || cData.guarantor_name) {
+        suggestions.push({
+          contract_id: contractId,
+          signer_name: cData.guarantor_name || 'Fiador',
+          signer_email: cData.guarantor_email || '',
+          signer_role: 'Fiador',
+          status: 'pending'
+        });
+      }
+
+      if (fullText.includes('testemunha')) {
+        suggestions.push({
+          contract_id: contractId,
+          signer_name: 'Testemunha 1',
+          signer_email: '',
+          signer_role: 'Testemunha',
+          status: 'pending'
+        });
+        if (fullText.includes('segunda testemunha') || fullText.includes('testemunha_2')) {
+          suggestions.push({
+            contract_id: contractId,
+            signer_name: 'Testemunha 2',
+            signer_email: '',
+            signer_role: 'Testemunha',
+            status: 'pending'
+          });
+        }
+      }
+
+      const repRole = cData.representation_type === 'imobiliaria' ? 'Imobiliária' : 'Corretor';
+      if (fullText.includes('corretor') || fullText.includes('imobiliária') || fullText.includes('administradora') || cData.broker_name) {
+        suggestions.push({
+          contract_id: contractId,
+          signer_name: cData.broker_name || repRole,
+          signer_email: cData.broker_email || '',
+          signer_role: repRole,
+          status: 'pending'
+        });
+      }
+
+      setSuggestedSigners(suggestions);
+    } catch (e) {
+      console.error('Erro no Scanner', e);
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleApproveSuggestions = async () => {
+    setIsAdding(true);
+    const payloads = suggestedSigners.map(s => ({
+      ...s,
+      token: crypto.randomUUID(),
+      company_id: companyId
+    }));
+    const { data, error } = await supabase.from('contract_signatures').insert(payloads).select();
+    if (!error && data) {
+      setSignatures(data as SignatureRecord[]);
+      setSuggestedSigners([]);
+      addToast('Links gerados com sucesso!', 'success');
+    }
+    setIsAdding(false);
   };
 
   const handleGenerateBulk = async () => {
@@ -282,12 +360,48 @@ export default function SignatureManagerModal({
                 </div>
 
                 {signatures.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-10 text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 mb-3">
-                      <Icons.Link className="text-slate-400" size={24} />
-                    </div>
-                    <p className="text-sm font-medium text-slate-600">Nenhum link gerado ainda.</p>
-                    <p className="text-xs text-slate-400 mt-1">Os signatários aparecerão aqui.</p>
+                  <div className="text-center py-8">
+                    {suggestedSigners.length > 0 ? (
+                      <div className="animate-in fade-in zoom-in duration-300">
+                        <div className="w-16 h-16 bg-brand-50 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                          <Icons.Sparkles size={32} />
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-800 mb-2">Signatários Identificados</h3>
+                        <p className="text-slate-500 mb-6 max-w-sm mx-auto">
+                          O nosso sistema escaneou o contrato e encontrou <b>{suggestedSigners.length}</b> pessoa(s) que precisam assinar. Deseja gerar os links?
+                        </p>
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 text-left space-y-2">
+                          {suggestedSigners.map((s, idx) => (
+                            <div key={idx} className="flex justify-between items-center text-sm">
+                              <span className="font-semibold text-slate-700">{s.signer_role}</span>
+                              <span className="text-slate-500">{s.signer_name || 'Nome pendente'}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <Button 
+                          onClick={handleApproveSuggestions} 
+                          disabled={isAdding} 
+                          className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold h-12 text-base shadow-lg shadow-brand-500/20"
+                        >
+                          {isAdding ? <Icons.Loader2 className="animate-spin mr-2" /> : <Icons.Link className="mr-2" />}
+                          Gerar {suggestedSigners.length} Links
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        {isScanning ? (
+                          <div className="flex flex-col items-center text-slate-500">
+                            <Icons.Loader2 className="animate-spin mb-2" size={32} />
+                            Escaneando documento...
+                          </div>
+                        ) : (
+                          <div className="text-slate-500">
+                            <Icons.Users className="mx-auto mb-3 opacity-20" size={48} />
+                            Nenhum signatário detetado. Crie manualmente abaixo.
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-3">

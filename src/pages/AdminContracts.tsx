@@ -352,8 +352,18 @@ const AdminContracts: React.FC = () => {
     return { recebidoMes, aReceberMes, inadimplencia, proximos, atrasados, vgvAno, mrrAtivo, chartData, saudeFinanceira };
   }, [installments, contracts]);
 
-  const salesContracts = contracts.filter((c) => c.type === 'sale');
-  const rentContracts = contracts.filter((c) => c.type === 'rent');
+  const salesContracts = contracts.filter((c) => {
+    // Regra de Negócio 1: Corretor só visualiza contratos onde ele é o autor ou responsável
+    const isCreator = c.user_id === user?.id || c.broker_id === user?.id || c.created_by === user?.id;
+    if (!isAdmin && !isCreator) return false;
+    return c.type === 'sale';
+  });
+  const rentContracts = contracts.filter((c) => {
+    // Regra de Negócio 1: Corretor só visualiza contratos onde ele é o autor ou responsável
+    const isCreator = c.user_id === user?.id || c.broker_id === user?.id || c.created_by === user?.id;
+    if (!isAdmin && !isCreator) return false;
+    return c.type === 'rent';
+  });
   const filterContractsByTab = (list: ContractWithSignatureState[]) =>
     list.filter((contract) => {
       if (contractTab === 'active') return contract.status === 'active';

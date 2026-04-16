@@ -1,4 +1,25 @@
-﻿// Conversor de imagem para contornar CORS e incompatibilidade de WebP no jsPDF
+﻿// ========== GERADOR DE HEADERS CUSTOMIZÁVEIS ==========
+export type HeaderVariant = 'logo_only' | 'logo_name' | 'logo_phone' | 'logo_name_phone' | 'full_header';
+
+export const buildContractHeader = (variant: HeaderVariant, tenant: any, logoUrl?: string) => {
+  const tName = tenant?.trade_name || tenant?.company_name || tenant?.name || 'Imobiliária';
+  const tPhone = tenant?.whatsapp || tenant?.phone;
+  const logoHtml = logoUrl ? `<img src="${logoUrl}" style="max-height: 60px; object-fit: contain;" />` : '';
+  const nameHtml = tName ? `<h2 style="margin: 0; font-size: 18px; color: #1e293b;">${tName}</h2>` : '';
+  const phoneHtml = tPhone ? `<p style="margin: 4px 0 0; font-size: 12px; color: #64748b;">📞 ${tPhone}</p>` : '';
+  const emailHtml = tenant?.email ? `<p style="margin: 4px 0 0; font-size: 12px; color: #64748b;">✉️ ${tenant.email}</p>` : '';
+  const addressHtml = tenant?.address ? `<p style="margin: 4px 0 0; font-size: 12px; color: #64748b;">📍 ${tenant.address}</p>` : '';
+
+  let rightContent = '';
+  if (variant === 'logo_name') rightContent = `${nameHtml}`;
+  if (variant === 'logo_phone') rightContent = `${phoneHtml}`;
+  if (variant === 'logo_name_phone') rightContent = `${nameHtml}${phoneHtml}`;
+  if (variant === 'full_header') rightContent = `${nameHtml}${phoneHtml}${emailHtml}${addressHtml}`;
+
+  return `<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 30px;"><div>${logoHtml}</div><div style="text-align: right;">${rightContent}</div></div>`;
+};
+
+// Conversor de imagem para contornar CORS e incompatibilidade de WebP no jsPDF
 const fetchImageAsBase64PNG = (url: string): Promise<string> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -700,11 +721,39 @@ export const buildContractHtml = async (
       .replace(/\{\{CORRETOR_NOME\}\}/g, resolvedBrokerDisplayName)
       .replace(/\{\{CORRETOR_CPF\}\}/g, finalDocument || '____________________')
       .replace(/\{\{CORRETOR_CRECI\}\}/g, finalCreci || '____________________')
+      
+      // LÓGICA DE REPRESENTAÇÃO JURÍDICA (Corretor vs. Imobiliária)
+      .replace(/\{\{REPRESENTANTE_NOME\}\}/g, data.representation_type === 'imobiliaria' ? (siteData.corporate_name || tenant?.name || '____________________') : (resolvedBrokerDisplayName || '____________________'))
+      .replace(/\{\{REPRESENTANTE_DOCUMENTO\}\}/g, data.representation_type === 'imobiliaria' ? (finalDocument || '____________________') : (brokerDisplayDoc || '____________________'))
+      .replace(/\{\{REPRESENTANTE_CRECI\}\}/g, data.representation_type === 'imobiliaria' ? (siteData.creci || '____________________') : (finalCreci || '____________________'))
+      
       // DADOS DO IMÓVEL
       .replace(/\{\{IMOVEL_TITULO\}\}/g, data.property?.title || '____________________')
       .replace(/\{\{IMOVEL_ENDERECO\}\}/g, propertyAddress)
       .replace(/\{\{IMOVEL_MATRICULA\}\}/g, data.property?.registration_number || data.property?.iptu_number || '____________________')
-      // DADOS DO LOCATÁRIO / COMPRADOR (CLIENTE PRINCIPAL)
+      
+      // DADOS DO INQUILINO (LOCATÁRIO) - BLINDAGEM COMPLETA
+      .replace(/\{\{INQUILINO_NOME\}\}/g, data.tenant_name || '____________________')
+      .replace(/\{\{INQUILINO_DOCUMENTO\}\}/g, data.tenant_document || '____________________')
+      .replace(/\{\{INQUILINO_RG\}\}/g, data.tenant_rg || '____________________')
+      .replace(/\{\{INQUILINO_NACIONALIDADE\}\}/g, data.tenant_nationality || 'brasileiro(a)')
+      .replace(/\{\{INQUILINO_PROFISSAO\}\}/g, data.tenant_profession || 'Autônomo')
+      .replace(/\{\{INQUILINO_ESTADO_CIVIL\}\}/g, data.tenant_marital_status || '____________________')
+      .replace(/\{\{INQUILINO_ENDERECO\}\}/g, data.tenant_address || '____________________')
+      .replace(/\{\{INQUILINO_CONJUGE\}\}/g, data.tenant_spouse_name || 'N/A')
+      .replace(/\{\{INQUILINO_CONJUGE_CPF\}\}/g, data.tenant_spouse_document || '____________________')
+      .replace(/\{\{INQUILINO_CONJUGE_RG\}\}/g, data.tenant_spouse_rg || '____________________')
+      .replace(/\{\{INQUILINO_CONJUGE_PROFISSAO\}\}/g, data.tenant_spouse_profession || 'Autônomo')
+      
+      // DADOS DO FIADOR (SE HOUVER)
+      .replace(/\{\{FIADOR_NOME\}\}/g, data.guarantor_name || '____________________')
+      .replace(/\{\{FIADOR_DOCUMENTO\}\}/g, data.guarantor_document || '____________________')
+      .replace(/\{\{FIADOR_RG\}\}/g, data.guarantor_rg || '____________________')
+      .replace(/\{\{FIADOR_PROFISSAO\}\}/g, data.guarantor_profession || 'Autônomo')
+      .replace(/\{\{FIADOR_ESTADO_CIVIL\}\}/g, data.guarantor_marital_status || '____________________')
+      .replace(/\{\{FIADOR_ENDERECO\}\}/g, data.guarantor_address || '____________________')
+      
+      // DADOS DO LOCATÁRIO / COMPRADOR (CLIENTE PRINCIPAL) - Aliases
       .replace(/\{\{LOCATARIO_NOME\}\}/g, data.tenant_name || data.buyer_name || data.lead?.name || '____________________')
       .replace(/\{\{LOCATARIO_CPF\}\}/g, data.tenant_document || data.buyer_document || '____________________')
       .replace(/\{\{LOCATARIO_RG\}\}/g, data.tenant_rg || data.buyer_rg || '____________________')
@@ -716,6 +765,7 @@ export const buildContractHtml = async (
       .replace(/\{\{LOCATARIO_CONJUGE_NOME\}\}/g, data.tenant_spouse_name || data.buyer_spouse_name || '____________________')
       .replace(/\{\{LOCATARIO_CONJUGE_CPF\}\}/g, data.tenant_spouse_document || data.buyer_spouse_document || '____________________')
       .replace(/\{\{LOCATARIO_CONJUGE_PROFISSAO\}\}/g, data.tenant_spouse_profession || data.buyer_spouse_profession || 'Autônomo')
+      
       // Aliases de compatibilidade (CLIENTE = LOCATÁRIO)
       .replace(/\{\{CLIENTE_NOME\}\}/g, data.tenant_name || data.buyer_name || data.lead?.name || '____________________')
       .replace(/\{\{CLIENTE_CPF\}\}/g, data.tenant_document || data.buyer_document || '____________________')
@@ -726,6 +776,7 @@ export const buildContractHtml = async (
       .replace(/\{\{CLIENTE_ENDERECO\}\}/g, data.tenant_address || data.buyer_address || '____________________')
       .replace(/\{\{CLIENTE_EMAIL\}\}/g, data.lead?.email || '____________________')
       .replace(/\{\{CLIENTE_TELEFONE\}\}/g, data.lead?.phone || '____________________')
+      
       // DADOS DO LOCADOR / PROPRIETÁRIO (VENDEDOR)
       .replace(/\{\{LOCADOR_NOME\}\}/g, data.landlord_name || data.seller_name || data.property?.owner_name || '____________________')
       .replace(/\{\{LOCADOR_CPF\}\}/g, data.landlord_document || data.seller_document || data.property?.owner_document || '____________________')
@@ -736,6 +787,7 @@ export const buildContractHtml = async (
       .replace(/\{\{LOCADOR_CONJUGE_NOME\}\}/g, data.landlord_spouse_name || data.seller_spouse_name || '____________________')
       .replace(/\{\{LOCADOR_CONJUGE_CPF\}\}/g, data.landlord_spouse_document || data.seller_spouse_document || '____________________')
       .replace(/\{\{LOCADOR_CONJUGE_PROFISSAO\}\}/g, data.landlord_spouse_profession || data.seller_spouse_profession || 'Autônomo')
+      
       // Aliases de compatibilidade (PROPRIETÁRIO = LOCADOR)
       .replace(/\{\{PROPRIETARIO_NOME\}\}/g, data.landlord_name || data.seller_name || data.property?.owner_name || '____________________')
       .replace(/\{\{PROPRIETARIO_CPF\}\}/g, data.landlord_document || data.seller_document || data.property?.owner_document || '____________________')
@@ -743,17 +795,12 @@ export const buildContractHtml = async (
       .replace(/\{\{PROPRIETARIO_PROFISSAO\}\}/g, data.landlord_profession || data.seller_profession || 'Autônomo')
       .replace(/\{\{PROPRIETARIO_ESTADO_CIVIL\}\}/g, data.landlord_marital_status || data.seller_marital_status || '____________________')
       .replace(/\{\{PROPRIETARIO_ENDERECO\}\}/g, data.landlord_address || data.seller_address || '____________________')
-      // DADOS DO FIADOR (SE HOUVER)
-      .replace(/\{\{FIADOR_NOME\}\}/g, data.guarantor_name || '____________________')
-      .replace(/\{\{FIADOR_CPF\}\}/g, data.guarantor_document || '____________________')
-      .replace(/\{\{FIADOR_RG\}\}/g, data.guarantor_rg || '____________________')
-      .replace(/\{\{FIADOR_PROFISSAO\}\}/g, data.guarantor_profession || 'Autônomo')
-      .replace(/\{\{FIADOR_ESTADO_CIVIL\}\}/g, data.guarantor_marital_status || '____________________')
-      .replace(/\{\{FIADOR_ENDERECO\}\}/g, data.guarantor_address || '____________________')
+      
       // VALORES E CONDIÇÕES
       .replace(/\{\{VALOR_NEGOCIADO\}\}/g, formatCurrency(dealValue))
       .replace(/\{\{VALOR_TOTAL\}\}/g, formatCurrency(dealValue))
       .replace(/\{\{VALOR_TOTAL_EXTENSO\}\}/g, currencyToWordsPtBr(dealValue))
+      .replace(/\{\{VALOR_ALUGUEL\}\}/g, formatCurrency(data.rent_value || dealValue))
       .replace(/\{\{VALOR_SINAL\}\}/g, formatCurrency(data.sale_down_payment))
       .replace(/\{\{VALOR_FINANCIAMENTO\}\}/g, formatCurrency(data.sale_financing_value))
       .replace(/\{\{VALOR_FGTS\}\}/g, formatCurrency(data.sale_consortium_value))
@@ -761,7 +808,74 @@ export const buildContractHtml = async (
       .replace(/\{\{QTD_PARCELAS\}\}/g, data.installments_count || '0')
       .replace(/\{\{DATA_VENCIMENTO\}\}/g, dueDateLabel)
       .replace(/\{\{PRAZO_MESES\}\}/g, String(leaseDuration))
-      .replace(/\{\{DATA_ATUAL\}\}/g, formatLongDatePtBr(new Date()));
+      .replace(/\{\{DATA_ATUAL\}\}/g, formatLongDatePtBr(new Date()))
+      .replace(/\{\{LOCAL_DATA\}\}/g, `${cityLocation}, ${formatLongDatePtBr(new Date())}`);
+
+    // --- ENDEREÇOS (Venda e Locação) ---
+    html = html.replace(/\{\{vendedor_endereco\}\}/g, data.owner_address || data.seller_address || '_______________________');
+    html = html.replace(/\{\{locador_endereco\}\}/g, data.owner_address || data.landlord_address || '_______________________');
+    html = html.replace(/\{\{comprador_endereco\}\}/g, data.buyer_address || data.tenant_address || '_______________________');
+    html = html.replace(/\{\{inquilino_endereco\}\}/g, data.tenant_address || '_______________________');
+    html = html.replace(/\{\{locatario_endereco\}\}/g, data.tenant_address || '_______________________');
+    html = html.replace(/\{\{fiador_endereco\}\}/g, data.guarantor_address || '_______________________');
+
+    // --- FINANCEIRO E VENCIMENTO ---
+    const dayDue = data.due_day || '05';
+    html = html.replace(/\{\{dia_vencimento\}\}/g, dayDue);
+    html = html.replace(/\{\{data_vencimento\}\}/g, dayDue);
+    html = html.replace(/\{\{vencimento\}\}/g, dayDue);
+
+    const discountValue = data.punctuality_discount ? Number(data.punctuality_discount) : 0;
+    const formattedDiscount = discountValue > 0 ? discountValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '_______________';
+    html = html.replace(/\{\{desconto_pontualidade\}\}/g, formattedDiscount);
+    html = html.replace(/\{\{desconto\}\}/g, formattedDiscount);
+    html = html.replace(/\{\{valor_desconto\}\}/g, formattedDiscount);
+
+    // --- DATA, LOCAL E FORO ---
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, '0');
+    const monthStr = today.toLocaleString('pt-BR', { month: 'long' });
+    const year = String(today.getFullYear());
+    const formattedFullDate = `${day} de ${monthStr} de ${year}`;
+
+    let city = tenant?.city;
+    let uf = tenant?.state || tenant?.uf;
+
+    if (!city && tenant?.address) {
+      const addressParts = tenant.address.split(',');
+      const lastPart = addressParts[addressParts.length - 1] || '';
+      const cityState = lastPart.split('-');
+      
+      if (cityState.length === 2) {
+        city = cityState[0].trim();
+        uf = uf || cityState[1].trim();
+      }
+    }
+
+    const cityName = city || 'Sede da Imobiliária';
+    const ufName = uf || 'UF';
+
+    html = html.replace(/\{\{cidade\}\}/g, cityName);
+    html = html.replace(/\{\{estado\}\}/g, ufName);
+    html = html.replace(/\{\{uf\}\}/g, ufName);
+    html = html.replace(/\{\{data_atual\}\}/g, formattedFullDate);
+    html = html.replace(/\{\{dia_atual\}\}/g, day);
+    html = html.replace(/\{\{mes_atual\}\}/g, monthStr);
+    html = html.replace(/\{\{ano_atual\}\}/g, year);
+    html = html.replace(/\{\{local_data\}\}/g, `${cityName} - ${ufName}, ${formattedFullDate}`);
+
+    // NOVA VARIÁVEL: FORO (JURISDIÇÃO)
+    const foroText = `Comarca de ${cityName} - ${ufName}`;
+    html = html.replace(/\{\{foro_comarca\}\}/g, foroText);
+
+    parsedContent = parsedContent.replace(/\{\{cidade\}\}/g, cityName);
+    parsedContent = parsedContent.replace(/\{\{estado\}\}/g, ufName);
+    parsedContent = parsedContent.replace(/\{\{uf\}\}/g, ufName);
+    parsedContent = parsedContent.replace(/\{\{data_atual\}\}/g, formattedFullDate);
+    parsedContent = parsedContent.replace(/\{\{dia_atual\}\}/g, day);
+    parsedContent = parsedContent.replace(/\{\{mes_atual\}\}/g, monthStr);
+    parsedContent = parsedContent.replace(/\{\{ano_atual\}\}/g, year);
+    parsedContent = parsedContent.replace(/\{\{local_data\}\}/g, `${cityName}, ${formattedFullDate}`);
 
     // As tags {{ASSINATURA_*}} sao injectadas no PDF final, quando temos acesso a contract_signatures.
     contractContent = `<div style="text-align: justify; line-height: 1.6; font-size: 14px;">${parsedContent.replace(/\n/g, '<br/>')}</div>`;
@@ -1958,15 +2072,7 @@ export const buildContractHtml = async (
       <thead>
         <tr>
           <td>
-            <div class="header">
-              <div>
-                <img src="${logoSrc}" class="logo" alt="Logo" />
-              </div>
-              <div class="header-text">
-                <div style="font-size: 14px; font-weight: bold; text-transform: uppercase; margin-bottom: 2px; color: ${tenant?.site_data?.primaryColor || '#000'}">${val(companyName || tenant?.name, 'Imobiliária')}</div>
-                <div style="font-size: 10px; color: #666;">Tel: ${val(tenant?.phone)} | Email: contato@${val(tenant?.subdomain)}.com.br</div>
-              </div>
-            </div>
+            ${buildContractHeader(data.header_variant || 'full_header', tenant, logoSrc)}
           </td>
         </tr>
       </thead>
