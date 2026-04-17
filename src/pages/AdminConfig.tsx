@@ -17,11 +17,10 @@ import {
   type AppUserRole,
   type Company as BaseCompany,
   type CompanyPermissions,
-  type CompanySettings,
   type FinanceConfig,
   type SiteData,
 } from '../types';
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, Headphones, ImageOff, Loader2, Upload, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, ImageOff, Loader2, Upload, X, XCircle } from 'lucide-react';
 import { useProperties } from '../hooks/useProperties';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import { generateZapXML } from '../utils/zapXmlGenerator';
@@ -91,7 +90,24 @@ type SitePartner = NonNullable<SiteData['partners']>[number];
 type OfficialSignatureTab = 'draw' | 'type' | 'upload';
 type ConfigTab = 'profile' | 'company' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance' | 'permissions';
 type SiteSubTab = 'templates' | 'identity' | 'hero' | 'about' | 'social';
-type PermissionKey = keyof CompanyPermissions;
+type PermissionRole = 'manager' | 'agent' | 'attendant' | 'admin';
+type RolePermissionKey =
+  | 'view_all_leads'
+  | 'reassign_leads'
+  | 'delete_leads'
+  | 'export_leads'
+  | 'edit_all_properties'
+  | 'delete_properties'
+  | 'manage_portals'
+  | 'create_contracts'
+  | 'edit_templates'
+  | 'view_finance'
+  | 'cancel_contracts';
+type RolePermissionMatrix = Record<PermissionRole, Record<RolePermissionKey, boolean>>;
+type ConfigPermissionState = CompanyPermissions &
+  {
+    role_permissions?: Partial<Record<PermissionRole, Partial<Record<RolePermissionKey, boolean>>>>;
+  };
 type TenantFinanceRecord = Pick<
   Company,
   'id' | 'name' | 'document' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template' | 'logo_url' | 'admin_signature_url'
@@ -103,7 +119,7 @@ type TenantFinanceRecord = Pick<
 };
 
 const CONFIG_TABS: ConfigTab[] = ['profile', 'company', 'team', 'traffic', 'subscription', 'site', 'contracts', 'integrations', 'finance', 'permissions'];
-const OWNER_ONLY_CONFIG_TABS: ConfigTab[] = ['company', 'subscription', 'finance', 'permissions'];
+const OWNER_ONLY_CONFIG_TABS: ConfigTab[] = ['company', 'subscription', 'finance'];
 const SITE_SUBTABS: SiteSubTab[] = ['templates', 'identity', 'hero', 'about', 'social'];
 const LEGACY_CONFIG_TAB_ALIASES: Partial<Record<string, ConfigTab>> = {
   assinatura: 'subscription',
@@ -160,43 +176,132 @@ const getRoleBadgeClassName = (role?: AppUserRole | null) => {
   }
 };
 
-const PERMISSION_SECTIONS: Array<{
-  title: string;
+const PERMISSION_ROLE_LABELS: Record<PermissionRole, string> = {
+  manager: 'Gerente de Vendas',
+  agent: 'Corretor Associado',
+  attendant: 'Atendente / Secretária',
+  admin: 'Administrador (TI/Base)',
+};
+
+const DEFAULT_ROLE_PERMISSION_MATRIX: RolePermissionMatrix = {
+  manager: {
+    view_all_leads: true,
+    reassign_leads: true,
+    delete_leads: false,
+    export_leads: true,
+    edit_all_properties: true,
+    delete_properties: false,
+    manage_portals: true,
+    create_contracts: true,
+    edit_templates: true,
+    view_finance: true,
+    cancel_contracts: true,
+  },
+  agent: {
+    view_all_leads: false,
+    reassign_leads: false,
+    delete_leads: false,
+    export_leads: false,
+    edit_all_properties: false,
+    delete_properties: false,
+    manage_portals: false,
+    create_contracts: true,
+    edit_templates: false,
+    view_finance: false,
+    cancel_contracts: false,
+  },
+  attendant: {
+    view_all_leads: true,
+    reassign_leads: true,
+    delete_leads: false,
+    export_leads: false,
+    edit_all_properties: false,
+    delete_properties: false,
+    manage_portals: false,
+    create_contracts: false,
+    edit_templates: false,
+    view_finance: false,
+    cancel_contracts: false,
+  },
+  admin: {
+    view_all_leads: false,
+    reassign_leads: false,
+    delete_leads: false,
+    export_leads: false,
+    edit_all_properties: false,
+    delete_properties: false,
+    manage_portals: true,
+    create_contracts: false,
+    edit_templates: true,
+    view_finance: false,
+    cancel_contracts: false,
+  },
+};
+
+const RBAC_PERMISSION_GROUPS: Array<{
+  category: string;
   icon: React.ComponentType<{ className?: string; size?: number }>;
-  items: Array<{
-    key: PermissionKey;
-    title: string;
-    description: string;
+  perms: Array<{
+    id: RolePermissionKey;
+    label: string;
+    desc: string;
   }>;
 }> = [
   {
-    title: 'Permissões de Corretores',
+    category: 'Módulo de CRM (Leads e Funil)',
     icon: Icons.Users,
-    items: [
-      {
-        key: 'brokers_can_create_properties',
-        title: 'Criar Novos Imóveis',
-        description: 'Permite que o corretor cadastre imóveis diretamente no sistema.',
-      },
-      {
-        key: 'brokers_can_edit_properties',
-        title: 'Editar Próprios Imóveis',
-        description: 'Permite que o corretor edite fotos e dados dos imóveis que ele mesmo cadastrou.',
-      },
+    perms: [
+      { id: 'view_all_leads', label: 'Ver todos os Leads da Imobiliária', desc: 'Se inativo, verá apenas os leads atribuídos a si mesmo.' },
+      { id: 'reassign_leads', label: 'Transferir Leads', desc: 'Permite transferir o lead de um corretor para outro.' },
+      { id: 'delete_leads', label: 'Excluir Leads', desc: 'Permite apagar o registro permanentemente do banco.' },
+      { id: 'export_leads', label: 'Exportar Banco de Leads', desc: 'Permite baixar planilhas (Excel/CSV) com dados dos clientes.' },
     ],
   },
   {
-    title: 'Permissões de Atendentes (SDR)',
-    icon: Headphones,
-    items: [
-      {
-        key: 'atendentes_can_assign_leads',
-        title: 'Distribuir Leads',
-        description: 'Permite que atendentes atribuam leads recebidos para outros corretores.',
-      },
+    category: 'Módulo de Imóveis',
+    icon: Icons.Home,
+    perms: [
+      { id: 'edit_all_properties', label: 'Editar Imóveis de Terceiros', desc: 'Permite alterar descrição e preço de captações de outros corretores.' },
+      { id: 'delete_properties', label: 'Excluir Imóveis', desc: 'Permite apagar do sistema. (Se inativo, apenas Arquiva).' },
+      { id: 'manage_portals', label: 'Gerenciar Exportação', desc: 'Permite ligar/desligar a exportação do imóvel para Zap/VivaReal.' },
+    ],
+  },
+  {
+    category: 'Contratos e Financeiro',
+    icon: Icons.FileSignature,
+    perms: [
+      { id: 'create_contracts', label: 'Gerar Contratos Padrão', desc: 'Criar propostas, contratos de venda e locação.' },
+      { id: 'edit_templates', label: 'Editar Modelos Base (Minutas)', desc: 'Alterar as regras jurídicas dos contratos da imobiliária.' },
+      { id: 'view_finance', label: 'Acessar Painel Financeiro', desc: 'Visualizar faturamento, VGV global e métricas da empresa.' },
+      { id: 'cancel_contracts', label: 'Cancelar/Distratar Contratos', desc: 'Permite encerrar contratos ativos.' },
     ],
   },
 ];
+
+const getPermissionRoleLabel = (role: PermissionRole) => PERMISSION_ROLE_LABELS[role];
+
+const getPermissionRoleDescription = (role: PermissionRole) => {
+  switch (role) {
+    case 'manager':
+      return 'Gerentes supervisionam equipes e têm acesso a dados sensíveis.';
+    case 'agent':
+      return 'Corretores são o front-line. Geralmente têm acesso restrito aos próprios leads.';
+    case 'attendant':
+      return 'Atendentes recebem leads e os distribuem, mas não gerenciam contratos.';
+    case 'admin':
+    default:
+      return 'Admins configuram o sistema, mas não interferem nas vendas.';
+  }
+};
+
+const createRolePermissionMatrix = (
+  storedMatrix?: ConfigPermissionState['role_permissions'] | null
+): RolePermissionMatrix => ({
+  manager: { ...DEFAULT_ROLE_PERMISSION_MATRIX.manager, ...(storedMatrix?.manager ?? {}) },
+  agent: { ...DEFAULT_ROLE_PERMISSION_MATRIX.agent, ...(storedMatrix?.agent ?? {}) },
+  attendant: { ...DEFAULT_ROLE_PERMISSION_MATRIX.attendant, ...(storedMatrix?.attendant ?? {}) },
+  admin: { ...DEFAULT_ROLE_PERMISSION_MATRIX.admin, ...(storedMatrix?.admin ?? {}) },
+});
 
 const TYPED_CANVAS_WIDTH = 1200;
 const TYPED_CANVAS_HEIGHT = 360;
@@ -575,7 +680,7 @@ const AdminConfig: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isAdmin = user?.role === 'admin' || isOwner;
   const canManageOfficialSignature = user?.role === 'owner';
-  const canManagePermissions = isAdmin;
+  const canManagePermissions = user?.role === 'owner' || user?.role === 'manager' || user?.role === 'super_admin';
   const adminCompanyId = user?.company_id ?? null;
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -595,14 +700,17 @@ const AdminConfig: React.FC = () => {
   };
 
   useEffect(() => {
-    if (OWNER_ONLY_CONFIG_TABS.includes(activeTab) && user?.role !== 'owner') {
+    if (
+      (OWNER_ONLY_CONFIG_TABS.includes(activeTab) && user?.role !== 'owner') ||
+      (activeTab === 'permissions' && !canManagePermissions)
+    ) {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
         next.set('tab', 'profile');
         return next;
       }, { replace: true });
     }
-  }, [activeTab, user?.role, setSearchParams]);
+  }, [activeTab, canManagePermissions, user?.role, setSearchParams]);
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedTeamMember, setSelectedTeamMember] = useState<Profile | null>(null);
@@ -642,11 +750,13 @@ const AdminConfig: React.FC = () => {
   const [signatureModalError, setSignatureModalError] = useState('');
   const [isXpModalOpen, setIsXpModalOpen] = useState(false);
   const [siteSettings, setSiteSettings] = useState({ route_to_central: true, central_whatsapp: '', central_user_id: '' });
-  const [companyPermissions, setCompanyPermissions] = useState<CompanyPermissions>({
+  const [selectedRolePermission, setSelectedRolePermission] = useState<PermissionRole>('agent');
+  const [rolePermissionDrafts, setRolePermissionDrafts] = useState<RolePermissionMatrix>(() => createRolePermissionMatrix());
+  const [companyPermissions, setCompanyPermissions] = useState<ConfigPermissionState>({
     ...DEFAULT_COMPANY_PERMISSIONS,
   });
   const [loadingPermissions, setLoadingPermissions] = useState(false);
-  const [savingPermissionKey, setSavingPermissionKey] = useState<PermissionKey | null>(null);
+  const [savingRolePermissions, setSavingRolePermissions] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem('trimoveis-sound') !== 'disabled');
   const [contract, setContract] = useState<Contract | null>(null);
@@ -979,6 +1089,7 @@ const AdminConfig: React.FC = () => {
   const fetchCompanyPermissions = async () => {
     if (!user?.company_id) {
       setCompanyPermissions({ ...DEFAULT_COMPANY_PERMISSIONS });
+      setRolePermissionDrafts(createRolePermissionMatrix());
       return;
     }
 
@@ -992,14 +1103,18 @@ const AdminConfig: React.FC = () => {
 
       if (error) throw error;
 
-      const settingsData = data as Pick<CompanySettings, 'permissions'> | null;
-      setCompanyPermissions({
+      const settingsData = data as { permissions?: ConfigPermissionState | null } | null;
+      const nextPermissions: ConfigPermissionState = {
         ...DEFAULT_COMPANY_PERMISSIONS,
         ...(settingsData?.permissions ?? {}),
-      });
+      };
+
+      setCompanyPermissions(nextPermissions);
+      setRolePermissionDrafts(createRolePermissionMatrix(nextPermissions.role_permissions));
     } catch (error) {
       console.error('Erro ao carregar permissões da empresa:', error);
       setCompanyPermissions({ ...DEFAULT_COMPANY_PERMISSIONS });
+      setRolePermissionDrafts(createRolePermissionMatrix());
     } finally {
       setLoadingPermissions(false);
     }
@@ -1952,18 +2067,35 @@ const AdminConfig: React.FC = () => {
     setSavingPassword(false);
   };
 
-  const saveCompanyPermissions = async (
-    nextPermissions: CompanyPermissions,
-    permissionKey: PermissionKey
-  ) => {
+  const toggleRolePermission = (permissionKey: RolePermissionKey) => {
+    setRolePermissionDrafts((prev) => ({
+      ...prev,
+      [selectedRolePermission]: {
+        ...prev[selectedRolePermission],
+        [permissionKey]: !prev[selectedRolePermission][permissionKey],
+      },
+    }));
+  };
+
+  const discardRolePermissionChanges = () => {
+    setRolePermissionDrafts(createRolePermissionMatrix(companyPermissions.role_permissions));
+    addToast('Alterações descartadas.', 'info');
+  };
+
+  const saveRolePermissionRules = async () => {
     if (!user?.company_id) {
       addToast('Empresa não encontrada para salvar as permissões.', 'error');
       return;
     }
 
     const previousPermissions = companyPermissions;
+    const nextPermissions: ConfigPermissionState = {
+      ...companyPermissions,
+      role_permissions: rolePermissionDrafts,
+    };
+
+    setSavingRolePermissions(true);
     setCompanyPermissions(nextPermissions);
-    setSavingPermissionKey(permissionKey);
 
     try {
       const { data: currentSettings, error: fetchError } = await supabase
@@ -2001,23 +2133,15 @@ const AdminConfig: React.FC = () => {
         })
       );
 
-      addToast('Permissão atualizada com sucesso.', 'success');
+      addToast(`Regras de ${getPermissionRoleLabel(selectedRolePermission)} salvas com sucesso.`, 'success');
     } catch (error) {
-      console.error('Erro ao salvar permissões da empresa:', error);
+      console.error('Erro ao salvar regras de permissões por cargo:', error);
       setCompanyPermissions(previousPermissions);
-      addToast('Não foi possível salvar essa permissão.', 'error');
+      setRolePermissionDrafts(createRolePermissionMatrix(previousPermissions.role_permissions));
+      addToast('Não foi possível salvar as regras desse cargo.', 'error');
     } finally {
-      setSavingPermissionKey(null);
+      setSavingRolePermissions(false);
     }
-  };
-
-  const handleTogglePermission = async (permissionKey: PermissionKey) => {
-    const nextPermissions: CompanyPermissions = {
-      ...companyPermissions,
-      [permissionKey]: !companyPermissions[permissionKey],
-    };
-
-    await saveCompanyPermissions(nextPermissions, permissionKey);
   };
 
   const handleSaveTrafficSettings = async (e: React.FormEvent) => {
@@ -2507,7 +2631,7 @@ const AdminConfig: React.FC = () => {
           { id: 'contracts', label: 'Modelos de Contrato', icon: Icons.FileSignature, adminOnly: true },
           { id: 'integrations', label: 'Integrações', icon: Icons.Share2, adminOnly: true },
           { id: 'finance', label: 'Financeiro / API', icon: Icons.DollarSign, ownerOnly: true },
-          { id: 'permissions', label: 'Permissões', icon: Icons.Shield, ownerOnly: true },
+          { id: 'permissions', label: 'Permissões', icon: Icons.Shield },
         ].filter(tab => {
           if (tab.ownerOnly) return user?.role === 'owner';
           if (tab.id === 'permissions') return canManagePermissions;
@@ -2802,21 +2926,34 @@ const AdminConfig: React.FC = () => {
             <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-6">
               <Icons.Settings size={20} className="text-brand-600" /> Preferências do Sistema
             </h2>
-
-            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-700">
-              <div>
-                <p className="font-bold text-slate-700 dark:text-slate-100">Sons de Notificação</p>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Tocar um som suave quando uma notificação chegar em tempo real.</p>
+            <div className="flex flex-col p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="font-bold text-slate-700 dark:text-slate-100">Sons de Notificação (Mestre)</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Ativar ou desativar todos os sons do sistema.</p>
+                </div>
+                <button type="button" role="switch" aria-checked={soundEnabled} onClick={toggleSound} className={`${soundEnabled ? 'bg-brand-600' : 'bg-slate-200 dark:bg-slate-600'} relative inline-flex h-6 w-11 items-center flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none`} >
+                  <span className={`${soundEnabled ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`} />
+                </button>
               </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={soundEnabled}
-                onClick={toggleSound}
-                className={`${soundEnabled ? 'bg-brand-600' : 'bg-slate-200 dark:bg-slate-600'} relative inline-flex h-6 w-11 items-center flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none`}
-              >
-                <span className={`${soundEnabled ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`} />
-              </button>
+
+              {soundEnabled && (
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3 pl-2">
+                  {[
+                    { id: 'leads', label: 'Novos Leads na Roleta', desc: 'Aviso sonoro ao receber um cliente' },
+                    { id: 'messages', label: 'Mensagens (WhatsApp/Aura)', desc: 'Aviso de nova mensagem no chat' },
+                    { id: 'system', label: 'Atualizações do Sistema', desc: 'Avisos gerais da equipe' }
+                  ].map(item => (
+                    <div key={item.id} className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{item.label}</p>
+                        <p className="text-xs text-slate-500">{item.desc}</p>
+                      </div>
+                      <input type="checkbox" defaultChecked className="rounded text-brand-600 focus:ring-brand-500 w-4 h-4 cursor-pointer" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           </div>
@@ -2904,42 +3041,6 @@ const AdminConfig: React.FC = () => {
                 <Icons.Link size={16} /> Convite Corretor
               </button>
             </div>
-          </div>
-
-          <div className={`p-6 rounded-2xl border shadow-sm transition-all ${distRules.enabled ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-white border-gray-200 dark:bg-dark-card dark:border-dark-border'}`}>
-            <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
-              <div>
-                <h3 className="font-bold text-slate-800 dark:text-white">Distribuição dos MEUS Imóveis</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Transfira automaticamente leads interessados nos seus imóveis para a equipe.
-                </p>
-              </div>
-              <button
-                onClick={() => updateDistRules({ enabled: !distRules.enabled })}
-                className={`px-5 py-2 rounded-xl font-bold transition-colors ${distRules.enabled ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-900 hover:bg-slate-800 text-white'}`}
-              >
-                {distRules.enabled ? 'Desativar Distribuição' : 'Ativar Distribuição'}
-              </button>
-            </div>
-
-            {distRules.enabled && (
-              <div className="pt-4 border-t border-emerald-200/50 dark:border-emerald-800/50">
-                <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Quais categorias deseja distribuir?</p>
-                <div className="flex flex-wrap gap-2">
-                  {['Casa', 'Apartamento', 'Terreno', 'Chácara', 'Comercial', 'Aluguel'].map((type) => (
-                    <label key={type} className="flex items-center gap-2 bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-brand-400 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={distRules.types.includes(type)}
-                        onChange={() => togglePropertyType(type)}
-                        className="rounded text-brand-600 focus:ring-brand-500"
-                      />
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{type}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -3032,82 +3133,80 @@ const AdminConfig: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'permissions' && user?.role === 'owner' && (
-        <div className="space-y-6 animate-fade-in">
-          <div className="border-b border-slate-200 pb-5">
-            <h2 className="flex items-center gap-2 text-xl font-black text-slate-800 dark:text-white">
-              <Icons.ShieldCheck className="text-brand-600" /> Controle de Permissões
-            </h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Defina o que cada cargo pode fazer dentro do sistema.
-            </p>
+      {activeTab === 'permissions' && canManagePermissions && (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+            <div>
+              <h2 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight mb-2">Controle de Acessos</h2>
+              <p className="text-slate-500 dark:text-slate-400">Defina exatamente o que cada cargo pode ver e fazer dentro do sistema.</p>
+            </div>
+            <div className="w-full sm:w-auto">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Editando Permissões do Cargo:</label>
+              <div className="relative">
+                <select
+                  value={selectedRolePermission}
+                  onChange={(e) => setSelectedRolePermission(e.target.value as PermissionRole)}
+                  className="w-full sm:w-64 appearance-none px-4 py-3 bg-white dark:bg-slate-800 border-2 border-brand-500 rounded-xl font-bold text-brand-700 dark:text-brand-400 outline-none shadow-sm cursor-pointer"
+                >
+                  <option value="manager">Gerente de Vendas</option>
+                  <option value="agent">Corretor Associado</option>
+                  <option value="attendant">Atendente / Secretária</option>
+                  <option value="admin">Administrador (TI/Base)</option>
+                </select>
+                <Icons.ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-brand-500 pointer-events-none" />
+              </div>
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-dark-card">
-            <div className="mb-6 rounded-2xl border border-brand-100 bg-brand-50/70 p-4 dark:border-brand-900/40 dark:bg-brand-900/10">
-              <p className="text-sm font-bold text-slate-800 dark:text-white">
-                Donos, gerentes e administradores operacionais sempre mantêm acesso total.
-              </p>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Os toggles abaixo controlam apenas as permissões dinâmicas de corretores e atendentes.
+          <div className="bg-white dark:bg-dark-card rounded-3xl border border-slate-200 dark:border-dark-border shadow-[0_8px_30px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="p-6 bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 bg-brand-100 dark:bg-brand-900/50 text-brand-600 rounded-xl">
+                  <Icons.Shield size={20} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 dark:text-white">Matriz de Permissões: {getPermissionRoleLabel(selectedRolePermission)}</h3>
+              </div>
+              <p className="text-sm text-slate-500">
+                {getPermissionRoleDescription(selectedRolePermission)}
               </p>
             </div>
 
             {loadingPermissions ? (
-              <div className="flex items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 px-4 py-12 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              <div className="flex items-center justify-center gap-3 px-4 py-16 text-sm text-slate-500 dark:text-slate-400">
                 <Loader2 size={18} className="animate-spin text-brand-600" />
                 Carregando permissões da empresa...
               </div>
             ) : (
-              <div className="space-y-8">
-                {PERMISSION_SECTIONS.map((section) => {
-                  const SectionIcon = section.icon;
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {RBAC_PERMISSION_GROUPS.map((group, idx) => {
+                  const GroupIcon = group.icon;
 
                   return (
-                    <div key={section.title}>
-                      <h3 className="mb-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-400">
-                        <SectionIcon size={16} /> {section.title}
-                      </h3>
-
-                      <div className="space-y-4">
-                        {section.items.map((permission) => {
-                          const isEnabled = companyPermissions[permission.key];
-                          const isSaving = savingPermissionKey === permission.key;
+                    <div key={idx} className="p-6">
+                      <h4 className="text-sm font-bold text-brand-600 dark:text-brand-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                        <GroupIcon size={16} /> {group.category}
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 pl-2 sm:pl-6">
+                        {group.perms.map(perm => {
+                          const isEnabled = Boolean(rolePermissionDrafts[selectedRolePermission][perm.id]);
 
                           return (
-                            <div
-                              key={permission.key}
-                              className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/40"
-                            >
+                            <div key={perm.id} className="flex items-start justify-between gap-4">
                               <div>
-                                <p className="font-bold text-slate-800 dark:text-white">
-                                  {permission.title}
-                                </p>
-                                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                                  {permission.description}
-                                </p>
+                                <p className="font-bold text-slate-800 dark:text-slate-200">{perm.label}</p>
+                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">{perm.desc}</p>
                               </div>
-
-                              <div className="flex items-center gap-3">
-                                {isSaving ? (
-                                  <Loader2 size={16} className="animate-spin text-brand-600" />
-                                ) : null}
-                                <button
-                                  type="button"
-                                  onClick={() => void handleTogglePermission(permission.key)}
-                                  disabled={Boolean(savingPermissionKey)}
-                                  aria-pressed={isEnabled}
-                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all ${
-                                    isEnabled ? 'bg-brand-600' : 'bg-slate-200 dark:bg-slate-700'
-                                  } ${savingPermissionKey ? 'cursor-not-allowed opacity-70' : ''}`}
-                                >
-                                  <span
-                                    className={`inline-block h-4 w-4 rounded-full bg-white transition ${
-                                      isEnabled ? 'translate-x-6' : 'translate-x-1'
-                                    }`}
-                                  />
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={isEnabled}
+                                onClick={() => toggleRolePermission(perm.id)}
+                                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                  isEnabled ? 'bg-brand-600' : 'bg-slate-200 dark:bg-slate-700'
+                                }`}
+                              >
+                                <span className={`${isEnabled ? 'translate-x-5' : 'translate-x-0'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}></span>
+                              </button>
                             </div>
                           );
                         })}
@@ -3117,6 +3216,26 @@ const AdminConfig: React.FC = () => {
                 })}
               </div>
             )}
+
+            <div className="p-6 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={discardRolePermissionChanges}
+                disabled={savingRolePermissions}
+                className="px-6 py-3 font-bold text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-60"
+              >
+                Descartar
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveRolePermissionRules()}
+                disabled={savingRolePermissions}
+                className="bg-brand-600 hover:bg-brand-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-brand-500/30 flex items-center gap-2 disabled:opacity-60"
+              >
+                {savingRolePermissions ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.Save size={18} />}
+                Salvar Regras para {getPermissionRoleLabel(selectedRolePermission)}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3128,6 +3247,42 @@ const AdminConfig: React.FC = () => {
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
               Defina para qual fila ou usuário os leads de cada canal de tráfego devem ser enviados.
             </p>
+          </div>
+
+          <div className={`p-6 rounded-2xl border shadow-sm transition-all ${distRules.enabled ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-white border-gray-200 dark:bg-dark-card dark:border-dark-border'}`}>
+            <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+              <div>
+                <h3 className="font-bold text-slate-800 dark:text-white">Distribuição dos MEUS Imóveis</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Transfira automaticamente leads interessados nos seus imóveis para a equipe.
+                </p>
+              </div>
+              <button
+                onClick={() => updateDistRules({ enabled: !distRules.enabled })}
+                className={`px-5 py-2 rounded-xl font-bold transition-colors ${distRules.enabled ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-900 hover:bg-slate-800 text-white'}`}
+              >
+                {distRules.enabled ? 'Desativar Distribuição' : 'Ativar Distribuição'}
+              </button>
+            </div>
+
+            {distRules.enabled && (
+              <div className="pt-4 border-t border-emerald-200/50 dark:border-emerald-800/50">
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Quais categorias deseja distribuir?</p>
+                <div className="flex flex-wrap gap-2">
+                  {['Casa', 'Apartamento', 'Terreno', 'Chácara', 'Comercial', 'Aluguel'].map((type) => (
+                    <label key={type} className="flex items-center gap-2 bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-brand-400 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={distRules.types.includes(type)}
+                        onChange={() => togglePropertyType(type)}
+                        className="rounded text-brand-600 focus:ring-brand-500"
+                      />
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{type}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -3167,29 +3322,33 @@ const AdminConfig: React.FC = () => {
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Responsável pelos Leads (Admin)</label>
                       <select
                         value={siteSettings.central_user_id}
-                        onChange={(e) => setSiteSettings(prev => ({ ...prev, central_user_id: e.target.value }))}
-                        className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                        onChange={(e) => {
+                          const selectedId = e.target.value;
+                          const selectedAdmin = profiles.find(p => p.id === selectedId);
+                          setSiteSettings(prev => ({
+                            ...prev,
+                            central_user_id: selectedId,
+                            central_whatsapp: selectedAdmin?.phone || ''
+                          }));
+                        }}
+                        className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                       >
                         <option value="">Ninguém (Fica na fila geral)</option>
-                        {profiles
-                          .filter((profile) =>
-                            ['owner', 'manager', 'admin'].includes(profile.role)
-                          )
-                          .map(admin => (
+                        {profiles.filter(p => ['owner', 'manager', 'admin'].includes(p.role)).map(admin => (
                           <option key={admin.id} value={admin.id}>{admin.name} ({getRoleLabel(admin.role)})</option>
                         ))}
                       </select>
                     </div>
-
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">WhatsApp da Recepção/Central</label>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">WhatsApp da Central (Sincronizado)</label>
                       <input
                         type="text"
-                        placeholder="Ex: 11999999999"
-                        className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500"
+                        disabled
+                        className="w-full px-4 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400"
                         value={siteSettings.central_whatsapp}
-                        onChange={(e) => setSiteSettings(prev => ({ ...prev, central_whatsapp: e.target.value }))}
+                        placeholder="Usuário não possui telefone no perfil"
                       />
+                      <p className="text-[10px] text-amber-600 mt-1 flex items-center gap-1"><Icons.AlertTriangle size={12}/> Para alterar o número, o responsável deve atualizar o próprio Perfil.</p>
                     </div>
                   </div>
                 )}
@@ -3205,25 +3364,62 @@ const AdminConfig: React.FC = () => {
             </div>
 
             <div className="space-y-4">
-              {[
-                { title: 'Meta Ads (Facebook & Instagram)', icon: Icons.Share2, color: 'text-blue-600', bg: 'bg-blue-50' },
-                { title: 'Google Ads', icon: Icons.Search, color: 'text-red-500', bg: 'bg-red-50' },
-              ].map((platform, i) => (
-                <div key={i} className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border p-4 flex items-center justify-between opacity-70 grayscale-[30%]">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-white mt-8 border-t border-slate-100 dark:border-slate-800 pt-6">Integrações de Anúncios</h3>
+
+              <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border overflow-hidden">
+                <div className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-blue-50/50 dark:bg-blue-900/10 gap-4">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 ${platform.bg} rounded-full flex items-center justify-center ${platform.color}`}>
-                      <platform.icon size={20} />
-                    </div>
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600"><Icons.Share2 size={20} /></div>
                     <div>
-                      <h4 className="font-bold text-slate-800 dark:text-white">{platform.title}</h4>
-                      <p className="text-xs text-slate-500">Integração nativa</p>
+                      <h4 className="font-bold text-slate-800 dark:text-white">Meta Ads (Facebook & Instagram)</h4>
+                      <p className="text-xs text-slate-500">Receba leads de formulários nativos diretamente no CRM</p>
                     </div>
                   </div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 px-2 py-1 rounded-md">
-                    Em Breve
-                  </span>
+                  <button type="button" onClick={() => alert("1. Vá no Gerenciador de Anúncios da Meta.\n2. Nas configurações do Formulário de Lead, vá em 'Configuração de Webhook'.\n3. Cole a URL fornecida abaixo.\n4. Insira o seu Access Token para autenticar.")} className="text-xs font-bold text-blue-600 bg-blue-100 px-3 py-1.5 rounded-lg hover:bg-blue-200 transition-colors flex items-center gap-1">
+                    <Icons.Info size={14}/> Como configurar?
+                  </button>
                 </div>
-              ))}
+                <div className="p-4 space-y-4 bg-slate-50/50 dark:bg-slate-900/20">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sua URL de Webhook (Copie e cole na Meta)</label>
+                    <div className="flex gap-2">
+                      <input type="text" readOnly value={`https://[SEU-DOMINIO]/api/webhook/meta/${user?.company_id}`} className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/50 text-slate-500 outline-none" />
+                      <button type="button" onClick={() => navigator.clipboard.writeText(`https://[SEU-DOMINIO]/api/webhook/meta/${user?.company_id}`)} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl text-slate-700 dark:text-slate-200 transition-colors"><Icons.Copy size={16}/></button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">Esta é a "porta de entrada" exclusiva da sua imobiliária para receber leads.</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Access Token / Token de Verificação</label>
+                      <input type="text" placeholder="Cole o token da Meta aqui" className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-brand-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pixel ID (Opcional)</label>
+                      <input type="text" placeholder="Ex: 1234567890" className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-brand-500" />
+                    </div>
+                  </div>
+                  <button type="button" className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition-colors shadow-md">Salvar Credenciais</button>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border overflow-hidden">
+                <div className="p-4 flex items-center justify-between bg-red-50/50 dark:bg-red-900/10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-500"><Icons.Search size={20} /></div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 dark:text-white">Google Ads</h4>
+                      <p className="text-xs text-slate-500">Rastreamento de conversões (Tag Global)</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-4 space-y-4 bg-slate-50/50 dark:bg-slate-900/20">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">ID de Acompanhamento (AW-XXXXX)</label>
+                    <input type="text" placeholder="AW-123456789" className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-brand-500" />
+                  </div>
+                  <button type="button" className="bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition-colors shadow-md">Salvar Configuração Google</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -4902,48 +5098,67 @@ const AdminConfig: React.FC = () => {
                   <select value={editingTemplate.type} onChange={e => setEditingTemplate({...editingTemplate, type: e.target.value})} className="px-4 py-3 rounded-xl border border-slate-200 dark:border-dark-border outline-none">
                     <option value="sale">Venda</option>
                     <option value="rent">Aluguel</option>
+                    <option value="administrative">Administrativo</option>
                   </select>
                 </div>
               </div>
-              <div className="mb-4 bg-brand-50 dark:bg-brand-500/10 p-4 rounded-xl border border-brand-100 dark:border-brand-500/20">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
-                  <p className="text-xs font-bold text-brand-700 dark:text-brand-300 uppercase tracking-wider">Variáveis Disponíveis</p>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!editingTemplate.content || editingTemplate.content.length < 50) {
-                        addToast('Cole o texto do contrato primeiro!', 'error');
-                        return;
-                      }
-                      setIsAnalyzingContract(true);
-                      addToast('A IA está a analisar o seu contrato...', 'info');
-                      try {
-                        const newContent = await autoTagContractTemplate(editingTemplate.content);
-                        setEditingTemplate({ ...editingTemplate, content: newContent });
-                        addToast('Contrato mapeado com sucesso! Revise os campos.', 'success');
-                      } catch (error: any) {
-                        // Agora a interface vai mostrar exatamente o motivo da falha!
-                        addToast(error.message || 'Erro ao usar IA no contrato.', 'error');
-                      } finally {
-                        setIsAnalyzingContract(false);
-                      }
-                    }}
-                    disabled={isAnalyzingContract}
-                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-brand-500 hover:from-purple-600 hover:to-brand-600 text-white rounded-xl font-bold text-xs transition-all shadow-md shadow-purple-500/20 disabled:opacity-50"
-                  >
-                    {isAnalyzingContract ? <Icons.Loader2 size={16} className="animate-spin" /> : <Icons.Sparkles size={16} />}
-                    {isAnalyzingContract ? 'Mapeando...' : 'Mapear com IA'}
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-500 mb-2">Pode clicar nos botões abaixo para inserir manualmente, ou usar a IA acima para substituir nomes reais do seu documento pelas tags automaticamente.</p>
+              <div className="mb-4 p-5 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800 rounded-xl">
+                <p className="text-sm font-bold text-blue-800 dark:text-blue-300 mb-3 flex items-center gap-2"><Icons.Copy size={16}/> Variáveis Mágicas (Clique para copiar)</p>
                 <div className="flex flex-wrap gap-2">
-                  {['{{IMOBILIARIA_NOME}}', '{{IMOBILIARIA_CNPJ}}', '{{IMOBILIARIA_ENDERECO}}', '{{CORRETOR_NOME}}', '{{CORRETOR_CRECI}}', '{{IMOBILIARIA_ASSINATURA}}',
-                    '{{CLIENTE_NOME}}', '{{CLIENTE_CPF}}', '{{CLIENTE_RG}}', '{{CLIENTE_NACIONALIDADE}}', '{{CLIENTE_PROFISSAO}}', '{{CLIENTE_ESTADO_CIVIL}}', '{{CLIENTE_ENDERECO}}',
-                    '{{PROPRIETARIO_NOME}}', '{{PROPRIETARIO_CPF}}', '{{PROPRIETARIO_RG}}', '{{PROPRIETARIO_ESTADO_CIVIL}}', '{{PROPRIETARIO_ENDERECO}}',
-                    '{{IMOVEL_ENDERECO}}', '{{IMOVEL_MATRICULA}}', '{{VALOR_TOTAL}}', '{{VALOR_TOTAL_EXTENSO}}', '{{DATA_VENCIMENTO}}', '{{PRAZO_MESES}}', '{{DATA_ATUAL}}'].map(tag => (
-                    <button key={tag} type="button" onClick={() => { navigator.clipboard.writeText(tag); addToast(`${tag} copiado!`, 'success'); }} className="px-2 py-1 bg-white dark:bg-slate-800 text-[10px] font-mono font-bold text-brand-600 rounded-lg shadow-sm border border-brand-100 hover:scale-105 transition-transform">{tag}</button>
+                  {[
+                    // Comprador / Proponente
+                    '{{comprador_nome}}', '{{comprador_cpf}}', '{{comprador_rg}}', '{{comprador_endereco}}', '{{comprador_profissao}}', '{{comprador_estado_civil}}', '{{comprador_email}}', '{{comprador_telefone}}',
+                    // Vendedor / Proprietário
+                    '{{vendedor_nome}}', '{{vendedor_cpf}}', '{{vendedor_rg}}', '{{vendedor_endereco}}', '{{vendedor_profissao}}', '{{vendedor_estado_civil}}',
+                    // Inquilino e Fiador
+                    '{{inquilino_nome}}', '{{inquilino_cpf}}', '{{fiador_nome}}', '{{fiador_cpf}}',
+                    // Imóvel
+                    '{{imovel_endereco}}', '{{imovel_matricula}}', '{{imovel_cartorio}}', '{{imovel_iptu}}', '{{imovel_descricao}}',
+                    // Valores e Condições
+                    '{{imovel_valor}}', '{{valor_extenso}}', '{{sinal}}', '{{condicoes_pagamento}}', '{{prazo_validade}}', '{{taxa_administracao}}', '{{comissao_venda}}',
+                    // Imobiliária / Corretor
+                    '{{corretor_nome}}', '{{corretor_creci}}', '{{imobiliaria_nome}}', '{{imobiliaria_cnpj}}',
+                    // Dados Legais e Assinaturas
+                    '{{foro_comarca}}', '{{local_data}}', '{{assinatura_vendedor}}', '{{assinatura_comprador}}', '{{assinatura_inquilino}}', '{{assinatura_fiador}}', '{{assinatura_testemunha_1}}', '{{assinatura_testemunha_2}}'
+                  ].map(variable => (
+                    <button key={variable} type="button" onClick={() => navigator.clipboard.writeText(variable)} className="px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono text-slate-600 dark:text-slate-300 hover:border-brand-500 hover:text-brand-600 transition-colors shadow-sm cursor-pointer">
+                      {variable}
+                    </button>
                   ))}
                 </div>
+                <p className="text-[10px] text-blue-600 mt-3">Copie e cole a tag desejada diretamente no texto do seu contrato. A IA e o sistema substituirão pelos dados reais na hora da geração.</p>
+              </div>
+              <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 rounded-xl border border-purple-100 bg-purple-50/70 p-4 dark:border-purple-900/30 dark:bg-purple-900/10">
+                <div>
+                  <p className="text-sm font-bold text-slate-800 dark:text-white">Mapeamento assistido por IA</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Cole o texto abaixo e peça para a IA substituir dados reais pelas tags do sistema.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!editingTemplate.content || editingTemplate.content.length < 50) {
+                      addToast('Cole o texto do contrato primeiro!', 'error');
+                      return;
+                    }
+                    setIsAnalyzingContract(true);
+                    addToast('A IA está a analisar o seu contrato...', 'info');
+                    try {
+                      const newContent = await autoTagContractTemplate(editingTemplate.content);
+                      setEditingTemplate({ ...editingTemplate, content: newContent });
+                      addToast('Contrato mapeado com sucesso! Revise os campos.', 'success');
+                    } catch (error: any) {
+                      // Agora a interface vai mostrar exatamente o motivo da falha!
+                      addToast(error.message || 'Erro ao usar IA no contrato.', 'error');
+                    } finally {
+                      setIsAnalyzingContract(false);
+                    }
+                  }}
+                  disabled={isAnalyzingContract}
+                  className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-brand-500 hover:from-purple-600 hover:to-brand-600 text-white rounded-xl font-bold text-xs transition-all shadow-md shadow-purple-500/20 disabled:opacity-50"
+                >
+                  {isAnalyzingContract ? <Icons.Loader2 size={16} className="animate-spin" /> : <Icons.Sparkles size={16} />}
+                  {isAnalyzingContract ? 'Mapeando...' : 'Mapear com IA'}
+                </button>
               </div>
               <div className="relative">
                 {isAnalyzingContract && (
@@ -4984,12 +5199,20 @@ const AdminConfig: React.FC = () => {
               {contractTemplates.map(template => (
                 <div key={template.id} className="p-5 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-between hover:border-brand-300 transition-colors group">
                   <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${template.type === 'sale' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                      template.type === 'sale'
+                        ? 'bg-emerald-100 text-emerald-600'
+                        : template.type === 'administrative'
+                          ? 'bg-purple-100 text-purple-600'
+                          : 'bg-blue-100 text-blue-600'
+                    }`}>
                       <Icons.FileText size={20} />
                     </div>
                     <div>
                       <p className="font-bold text-slate-800 dark:text-white">{template.name}</p>
-                      <p className="text-xs text-slate-500 uppercase">{template.type === 'sale' ? 'Venda' : 'Aluguel'}</p>
+                      <p className="text-xs text-slate-500 uppercase">
+                        {template.type === 'sale' ? 'Venda' : template.type === 'administrative' ? 'Administrativo' : 'Aluguel'}
+                      </p>
                     </div>
                   </div>
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
