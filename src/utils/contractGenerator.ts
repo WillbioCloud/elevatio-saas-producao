@@ -1019,109 +1019,89 @@ export const buildContractHtml = async (
     `;
   } else if (type === 'proposal_buy') {
     contractContent = `
-      <h1>PROPOSTA DE COMPRA DE IMÓVEL</h1>
-      
-      <p>Por este instrumento particular, a pessoa qualificada na Cláusula 1ª resolve, por livre e espontânea vontade, propor à imobiliária/corretor <strong>${val(companyName || tenant?.name, '______________________')}</strong> a compra do imóvel descrito na Cláusula 2ª pelo preço e condições aqui estabelecidos:</p>
-      
-      <h2>Cláusula 1ª - Identificação do proponente:</h2>
-      <p>
-      a) Nome: <strong>${val(data.buyer_name)}</strong>;<br/>
-      b) CPF: <strong>${val(data.buyer_document)}</strong>;<br/>
-      c) Profissão: ${val(data.buyer_profession)};<br/>
-      d) Estado civil: ${val(data.buyer_marital_status)};<br/>
-      e) Endereço: ${val(data.buyer_address)};<br/>
-      f) Telefones: ${val(data.buyer_phone)};<br/>
-      g) E-mail: ${val(data.buyer_email)}.${spouseText(data.buyer_spouse_name, data.buyer_spouse_document, data.buyer_spouse_rg || '', data.buyer_spouse_profession)}
-      </p>
-      
-      <h2>Cláusula 2ª – Identificação do imóvel:</h2>
-      <p>
-      a) Matrícula: _____________________________;<br/>
-      b) Cartório: _____________________________;<br/>
-      c) Inscrição municipal (IPTU/ITU/ITR): _____________________________;<br/>
-      d) Endereço: <strong>${val(data.property_address)}</strong>;<br/>
-      e) Descrição do imóvel: <strong>${val(data.property_description)}</strong>.
-      </p>
-      
-      <h2>Cláusula 3ª – Preço do imóvel e condições de pagamento:</h2>
-      <p>
-      1) O proponente oferece pagar pelo imóvel acima descrito o preço total de <strong>R$ ${val(data.total_value)}</strong>.<br/>
-      2) A forma de pagamento será a seguinte:<br/>
-      a) Sinal, princípio de pagamento ou arras de <strong>R$ ${val(data.down_payment)}</strong>, a ser depositado na seguinte conta: ______________________________________________________________.<br/>
-      b) O saldo restante será pago conforme aprovado e acordado posteriormente em contrato de compra e venda definitivo.
-      </p>
-      
-      <h2>Cláusula 4ª – Prazo da proposta e validade:</h2>
-      <p>
-      1) A presente proposta é irrevogável e irretratável.<br/>
-      2) O proponente manterá a presente proposta por prazo de <strong>05 (cinco) dias úteis</strong> da data de assinatura deste instrumento. Caso não seja aceita ou o proprietário não se manifeste no prazo estipulado, a mesma ficará sem nenhum efeito.
-      </p>
-      
-      <h2>Cláusula 5ª – Honorários do corretor de imóveis:</h2>
-      <p>
-      1) Em caso de desistência, arrependimento ou recusa imotivada do proponente em assinar o contrato principal de compra e venda após a aceitação desta proposta pelo proprietário/vendedor, o proponente obriga-se a pagar uma multa equivalente a 10% (dez por cento) do valor total da proposta, a qual será revertida, com exclusividade, em favor do corretor de imóveis credenciado.<br/>
-      2) Em caso de distrato por iniciativa do proponente após assinatura do contrato principal de compra e venda, o proponente assume, desde logo, para si, integralmente, o pagamento imediato dos honorários profissionais do corretor de imóveis, no mesmo percentual estabelecido no contrato de intermediação, nos moldes estabelecidos no art. 725 do Código Civil.
-      </p>
-      
-      <h2>Cláusula 6ª – Eleição do foro:</h2>
-      <p>
-      1) Todas as questões eventualmente oriundas do presente contrato, serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Câmara de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede à Rua 56, Qd CH Lt 07, Jardim Goiás, Goiânia - GO, consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.
-      </p>
-      
-      <h2>Cláusula 7ª – Local e assinatura do proponente e do corretor de imóveis:</h2>
-      <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
-      
-      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
-        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_COMPRADOR}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Proponente (Comprador)</span>
-        </div>
-        ${brokerSignature('Corretor de Imóveis')}
-      </div>
-      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
-        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_TESTEMUNHA_1}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
-          <span style="font-size: 14px; color: #000;">CPF:</span>
-        </div>
-        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_TESTEMUNHA_2}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
-          <span style="font-size: 14px; color: #000;">CPF:</span>
-        </div>
-      </div>
-      
-      <div style="margin-top: 50px; border-top: 2px dashed #000; padding-top: 30px; page-break-inside: avoid;">
-        <h1 style="text-align: center;">ACEITE DA PROPOSTA</h1>
+        <h2 style="text-align: center; color: #1e293b; font-size: 18px; margin-bottom: 20px; font-weight: bold;">PROPOSTA DE COMPRA DE IMÓVEL</h2>
+        <p style="font-size: 14px; text-align: justify; line-height: 1.6;">Por este instrumento particular, a pessoa qualificada na Cláusula 1ª resolve, por livre e espontânea vontade, propor à imobiliária/corretor <strong>${resolvedBrokerDisplayName}</strong> a compra do imóvel descrito na Cláusula 2ª pelo preço e condições aqui estabelecidos:</p>
         
-        <h2>Cláusula 8ª – Aceite do(s) proprietário(s)/vendedor(es):</h2>
-        <p>1) O(s) proprietário(s)/vendedor(es) aceita(m) a proposta conforme formulada e aguarda(m) o proponente para assinatura do contrato definitivo conforme o prazo estabelecido.<br/>
-        2) O(s) proprietário(s)/vendedor(es) autorizam o corretor de imóveis a receber e dar recibo do sinal ou princípio de pagamento constante na alínea "a" do item 2 da Cláusula 3ª acima.</p>
-        
-        <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
+        <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">Cláusula 1ª - Identificação do proponente:</h3>
+        <p style="font-size: 14px; line-height: 1.6; margin-left: 15px;">
+          a) Nome: <strong>${val(data.buyer_name, data.name)}</strong>;<br/>
+          b) CPF/CNPJ: <strong>${val(data.buyer_document, data.document, data.cpf)}</strong>;<br/>
+          c) Profissão: <strong>${val(data.buyer_profession)}</strong>;<br/>
+          d) Estado civil: <strong>${val(data.buyer_marital_status)}</strong>;<br/>
+          e) Endereço: <strong>${val(data.buyer_address)}</strong>;<br/>
+          f) Telefones: <strong>${val(data.buyer_phone, data.phone)}</strong>;<br/>
+          g) E-mail: <strong>${val(data.buyer_email, data.email)}</strong>.
+        </p>
+
+        <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">Cláusula 2ª – Identificação do imóvel:</h3>
+        <p style="font-size: 14px; line-height: 1.6; margin-left: 15px;">
+          a) Matrícula: <strong>${val(data.property_registration)}</strong>;<br/>
+          b) Cartório: <strong>${val(data.property_registry_office)}</strong>;<br/>
+          c) Inscrição municipal (IPTU/ITU/ITR): <strong>${val(data.property_tax_id)}</strong>;<br/>
+          d) Endereço: <strong>${val(data.property_address)}</strong>;<br/>
+          e) Descrição do imóvel: <strong>${val(data.property_description)}</strong>.
+        </p>
+
+        <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">Cláusula 3ª – Preço do imóvel e condições de pagamento:</h3>
+        <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>1)</strong> O proponente oferece pagar pelo imóvel acima descrito o preço total de <strong>R$ ${val(data.contract_value, data.price)}</strong>.</p>
+        <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>2)</strong> A forma de pagamento será a seguinte:<br/>
+        a) Sinal, princípio de pagamento ou arras de <strong>R$ ${val(data.down_payment)}</strong>, a ser depositado na conta designada pela imobiliária/proprietário.<br/>
+        b) Condições: <strong>${val(data.payment_method)}</strong><br/>
+        c) O saldo restante será pago conforme aprovado e acordado posteriormente em contrato de compra e venda definitivo.</p>
+
+        <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">Cláusula 4ª – Prazo da proposta e validade:</h3>
+        <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>1)</strong> A presente proposta é irrevogável e irretratável.</p>
+        <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>2)</strong> O proponente manterá a presente proposta por prazo de <strong>${val(data.validity_days, '5')} dias úteis</strong> da data de assinatura deste instrumento. Caso não seja aceita ou o proprietário não se manifeste no prazo estipulado, a mesma ficará sem nenhum efeito.</p>
+
+        <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">Cláusula 5ª – Honorários do corretor de imóveis:</h3>
+        <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>1)</strong> Em caso de desistência, arrependimento ou recusa imotivada do proponente em assinar o contrato principal de compra e venda após a aceitação desta proposta pelo proprietário/vendedor, o proponente obriga-se a pagar uma multa equivalente a 10% (dez por cento) do valor total da proposta, a qual será revertida, com exclusividade, em favor do corretor de imóveis credenciado.</p>
+        <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>2)</strong> Em caso de distrato por iniciativa do proponente após assinatura do contrato principal de compra e venda, o proponente assume o pagamento imediato dos honorários profissionais, nos moldes estabelecidos no art. 725 do Código Civil.</p>
+
+        <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">Cláusula 6ª – Eleição do foro:</h3>
+        <p style="font-size: 14px; text-align: justify; line-height: 1.6;">Fica eleito o foro da Comarca local ({{foro_comarca}}) para dirimir quaisquer questões decorrentes deste instrumento, conforme preceitos ditados pela Lei nº 9.307 de 23/09/1996 (arbitragem e conciliação se aplicável localmente).</p>
+
+        ${val(data.observations) ? `<h3 style="color: #334155; font-size: 14px; margin-top: 20px;">Cláusula Especial – Observações Adicionais:</h3>
+        <p style="font-size: 14px; text-align: justify; line-height: 1.6;">${val(data.observations)}</p>` : ''}
+
+        <p style="margin-top: 30px; text-align: center;">{{local_data}}</p>
+
+        <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+          <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px;">
+            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_COMPRADOR}}</div>
+            _________________________________________________<br/>
+            <strong style="font-size: 14px; color: #000;">${val(data.buyer_name, data.name)}</strong><br/>
+            Proponente (Comprador)
+          </div>
+          ${brokerSignature('Corretor de Imóveis')}
+        </div>
+
+        <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+          <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px;">
+            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_1}}</div>
+            _________________________________________________<br/>
+            <strong style="font-size: 14px; color: #000;">${val(data.witness_name_1, 'Testemunha 1')}</strong><br/>
+            CPF: ${val(data.witness_doc_1)}
+          </div>
+          <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px;">
+            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_2}}</div>
+            _________________________________________________<br/>
+            <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
+            CPF: 
+          </div>
+        </div>
+
+        <h3 style="color: #334155; font-size: 14px; margin-top: 40px; border-top: 1px solid #cbd5e1; padding-top: 20px; text-align: center;">ACEITE DA PROPOSTA</h3>
+        <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>1)</strong> O(s) proprietário(s)/vendedor(es) aceita(m) a proposta conforme formulada e aguarda(m) o proponente para assinatura do contrato definitivo conforme o prazo estabelecido.</p>
+        <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>2)</strong> O(s) proprietário(s)/vendedor(es) autorizam o corretor de imóveis a receber e dar recibo do sinal ou princípio de pagamento constante na alínea "a" do item 2 da Cláusula 3ª acima.</p>
         
         <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
-          <div class="signature-line" style="display: table-cell; width: 100%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-              {{ASSINATURA_PROPRIETARIO}}
-            </div>
+          <div class="signature-line" style="display: table-cell; width: 100%; text-align: center; vertical-align: top; padding: 0 10px;">
+            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_PROPRIETARIO}}</div>
             _________________________________________________<br/>
-            <strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/>
-            <span style="font-size: 14px; color: #000;">Proprietário (Vendedor)</span>
+            <strong style="font-size: 14px; color: #000;">Proprietário (Vendedor)</strong>
           </div>
         </div>
-      </div>
-    `;
+      `;
   } else if (type === 'intermed_sale') {
     return buildContractHtml('intermediacao', data, tenant, companyLogo, brokerDisplayName, brokerDisplayDoc, brokerDisplayCreci, companyName, customTemplateContent);
   } else if (type === 'intermediacao') {
