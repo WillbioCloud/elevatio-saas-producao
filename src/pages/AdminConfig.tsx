@@ -2111,17 +2111,39 @@ const AdminConfig: React.FC = () => {
     setRolePermissionDrafts(nextRolePermissions);
 
     try {
-      const { error: saveError } = await supabase
-        .from('settings')
-        .upsert(
-          {
-            company_id: companyId,
-            permissions: nextPermissions,
-          },
-          { onConflict: 'company_id' }
-        );
+      const payload = {
+        permissions: nextPermissions,
+      };
 
-      if (saveError) throw saveError;
+      // 1. Tenta atualizar a linha existente da imobiliaria (Padrao Multi-Tenant Correto)
+      const { error: updateError, count } = await supabase
+        .from('settings')
+        .update(payload, { count: 'exact' })
+        .eq('company_id', companyId);
+
+      if (updateError) throw updateError;
+
+      // 2. Se nao atualizou nenhuma linha (imobiliaria nova)
+      if (count === 0) {
+        const { error: insertError } = await supabase
+          .from('settings')
+          .insert([{ ...payload, company_id: companyId }]);
+
+        // 3. Se falhar por causa da chave duplicada (Tabela Global ou Sequence Bug), faz fallback
+        if (insertError) {
+          if (insertError.code === '23505') {
+            console.warn('Aviso: Chave duplicada na tabela settings. Atualizando o registro legado (id=1).');
+            const { error: fallbackError } = await supabase
+              .from('settings')
+              .update({ ...payload, company_id: companyId })
+              .eq('id', 1);
+
+            if (fallbackError) throw fallbackError;
+          } else {
+            throw insertError;
+          }
+        }
+      }
 
       window.dispatchEvent(
         new CustomEvent('company-permissions-updated', {
