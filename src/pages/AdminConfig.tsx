@@ -2111,39 +2111,22 @@ const AdminConfig: React.FC = () => {
     setRolePermissionDrafts(nextRolePermissions);
 
     try {
+      if (!companyId) {
+        throw new Error('ID da imobiliaria nao encontrado.');
+      }
+
+      // 1. Prepara os dados (Payload)
       const payload = {
+        company_id: companyId,
         permissions: nextPermissions,
       };
 
-      // 1. Tenta atualizar a linha existente da imobiliaria (Padrao Multi-Tenant Correto)
-      const { error: updateError, count } = await supabase
+      // 2. Executa o Upsert limpo usando a constraint de company_id
+      const { error: upsertError } = await supabase
         .from('settings')
-        .update(payload, { count: 'exact' })
-        .eq('company_id', companyId);
+        .upsert(payload, { onConflict: 'company_id' });
 
-      if (updateError) throw updateError;
-
-      // 2. Se nao atualizou nenhuma linha (imobiliaria nova)
-      if (count === 0) {
-        const { error: insertError } = await supabase
-          .from('settings')
-          .insert([{ ...payload, company_id: companyId }]);
-
-        // 3. Se falhar por causa da chave duplicada (Tabela Global ou Sequence Bug), faz fallback
-        if (insertError) {
-          if (insertError.code === '23505') {
-            console.warn('Aviso: Chave duplicada na tabela settings. Atualizando o registro legado (id=1).');
-            const { error: fallbackError } = await supabase
-              .from('settings')
-              .update({ ...payload, company_id: companyId })
-              .eq('id', 1);
-
-            if (fallbackError) throw fallbackError;
-          } else {
-            throw insertError;
-          }
-        }
-      }
+      if (upsertError) throw upsertError;
 
       window.dispatchEvent(
         new CustomEvent('company-permissions-updated', {
@@ -2154,14 +2137,16 @@ const AdminConfig: React.FC = () => {
         })
       );
 
-      addToast(`Regras de ${getPermissionRoleLabel(selectedRolePermission)} salvas com sucesso.`, 'success');
-    } catch (error) {
+      addToast('Regras do cargo salvas com sucesso.', 'success');
+    } catch (error: any) {
       console.error('Erro ao salvar regras de permissões por cargo:', error);
-      setCompanyPermissions(previousPermissions);
-      setRolePermissionDrafts(createRolePermissionMatrix(previousPermissions.role_permissions));
-      addToast('Não foi possível salvar as regras desse cargo.', 'error');
+      if (typeof setCompanyPermissions === 'function') setCompanyPermissions(previousPermissions);
+      if (typeof setRolePermissionDrafts === 'function' && typeof createRolePermissionMatrix === 'function') {
+        setRolePermissionDrafts(createRolePermissionMatrix(previousPermissions.role_permissions));
+      }
+      addToast(`Falha: ${error.message || 'Erro ao salvar regras'}`, 'error');
     } finally {
-      setSavingRolePermissions(false);
+      if (typeof setSavingRolePermissions === 'function') setSavingRolePermissions(false);
     }
   };
 
