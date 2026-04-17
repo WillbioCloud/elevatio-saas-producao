@@ -488,6 +488,45 @@ const AdminLeads: React.FC = () => {
     [effectiveFunnel, isAdmin, isMasterView, leads, user?.id]
   );
 
+  const filteredLeads = displayedLeads;
+
+  // 1. Controle de Permissao (Restrito a Donos, Super Admins ou permissao especifica no futuro)
+  const canExportLeads = user?.role === 'owner' || user?.role === 'super_admin' || user?.role === 'manager';
+
+  // 2. Funcao de Exportacao para Remarketing (Nome, Email, Telefone)
+  const handleExportCSV = () => {
+    if (!filteredLeads || filteredLeads.length === 0) {
+      addToast('Não há leads filtrados para exportar.', 'warning');
+      return;
+    }
+
+    // Monta o cabeçalho do CSV
+    let csvContent = 'Nome,Email,Telefone,Status\n';
+
+    // Varre os leads filtrados atuais e monta as linhas
+    filteredLeads.forEach(lead => {
+      // Limpa os dados para evitar quebra de CSV por vírgulas no nome
+      const nome = lead.name ? `"${lead.name.replace(/"/g, '""')}"` : 'Sem Nome';
+      const email = lead.email ? `"${lead.email}"` : '';
+      const telefone = lead.phone ? `"${lead.phone}"` : '';
+      const status = lead.status ? `"${lead.status}"` : '';
+
+      csvContent += `${nome},${email},${telefone},${status}\n`;
+    });
+
+    // Cria o blob e dispara o download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `leads_remarketing_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    addToast(`${filteredLeads.length} leads exportados com sucesso!`, 'success');
+  };
+
   const fetchLeads = async () => {
     if (!user?.id) return;
     const shouldShowInitialLoading = leads.length === 0;
@@ -1210,6 +1249,17 @@ const AdminLeads: React.FC = () => {
           <span className="text-xs font-semibold px-3 py-2 rounded-full bg-slate-100 text-slate-600 uppercase text-center sm:text-left border border-slate-200 w-full sm:w-auto">
             Funil: {isMasterView ? 'geral' : effectiveFunnel.replace('_', ' ')}
           </span>
+          {canExportLeads && (
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold transition-colors shadow-sm text-sm"
+              title="Exportar lista atual para CSV (Excel)"
+            >
+              <Icons.Download size={18} />
+              <span className="hidden sm:inline">Exportar Planilha</span>
+            </button>
+          )}
           {isAdmin && (
             <button
               type="button"

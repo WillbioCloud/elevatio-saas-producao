@@ -2083,51 +2083,50 @@ const AdminConfig: React.FC = () => {
   };
 
   const saveRolePermissionRules = async () => {
-    if (!user?.company_id) {
+    const companyId = user?.company_id;
+
+    if (!companyId) {
       addToast('Empresa não encontrada para salvar as permissões.', 'error');
       return;
     }
 
     const previousPermissions = companyPermissions;
+    const previousRolePermissions = createRolePermissionMatrix(companyPermissions?.role_permissions ?? null);
+    const selectedRoleDraft = rolePermissionDrafts?.[selectedRolePermission] ?? previousRolePermissions[selectedRolePermission];
+    const nextRolePermissions: RolePermissionMatrix = {
+      ...previousRolePermissions,
+      [selectedRolePermission]: {
+        ...DEFAULT_ROLE_PERMISSION_MATRIX[selectedRolePermission],
+        ...selectedRoleDraft,
+      },
+    };
     const nextPermissions: ConfigPermissionState = {
+      ...DEFAULT_COMPANY_PERMISSIONS,
       ...companyPermissions,
-      role_permissions: rolePermissionDrafts,
+      role_permissions: nextRolePermissions,
     };
 
     setSavingRolePermissions(true);
     setCompanyPermissions(nextPermissions);
+    setRolePermissionDrafts(nextRolePermissions);
 
     try {
-      const { data: currentSettings, error: fetchError } = await supabase
+      const { error: saveError } = await supabase
         .from('settings')
-        .select('id')
-        .eq('company_id', user.company_id)
-        .maybeSingle();
-
-      if (fetchError) throw fetchError;
-
-      if (currentSettings?.id) {
-        const { error: updateError } = await supabase
-          .from('settings')
-          .update({ permissions: nextPermissions })
-          .eq('id', currentSettings.id);
-
-        if (updateError) throw updateError;
-      } else {
-        const { error: insertError } = await supabase
-          .from('settings')
-          .insert({
-            company_id: user.company_id,
+        .upsert(
+          {
+            company_id: companyId,
             permissions: nextPermissions,
-          });
+          },
+          { onConflict: 'company_id' }
+        );
 
-        if (insertError) throw insertError;
-      }
+      if (saveError) throw saveError;
 
       window.dispatchEvent(
         new CustomEvent('company-permissions-updated', {
           detail: {
-            companyId: user.company_id,
+            companyId,
             permissions: nextPermissions,
           },
         })
