@@ -17,6 +17,7 @@ type SignatureStatus = 'pending' | 'signed' | 'rejected';
 
 interface SignatureRecord {
   id: string;
+  contract_id?: string;
   token: string | null;
   signer_name: string;
   signer_email: string;
@@ -61,13 +62,7 @@ export default function SignatureManagerModal({
   const [suggestedSigners, setSuggestedSigners] = useState<any[]>([]);
   const [isScanning, setIsScanning] = useState(false);
 
-  useEffect(() => {
-    if (contractId) {
-      void fetchSignatures();
-    }
-  }, [contractId]);
-
-  const fetchSignatures = async (): Promise<SignatureRecord[]> => {
+  const loadSignatures = async (): Promise<SignatureRecord[]> => {
     setIsLoading(true);
     try {
       const { data, error } = await supabase
@@ -86,7 +81,7 @@ export default function SignatureManagerModal({
 
       // Se não há assinaturas geradas, aciona o Scanner para procurar no texto
       if (!data || data.length === 0) {
-        await scanContractForSigners();
+        await scanContractForSigners(contractId, companyId);
       }
 
       return nextSignatures;
@@ -98,85 +93,108 @@ export default function SignatureManagerModal({
     }
   };
 
-  const scanContractForSigners = async () => {
+  const handleDeleteSignature = async (signatureId: string) => {
+    if (!window.confirm('Tem certeza que deseja remover este signatário? O link atual deixará de funcionar.')) return;
+
+    try {
+      const { error } = await supabase
+        .from('contract_signatures')
+        .delete()
+        .eq('id', signatureId);
+
+      if (error) throw error;
+
+      addToast('Signatário removido com sucesso.', 'success');
+      void loadSignatures();
+    } catch (err) {
+      console.error('Erro ao deletar assinatura:', err);
+      addToast('Erro ao remover signatário.', 'error');
+    }
+  };
+
+  useEffect(() => {
+    if (contractId) {
+      void loadSignatures();
+    }
+  }, [contractId]);
+
+  // Listener em tempo real APENAS para atualizar a UI (Notificacoes agora sao globais)
+  useEffect(() => {
+    if (!contractId) return;
+
+    const channel = supabase
+      .channel(`signatures_ui_${contractId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Escuta INSERT, UPDATE e DELETE
+          schema: 'public',
+          table: 'contract_signatures',
+          filter: `contract_id=eq.${contractId}`
+        },
+        () => {
+          // Apenas recarrega a tabela visual quando houver alteracao
+          void loadSignatures();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [contractId]);
+
+  const scanContractForSigners = async (contractId: string, companyId: string) => {
     setIsScanning(true);
     try {
-      const { data: contractData } = await supabase
+      const { data: contractData, error } = await supabase
         .from('contracts')
-        .select('type, contract_data, html_content, content')
+        .select('html_content, contract_data')
         .eq('id', contractId)
         .single();
 
-      if (!contractData) return;
-
-      const cData = contractData.contract_data || {};
-      // Lemos o texto real do contrato para encontrar palavras-chave
-      const fullText = String(contractData.html_content || contractData.content || '').toLowerCase();
-      const suggestions = [];
-
-      if (contractData.type === 'sale') {
-        suggestions.push({
-          contract_id: contractId,
-          signer_name: cData.owner_name || 'Vendedor',
-          signer_email: cData.owner_email || '',
-          signer_role: 'Vendedor',
-          status: 'pending'
-        });
-        suggestions.push({
-          contract_id: contractId,
-          signer_name: cData.buyer_name || cData.tenant_name || 'Comprador',
-          signer_email: cData.buyer_email || cData.tenant_email || '',
-          signer_role: 'Comprador',
-          status: 'pending'
-        });
-      } else {
-        suggestions.push({
-          contract_id: contractId,
-          signer_name: cData.owner_name || 'Locador',
-          signer_email: cData.owner_email || '',
-          signer_role: 'Locador',
-          status: 'pending'
-        });
-        suggestions.push({
-          contract_id: contractId,
-          signer_name: cData.tenant_name || 'Locatário',
-          signer_email: cData.tenant_email || '',
-          signer_role: 'Locatário',
-          status: 'pending'
-        });
+      if (error || !contractData?.html_content) {
+        console.error('Erro na query do contrato:', error);
+        return;
       }
 
-      if (fullText.includes('fiador') || cData.guarantor_name) {
-        suggestions.push({
-          contract_id: contractId,
-          signer_name: cData.guarantor_name || 'Fiador',
-          signer_email: cData.guarantor_email || '',
-          signer_role: 'Fiador',
-          status: 'pending'
-        });
+      const html = contractData.html_content.toLowerCase();
+      const cData = typeof contractData.contract_data === 'string' 
+        ? JSON.parse(contractData.contract_data) 
+        : (contractData.contract_data || {});
+        
+      const docType = cData.document_type || '';
+      const isAdminDoc = ['proposal_buy', 'intermed_sale', 'intermediacao', 'intermed_rent', 'visit_control', 'keys_receipt'].includes(docType);
+
+      const suggestions: Omit<SignatureRecord, 'id' | 'token' | 'signed_at'>[] = [];
+
+      // 1. DADOS BASE DOS CLIENTES
+      if (cData.owner_name) {
+        suggestions.push({ contract_id: contractId, signer_name: cData.owner_name, signer_email: cData.owner_email || '', signer_role: 'Proprietário', status: 'pending' });
+      } else if (cData.landlord_name) {
+        suggestions.push({ contract_id: contractId, signer_name: cData.landlord_name, signer_email: cData.landlord_email || '', signer_role: 'Locador', status: 'pending' });
       }
 
-      if (fullText.includes('testemunha')) {
-        suggestions.push({
-          contract_id: contractId,
-          signer_name: 'Testemunha 1',
-          signer_email: '',
-          signer_role: 'Testemunha',
-          status: 'pending'
-        });
-        if (fullText.includes('segunda testemunha') || fullText.includes('testemunha_2')) {
-          suggestions.push({
-            contract_id: contractId,
-            signer_name: 'Testemunha 2',
-            signer_email: '',
-            signer_role: 'Testemunha',
-            status: 'pending'
-          });
+      // NUNCA sugere Locatário/Comprador se for contrato administrativo (ex: Captação)
+      if (!isAdminDoc) {
+        if (cData.tenant_name) {
+          suggestions.push({ contract_id: contractId, signer_name: cData.tenant_name, signer_email: cData.tenant_email || '', signer_role: 'Locatário', status: 'pending' });
+        }
+        if (cData.buyer_name) {
+          suggestions.push({ contract_id: contractId, signer_name: cData.buyer_name, signer_email: cData.buyer_email || '', signer_role: 'Comprador', status: 'pending' });
         }
       }
 
-      const repRole = cData.representation_type === 'imobiliaria' ? 'Imobiliária' : 'Corretor';
-      if (fullText.includes('corretor') || fullText.includes('imobiliária') || fullText.includes('administradora') || cData.broker_name) {
+      if (cData.guarantor_name) {
+        suggestions.push({ contract_id: contractId, signer_name: cData.guarantor_name, signer_email: cData.guarantor_email || '', signer_role: 'Fiador', status: 'pending' });
+      }
+
+      // 2. CORRETOR OU IMOBILIÁRIA (Apenas para Documentos Administrativos)
+      if (isAdminDoc) {
+        const repType = cData.representation_type || 'corretor';
+        const repRole = repType === 'imobiliaria' ? 'Imobiliária' : 'Corretor';
+        
+        // Em vez de buscar no HTML, se for doc administrativo, já sugere o intermediador
         suggestions.push({
           contract_id: contractId,
           signer_name: cData.broker_name || repRole,
@@ -186,9 +204,40 @@ export default function SignatureManagerModal({
         });
       }
 
-      setSuggestedSigners(suggestions);
-    } catch (e) {
-      console.error('Erro no Scanner', e);
+      // 3. TESTEMUNHAS (Se houver tag no HTML)
+      if (html.includes('testemunha 1') || html.includes('{{assinatura_testemunha_1}}')) {
+        suggestions.push({ contract_id: contractId, signer_name: 'Testemunha 1', signer_email: '', signer_role: 'Testemunha', status: 'pending' });
+      }
+      if (html.includes('testemunha 2') || html.includes('{{assinatura_testemunha_2}}')) {
+        suggestions.push({ contract_id: contractId, signer_name: 'Testemunha 2', signer_email: '', signer_role: 'Testemunha', status: 'pending' });
+      }
+
+      // 4. INSERIR NO BANCO
+      if (suggestions.length > 0) {
+        // Busca as assinaturas que já existem no banco para este contrato
+        const { data: existing } = await supabase
+          .from('contract_signatures')
+          .select('signer_role, signer_name')
+          .eq('contract_id', contractId);
+        
+        // Cria uma chave única combinando Role + Nome para evitar duplicatas de Testemunhas
+        const existingKeys = existing?.map(e => `${e.signer_role}:${e.signer_name}`) || [];
+        
+        const toInsert = suggestions
+          .filter(s => !existingKeys.includes(`${s.signer_role}:${s.signer_name}`))
+          .map(s => ({
+            ...s,
+            company_id: companyId,
+            token: crypto.randomUUID()
+          }));
+        
+        if (toInsert.length > 0) {
+          await supabase.from('contract_signatures').insert(toInsert);
+          loadSignatures();
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao ler contrato:', err);
     } finally {
       setIsScanning(false);
     }
@@ -228,7 +277,7 @@ export default function SignatureManagerModal({
 
       addToast(`${payloads.length} link(s) gerado(s) com sucesso!`, 'success');
       setAutoSigners([]);
-      await fetchSignatures();
+      await loadSignatures();
     } catch (error) {
       console.error('Erro ao gerar links em lote:', error);
       addToast('Erro ao gerar links automáticos.', 'error');
@@ -257,7 +306,7 @@ export default function SignatureManagerModal({
       setNewSigner(INITIAL_SIGNER);
       setShowManualAdd(false);
       addToast('Link de assinatura gerado com sucesso!', 'success');
-      await fetchSignatures();
+      await loadSignatures();
     } catch (error) {
       console.error('Erro ao adicionar signatário:', error);
       addToast('Erro ao adicionar signatário.', 'error');
@@ -427,17 +476,31 @@ export default function SignatureManagerModal({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
+                          <Badge
+                            variant={sig.status === 'signed' ? 'default' : sig.status === 'rejected' ? 'destructive' : 'secondary'}
+                            className={
+                              sig.status === 'signed' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none' :
+                              sig.status === 'rejected' ? 'bg-red-100 text-red-700 hover:bg-red-100 border-none' :
+                              'bg-amber-100 text-amber-700 hover:bg-amber-100 border-none'
+                            }
+                          >
+                            {sig.status === 'signed' ? 'Assinado' : sig.status === 'rejected' ? 'Recusado' : 'Pendente'}
+                          </Badge>
+
+                          <button
+                            onClick={() => handleDeleteSignature(sig.id)}
+                            className="text-slate-400 hover:text-red-500 transition-colors p-1"
+                            title="Remover Signatário"
+                          >
+                            <Icons.Trash size={18} />
+                          </button>
+
                           {sig.status === 'pending' && (
-                            <>
-                              <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">Aguardando</Badge>
-                              <Button variant="outline" size="sm" className="h-8 gap-2 ml-2 hover:bg-slate-50" onClick={() => void copyToClipboard(sig.token)}>
-                                <Icons.Copy size={14} /> Copiar Link
-                              </Button>
-                            </>
+                            <Button variant="outline" size="sm" className="h-8 gap-2 hover:bg-slate-50" onClick={() => void copyToClipboard(sig.token)}>
+                              <Icons.Copy size={14} /> Copiar Link
+                            </Button>
                           )}
-                          {sig.status === 'signed' && <Badge className="bg-emerald-500 hover:bg-emerald-600">Concluído</Badge>}
-                          {sig.status === 'rejected' && <Badge variant="destructive">Recusado</Badge>}
                         </div>
                       </div>
                     ))}

@@ -310,6 +310,7 @@ const AdminPropertyForm: React.FC = () => {
   const [newImageUrl, setNewImageUrl] = useState('');
   const [showPreview, setShowPreview] = useState(false);
   const [showContractModal, setShowContractModal] = useState(false);
+  const [legalServiceType, setLegalServiceType] = useState<'intermediation' | 'administration'>('intermediation');
   const [showSignatureManager, setShowSignatureManager] = useState(false);
   const [existingContract, setExistingContract] = useState<{ id: string; status: string } | null>(null);
   const [originalAgentId, setOriginalAgentId] = useState<string | null>(null);
@@ -348,6 +349,12 @@ const AdminPropertyForm: React.FC = () => {
     }
     return true;
   }, [formData, images.length, step]);
+
+  useEffect(() => {
+    if (formData.listing_type !== 'rent' && legalServiceType === 'administration') {
+      setLegalServiceType('intermediation');
+    }
+  }, [formData.listing_type, legalServiceType]);
 
   useEffect(() => {
     if (!user?.company_id) return;
@@ -1014,6 +1021,52 @@ const AdminPropertyForm: React.FC = () => {
     }
   };
 
+  const handleQuickSave = async () => {
+    if (!id) {
+      addToast('Salve o imóvel pela primeira vez antes de gerar contratos.', 'info');
+      return false;
+    }
+    try {
+      // Sanitiza campos numericos transformando string vazia em null para nao quebrar o PostgreSQL.
+      const payloadToSave: Record<string, unknown> = { ...formData };
+      const numericFields = [
+        'commission_percentage',
+        'price',
+        'condo_fee',
+        'condominium',
+        'iptu',
+        'area',
+        'built_area',
+        'bedrooms',
+        'suites',
+        'bathrooms',
+        'parking_spaces',
+        'garage',
+        'down_payment',
+        'balloon_value',
+        'latitude',
+        'longitude',
+        'strategic_weight',
+      ];
+
+      numericFields.forEach((field) => {
+        if (payloadToSave[field] === '') {
+          payloadToSave[field] = null;
+        }
+      });
+
+      const { error } = await supabase.from('properties').update(payloadToSave).eq('id', id);
+      if (error) throw error;
+
+      addToast('Dados do imóvel salvos com sucesso!', 'success');
+      return true;
+    } catch (error) {
+      console.error('Erro ao salvar:', error);
+      addToast('Erro ao salvar os dados. Verifique os campos preenchidos.', 'error');
+      return false;
+    }
+  };
+
   const handleViewSignedPdf = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!existingContract?.id) return;
@@ -1155,7 +1208,15 @@ const AdminPropertyForm: React.FC = () => {
               <button
                 key={item}
                 type="button"
-                onClick={() => setStep(item)}
+                onClick={async () => {
+                  if (item === 'legal' && step !== 'legal') {
+                    const saved = await handleQuickSave();
+                    if (saved || !id) setStep('legal');
+                    return;
+                  }
+
+                  setStep(item);
+                }}
                 className={`flex items-center gap-2 border-b-2 px-4 py-4 text-sm font-bold transition-all whitespace-nowrap ${
                   isStrategyTab
                     ? isActive
@@ -2035,127 +2096,103 @@ const AdminPropertyForm: React.FC = () => {
           )}
 
           {step === 'legal' && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 mb-6">
-                <p className="text-sm text-indigo-800 font-medium flex items-center gap-2">
-                  <Icons.Scale size={16} className="text-indigo-500" />
-                  Estes dados serão usados para gerar o Contrato de Autorização de Intermediação.
-                </p>
-              </div>
-
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label htmlFor="commission_percentage" className="block text-sm font-bold text-slate-600 mb-2">Comissão Acordada (%) *</label>
+                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Comissão Acordada (%)</label>
                   <div className="relative">
                     <input
-                      id="commission_percentage"
                       type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={formData.commission_percentage}
-                      onChange={(e) => handleInput('commission_percentage', e.target.value === '' ? '' : Number(e.target.value))}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-brand-500"
+                      value={formData.commission_percentage || ''}
+                      onChange={e => setFormData({ ...formData, commission_percentage: e.target.value === '' ? '' : Number(e.target.value) })}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:border-brand-500 outline-none"
                     />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                    <span className="absolute right-4 top-3 text-slate-400 font-bold">%</span>
                   </div>
                 </div>
-
-                <div className="flex items-end">
-                  <label className="w-full inline-flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
+                <div className="flex items-center mt-8">
+                  <label className="flex items-center gap-3 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={formData.has_exclusivity}
-                      onChange={(e) => handleInput('has_exclusivity', e.target.checked)}
-                      className="w-5 h-5 text-brand-600 rounded focus:ring-brand-500"
+                      checked={formData.has_exclusivity || false}
+                      onChange={e => setFormData({ ...formData, has_exclusivity: e.target.checked })}
+                      className="w-5 h-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                     />
-                    <span className="text-sm font-semibold text-slate-700">Contrato com Exclusividade de Venda/Locação</span>
+                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Contrato com Exclusividade</span>
                   </label>
                 </div>
               </div>
 
-              <div className="mt-8 pt-8 border-t border-slate-200">
-                <div className="flex flex-col items-center justify-center p-8 bg-slate-50 border-2 border-dashed border-slate-300 rounded-2xl text-center">
-                  <Icons.FileSignature size={48} className="text-slate-400 mb-4" />
-                  <h3 className="text-lg font-bold text-slate-800 mb-2">Contrato de Intermediação</h3>
-                  <p className="text-sm text-slate-500 max-w-md mb-6">
-                    Para gerar o contrato de autorização e enviá-lo para assinatura digital do proprietário, conclua o preenchimento e salve este imóvel.
-                  </p>
-                  {existingContract ? (
-                    <div className="flex flex-col items-center gap-3 w-full animate-fade-in">
-                      <div className={`px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 ${
-                        existingContract.status === 'signed'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-amber-100 text-amber-700'
-                      }`}>
-                        {existingContract.status === 'signed' ? <Icons.CheckCircle size={18} /> : <Icons.Clock size={18} />}
-                        {existingContract.status === 'signed' ? 'Contrato Assinado' : 'Aguardando Assinatura'}
-                      </div>
-                      {existingContract.status === 'signed' ? (
-                        <div className="flex flex-wrap justify-center gap-3 mt-4">
-                          <button
-                            type="button"
-                            onClick={handleViewSignedPdf}
-                            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-lg flex items-center gap-2 transition-colors"
-                          >
-                            <Icons.Eye size={16} /> Visualizar Contrato Assinado
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (window.confirm('Atenção: Gerar um novo contrato invalidará a assinatura atual e será necessário solicitar uma nova assinatura do proprietário. Deseja continuar?')) {
-                                setShowContractModal(true);
-                              }
-                            }}
-                            className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors flex items-center gap-2"
-                          >
-                            <Icons.RefreshCw size={16} /> Refazer Contrato
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap justify-center gap-3 mt-4">
-                          <button
-                            type="button"
-                            onClick={() => setShowSignatureManager(true)}
-                            className="px-6 py-3 bg-brand-600 text-white rounded-xl text-sm font-bold hover:bg-brand-700 transition-colors shadow-lg flex items-center gap-2"
-                          >
-                            <Icons.PenTool size={16} /> Solicitar Assinatura
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              navigate(`/admin/contratos/${existingContract.id}`);
-                            }}
-                            className="px-6 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors shadow-lg"
-                          >
-                            Ver Detalhes
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setShowContractModal(true)}
-                            className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors"
-                          >
-                            Gerar Novo
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={!isEditing || !id}
-                      onClick={() => setShowContractModal(true)}
-                      className={`px-6 py-3 font-bold rounded-xl transition-colors ${
-                        !isEditing || !id
-                          ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                          : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-200'
-                      }`}
-                    >
-                      Gerar Contrato de Autorização
-                    </button>
+              <div className="p-5 border border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">Gerador de Contratos</h3>
+                  {existingContract && (
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${existingContract.status === 'signed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {existingContract.status === 'signed' ? 'Assinado' : 'Pendente de Assinatura'}
+                    </span>
                   )}
                 </div>
+
+                {!existingContract ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Tipo de Serviço</label>
+                      <select
+                        value={legalServiceType}
+                        onChange={e => setLegalServiceType(e.target.value as 'intermediation' | 'administration')}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-brand-500"
+                      >
+                        <option value="intermediation">Apenas Intermediação (Angariação)</option>
+                        {formData.listing_type === 'rent' && <option value="administration">Intermediação + Administração Mensal</option>}
+                      </select>
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!id) {
+                            addToast('Salve o imóvel antes de gerar o contrato.', 'info');
+                            return;
+                          }
+                          setShowContractModal(true);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 bg-slate-900 dark:bg-brand-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-sm"
+                      >
+                        <Icons.FileText size={18} />
+                        Gerar Contrato de {legalServiceType === 'administration' ? 'Administração' : 'Intermediação'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/admin/contratos/${existingContract.id}`)}
+                      className="flex-1 flex items-center justify-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 px-4 py-3 rounded-xl font-bold hover:bg-slate-50 transition-colors"
+                    >
+                      <Icons.Eye size={18} /> Ver Documento
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowSignatureManager(true)}
+                      className="flex-1 flex items-center justify-center gap-2 bg-brand-500 text-white px-4 py-3 rounded-xl font-bold hover:bg-brand-600 transition-colors shadow-sm shadow-brand-500/20"
+                    >
+                      <Icons.PenTool size={18} /> Gerir Assinaturas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('Deseja alterar o tipo de serviço e gerar um novo contrato? (O atual será substituído).')) {
+                          setExistingContract(null);
+                        }
+                      }}
+                      className="sm:w-auto w-full flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 px-4 py-3 rounded-xl font-bold transition-colors"
+                      title="Configurar Novo Contrato"
+                    >
+                      <Icons.RefreshCw size={18} />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2330,7 +2367,7 @@ const AdminPropertyForm: React.FC = () => {
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
             {/* Botão de Salvar Rápido (Oculto na última etapa) */}
-            {step !== 'seo' && (
+            {step !== 'legal' && (
               <button
                  type="submit"
                  disabled={loading}
@@ -2341,7 +2378,7 @@ const AdminPropertyForm: React.FC = () => {
                </button>
             )}
 
-            {step !== 'seo' ? (
+            {step !== 'legal' ? (
               <button
                 type="button"
                 onClick={goNext}
@@ -2408,6 +2445,7 @@ const AdminPropertyForm: React.FC = () => {
           }
         }}
         propertyId={id || ''}
+        serviceType={legalServiceType}
         propertyData={{
           title: formData.title,
           listing_type: formData.listing_type,

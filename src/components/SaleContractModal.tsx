@@ -77,6 +77,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     client_id: null as string | null,
     property_id: '',
     broker_id: '',
+    representation_type: 'corretor',
     sale_date: new Date().toISOString().split('T')[0],
     sale_total_value: '',
     sale_down_payment: '',
@@ -227,6 +228,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         client_id: contractData.client_id || contractData.lead_id || null,
         property_id: contractData.property_id || '',
         broker_id: contractData.broker_id || '',
+        representation_type: contractData.representation_type || contractData.contract_data?.representation_type || 'corretor',
         sale_date: contractData.start_date || '',
         sale_total_value: String(contractData.sale_total_value || ''),
         sale_down_payment: String(contractData.sale_down_payment || ''),
@@ -338,6 +340,9 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     try {
       const selectedPropertyData = properties.find(p => p.id === formData.property_id);
       const contractDataObj = {
+        representation_type: formData.representation_type,
+
+        // DADOS DO COMPRADOR
         buyer_name: contractClientRecord?.name || '',
         buyer_phone: contractClientRecord?.phone || '',
         buyer_email: contractClientRecord?.email || '',
@@ -346,9 +351,13 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         buyer_profession: contractDetails.buyer_profession,
         buyer_marital_status: contractDetails.buyer_marital_status,
         buyer_address: contractDetails.buyer_address || selectedLeadRecord?.address,
+        buyer_nationality: contractDetails.buyer_nationality,
         buyer_spouse_name: contractDetails.buyer_spouse_name,
         buyer_spouse_document: contractDetails.buyer_spouse_document,
         buyer_spouse_profession: contractDetails.buyer_spouse_profession,
+        buyer_spouse_rg: contractDetails.buyer_spouse_rg,
+        
+        // DADOS DO VENDEDOR
         seller_name: selectedPropertyData?.owner_name || 'Proprietário Atual',
         seller_phone: selectedPropertyData?.owner_phone || '',
         seller_email: selectedPropertyData?.owner_email || '',
@@ -357,20 +366,35 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         seller_profession: contractDetails.seller_profession,
         seller_marital_status: contractDetails.seller_marital_status,
         seller_address: contractDetails.seller_address || selectedPropertyData?.owner_address || properties.find(p => p.id === formData.property_id)?.owner_address,
+        seller_nationality: contractDetails.seller_nationality,
         seller_spouse_name: contractDetails.seller_spouse_name,
         seller_spouse_document: contractDetails.seller_spouse_document,
         seller_spouse_rg: contractDetails.seller_spouse_rg,
         seller_spouse_profession: contractDetails.seller_spouse_profession,
-        permuta_address: contractDetails.permuta_address,
-        permuta_description: contractDetails.permuta_description,
-        permuta_value: contractDetails.permuta_value,
+        
+        // DADOS DO IMÓVEL
         property_address: selectedPropertyData ? `${selectedPropertyData.address}, ${selectedPropertyData.city}` : '',
+        property_city: selectedPropertyData?.city || '',
+        property_state: selectedPropertyData?.state || '',
         property_description: selectedPropertyData?.title || '',
         property_registration: selectedPropertyData?.property_registration || '',
         property_registry_office: selectedPropertyData?.property_registry_office || '',
         property_municipal_registration: selectedPropertyData?.property_municipal_registration || '',
-        total_value: formData.sale_total_value,
+        
+        // DADOS FINANCEIROS DA VENDA
+        sale_total_value: formData.sale_total_value || selectedPropertyData?.price,
+        total_value: formData.sale_total_value || selectedPropertyData?.price,
+        sale_down_payment: formData.sale_down_payment || '0',
         down_payment: formData.sale_down_payment || '0',
+        sale_financing_value: (Number(formData.sale_total_value || selectedPropertyData?.price || 0) - Number(formData.sale_down_payment || 0)),
+        permutation_value: contractDetails.permuta_value || formData.permutation_value || '0',
+        
+        // DADOS DE PERMUTA (SE HOUVER)
+        permuta_address: contractDetails.permuta_address,
+        permuta_description: contractDetails.permuta_description,
+        permuta_value: contractDetails.permuta_value,
+        
+        // DADOS BANCÁRIOS
         bank_name: formData.sale_financing_bank || '',
         bank_agency: '',
         bank_account: '',
@@ -405,6 +429,9 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
       const selectedTemplate = customTemplates.find(t => `custom_${t.id}` === documentType);
       const resolvedClientId = formData.client_id || formData.lead_id || null;
       const contractDataObj = {
+        representation_type: formData.representation_type,
+
+        // DADOS DO COMPRADOR
         buyer_name: selectedLeadForSave?.name || '',
         buyer_phone: selectedLeadForSave?.phone || '',
         buyer_email: selectedLeadForSave?.email || '',
@@ -413,9 +440,13 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         buyer_profession: contractDetails.buyer_profession,
         buyer_marital_status: contractDetails.buyer_marital_status,
         buyer_address: contractDetails.buyer_address || selectedLeadForSave?.address,
+        buyer_nationality: contractDetails.buyer_nationality,
         buyer_spouse_name: contractDetails.buyer_spouse_name,
         buyer_spouse_document: contractDetails.buyer_spouse_document,
         buyer_spouse_profession: contractDetails.buyer_spouse_profession,
+        buyer_spouse_rg: contractDetails.buyer_spouse_rg,
+        
+        // DADOS DO VENDEDOR
         seller_name: selectedPropForSave?.owner_name || 'Proprietário Atual',
         seller_phone: selectedPropForSave?.owner_phone || '',
         seller_email: selectedPropForSave?.owner_email || '',
@@ -424,20 +455,33 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         seller_profession: contractDetails.seller_profession,
         seller_marital_status: contractDetails.seller_marital_status,
         seller_address: contractDetails.seller_address || selectedPropForSave?.owner_address || properties.find(p => p.id === formData.property_id)?.owner_address,
+        seller_nationality: contractDetails.seller_nationality,
         seller_spouse_name: contractDetails.seller_spouse_name,
         seller_spouse_document: contractDetails.seller_spouse_document,
         seller_spouse_rg: contractDetails.seller_spouse_rg,
         seller_spouse_profession: contractDetails.seller_spouse_profession,
-        permuta_address: contractDetails.permuta_address,
-        permuta_description: contractDetails.permuta_description,
-        permuta_value: contractDetails.permuta_value,
+        
+        // DADOS DO IMÓVEL
         property_address: selectedPropForSave ? `${selectedPropForSave.address}, ${selectedPropForSave.city}` : '',
         property_description: selectedPropForSave?.title || '',
         property_registration: selectedPropForSave?.property_registration || '',
         property_registry_office: selectedPropForSave?.property_registry_office || '',
         property_municipal_registration: selectedPropForSave?.property_municipal_registration || '',
-        total_value: formData.sale_total_value,
+        
+        // DADOS FINANCEIROS DA VENDA
+        sale_total_value: formData.sale_total_value || selectedPropForSave?.price,
+        total_value: formData.sale_total_value || selectedPropForSave?.price,
+        sale_down_payment: formData.sale_down_payment || '0',
         down_payment: formData.sale_down_payment || '0',
+        sale_financing_value: (Number(formData.sale_total_value || selectedPropForSave?.price || 0) - Number(formData.sale_down_payment || 0)),
+        permutation_value: contractDetails.permuta_value || formData.permutation_value || '0',
+        
+        // DADOS DE PERMUTA (SE HOUVER)
+        permuta_address: contractDetails.permuta_address,
+        permuta_description: contractDetails.permuta_description,
+        permuta_value: contractDetails.permuta_value,
+        
+        // DADOS BANCÁRIOS
         bank_name: formData.sale_financing_bank || '',
         bank_agency: '',
         bank_account: '',
@@ -491,9 +535,11 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         sale_payment_method: formData.sale_is_cash ? formData.sale_payment_method : null,
         commission_percentage: Number(formData.commission_percentage) || 0,
         commission_total: Number(formData.commission_value) || 0,
+        representation_type: formData.representation_type,
         contract_data: {
           ...contractDetails,
           ...contractDataObj,
+          representation_type: formData.representation_type,
           buyer_name: selectedLeadForSave?.name || '',
           seller_name: selectedPropForSave?.owner_name || 'Proprietário',
           document_type: documentType,

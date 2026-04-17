@@ -2,7 +2,7 @@
 export type HeaderVariant = 'logo_only' | 'logo_name' | 'logo_phone' | 'logo_name_phone' | 'full_header';
 
 export const buildContractHeader = (variant: HeaderVariant, tenant: any, logoUrl?: string) => {
-  const tName = tenant?.trade_name || tenant?.company_name || tenant?.name || 'Imobiliária';
+  const tName = tenant?.corporate_name || tenant?.trade_name || tenant?.company_name || tenant?.name || '';
   const tPhone = tenant?.whatsapp || tenant?.phone;
   const logoHtml = logoUrl ? `<img src="${logoUrl}" style="max-height: 60px; object-fit: contain;" />` : '';
   const nameHtml = tName ? `<h2 style="margin: 0; font-size: 18px; color: #1e293b;">${tName}</h2>` : '';
@@ -91,6 +91,10 @@ const resolveSignatureRoleKey = (value: string) => {
     return 'imobiliaria';
   }
 
+  if (normalizedRole.includes('conjuge') && normalizedRole.includes('fiador')) {
+    return 'conjuge_fiador';
+  }
+
   if (normalizedRole.includes('fiador')) {
     return 'fiador';
   }
@@ -112,6 +116,7 @@ const SIGNATURE_ROLE_ALIASES: Record<string, string[]> = {
   locador: ['locador', 'proprietario', 'vendedor'],
   dono: ['dono', 'proprietario', 'vendedor', 'locador'],
   fiador: ['fiador'],
+  conjuge_fiador: ['conjuge_fiador', 'conjuge_do_fiador', 'esposa_fiador', 'esposo_fiador', 'outorga_uxoria'],
   testemunha: ['testemunha'],
   corretor: ['corretor', 'imobiliaria', 'administrador', 'administradora', 'admin'],
   imobiliaria: ['imobiliaria', 'corretor', 'administrador', 'administradora', 'admin'],
@@ -258,6 +263,7 @@ export const injectSignatureStamps = async (
     '{{ASSINATURA_COMPRADOR}}',
     '{{ASSINATURA_IMOBILIARIA}}',
     '{{ASSINATURA_FIADOR}}',
+    '{{ASSINATURA_CONJUGE_FIADOR}}',
     '{{ASSINATURA_TESTEMUNHA_1}}',
     '{{ASSINATURA_TESTEMUNHA_2}}',
   ];
@@ -434,8 +440,6 @@ export const buildContractHtml = async (
   companyName: string = '',
   customTemplateContent?: string
 ) => {
-  const agencySignatureUrl = tenant?.admin_signature_url || '';
-
   // Função auxiliar para evitar "undefined" e permitir múltiplos fallbacks
   const val = (...values: any[]) => {
     const fallback = '______________________';
@@ -591,9 +595,9 @@ export const buildContractHtml = async (
     }
     
     .signature-line {
-      border-top: 1px solid #000;
+      border-top: none !important; /* Força a remoção da linha preta */
       text-align: center;
-      padding-top: 5px;
+      padding-top: 10px;
       font-size: 12px;
       margin-top: 40px;
       page-break-inside: avoid; /* Evita que a assinatura seja cortada no meio entre duas páginas */
@@ -650,7 +654,7 @@ export const buildContractHtml = async (
 
   // Preenchimento automático de profissão padrão (Autônomo) para campos vazios
   const defaultProf = 'Autônomo';
-  const profFields = ['buyer_profession', 'seller_profession', 'landlord_profession', 'tenant_profession', 'buyer_spouse_profession', 'seller_spouse_profession', 'guarantor_profession', 'landlord_spouse_profession', 'tenant_spouse_profession'];
+  const profFields = ['buyer_profession', 'seller_profession', 'landlord_profession', 'tenant_profession', 'buyer_spouse_profession', 'seller_spouse_profession', 'guarantor_profession', 'guarantor_spouse_profession', 'landlord_spouse_profession', 'tenant_spouse_profession'];
   profFields.forEach(field => {
     if (!data[field] || String(data[field]).trim() === '') {
       data[field] = defaultProf;
@@ -658,18 +662,32 @@ export const buildContractHtml = async (
   });
 
   // Função auxiliar para imprimir dados do cônjuge
-  const spouseText = (name: string, doc: string, rg: string, prof: string) => 
-    name ? `, juntamente com seu cônjuge/companheiro(a): <strong>${name}</strong>, portador(a) do RG nº ${val(rg)} e CPF nº ${val(doc)}, Profissão: ${val(prof)}` : '';
+  const spouseText = (name?: string, doc?: string, rg?: string, prof?: string) => {
+    if (!name || name.trim() === '') return '';
+    const docText = doc ? ` e CPF nº ${doc}` : '';
+    const rgText = rg ? `, RG nº ${rg}` : '';
+    const profText = prof ? `, ${prof}` : '';
+    return `, e seu cônjuge ${name}${profText}${rgText}${docText}`;
+  };
 
   // Extrai o siteData para acessar os dados da Empresa/Sede
   const siteData = typeof tenant?.site_data === 'string' ? JSON.parse(tenant.site_data) : tenant?.site_data || {};
 
   // Lógica de Fallback Inteligente (Sede > Perfil Corretor > Tenant Base)
-  const resolvedBrokerDisplayName =
-    siteData.corporate_name || brokerDisplayName || tenant?.name || 'Corretor / Imobiliária';
-  const finalDocument = siteData.cnpj || tenant?.document || brokerDisplayDoc;
+  const isImob = data.representation_type === 'imobiliaria';
+  
+  const resolvedBrokerDisplayName = isImob
+    ? (data.broker_name || siteData.corporate_name || tenant?.corporate_name || tenant?.name || companyName || 'Imobiliária')
+    : (data.broker_name || brokerDisplayName || siteData.corporate_name || tenant?.name || 'Corretor');
+
+  const finalDocument = isImob
+    ? (data.broker_document || siteData.cnpj || tenant?.cnpj || tenant?.document || tenant?.cpf)
+    : (data.broker_document || brokerDisplayDoc || siteData.cnpj || tenant?.document);
   const resolvedBrokerDisplayDoc = finalDocument ? `CPF/CNPJ: ${finalDocument}` : 'CPF/CNPJ: Não informado';
-  const finalCreci = siteData.creci || brokerDisplayCreci;
+
+  const finalCreci = isImob
+    ? (data.broker_creci || siteData.creci || tenant?.creci)
+    : (data.broker_creci || brokerDisplayCreci || siteData.creci || tenant?.creci);
   const resolvedBrokerDisplayCreci = finalCreci ? `CRECI: ${finalCreci}` : '';
 
   // Montagem do Endereço e Contatos da Sede
@@ -688,12 +706,10 @@ export const buildContractHtml = async (
     : '';
 
   // Bloco HTML reutilizável para a assinatura do intermediador
-  const brokerSignature = (roleLabel: string) => `
-    <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+  const brokerSignature = (roleLabel: string, width: string = '50%') => `
+    <div class="signature-line" style="display: table-cell; width: ${width}; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
       <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-        ${agencySignatureUrl
-          ? `<img src="${agencySignatureUrl}" style="max-height: 55px; max-width: 180px; object-fit: contain; mix-blend-multiply;" alt="Assinatura Imobiliária" />`
-          : '{{ASSINATURA_IMOBILIARIA}}'}
+        {{ASSINATURA_IMOBILIARIA}}
       </div>
       __________________________________________________<br/>
       <strong style="font-size: 11px; color: #000;">${resolvedBrokerDisplayName}</strong><br/>
@@ -723,9 +739,9 @@ export const buildContractHtml = async (
       .replace(/\{\{CORRETOR_CRECI\}\}/g, finalCreci || '____________________')
       
       // LÓGICA DE REPRESENTAÇÃO JURÍDICA (Corretor vs. Imobiliária)
-      .replace(/\{\{REPRESENTANTE_NOME\}\}/g, data.representation_type === 'imobiliaria' ? (siteData.corporate_name || tenant?.name || '____________________') : (resolvedBrokerDisplayName || '____________________'))
-      .replace(/\{\{REPRESENTANTE_DOCUMENTO\}\}/g, data.representation_type === 'imobiliaria' ? (finalDocument || '____________________') : (brokerDisplayDoc || '____________________'))
-      .replace(/\{\{REPRESENTANTE_CRECI\}\}/g, data.representation_type === 'imobiliaria' ? (siteData.creci || '____________________') : (finalCreci || '____________________'))
+      .replace(/\{\{REPRESENTANTE_NOME\}\}/g, resolvedBrokerDisplayName || '____________________')
+      .replace(/\{\{REPRESENTANTE_DOCUMENTO\}\}/g, finalDocument || '____________________')
+      .replace(/\{\{REPRESENTANTE_CRECI\}\}/g, finalCreci || '____________________')
       
       // DADOS DO IMÓVEL
       .replace(/\{\{IMOVEL_TITULO\}\}/g, data.property?.title || '____________________')
@@ -811,279 +827,193 @@ export const buildContractHtml = async (
       .replace(/\{\{DATA_ATUAL\}\}/g, formatLongDatePtBr(new Date()))
       .replace(/\{\{LOCAL_DATA\}\}/g, `${cityLocation}, ${formatLongDatePtBr(new Date())}`);
 
-    // --- ENDEREÇOS (Venda e Locação) ---
-    html = html.replace(/\{\{vendedor_endereco\}\}/g, data.owner_address || data.seller_address || '_______________________');
-    html = html.replace(/\{\{locador_endereco\}\}/g, data.owner_address || data.landlord_address || '_______________________');
-    html = html.replace(/\{\{comprador_endereco\}\}/g, data.buyer_address || data.tenant_address || '_______________________');
-    html = html.replace(/\{\{inquilino_endereco\}\}/g, data.tenant_address || '_______________________');
-    html = html.replace(/\{\{locatario_endereco\}\}/g, data.tenant_address || '_______________________');
-    html = html.replace(/\{\{fiador_endereco\}\}/g, data.guarantor_address || '_______________________');
-
-    // --- FINANCEIRO E VENCIMENTO ---
-    const dayDue = data.due_day || '05';
-    html = html.replace(/\{\{dia_vencimento\}\}/g, dayDue);
-    html = html.replace(/\{\{data_vencimento\}\}/g, dayDue);
-    html = html.replace(/\{\{vencimento\}\}/g, dayDue);
-
-    const discountValue = data.punctuality_discount ? Number(data.punctuality_discount) : 0;
-    const formattedDiscount = discountValue > 0 ? discountValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '_______________';
-    html = html.replace(/\{\{desconto_pontualidade\}\}/g, formattedDiscount);
-    html = html.replace(/\{\{desconto\}\}/g, formattedDiscount);
-    html = html.replace(/\{\{valor_desconto\}\}/g, formattedDiscount);
-
-    // --- DATA, LOCAL E FORO ---
-    const today = new Date();
-    const day = String(today.getDate()).padStart(2, '0');
-    const monthStr = today.toLocaleString('pt-BR', { month: 'long' });
-    const year = String(today.getFullYear());
-    const formattedFullDate = `${day} de ${monthStr} de ${year}`;
-
-    let city = tenant?.city;
-    let uf = tenant?.state || tenant?.uf;
-
-    if (!city && tenant?.address) {
-      const addressParts = tenant.address.split(',');
-      const lastPart = addressParts[addressParts.length - 1] || '';
-      const cityState = lastPart.split('-');
-      
-      if (cityState.length === 2) {
-        city = cityState[0].trim();
-        uf = uf || cityState[1].trim();
-      }
-    }
-
-    const cityName = city || 'Sede da Imobiliária';
-    const ufName = uf || 'UF';
-
-    html = html.replace(/\{\{cidade\}\}/g, cityName);
-    html = html.replace(/\{\{estado\}\}/g, ufName);
-    html = html.replace(/\{\{uf\}\}/g, ufName);
-    html = html.replace(/\{\{data_atual\}\}/g, formattedFullDate);
-    html = html.replace(/\{\{dia_atual\}\}/g, day);
-    html = html.replace(/\{\{mes_atual\}\}/g, monthStr);
-    html = html.replace(/\{\{ano_atual\}\}/g, year);
-    html = html.replace(/\{\{local_data\}\}/g, `${cityName} - ${ufName}, ${formattedFullDate}`);
-
-    // NOVA VARIÁVEL: FORO (JURISDIÇÃO)
-    const foroText = `Comarca de ${cityName} - ${ufName}`;
-    html = html.replace(/\{\{foro_comarca\}\}/g, foroText);
-
-    parsedContent = parsedContent.replace(/\{\{cidade\}\}/g, cityName);
-    parsedContent = parsedContent.replace(/\{\{estado\}\}/g, ufName);
-    parsedContent = parsedContent.replace(/\{\{uf\}\}/g, ufName);
-    parsedContent = parsedContent.replace(/\{\{data_atual\}\}/g, formattedFullDate);
-    parsedContent = parsedContent.replace(/\{\{dia_atual\}\}/g, day);
-    parsedContent = parsedContent.replace(/\{\{mes_atual\}\}/g, monthStr);
-    parsedContent = parsedContent.replace(/\{\{ano_atual\}\}/g, year);
-    parsedContent = parsedContent.replace(/\{\{local_data\}\}/g, `${cityName}, ${formattedFullDate}`);
+    parsedContent = parsedContent.replace(/\{\{cidade\}\}/g, cityLocation);
+    parsedContent = parsedContent.replace(/\{\{estado\}\}/g, stateLocation);
+    parsedContent = parsedContent.replace(/\{\{uf\}\}/g, stateLocation);
+    parsedContent = parsedContent.replace(/\{\{data_atual\}\}/g, formatLongDatePtBr(new Date()));
+    parsedContent = parsedContent.replace(/\{\{dia_atual\}\}/g, String(new Date().getDate()).padStart(2, '0'));
+    parsedContent = parsedContent.replace(/\{\{mes_atual\}\}/g, new Date().toLocaleString('pt-BR', { month: 'long' }));
+    parsedContent = parsedContent.replace(/\{\{ano_atual\}\}/g, String(new Date().getFullYear()));
+    parsedContent = parsedContent.replace(/\{\{local_data\}\}/g, `${cityLocation}, ${formatLongDatePtBr(new Date())}`);
 
     // As tags {{ASSINATURA_*}} sao injectadas no PDF final, quando temos acesso a contract_signatures.
     contractContent = `<div style="text-align: justify; line-height: 1.6; font-size: 14px;">${parsedContent.replace(/\n/g, '<br/>')}</div>`;
   } else if (type === 'sale_standard') {
     contractContent = `
-      <h1>CONTRATO DE COMPRA E VENDA DE IMÓVEL A PRAZO</h1>
-      
-      <p>Por este instrumento particular, as partes qualificadas na Cláusula 1ª resolvem, por livre e espontânea vontade, firmar o presente contrato de compra e venda do imóvel descrito na cláusula 2ª, conforme os termos, preço e condições estabelecidos nas cláusulas seguintes:</p>
-      
-      <h2>Cláusula 1ª - Identificação das partes</h2>
-      <p><strong>1) De um lado como comprador(es):</strong><br/>
-      a) Nome: <strong>${val(data.buyer_name)}</strong>;<br/>
-      b) CPF/CNPJ: <strong>${val(data.buyer_document)}</strong>;<br/>
-      c) Profissão: ${val(data.buyer_profession)};<br/>
-      d) Estado civil: ${val(data.buyer_marital_status)};<br/>
-      e) Endereço: ${val(data.buyer_address)};<br/>
-      f) Telefones: ${val(data.buyer_phone)};<br/>
-      g) E-mail: ${val(data.buyer_email)}.${spouseText(data.buyer_spouse_name, data.buyer_spouse_document, data.buyer_spouse_rg || '', data.buyer_spouse_profession)}</p>
-      
-      <p><strong>2) E de outro lado, como vendedor(es):</strong><br/>
-      a) Nome: <strong>${val(data.seller_name)}</strong>;<br/>
-      b) CPF/CNPJ: <strong>${val(data.seller_document)}</strong>;<br/>
-      c) Profissão: ${val(data.seller_profession)};<br/>
-      d) Estado civil: ${val(data.seller_marital_status)};<br/>
-      e) Endereço: ${val(data.seller_address)};<br/>
-      f) Telefones: ${val(data.seller_phone)}.${spouseText(data.seller_spouse_name, data.seller_spouse_document, data.seller_spouse_rg || '', data.seller_spouse_profession)}</p>
-      
-      <h2>Cláusula 2ª – Objeto do contrato</h2>
-      <p>1) O presente contrato tem por finalidade a compra e a venda "ad corpus" do imóvel descrito a seguir, de propriedade do(s) vendedor(es):<br/>
-      a) Endereço: <strong>${val(data.property_address)}</strong>;<br/>
-      b) Descrição do imóvel: <strong>${val(data.property_description)}</strong>.</p>
-      
-      <p>2) O(s) vendedor(es) declara(m) que são proprietários e possuidores a justo título do imóvel acima descrito, que ele está livre e desembaraçado de qualquer ônus, gravame, ações reais, pessoais reipersecutórias, dívidas, hipotecas, impostos ou taxas em atraso, restrições e outros.</p>
-      
-      <h2>Cláusula 3ª – Preço do imóvel e condições de pagamento</h2>
-      <p>1) A transação objeto deste instrumento contratual tem preço total de <strong>R$ ${val(data.total_value)}</strong>.</p>
-      
-      <p>2) O preço será pago da seguinte forma:<br/>
-      a) Sinal, princípio de pagamento ou arras de <strong>R$ ${val(data.down_payment)}</strong>, pagos no ato da assinatura do presente contrato.<br/>
-      b) O saldo remanescente será pago conforme as condições de parcelamento ou financiamento aprovadas e combinadas entre as partes.</p>
-      
-      <h2>Cláusula 4ª – Honorários do corretor de imóveis</h2>
-      <p>1) O presente negócio foi intermediado pelo corretor de imóveis responsável pela empresa <strong>${val(companyName || tenant?.name, '______________________')}</strong>, regularmente inscrito no CRECI, que apresentou os dados rigorosamente certos, não omitindo nenhum detalhe de desabono à negociação de que teve conhecimento.</p>
-      
-      <h2>Cláusula 5ª – Posse do imóvel</h2>
-      <p>1) A posse do imóvel objeto deste contrato neste ato é transmitida pelo(s) vendedor(es) ao(s) comprador(es) com a entrega das chaves.</p>
-      
-      <h2>Cláusula 6ª – Despesas, impostos e taxas</h2>
-      <p>1) Caberá ao(s) vendedor(es) o pagamento de todos os impostos, taxas, contribuições, despesas de condomínio, foros e outras despesas que incidam ou venham a incidir sobre o imóvel até a data da transmissão da posse.<br/>
-      2) Caberá ao(s) comprador(es) o pagamento das despesas com a lavratura da escritura, ITBI, laudêmios e o registro de imóveis.</p>
-      
-      <h2>Cláusula 7ª – Documentação</h2>
-      <p>1) O(s) vendedor(es) entregam, neste ato, todos os documentos e certidões exigidos por lei para a lavratura da escritura pública.</p>
-      
-      <h2>Cláusula 8ª – Declarações</h2>
-      <p>1) O(s) comprador(es) declara(m) ter vistoriado o imóvel, aceitando-o no estado de conservação em que se encontra.</p>
-      
-      <h2>Cláusula 9ª – Cláusula Penal (Multa)</h2>
-      <p>1) A infração de qualquer cláusula deste contrato sujeitará a parte infratora a uma multa de 10% (dez por cento) sobre o valor total da negociação, em favor da parte inocente, independentemente de perdas e danos.</p>
-      
-      <h2>Cláusula 10ª – Evicção de direitos</h2>
-      <p>1) O(s) vendedor(es) responde(m), na forma da lei, pelos riscos de evicção de direitos.</p>
-      
-      <h2>Cláusula 11ª e 12ª – Irrevogabilidade e Sucessão</h2>
-      <p>1) O presente contrato é celebrado sob a condição expressa de irrevogabilidade e irretratabilidade, ressalvando a inadimplência do(s) comprador(es), e vincula herdeiros e sucessores. Para tal as partes renunciam expressamente à faculdade de arrependimento prevista no art. 420 do Código Civil.</p>
-      
-      <h2>Cláusula 13ª – Eleição do foro</h2>
-      <p>1) Todas as questões eventualmente oriundas do presente contrato, serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede na Rua 56, Qd CH Lt 07, Jardim Goiás, Goiânia - GO, consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.</p>
-      
-      <h2>Cláusula 14ª - Fechamento</h2>
-      <p style="margin-top: 40px; margin-bottom: 30px; text-align: center; line-height: 1.6;">
-        Por estarem assim justos e contratados, firmam o presente em 02 (duas) vias de igual teor e forma, juntamente com as testemunhas abaixo.<br/>
-        <strong>${cityLocation} - ${stateLocation}, ${dataFormatada}.</strong>
-      </p>
-      
+      <h2 style="text-align: center; color: #1e293b;">CONTRATO DE COMPRA E VENDA DE IMÓVEL A PRAZO (COM ALIENAÇÃO FIDUCIÁRIA)</h2>
+      <h3 style="color: #334155; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">IDENTIFICAÇÃO DAS PARTES</h3>
+      <p><strong>VENDEDOR(A) / CREDOR(A) FIDUCIÁRIO(A):</strong> ${val(data.seller_name)}, documento nº ${val(data.seller_document)}, residente e domiciliado(a) na {{vendedor_endereco}}.</p>
+      <p><strong>COMPRADOR(A) / DEVEDOR(A) FIDUCIANTE:</strong> ${val(data.buyer_name)}, documento nº ${val(data.buyer_document)}, residente e domiciliado(a) na {{comprador_endereco}}.</p>
+      <h3 style="color: #334155;">CLÁUSULA PRIMEIRA E SEGUNDA - DO OBJETO E PAGAMENTO</h3>
+      <p><strong>1.1.</strong> O objeto deste contrato é o imóvel situado na <strong>${val(data.property_address)}</strong>.</p>
+      <p><strong>2.1.</strong> O preço total para a venda do imóvel é de <strong>R$ ${val(data.sale_total_value, data.total_value)}</strong>, pago da seguinte forma:</p>
+      <p><strong>2.1.1. SINAL:</strong> O valor de <strong>R$ ${val(data.sale_down_payment, data.down_payment)}</strong>, pago neste ato pelo COMPRADOR(A).</p>
+      <p><strong>2.1.2. SALDO DEVEDOR:</strong> O saldo remanescente, no valor de <strong>R$ ${val(data.sale_financing_value)}</strong>, financiado ou parcelado entre as partes.</p>
+      <h3 style="color: #334155;">CLÁUSULA TERCEIRA - DA GARANTIA E FORO</h3>
+      <p><strong>3.1.</strong> Para garantia do pagamento, o COMPRADOR(A), aliena fiduciariamente ao VENDEDOR(A) o próprio imóvel (Lei nº 9.514/97).</p>
+      <p><strong>3.2.</strong> Fica eleito o foro da <strong>{{foro_comarca}}</strong> para dirimir litígios decorrentes deste contrato.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">DAS DISPOSIÇÕES GERAIS, LGPD E ASSINATURA ELETRÔNICA</h3>
+      <p style="text-align: justify;"><strong>1.</strong> As partes reconhecem como válidas e eficazes as assinaturas eletrônicas lançadas neste instrumento, equiparando-as a assinaturas de próprio punho (Art. 10, § 2º, da MP nº 2.200-2/2001 e Lei nº 14.063/2020).</p>
+      <p style="text-align: justify;"><strong>2.</strong> As partes autorizam o tratamento de seus dados pessoais constantes neste instrumento estritamente para a finalidade de execução contratual e proteção do crédito, nos termos da LGPD (Lei nº 13.709/2018).</p>
+      ${type.startsWith('rent') ? '<p style="text-align: justify;"><strong>3.</strong> A multa rescisória será sempre cobrada de forma estritamente proporcional ao tempo restante de contrato, conforme determina o Art. 4º da Lei nº 8.245/91.</p>' : ''}
+      <p style="margin-top: 30px; text-align: center;">{{local_data}}</p>
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_COMPRADOR}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Comprador(a)</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_PROPRIETARIO}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/><span style="font-size: 14px; color: #000;">Credor Fiduciário</span>
         </div>
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_PROPRIETARIO}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Vendedor(a)</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_COMPRADOR}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/><span style="font-size: 14px; color: #000;">Devedor Fiduciante</span>
         </div>
       </div>
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
-        ${brokerSignature('Intermediador')}
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_TESTEMUNHA_1}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">Testemunha</strong><br/>
-          <span style="font-size: 14px; color: #000;">CPF:</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_1}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_2}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
         </div>
       </div>
     `;
   } else if (type === 'rent_guarantor') {
     contractContent = `
       <h1>CONTRATO DE LOCAÇÃO RESIDENCIAL COM FIADOR</h1>
-      
+
       <h2>IDENTIFICAÇÃO DAS PARTES CONTRATANTES</h2>
-      
-      <p><strong>LOCADOR:</strong> <strong>${val(data.landlord_name)}</strong>, ${val(data.landlord_nationality, 'brasileiro(a)')}, ${val(data.landlord_marital_status)}, ${val(data.landlord_profession)}, portador(a) da cédula de identidade RG nº ${val(data.landlord_rg)} e CPF nº ${val(data.landlord_document)}${spouseText(data.landlord_spouse_name, data.landlord_spouse_document, data.landlord_spouse_rg, data.landlord_spouse_profession)}, residente e domiciliado(a) à ${val(data.landlord_address)}.</p>
-      
-      <p><strong>LOCATÁRIO:</strong> <strong>${val(data.tenant_name)}</strong>, ${val(data.tenant_nationality, 'brasileiro(a)')}, ${val(data.tenant_marital_status)}, ${val(data.tenant_profession)}, portador(a) da cédula de identidade RG nº ${val(data.tenant_rg)} e CPF nº ${val(data.tenant_document)}${spouseText(data.tenant_spouse_name, data.tenant_spouse_document, data.tenant_spouse_rg, data.tenant_spouse_profession)}, residente e domiciliado(a) à ${val(data.tenant_address)}.</p>
-      
-      <p><strong>FIADOR(ES):</strong> <strong>${val(data.guarantor_name, '_________________________________')}</strong>, CPF nº <strong>${val(data.guarantor_document, '_________________')}</strong>, Profissão: ${val(data.guarantor_profession)}, residente e domiciliado(a) em ________________________________________________.</p>
-      
-      <p><strong>REPRESENTANTE DO LOCADOR / ADMINISTRADOR:</strong> <strong>${resolvedBrokerDisplayName}</strong>, corretor(a) de imóveis, inscrito(a) no CPF nº ${resolvedBrokerDisplayDoc.replace('CPF/CNPJ: ', '')}${resolvedBrokerDisplayCreci ? ` e ${resolvedBrokerDisplayCreci}` : ''}, atuando neste ato como administrador do imóvel e representante legal do locador.</p>
-      
+
+      <p><strong>LOCADOR:</strong> <strong>${val(data.owner_name, data.landlord_name)}</strong>, ${val(data.landlord_nationality, 'brasileiro(a)')}, ${val(data.landlord_marital_status)}, ${val(data.landlord_profession)}, portador(a) da cédula de identidade RG nº ${val(data.landlord_rg)} e CPF nº ${val(data.owner_document, data.landlord_document)}${spouseText(data.landlord_spouse_name, data.landlord_spouse_document, data.landlord_spouse_rg || '', data.landlord_spouse_profession)}, residente e domiciliado(a) à {{locador_endereco}}.</p>
+
+      <p><strong>LOCATÁRIO:</strong> <strong>${val(data.tenant_name)}</strong>, ${val(data.tenant_nationality, 'brasileiro(a)')}, ${val(data.tenant_marital_status)}, ${val(data.tenant_profession)}, portador(a) da cédula de identidade RG nº ${val(data.tenant_rg)} e CPF nº ${val(data.tenant_document)}${spouseText(data.tenant_spouse_name, data.tenant_spouse_document, data.tenant_spouse_rg || '', data.tenant_spouse_profession)}, residente e domiciliado(a) à {{locatario_endereco}}.</p>
+
+      <p><strong>FIADOR(ES):</strong> <strong>${val(data.guarantor_name, '____________________')}</strong>, ${val(data.guarantor_nationality, 'brasileiro(a)')}, ${val(data.guarantor_marital_status, 'Estado Civil')}, ${val(data.guarantor_profession, 'Profissão')}, portador(a) da cédula de identidade RG nº ${val(data.guarantor_rg)} e CPF nº ${val(data.guarantor_document, '______________')}${spouseText(data.guarantor_spouse_name, data.guarantor_spouse_document, data.guarantor_spouse_rg || '', data.guarantor_spouse_profession)}, residente e domiciliado(a) à {{fiador_endereco}}.</p>
+
       <p><em>As partes acima identificadas têm, entre si, justo e acertado o presente Contrato de Locação Residencial com Fiador, que se regerá pelas cláusulas seguintes e pelas condições de preço, forma e termo de pagamento descritas no presente.</em></p>
-      
+
       <h2>Cláusula 1ª – DO OBJETO DA LOCAÇÃO</h2>
-      <p>O presente contrato tem como OBJETO o imóvel de propriedade do LOCADOR, situado na <strong>${val(data.property_address)}</strong>.</p>
-      
+      <p>O presente contrato tem como OBJETO o imóvel de propriedade do LOCADOR, situado na <strong>${val(data.property_address)}</strong>, livre de ônus ou quaisquer dívidas.<br/>
+      Parágrafo único: O imóvel é entregue na data da assinatura deste contrato nas condições descritas no auto de vistoria anexo, que desde já as partes aceitam expressamente.</p>
+
       <h2>Cláusula 2ª – DO PRAZO</h2>
-      <p>A presente locação terá o lapso temporal de validade de <strong>${val(data.lease_duration)} meses</strong>, a iniciar-se no dia ${val(data.start_date)} e findar-se no dia ${val(data.end_date)}, data a qual o imóvel deverá ser devolvido nas condições previstas na Cláusula 13ª, efetivando-se com a entrega das chaves, independentemente de aviso ou qualquer outra medida judicial ou extrajudicial.</p>
-      
+      <p>A presente locação terá o lapso temporal de validade de <strong>${val(data.lease_duration)} meses</strong>, a iniciar-se na data da assinatura deste, data a qual o imóvel deverá ser devolvido nas condições previstas, efetivando-se com a entrega das chaves, independentemente de aviso ou qualquer outra medida judicial ou extrajudicial.</p>
+
       <h2>Cláusula 3ª – DO VALOR DO ALUGUEL, DESPESAS E TRIBUTOS</h2>
-      <p>Como aluguel mensal, o LOCATÁRIO se obrigará a pagar o valor de <strong>R$ ${val(data.rent_value)}</strong>, a ser efetuado diretamente à administradora do imóvel, ou mediante depósito bancário, até o dia <strong>${val(data.due_day)}</strong> de cada mês subsequente ao vencido.</p>
-      
-      <h2>Cláusula 4ª a 6ª – ATRASOS, MULTA E REAJUSTE</h2>
-      <p>Em caso de atraso no pagamento dos aluguéis e encargos, incidirá multa penal de 10% (dez por cento) sobre o valor do débito, acrescido de juros de mora de 1% (um por cento) ao mês e correção monetária.<br/>
+      <p>Como aluguel mensal, o LOCATÁRIO se obrigará a pagar o valor de <strong>R$ ${val(data.rent_value)}</strong>, a ser efetuado diretamente à administradora do imóvel ou mediante depósito bancário, até o dia <strong>{{dia_vencimento}}</strong> de cada mês subsequente ao vencido.<br/>
+      Parágrafo 1º: Fica estipulado um desconto de pontualidade no valor de <strong>{{desconto_pontualidade}}</strong> se o pagamento for efetuado até a data de vencimento.<br/>
+      Parágrafo 2º: Todas as despesas de água, luz, gás, telefone, taxas condominiais e IPTU ficarão a cargo do LOCATÁRIO durante todo o período de locação.<br/>
+      <strong>Parágrafo 3º – TRANSFERÊNCIA DE TITULARIDADE:</strong> O(A) LOCATÁRIO(A) obriga-se a transferir para o seu CPF/CNPJ, no prazo improrrogável de 05 (cinco) dias úteis contados da assinatura deste, a titularidade das contas de consumo (energia elétrica, água/esgoto e gás) junto às concessionárias locais. O descumprimento sujeita o infrator à multa contratual, respondendo integralmente por perdas e danos caso o LOCADOR sofra qualquer restrição de crédito (SPC/Serasa) decorrente de faturas não pagas.</p>
+
+      <h2>Cláusula 4ª – DA FIANÇA</h2>
+      <p>Assinam o presente contrato, na qualidade de FIADORES e principais pagadores, solidariamente responsáveis com o LOCATÁRIO pelo exato cumprimento de todas as obrigações contratuais, as pessoas qualificadas no preâmbulo, os quais renunciam expressamente aos benefícios de ordem e de divisão previstos nos artigos 827, 828, 835 e 838 do Código Civil Brasileiro, bem como ao artigo 262 do Código de Processo Civil.<br/>
+      Parágrafo único: A responsabilidade dos fiadores perdurará até a entrega real e efetiva das chaves do imóvel, mesmo em caso de prorrogação da locação por prazo indeterminado, na forma do Artigo 39 da Lei 8.245/91.</p>
+
+      <h2>Cláusula 5ª – MULTAS, REAJUSTE E MORA</h2>
+      <p>Em caso de atraso no pagamento dos aluguéis e encargos, perderá o direito ao desconto de pontualidade e incidirá multa penal de 10% (dez por cento) sobre o valor do débito, acrescido de juros de mora de 1% (um por cento) ao mês e correção monetária.<br/>
       O valor do aluguel será reajustado anualmente, ou no menor período fixado por lei, tendo como base o índice do IGP-M/FGV ou IPCA, acumulado no período.</p>
-      
-      <h2>Cláusula 7ª a 10ª – DESTINAÇÃO E SUBLOCAÇÃO</h2>
-      <p>A presente locação destina-se exclusivamente ao uso <strong>RESIDENCIAL</strong> do LOCATÁRIO e de sua família, restando proibido sublocar, ceder ou emprestar o imóvel, no todo ou em parte, sem prévia e expressa anuência, por escrito, do LOCADOR.</p>
-      
-      <h2>Cláusula 11ª a 15ª – CONSERVAÇÃO E VISTORIA</h2>
-      <p>O LOCATÁRIO declara receber o imóvel em perfeito estado de conservação e limpeza, com as instalações elétricas, hidráulicas e sanitárias em perfeito funcionamento, obrigando-se a restituí-lo no mesmo estado em que o recebe.<br/>
-      Quaisquer modificações ou benfeitorias, sejam elas úteis, necessárias ou voluptuárias, dependerão de aprovação prévia e escrita do LOCADOR e, uma vez realizadas, incorporar-se-ão ao imóvel, não cabendo ao LOCATÁRIO qualquer direito de retenção ou indenização.</p>
-      
-      <h2>Cláusula 16ª a 19ª – TAXAS, IMPOSTOS E SEGURO</h2>
-      <p>Todas as despesas incidentes sobre o imóvel, tais como consumo de água, luz, telefone, gás, taxas condominiais, bem como o IPTU (Imposto Predial e Territorial Urbano), ficarão a cargo do LOCATÁRIO durante todo o período em que permanecer no imóvel.<br/>
-      Fica o LOCATÁRIO obrigado a contratar, no prazo de 30 dias, seguro contra incêndio do imóvel locado.</p>
-      
-      <h2>Cláusula 20ª a 23ª – PREFERÊNCIA E DESAPROPRIAÇÃO</h2>
-      <p>Caso o LOCADOR decida vender o imóvel objeto deste contrato, deverá oferecer primeiramente ao LOCATÁRIO, por escrito, assegurando-lhe o direito de preferência. Em caso de desapropriação pelo Poder Público, o LOCADOR e a Administradora ficarão desobrigados de todas as cláusulas deste contrato.</p>
-      
-      <h2>Cláusula 24ª e 25ª – DA INFRAÇÃO CONTRATUAL</h2>
+
+      <h2>Cláusula 6ª – DESTINAÇÃO E SUBLOCAÇÃO</h2>
+      <p>A presente locação destina-se exclusivamente ao uso <strong>RESIDENCIAL</strong> do LOCATÁRIO e de sua família, restando expressamente proibido sublocar, ceder ou emprestar o imóvel, no todo ou em parte, sem prévia e expressa anuência por escrito do LOCADOR.</p>
+
+      <h2>Cláusula 7ª – DA INFRAÇÃO CONTRATUAL E RESCISÃO</h2>
       <p>A infração de qualquer das cláusulas do presente contrato sujeitará o infrator à multa equivalente a 03 (três) vezes o valor do aluguel vigente à época da infração, cobrável por via executiva, sem prejuízo da rescisão do contrato e despejo.</p>
-      
-      <h2>Cláusula 26ª a 29ª – DA GARANTIA E DOS FIADORES</h2>
-      <p>Assina(m) o presente contrato, na qualidade de FIADOR(ES) e principal(is) pagador(es), solidariamente responsável(is) com o LOCATÁRIO pelo fiel cumprimento de todas as cláusulas e obrigações, o(s) fiador(es) qualificado(s) no preâmbulo deste instrumento.<br/>
-      A responsabilidade do(s) FIADOR(ES) estende-se até a efetiva devolução do imóvel e entrega das chaves, renunciando expressamente aos benefícios de ordem e direitos previstos nos artigos 827, 835 e 838 do Código Civil.</p>
-      
-      <h2>Cláusula 30ª e 31ª – REGISTRO E FORO</h2>
-      <p>Este contrato deve ser levado a registro público no cartório competente. O presente contrato passa a vigorar entre as partes a partir da assinatura do mesmo.<br/>
-      Todas as questões eventualmente oriundas do presente contrato, serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede na Rua 56, Jardim Goiás, nº 390, Goiânia - GO, consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.</p>
-      
-      <p>Por estarem, assim justos e contratados, firmam o presente instrumento, em vias de igual teor, juntamente com 2 (duas) testemunhas.</p>
-      
-      <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
-      
+
+      <h2>Cláusula 8ª – FORO</h2>
+      <p>Fica eleito o foro da <strong>{{foro_comarca}}</strong> para dirimir quaisquer dúvidas oriundas do presente contrato, renunciando a qualquer outro por mais privilegiado que seja.</p>
+
+      <p>Por estarem, assim justos e contratados, firmam o presente instrumento em vias de igual teor, juntamente com as testemunhas.</p>
+
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">DAS DISPOSIÇÕES GERAIS, LGPD E ASSINATURA ELETRÔNICA</h3>
+      <p style="text-align: justify;"><strong>1.</strong> As partes reconhecem como válidas e eficazes as assinaturas eletrônicas lançadas neste instrumento, equiparando-as a assinaturas de próprio punho (Art. 10, § 2º, da MP nº 2.200-2/2001 e Lei nº 14.063/2020).</p>
+      <p style="text-align: justify;"><strong>2.</strong> As partes autorizam o tratamento de seus dados pessoais constantes neste instrumento estritamente para a finalidade de execução contratual e proteção do crédito, nos termos da LGPD (Lei nº 13.709/2018).</p>
+      ${type.startsWith('rent') ? '<p style="text-align: justify;"><strong>3.</strong> A multa rescisória será sempre cobrada de forma estritamente proporcional ao tempo restante de contrato, conforme determina o Art. 4º da Lei nº 8.245/91.</p>' : ''}
+      <p style="margin-top: 40px; text-align: right;">{{local_data}}</p>
+
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_PROPRIETARIO}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.landlord_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Locador(a)</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_PROPRIETARIO}}</div>
+          _________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.owner_name, data.landlord_name)}</strong><br/>Locador(a)
         </div>
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_INQUILINO}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.tenant_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Locatário(a)</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_INQUILINO}}</div>
+          _________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.tenant_name)}</strong><br/>Locatário(a)
         </div>
       </div>
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_FIADOR}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.guarantor_name, '_________________________________')}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Fiador(a) Principal</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_1}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
         </div>
-        ${brokerSignature('Administrador do Imóvel')}
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_2}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
+        </div>
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: ${data.guarantor_marital_status === 'Casado(a)' || data.guarantor_marital_status === 'União Estável' ? '50%' : '100%'}; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_FIADOR}}</div>
+          _________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.guarantor_name, 'Fiador')}</strong><br/>Fiador(a)
+        </div>
+        ${(data.guarantor_marital_status === 'Casado(a)' || data.guarantor_marital_status === 'União Estável') ? `
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_CONJUGE_FIADOR}}</div>
+          _________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.guarantor_spouse_name, 'Cônjuge do Fiador')}</strong><br/>Cônjuge do Fiador(a)
+        </div>
+        ` : ''}
+      </div>
+    `;
+  } else if (type === 'rent_deposit') {
+    contractContent = `
+      <h2 style="text-align: center; color: #1e293b; font-size: 18px; margin-bottom: 20px;">CONTRATO DE LOCAÇÃO RESIDENCIAL COM GARANTIA DE CAUÇÃO</h2>
+      <h3 style="color: #334155; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">IDENTIFICAÇÃO DAS PARTES</h3>
+      <p style="text-align: justify;"><strong>LOCADOR(A):</strong> ${val(data.owner_name, data.landlord_name)}, portador(a) da Cédula de Identidade e inscrito(a) no CPF/MF sob o nº ${val(data.owner_document, data.landlord_document)}, residente e domiciliado(a) na {{locador_endereco}}.</p>
+      <p style="text-align: justify;"><strong>LOCATÁRIO(A):</strong> ${val(data.tenant_name)}, portador(a) da Cédula de Identidade e inscrito(a) no CPF/MF sob o nº ${val(data.tenant_document)}, residente e domiciliado(a) na {{locatario_endereco}}.</p>
+      <p style="text-align: justify; margin-top: 15px;">As partes acima qualificadas celebram o presente Contrato de Locação para fins residenciais, regido pela Lei nº 8.245/91 e pelas seguintes cláusulas.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA PRIMEIRA - DO OBJETO</h3>
+      <p style="text-align: justify;"><strong>1.1.</strong> O objeto deste contrato é a locação do imóvel residencial de propriedade do(a) LOCADOR(A), situado na <strong>${val(data.property_address)}</strong>.</p>
+      <p style="text-align: justify;"><strong>1.2.</strong> O(A) LOCATÁRIO(A) declara ter vistoriado o imóvel e recebê-lo no estado em que se encontra, conforme Termo de Vistoria em anexo, que passa a fazer parte integrante deste contrato.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA SEGUNDA - DO PRAZO</h3>
+      <p style="text-align: justify;"><strong>2.1.</strong> O prazo da locação é de <strong>${val(data.lease_duration)} meses</strong>, iniciando-se na data da assinatura deste, independentemente de aviso ou notificação.</p>
+      <p style="text-align: justify;"><strong>2.2.</strong> Se o(a) LOCATÁRIO(A) permanecer no imóvel por mais de 30 dias após o fim do prazo, sem oposição do(a) LOCADOR(A), a locação ficará prorrogada por prazo indeterminado, mantidas todas as demais cláusulas deste contrato.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA TERCEIRA - DO ALUGUEL E ENCARGOS</h3>
+      <p style="text-align: justify;"><strong>3.1.</strong> O valor do aluguel mensal é de <strong>R$ ${val(data.rent_value)}</strong>, a ser pago até o dia <strong>{{dia_vencimento}}</strong> do mês subsequente ao vencido.</p>
+      <p style="text-align: justify;"><strong>3.2.</strong> Fica estipulado um <strong>desconto de pontualidade no valor de {{desconto_pontualidade}}</strong> para pagamentos efetuados rigorosamente até a data de vencimento. O atraso no pagamento implicará na perda deste desconto, além de multa de 10% (dez por cento) sobre o débito, juros de mora de 1% (um por cento) ao mês e correção monetária.</p>
+      <p style="text-align: justify;"><strong>3.3.</strong> Além do aluguel, é de responsabilidade do(a) LOCATÁRIO(A) o pagamento pontual do Imposto Predial e Territorial Urbano (IPTU), da taxa de condomínio, do seguro contra incêndio e das contas de consumo.</p>
+      <p style="text-align: justify;"><strong>3.4. TRANSFERÊNCIA DE TITULARIDADE:</strong> O(A) LOCATÁRIO(A) obriga-se a transferir para o seu CPF/CNPJ, no prazo improrrogável de 05 (cinco) dias úteis contados da assinatura deste, a titularidade das contas de consumo (energia elétrica, água/esgoto e gás) junto às concessionárias locais. O descumprimento sujeita o infrator à multa contratual, respondendo integralmente por perdas e danos caso o LOCADOR sofra qualquer restrição de crédito (SPC/Serasa) decorrente de faturas não pagas.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA QUARTA - DA GARANTIA (CAUÇÃO EM DINHEIRO)</h3>
+      <p style="text-align: justify;"><strong>4.1.</strong> Para garantir o fiel cumprimento de todas as obrigações contratuais, o(a) LOCATÁRIO(A) compromete-se a pagar ao(à) LOCADOR(A), a título de caução em dinheiro, a quantia de <strong>${val(data.valor_caucao, '_____________')}</strong>, diluída e cobrada em <strong>${val(data.parcelas_caucao, '1')}</strong> parcela(s) iniciais, nos termos do Art. 37, I, e Art. 38, § 2º, da Lei nº 8.245/91.</p>
+      <p style="text-align: justify;"><strong>4.2.</strong> O(A) LOCADOR(A) se obriga a depositar o valor recebido em caderneta de poupança, mantendo-o assim durante todo o período da locação.</p>
+      <p style="text-align: justify;"><strong>4.3.</strong> Ao final da locação, uma vez cumpridas todas as obrigações pelo(a) LOCATÁRIO(A) e após a desocupação e vistoria final do imóvel, a quantia depositada, acrescida de todos os rendimentos da caderneta de poupança, será integralmente restituída ao(à) LOCATÁRIO(A).</p>
+      <p style="text-align: justify;"><strong>4.4.</strong> Caso se verifique, ao final do contrato, a existência de débitos de aluguéis, encargos ou danos ao imóvel não reparados pelo(a) LOCATÁRIO(A), o(a) LOCADOR(A) fica autorizado(a) a utilizar o montante da caução (principal + rendimentos) para quitar tais valores.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA QUINTA - DOS DEVERES DAS PARTES E BENFEITORIAS</h3>
+      <p style="text-align: justify;"><strong>5.1.</strong> Toda e qualquer benfeitoria a ser realizada no imóvel, seja ela útil ou voluptuária, dependerá de autorização prévia e por escrito do(a) LOCADOR(A). As benfeitorias autorizadas, de qualquer natureza, não gerarão direito a indenização ou retenção, incorporando-se ao imóvel ao final da locação.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA SEXTA - DA RESCISÃO E DO FORO</h3>
+      <p style="text-align: justify;"><strong>6.1.</strong> A infração de qualquer cláusula deste contrato sujeita a parte infratora ao pagamento de multa correspondente a 3 (três) aluguéis vigentes.</p>
+      <p style="text-align: justify;"><strong>6.2.</strong> Fica eleito o foro da <strong>{{foro_comarca}}</strong>, local do imóvel, para dirimir quaisquer litígios decorrentes deste contrato.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">DAS DISPOSIÇÕES GERAIS, LGPD E ASSINATURA ELETRÔNICA</h3>
+      <p style="text-align: justify;"><strong>1.</strong> As partes reconhecem como válidas e eficazes as assinaturas eletrônicas lançadas neste instrumento, equiparando-as a assinaturas de próprio punho (Art. 10, § 2º, da MP nº 2.200-2/2001 e Lei nº 14.063/2020).</p>
+      <p style="text-align: justify;"><strong>2.</strong> As partes autorizam o tratamento de seus dados pessoais constantes neste instrumento estritamente para a finalidade de execução contratual e proteção do crédito, nos termos da LGPD (Lei nº 13.709/2018).</p>
+      ${type.startsWith('rent') ? '<p style="text-align: justify;"><strong>3.</strong> A multa rescisória será sempre cobrada de forma estritamente proporcional ao tempo restante de contrato, conforme determina o Art. 4º da Lei nº 8.245/91.</p>' : ''}
+      <p style="margin-top: 30px; text-align: center;">{{local_data}}</p>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_PROPRIETARIO}}</div>
+          _________________________________________________<br/><strong>${val(data.owner_name, data.landlord_name)}</strong><br/>Locador(a)
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_INQUILINO}}</div>
+          _________________________________________________<br/><strong>${val(data.tenant_name)}</strong><br/>Locatário(a)
+        </div>
       </div>
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_TESTEMUNHA_1}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
-          <span style="font-size: 14px; color: #000;">CPF:</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_1}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
         </div>
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_TESTEMUNHA_2}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
-          <span style="font-size: 14px; color: #000;">CPF:</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_2}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
         </div>
       </div>
     `;
@@ -1192,7 +1122,9 @@ export const buildContractHtml = async (
         </div>
       </div>
     `;
-  } else if (type === 'intermed_sale' || type === 'intermediacao') {
+  } else if (type === 'intermed_sale') {
+    return buildContractHtml('intermediacao', data, tenant, companyLogo, brokerDisplayName, brokerDisplayDoc, brokerDisplayCreci, companyName, customTemplateContent);
+  } else if (type === 'intermediacao') {
     const isRentIntermediation =
       data.listing_type === 'rent' ||
       data.listingType === 'rent' ||
@@ -1203,731 +1135,334 @@ export const buildContractHtml = async (
       return buildContractHtml('intermed_rent', data, tenant, companyLogo, brokerDisplayName, brokerDisplayDoc, brokerDisplayCreci, companyName, customTemplateContent);
     }
 
-    if (type === 'intermediacao') {
-      // Detecta automaticamente se o contrato tem exclusividade
-      const isExclusive =
-        data.has_exclusivity === true ||
-        data.has_exclusivity === 'true' ||
-        data.has_exclusivity === 'Sim';
-
-      const joinFilled = (...parts: unknown[]) =>
-        parts
-          .map((part) => {
-            if (typeof part === 'string') return part.trim();
-            if (part === undefined || part === null) return '';
-            return String(part).trim();
-          })
-          .filter(Boolean)
-          .join(', ');
-
-      const ownerName = val(data.owner_name, data.seller_name, data.landlord_name, data.property?.owner_name);
-      const ownerNationality = val(data.owner_nationality, data.seller_nationality, 'brasileiro(a)');
-      const ownerProfession = val(data.owner_profession, data.seller_profession);
-      const ownerMaritalStatus = val(data.owner_marital_status, data.seller_marital_status);
-      const ownerRg = val(data.owner_rg, data.seller_rg);
-      const ownerCpf = val(
-        data.owner_cpf,
-        data.owner_document,
-        data.seller_cpf,
-        data.seller_document,
-        data.property?.owner_cpf,
-        data.property?.owner_document
-      );
-      const ownerAddress = val(
-        data.owner_address,
-        data.seller_address,
-        joinFilled(
-          data.owner_address || data.seller_address,
-          data.owner_number || data.seller_number,
-          data.owner_neighborhood || data.seller_neighborhood,
-          [data.owner_city || data.seller_city, data.owner_state || data.seller_state].filter(Boolean).join(' - ')
-        )
-      );
-      const propertyLocationLine = val(
-        data.property_address,
-        joinFilled(
-          data.property?.street,
-          data.property_number || data.property?.number,
-          data.property_neighborhood || data.property?.neighborhood,
-          [data.property_city || data.property?.city, data.property_state || data.property?.state].filter(Boolean).join(' - ')
-        ),
-        propertyAddress
-      );
-      const propertyRegistration = val(
-        data.property_registration,
-        data.property?.registration_number,
-        data.property?.iptu_number,
-        '__________________'
-      );
-      const transactionValue = val(
-        data.transaction_value,
-        data.property_price,
-        data.total_value,
-        data.sale_total_value,
-        data.property?.price
-      );
-      const brokerDocumentValue = finalDocument || brokerDisplayDoc || '______________________';
-      const brokerCreciValue = finalCreci || brokerDisplayCreci || '______________________';
-
-      contractContent = `
-        <h2 style="text-align: center; font-size: 16px; margin-bottom: 30px; color: #1e293b;">
-          CONTRATO DE INTERMEDIAÇÃO IMOBILIÁRIA ${isExclusive ? 'COM EXCLUSIVIDADE' : 'SEM EXCLUSIVIDADE'}
-        </h2>
-
-        <p style="margin-bottom: 25px; line-height: 1.6; text-align: justify;">
-          <strong>Por este instrumento particular, as partes qualificadas resolvem firmar o presente contrato de intermediação imobiliária, conforme as cláusulas seguintes:</strong>
-        </p>
-
-        <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">I - DO CONTRATANTE (PROPRIETÁRIO)</h3>
-        <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-          <strong>Nome:</strong> ${ownerName}<br/>
-          <strong>Nacionalidade / Profissão:</strong> ${ownerNationality} / ${ownerProfession}<br/>
-          <strong>Estado Civil:</strong> ${ownerMaritalStatus}<br/>
-          <strong>Documentos:</strong> RG nº ${ownerRg} | CPF/CNPJ nº ${ownerCpf}<br/>
-          <strong>Endereço:</strong> ${ownerAddress}
-        </p>
-
-        <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">II - DO CONTRATADO (CORRETOR/IMOBILIÁRIA)</h3>
-        <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-          <strong>Nome:</strong> ${resolvedBrokerDisplayName}<br/>
-          <strong>Documento:</strong> ${brokerDocumentValue}<br/>
-          <strong>CRECI:</strong> ${brokerCreciValue}
-        </p>
-
-        <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">III - DO IMÓVEL</h3>
-        <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-          <strong>Endereço:</strong> ${propertyLocationLine}<br/>
-          <strong>Matrícula:</strong> ${propertyRegistration}
-        </p>
-
-        <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">IV - DOS HONORÁRIOS E AUTORIZAÇÃO</h3>
-        <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-          <strong>Cláusula 1ª:</strong> O CONTRATANTE autoriza o CONTRATADO a promover a intermediação da venda do imóvel descrito acima, pelo valor de <strong>${transactionValue}</strong>.<br/>
-          <strong>Cláusula 2ª:</strong> Sendo concretizada a venda, o CONTRATANTE pagará ao CONTRATADO a título de honorários de corretagem o valor equivalente a <strong>${val(data.commission_percentage, '5')}%</strong> sobre o valor total da negociação.
-        </p>
-
-        <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">V - DA ${isExclusive ? 'EXCLUSIVIDADE' : 'NÃO EXCLUSIVIDADE'}</h3>
-        <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-          ${isExclusive
-            ? `<strong>Cláusula 3ª:</strong> A presente autorização é concedida <strong>COM EXCLUSIVIDADE</strong>. O CONTRATANTE obriga-se a não tratar da venda diretamente ou por intermédio de outrem. O CONTRATADO fará jus à remuneração integral caso o negócio se realize durante o prazo de vigência deste contrato, inclusive se realizado diretamente pelo CONTRATANTE, nos exatos termos do Art. 726 do Código Civil Brasileiro.`
-            : `<strong>Cláusula 3ª:</strong> A presente autorização é concedida <strong>SEM EXCLUSIVIDADE</strong>. O CONTRATANTE reserva-se o direito de autorizar outros profissionais a intermediar o mesmo imóvel, bem como realizar a venda diretamente. A remuneração será devida ao CONTRATADO apenas se este for o responsável direto pela apresentação do comprador que vier a concretizar o negócio.`
-          }
-        </p>
-
-        <p style="margin-top: 40px; margin-bottom: 30px; text-align: center; line-height: 1.6;">
-          Por estarem assim justos e contratados, firmam o presente em 02 (duas) vias de igual teor e forma, juntamente com as testemunhas abaixo.<br/>
-          <strong>${cityLocation} - ${stateLocation}, ${dataFormatada}.</strong>
-        </p>
-
-        <div class="signatures" style="display: table; width: 100%; margin-top: 40px; page-break-inside: avoid; table-layout: fixed;">
-          <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-              {{ASSINATURA_PROPRIETARIO}}
-            </div>
-            _________________________________________________<br/>
-            <strong style="font-size: 14px; color: #000;">${ownerName}</strong><br/>
-            <span style="font-size: 14px; color: #000;">Contratante (Proprietário)</span>
-          </div>
-          ${brokerSignature('Contratado (Corretor/Imobiliária)')}
-        </div>
-
-        <div class="signatures" style="display: table; width: 100%; margin-top: 40px; page-break-inside: avoid; table-layout: fixed;">
-          <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-              {{ASSINATURA_TESTEMUNHA_1}}
-            </div>
-            _________________________________________________<br/>
-            <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
-            <span style="font-size: 14px; color: #000;">CPF:</span>
-          </div>
-          <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-              {{ASSINATURA_TESTEMUNHA_2}}
-            </div>
-            _________________________________________________<br/>
-            <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
-            <span style="font-size: 14px; color: #000;">CPF:</span>
-          </div>
-        </div>
-      `;
-    } else {
-      const exclusivityText = data.has_exclusivity === false
-        ? '2) Por se tratar de contrato sem exclusividade, o contratante poderá negociar o imóvel por outros meios, sem prejuízo da remuneração do contratado caso o negócio seja concluído com interessado por ele apresentado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.'
-        : '2) Durante a vigência da cláusula de exclusividade, a intermediação ficará atribuída ao contratado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.';
-
-      contractContent = `
-        <h1>CONTRATO DE AUTORIZAÇÃO DE INTERMEDIAÇÃO PARA VENDA DE IMÓVEL</h1>
-        
-        <p>Por este instrumento particular, as partes qualificadas na Cláusula 1ª resolvem, por livre e espontânea vontade, firmar o presente contrato de intermediação para fins de venda de imóvel conforme os termos e condições estabelecidos nas cláusulas seguintes:</p>
-        
-        <h2>Cláusula 1ª - Identificação das partes</h2>
-        <p><strong>1) De um lado como contratante (Proprietário):</strong><br/>
-        a) Nome: <strong>${val(data.seller_name)}</strong>;<br/>
-        b) CPF/CNPJ: <strong>${val(data.seller_document)}</strong>;<br/>
-        c) Profissão: ${val(data.seller_profession)};<br/>
-        d) Estado civil: ${val(data.seller_marital_status)};<br/>
-        e) Endereço: ${val(data.seller_address)};<br/>
-        f) Telefones: ${val(data.seller_phone)}.${spouseText(data.seller_spouse_name, data.seller_spouse_document, data.seller_spouse_rg || '', data.seller_spouse_profession)}
-        </p>
-        
-        <p><strong>1.2) E de outro lado, como contratado, o corretor de imóveis:</strong><br/>
-        a) Nome: <strong>${resolvedBrokerDisplayName}</strong>;<br/>
-        b) ${resolvedBrokerDisplayDoc};<br/>
-        c) ${resolvedBrokerDisplayCreci || 'Inscrição no CRECI: ________________'};<br/>
-        d) Endereço: ${companyFullAddress};<br/>
-        e) Telefones: ${companyPhone};<br/>
-        f) E-mail: ${companyEmail}.
-        </p>
-        
-        <h2>Cláusula 2ª - Objeto do contrato</h2>
-        <p>1) O presente contrato tem por finalidade a contratação dos serviços profissionais de intermediação, por parte do contratado, para fins de venda do imóvel de propriedade do contratante com as seguintes características:<br/>
-        a) Localização: <strong>${val(data.property_address)}</strong>;<br/>
-        b) Descrição do imóvel: <strong>${val(data.property_description)}</strong>.</p>
-        
-        <p>2) O(s) contratante(s) declara(m) que são proprietários e possuidores a justo título do imóvel acima descrito, que ele está livre e desembaraçado de qualquer ônus, gravame, ações reais, pessoais reipersecutórias, dívidas, hipotecas, impostos ou taxas em atraso, restrições e outros.</p>
-        
-        <h2>Cláusula 3ª - Preço do imóvel e condições de negociação</h2>
-        <p>1) A transação objeto deste instrumento contratual deverá ser concretizada pelo valor de <strong>R$ ${val(data.total_value)}</strong>.<br/>
-        2) Independentemente do preço, a contratada poderá apresentar qualquer proposta para estudo do(s) contratante(s).</p>
-        
-        <h2>Cláusula 4ª - Honorários profissionais do corretor de imóveis</h2>
-        <p>1) Fica pactuado que, ocorrendo a venda do imóvel descrito na Cláusula 2ª, o contratante pagará ao contratado, a título de honorários de corretagem, o percentual de <strong>${val(data.commission_percentage, '5')}%</strong> a ser calculado sobre o valor total da venda.<br/>
-        2) O pagamento dos honorários de corretagem será feito no ato do recebimento do sinal, ou na assinatura do contrato de promessa de compra e venda, ou na escritura definitiva, o que ocorrer primeiro.<br/>
-        3) O contratante se obriga a pagar os honorários mesmo se a venda se realizar após o vencimento do presente contrato, caso o comprador tenha sido apresentado pelo contratado durante a vigência deste instrumento, conforme art. 727 do Código Civil.</p>
-        
-        <h2>Cláusula 5ª - Placas e anúncios</h2>
-        <p>1) Fica o contratado autorizado a colocar placa de "VENDE", faixas, cartazes e outros meios de divulgação no imóvel objeto deste contrato, visando facilitar a sua comercialização.</p>
-        
-        <h2>Cláusula 6ª - Prazo de vigência e exclusividade</h2>
-        <p>1) O presente contrato é assinado em caráter irrevogável, vincula herdeiros e sucessores do contratante, possui <strong>${data.has_exclusivity ? 'CLÁUSULA DE EXCLUSIVIDADE' : 'NÃO EXCLUSIVIDADE'}</strong> para a intermediação, e tem vigência de <strong>120 (cento e vinte) dias</strong> contados da sua assinatura.<br/>
-        ${exclusivityText}</p>
-        
-        <h2>Cláusula 7ª - Eleição do foro</h2>
-        <p>1) Todas as questões eventualmente oriundas do presente contrato serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede na Rua 56, Qd CH Lt 07, Jardim Goiás, Goiânia - GO consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.</p>
-        
-        <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
-        
-        <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
-          <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-            <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-              {{ASSINATURA_PROPRIETARIO}}
-            </div>
-            _________________________________________________<br/>
-            <strong style="font-size: 11px; color: #000;">${val(data.seller_name)}</strong><br/>
-            <span style="font-size: 11px; color: #000;">Contratante (Proprietário/Vendedor)</span>
-          </div>
-          ${brokerSignature('Contratado (Corretor)')}
-        </div>
-      `;
-    }
-  } else if (type === 'intermed_rent') {
-    // === MODELO: INTERMEDIAÇÃO DE LOCAÇÃO ===
-    const exclusivityText = data.has_exclusivity === false
-      ? '2) Por se tratar de contrato sem exclusividade, o contratante poderá negociar o imóvel por outros meios, sem prejuízo da remuneração do contratado caso o negócio seja concluído com interessado por ele apresentado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.'
-      : '2) Durante a vigência da cláusula de exclusividade, a intermediação ficará atribuída ao contratado.<br/>3) O prazo poderá ser estendido caso as partes assinem termo aditivo de prorrogação.';
-
-    // Na locação, a comissão geralmente é o 1º aluguel ou um percentual. O sistema salva o percentual.
-    const comissaoTexto = data.commission_percentage
-      ? `o percentual de <strong>${formatPercentagePtBr(data.commission_percentage, 100)}%</strong> sobre o valor do 1º (primeiro) aluguel integral`
-      : `o valor equivalente a <strong>01 (um) aluguel integral</strong>`;
-
     contractContent = `
-      <h1>CONTRATO DE AUTORIZAÇÃO DE INTERMEDIAÇÃO PARA LOCAÇÃO DE IMÓVEL</h1>
+      <h2 style="text-align: center; color: #1e293b; font-size: 18px; margin-bottom: 20px; font-weight: bold;">CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE INTERMEDIAÇÃO IMOBILIÁRIA (VENDA)</h2>
       
-      <p>Por este instrumento particular, as partes qualificadas na Cláusula 1ª resolvem, por livre e espontânea vontade, firmar o presente contrato de intermediação para fins de locação de imóvel conforme os termos e condições estabelecidos nas cláusulas seguintes:</p>
+      <h3 style="color: #334155; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">I. IDENTIFICAÇÃO DAS PARTES</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>CONTRATANTE (PROPRIETÁRIO):</strong> ${val(data.owner_name)}, documento nº ${val(data.owner_document)}, residente e domiciliado(a) na ${val(data.owner_address)}.</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>CONTRATADO(A) (INTERMEDIADOR):</strong> ${resolvedBrokerDisplayName}, ${resolvedBrokerDisplayDoc}, ${resolvedBrokerDisplayCreci}.</p>
       
-      <h2>Cláusula 1ª - Identificação das partes</h2>
-      <p><strong>1) De um lado como contratante (Locador):</strong><br/>
-      a) Nome: <strong>${val(data.seller_name)}</strong>;<br/>
-      b) CPF/CNPJ: <strong>${val(data.seller_document)}</strong>;<br/>
-      c) Profissão: ${val(data.seller_profession)};<br/>
-      d) Estado civil: ${val(data.seller_marital_status)};<br/>
-      e) Endereço: ${val(data.seller_address)};<br/>
-      f) Telefones: ${val(data.seller_phone)}.${spouseText(data.seller_spouse_name, data.seller_spouse_document, data.seller_spouse_rg || '', data.seller_spouse_profession)}
-      </p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">II. DO OBJETO E CONDIÇÕES DE VENDA</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>1.</strong> O CONTRATANTE autoriza o CONTRATADO a promover a venda do imóvel situado na <strong>${val(data.property_address)}</strong> (${val(data.property_description)}).</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>2.</strong> O imóvel será ofertado pelo valor de <strong>R$ ${val(data.sale_total_value, data.price)}</strong>. Quaisquer alterações no valor deverão ser comunicadas expressamente.</p>
       
-      <p><strong>1.2) E de outro lado, como contratado, a Administradora/Corretor:</strong><br/>
-      a) Nome: <strong>${resolvedBrokerDisplayName}</strong>;<br/>
-      b) ${resolvedBrokerDisplayDoc};<br/>
-      c) ${resolvedBrokerDisplayCreci || 'Inscrição no CRECI: ________________'};<br/>
-      d) Endereço: ${companyFullAddress};<br/>
-      e) Telefones: ${companyPhone};<br/>
-      f) E-mail: ${companyEmail}.
-      </p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">III. DA EXCLUSIVIDADE E PRAZO</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>3.</strong> O presente contrato possui prazo de validade de <strong>${val(data.validity_days, '90')} dias</strong> a contar de sua assinatura${data.has_exclusivity ? ', sendo outorgada exclusividade na intermediação ao CONTRATADO, nos termos do Art. 726 do Código Civil' : ', sem exclusividade de venda'}.</p>
       
-      <h2>Cláusula 2ª - Objeto do contrato</h2>
-      <p>1) O presente contrato tem por finalidade a contratação dos serviços profissionais de intermediação, por parte do contratado, para fins de locação do imóvel de propriedade do contratante com as seguintes características:<br/>
-      a) Localização: <strong>${val(data.property_address)}</strong>;<br/>
-      b) Descrição do imóvel: <strong>${val(data.property_description)}</strong>.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">IV. DA REMUNERAÇÃO (COMISSÃO)</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>4.</strong> A título de remuneração pelos serviços prestados, o CONTRATANTE pagará ao CONTRATADO a comissão de <strong>${val(data.commission_percentage, '6')}% (por cento)</strong> calculada sobre o valor total da venda, devida no ato do recebimento do sinal ou assinatura da promessa de compra e venda.</p>
       
-      <p>2) O(s) contratante(s) declara(m) que são proprietários e possuidores a justo título do imóvel acima descrito, que ele está livre e desembaraçado para locação.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">V. DAS DISPOSIÇÕES GERAIS E LGPD</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>5.</strong> As partes reconhecem como válidas e eficazes as assinaturas eletrônicas lançadas neste instrumento (MP nº 2.200-2/2001 e Lei nº 14.063/2020).</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>6.</strong> As partes autorizam o tratamento de seus dados pessoais constantes neste instrumento estritamente para a finalidade de execução contratual, nos termos da LGPD (Lei nº 13.709/2018).</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>7.</strong> Fica eleito o foro da <strong>{{foro_comarca}}</strong> para dirimir quaisquer litígios decorrentes deste contrato.</p>
       
-      <h2>Cláusula 3ª - Preço do imóvel e condições</h2>
-      <p>1) O valor pretendido para a locação do imóvel objeto deste instrumento é de <strong>R$ ${val(data.total_value)}</strong> mensais.<br/>
-      2) Independentemente do valor pretendido, a contratada poderá apresentar propostas para estudo do(s) contratante(s).</p>
-      
-      <h2>Cláusula 4ª - Honorários profissionais</h2>
-      <p>1) Fica pactuado que, ocorrendo a locação do imóvel descrito na Cláusula 2ª, o contratante pagará ao contratado, a título de honorários de intermediação, ${comissaoTexto}.<br/>
-      2) O pagamento dos honorários ocorrerá no ato da formalização da locação e assinatura do contrato de locação, podendo o contratado reter tal valor do primeiro recebimento de aluguel.<br/>
-      3) Em caso de administração continuada, a taxa de administração mensal, se houver, será objeto de aditivo ou contrato de administração específico.</p>
-      
-      <h2>Cláusula 5ª - Placas e anúncios</h2>
-      <p>1) Fica o contratado autorizado a colocar placa de "ALUGA", faixas, cartazes e outros meios de divulgação no imóvel objeto deste contrato.</p>
-      
-      <h2>Cláusula 6ª - Prazo de vigência e exclusividade</h2>
-      <p>1) O presente contrato possui <strong>${data.has_exclusivity ? 'CLÁUSULA DE EXCLUSIVIDADE' : 'NÃO EXCLUSIVIDADE'}</strong> para a intermediação, e tem vigência de <strong>120 (cento e vinte) dias</strong> contados da sua assinatura.<br/>
-      ${exclusivityText}</p>
-      
-      <h2>Cláusula 7ª - Eleição do foro</h2>
-      <p>1) Todas as questões eventualmente oriundas do presente contrato serão resolvidas na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA).</p>
-      
-      <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
+      <p style="font-size: 14px; margin-top: 30px; text-align: center;">{{local_data}}</p>
       
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
-        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_PROPRIETARIO}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 11px; color: #000;">${val(data.seller_name)}</strong><br/>
-          <span style="font-size: 11px; color: #000;">Contratante (Locador)</span>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_PROPRIETARIO}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.owner_name)}</strong><br/>Proprietário(a)
         </div>
-        ${brokerSignature('Administrador / Corretor')}
+        ${brokerSignature('Intermediador')}
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_1}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 1</strong>
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_2}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 2</strong>
+        </div>
+      </div>
+    `;
+  } else if (type === 'intermed_rent') {
+    const isAdministration = parseFloat(String(data.admin_fee_percentage || '0')) > 0;
+    const title = isAdministration ? 'CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE INTERMEDIAÇÃO E ADMINISTRAÇÃO DE IMÓVEL' : 'CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE INTERMEDIAÇÃO IMOBILIÁRIA (LOCAÇÃO)';
+
+    contractContent = `
+      <h2 style="text-align: center; color: #1e293b; font-size: 18px; margin-bottom: 20px; font-weight: bold;">${title}</h2>
+      
+      <h3 style="color: #334155; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">I. IDENTIFICAÇÃO DAS PARTES</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>CONTRATANTE (PROPRIETÁRIO):</strong> ${val(data.owner_name)}, documento nº ${val(data.owner_document)}, residente e domiciliado(a) na ${val(data.owner_address)}.</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>CONTRATADO(A) (${isAdministration ? 'ADMINISTRADOR' : 'INTERMEDIADOR'}):</strong> ${resolvedBrokerDisplayName}, ${resolvedBrokerDisplayDoc}, ${resolvedBrokerDisplayCreci}.</p>
+      
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">II. DO OBJETO E PRAZO</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>1.</strong> O CONTRATANTE autoriza o CONTRATADO a promover a locação do imóvel situado na <strong>${val(data.property_address)}</strong> (${val(data.property_description)}).</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>2.</strong> O imóvel será ofertado pelo valor inicial de <strong>R$ ${val(data.rent_value, data.price)}</strong>.</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>3.</strong> O prazo de validade deste contrato é de <strong>${data.validity_days === 'indeterminado' ? 'Prazo Indeterminado' : `${data.validity_days} dias`}</strong>.</p>
+      ${data.has_exclusivity 
+        ? `<p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>3.1. COM EXCLUSIVIDADE:</strong> Fica outorgada exclusividade na intermediação, nos termos do Art. 726 do Código Civil Brasileiro.</p>`
+        : `<p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>3.1. SEM EXCLUSIVIDADE:</strong> Este contrato é pactuado sem exclusividade de intermediação.</p>`
+      }
+
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">III. DA REMUNERAÇÃO</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>4. (Intermediação Inicial):</strong> O CONTRATANTE pagará o equivalente a <strong>${val(data.commission_percentage, '100')}% do valor do primeiro aluguel integral</strong>, no ato da assinatura do contrato de locação.</p>
+      ${isAdministration ? `
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>5. (Administração Mensal):</strong> A título de honorários de administração, o CONTRATADO reterá mensalmente <strong>${data.admin_fee_percentage}%</strong> sobre o valor dos aluguéis e encargos efetivamente recebidos.</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>5.1.</strong> O repasse líquido ao CONTRATANTE ocorrerá todo <strong>dia ${data.transfer_day || '10'}</strong> do mês subsequente ao vencido.</p>
+      
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">IV. DOS PODERES E OBRIGAÇÕES DA ADMINISTRAÇÃO</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>6.</strong> O CONTRATANTE outorga poderes ao CONTRATADO para assinar contratos, emitir recibos, contratar vistorias, fixar reajustes, realizar cobranças extrajudiciais e representar perante o inquilino.</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>7. (Isenção de Inadimplência):</strong> A responsabilidade do CONTRATADO é de meio e não de resultado. Em hipótese alguma o CONTRATADO será responsabilizado civil ou financeiramente pela falta de pagamento dos aluguéis e encargos por parte do inquilino, não lhe cabendo o dever de adiantar receitas.</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>8. (Segurança):</strong> O CONTRATADO não se responsabiliza pela segurança, conservação ou vigilância do imóvel contra furtos ou invasões quando o mesmo estiver desocupado.</p>
+
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">V. DAS OBRIGAÇÕES DO PROPRIETÁRIO</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>9. (Contato Indireto):</strong> Obriga-se o CONTRATANTE a não manter contato ou entendimento direto com o inquilino ou fiadores, devendo toda comunicação ser intermediada pelo CONTRATADO.</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>10. (Reparos e Manutenção):</strong> O CONTRATANTE compromete-se a autorizar e custear reparos estruturais de sua responsabilidade. Caso não responda a solicitações de urgência no prazo de 48 (quarenta e oito) horas, fica o CONTRATADO autorizado a providenciar o conserto para evitar degradação do bem, descontando os custos comprovados nos repasses subsequentes.</p>
+      
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">VI. DA RESCISÃO E MULTA</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>11.</strong> Caso a administração seja rescindida pelo CONTRATANTE sem justa causa antes do término da locação ativa, este pagará, a título de multa compensatória (Art. 603 do Código Civil), o valor correspondente à metade da taxa de administração que seria devida até o término estipulado no contrato de locação do inquilino.</p>
+      ` : ''}
+      
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">${isAdministration ? 'VII' : 'IV'}. DAS DISPOSIÇÕES GERAIS E LGPD</h3>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>${isAdministration ? '12' : '5'}.</strong> As partes reconhecem a validade das assinaturas eletrônicas aqui apostas (MP nº 2.200-2/2001 e Lei 14.063/2020).</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>${isAdministration ? '13' : '6'}.</strong> Fica autorizado o tratamento de dados pessoais estritamente para a finalidade de execução contratual (Lei nº 13.709/2018 - LGPD).</p>
+      <p style="font-size: 14px; text-align: justify; line-height: 1.6;"><strong>${isAdministration ? '14' : '7'}.</strong> Fica eleito o foro da <strong>{{foro_comarca}}</strong> para dirimir controvérsias.</p>
+      
+      <p style="font-size: 14px; margin-top: 30px; text-align: center;">{{local_data}}</p>
+      
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_PROPRIETARIO}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.owner_name)}</strong><br/>Proprietário(a)
+        </div>
+        ${brokerSignature(isAdministration ? 'Administrador' : 'Intermediador')}
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_1}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 1</strong>
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_2}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 2</strong>
+        </div>
       </div>
     `;
   } else if (type === 'sale_cash') {
     contractContent = `
-      <h2 style="text-align: center; font-size: 16px; margin-bottom: 30px; color: #1e293b;">
-        INSTRUMENTO PARTICULAR DE PROMESSA DE COMPRA E VENDA DE IMÓVEL (À VISTA)
-      </h2>
-
-      <p style="margin-bottom: 25px; line-height: 1.6; text-align: justify;">
-        <strong>Pelo presente instrumento particular, as partes abaixo qualificadas celebram entre si o presente Contrato de Promessa de Compra e Venda, mediante as cláusulas e condições seguintes:</strong>
-      </p>
-
-      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">I - DOS PROMITENTES VENDEDORES</h3>
-      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-        <strong>Vendedor(a):</strong> ${val(data.seller_name)}, ${val(data.seller_nationality, 'brasileiro(a)')}, ${val(data.seller_profession)}, estado civil: ${val(data.seller_marital_status)}, portador(a) do RG nº ${val(data.seller_rg)} e inscrito(a) no CPF sob o nº ${val(data.seller_cpf || data.seller_document || data.property?.owner_cpf || data.property?.owner_document)}, residente e domiciliado(a) na ${val(data.seller_address)}, ${val(data.seller_number)}, ${val(data.seller_neighborhood)}, ${val(data.seller_city)} - ${val(data.seller_state)}, CEP: ${val(data.seller_zipcode || data.seller_zip_code)}.
-        ${data.seller_spouse_name ? `<br/><strong>Cônjuge:</strong> ${val(data.seller_spouse_name)}, ${val(data.seller_spouse_nationality, 'brasileiro(a)')}, ${val(data.seller_spouse_profession)}, portador(a) do RG nº ${val(data.seller_spouse_rg)} e inscrito(a) no CPF sob o nº ${val(data.seller_spouse_cpf || data.seller_spouse_document)}.` : ''}
-      </p>
-
-      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">II - DOS PROMITENTES COMPRADORES</h3>
-      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-        <strong>Comprador(a):</strong> ${val(data.buyer_name)}, ${val(data.buyer_nationality, 'brasileiro(a)')}, ${val(data.buyer_profession)}, estado civil: ${val(data.buyer_marital_status)}, portador(a) do RG nº ${val(data.buyer_rg)} e inscrito(a) no CPF sob o nº ${val(data.buyer_cpf || data.buyer_document)}, residente e domiciliado(a) na ${val(data.buyer_address)}, ${val(data.buyer_number)}, ${val(data.buyer_neighborhood)}, ${val(data.buyer_city)} - ${val(data.buyer_state)}, CEP: ${val(data.buyer_zipcode || data.buyer_zip_code)}.
-        ${data.buyer_spouse_name ? `<br/><strong>Cônjuge:</strong> ${val(data.buyer_spouse_name)}, ${val(data.buyer_spouse_nationality, 'brasileiro(a)')}, ${val(data.buyer_spouse_profession)}, portador(a) do RG nº ${val(data.buyer_spouse_rg)} e inscrito(a) no CPF sob o nº ${val(data.buyer_spouse_cpf || data.buyer_spouse_document)}.` : ''}
-      </p>
-
-      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">III - DO IMÓVEL</h3>
-      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-        <strong>Cláusula 1ª:</strong> O objeto do presente contrato é um(a) <strong>${val(data.property_type || data.property?.property_type || data.property?.type)}</strong>, localizado(a) na ${val(data.property_address || data.property?.street || data.property?.address)}, ${val(data.property_number || data.property?.number)}, ${val(data.property_neighborhood || data.property?.neighborhood)}, na cidade de ${val(data.property_city || data.property?.city)} - ${val(data.property_state || data.property?.state)}, CEP: ${val(data.property_zipcode || data.property_zip_code || data.property?.zip_code)}.<br/>
-        <strong>Parágrafo Único:</strong> O imóvel encontra-se matriculado sob o nº <strong>${val(data.property_registration || data.property?.registration_number || data.property?.iptu_number)}</strong> no <strong>${val(data.property_registry || data.property_registry_office)}</strong> Cartório de Registro de Imóveis, livre e desembaraçado de quaisquer ônus, litígios ou dívidas.
-      </p>
-
-      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">IV - DO VALOR E FORMA DE PAGAMENTO</h3>
-      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-        <strong>Cláusula 2ª:</strong> O preço certo e ajustado para a presente venda e compra é de <strong>${val(data.transaction_value || data.sale_total_value || data.total_value)}</strong>, que será pago da seguinte forma:<br/>
-        <strong>Parágrafo Único - Pagamento à vista:</strong> O pagamento será realizado em moeda corrente nacional, em parcela única (à vista), através de transferência bancária (TED/PIX) ou cheque administrativo, no momento da assinatura da escritura pública de compra e venda ou conforme acordado entre as partes.
-      </p>
-      
-      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">V - DA POSSE E ESCRITURA</h3>
-      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-        <strong>Cláusula 3ª:</strong> A posse do imóvel será transferida aos COMPRADORES no momento da quitação integral do valor acordado e assinatura da Escritura Pública, devendo os VENDEDORES entregarem o imóvel livre de pessoas e coisas.<br/>
-        <strong>Cláusula 4ª:</strong> Todas as despesas inerentes à transferência de propriedade, incluindo ITBI, custas de cartório de notas e registro de imóveis, correrão por conta exclusiva dos COMPRADORES.
-      </p>
-
-      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">VI - DA INTERMEDIAÇÃO</h3>
-      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-        <strong>Cláusula 5ª:</strong> As partes declaram que a presente transação foi intermediada por <strong>${resolvedBrokerDisplayName}</strong>, ${resolvedBrokerDisplayDoc}, ${resolvedBrokerDisplayCreci || 'CRECI: ________________'}, fazendo jus aos honorários de corretagem pactuados em instrumento apartado.
-      </p>
-
-      <h3 style="font-size: 14px; margin-top: 25px; margin-bottom: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">VII - DO FORO</h3>
-      <p style="margin-bottom: 20px; line-height: 1.6; text-align: justify;">
-        <strong>Cláusula 6ª:</strong> As partes elegem o foro da Comarca de ${val(data.property_city || data.property?.city)} - ${val(data.property_state || data.property?.state)} para dirimir quaisquer dúvidas oriundas deste contrato, renunciando a qualquer outro por mais privilegiado que seja.
-      </p>
-
-      <p style="margin-top: 40px; margin-bottom: 30px; text-align: center; line-height: 1.6;">
-        Por estarem assim justos e contratados, firmam o presente em 02 (duas) vias de igual teor e forma, juntamente com as testemunhas abaixo.<br/>
-        <strong>${cityLocation} - ${stateLocation}, ${dataFormatada}.</strong>
-      </p>
-
-      <div class="signatures" style="display: table; width: 100%; margin-top: 40px; page-break-inside: avoid; table-layout: fixed;">
+      <h2 style="text-align: center; color: #1e293b;">CONTRATO PARTICULAR DE PROMESSA DE COMPRA E VENDA DE IMÓVEL (À VISTA)</h2>
+      <h3 style="color: #334155; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">IDENTIFICAÇÃO DAS PARTES</h3>
+      <p><strong>PROMITENTE VENDEDOR(A):</strong> ${val(data.seller_name)}, portador(a) do documento nº ${val(data.seller_document)}, residente e domiciliado(a) na {{vendedor_endereco}}, doravante denominado simplesmente VENDEDOR.</p>
+      <p><strong>PROMITENTE COMPRADOR(A):</strong> ${val(data.buyer_name)}, portador(a) do documento nº ${val(data.buyer_document)}, residente e domiciliado(a) na {{comprador_endereco}}, doravante denominado simplesmente COMPRADOR.</p>
+      <p>As partes acima identificadas têm, entre si, justo e acertado o presente Contrato Particular de Promessa de Compra e Venda de Imóvel, que se regerá pelas cláusulas seguintes:</p>
+      <h3 style="color: #334155;">CLÁUSULA PRIMEIRA - DO OBJETO</h3>
+      <p><strong>1.1.</strong> O VENDEDOR promete vender ao COMPRADOR o imóvel situado na <strong>${val(data.property_address)}</strong> (${val(data.property_description, data.property?.title)}).</p>
+      <h3 style="color: #334155;">CLÁUSULA SEGUNDA - DO PREÇO E DA FORMA DE PAGAMENTO</h3>
+      <p><strong>2.1.</strong> O preço total e certo para a venda do imóvel é de <strong>R$ ${val(data.sale_total_value, data.total_value)}</strong>.</p>
+      <p><strong>2.2. SINAL (ARRAS):</strong> A título de sinal, o COMPRADOR paga neste ato o valor de <strong>R$ ${val(data.sale_down_payment, data.down_payment)}</strong>.</p>
+      <p><strong>2.3. SALDO REMANESCENTE:</strong> O saldo remanescente será pago à vista no ato da assinatura da Escritura Pública de Compra e Venda.</p>
+      <h3 style="color: #334155;">CLÁUSULA TERCEIRA - DA IRRETRATABILIDADE E DO FORO</h3>
+      <p><strong>3.1.</strong> O presente contrato é celebrado em caráter irrevogável e irretratável. O descumprimento de qualquer cláusula sujeita a parte infratora à multa de 20% sobre o valor da transação.</p>
+      <p><strong>3.2.</strong> Para dirimir quaisquer controvérsias, as partes elegem o foro da <strong>{{foro_comarca}}</strong>.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">DAS DISPOSIÇÕES GERAIS, LGPD E ASSINATURA ELETRÔNICA</h3>
+      <p style="text-align: justify;"><strong>1.</strong> As partes reconhecem como válidas e eficazes as assinaturas eletrônicas lançadas neste instrumento, equiparando-as a assinaturas de próprio punho (Art. 10, § 2º, da MP nº 2.200-2/2001 e Lei nº 14.063/2020).</p>
+      <p style="text-align: justify;"><strong>2.</strong> As partes autorizam o tratamento de seus dados pessoais constantes neste instrumento estritamente para a finalidade de execução contratual e proteção do crédito, nos termos da LGPD (Lei nº 13.709/2018).</p>
+      ${type.startsWith('rent') ? '<p style="text-align: justify;"><strong>3.</strong> A multa rescisória será sempre cobrada de forma estritamente proporcional ao tempo restante de contrato, conforme determina o Art. 4º da Lei nº 8.245/91.</p>' : ''}
+      <p style="margin-top: 30px; text-align: center;">{{local_data}}</p>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_PROPRIETARIO}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Vendedor(a)</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_PROPRIETARIO}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/><span style="font-size: 14px; color: #000;">Vendedor(a)</span>
         </div>
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_COMPRADOR}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Comprador(a)</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_COMPRADOR}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/><span style="font-size: 14px; color: #000;">Comprador(a)</span>
         </div>
       </div>
-      
-      <div class="signatures" style="display: table; width: 100%; margin-top: 40px; page-break-inside: avoid; table-layout: fixed;">
-        ${brokerSignature('Intermediador')}
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_TESTEMUNHA_1}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
-          <span style="font-size: 14px; color: #000;">CPF:</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_1}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_2}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
         </div>
       </div>
     `;
   } else if (type === 'permuta') {
     contractContent = `
-      <h1>CONTRATO DE PERMUTA</h1>
-      
-      <p>Por este instrumento particular, as pessoas qualificadas na Cláusula 1ª resolvem, por livre e espontânea vontade, firmar o presente contrato de permuta dos imóveis descritos na cláusula 2ª, conforme os termos, preço e condições estabelecidos nas cláusulas seguintes.</p>
-      
-      <h2>Cláusula 1ª - Identificação das partes:</h2>
-      <p><strong>1) De um lado como primeiro(s) permutante(s) (Proprietário do Imóvel 1):</strong><br/>
-      a) Nome: <strong>${val(data.seller_name)}</strong>;<br/>
-      b) CPF/CNPJ: <strong>${val(data.seller_document)}</strong>;<br/>
-      c) Profissão: ${val(data.seller_profession)};<br/>
-      d) Estado civil: ${val(data.seller_marital_status)};<br/>
-      e) Endereço: ${val(data.seller_address)};<br/>
-      f) Telefones: ${val(data.seller_phone)}.${spouseText(data.seller_spouse_name, data.seller_spouse_document, data.seller_spouse_rg || '', data.seller_spouse_profession)}
-      </p>
-      
-      <p><strong>1.2) E de outro lado, como segundo(s) permutante(s) (Proprietário do Imóvel 2):</strong><br/>
-      a) Nome: <strong>${val(data.buyer_name)}</strong>;<br/>
-      b) CPF/CNPJ: <strong>${val(data.buyer_document)}</strong>;<br/>
-      c) Profissão: ${val(data.buyer_profession)};<br/>
-      d) Estado civil: ${val(data.buyer_marital_status)};<br/>
-      e) Endereço: ${val(data.buyer_address)};<br/>
-      f) Telefones: ${val(data.buyer_phone)}.${spouseText(data.buyer_spouse_name, data.buyer_spouse_document, data.buyer_spouse_rg || '', data.buyer_spouse_profession)}
-      </p>
-      
-      <p><em>2) As partes permutantes declaram, sob as penas da lei, que são verazes as indicações sobre suas identidade, estado civil, nacionalidades, profissões, endereços, cadastros fiscais e econômico-financeiros.</em></p>
-      
-      <h2>Cláusula 2ª – Objeto do contrato</h2>
-      <p>1) O presente contrato tem por finalidade a permuta ad corpus dos imóveis a seguir descritos:</p>
-      
-      <p><strong>I) De propriedade do(s) primeiro(s) permutante(s) o imóvel com as seguintes características:</strong><br/>
-      a) Matrícula: _____________________________;<br/>
-      b) Cartório: _____________________________;<br/>
-      c) Título aquisitivo: _____________________________;<br/>
-      d) Inscrição municipal (IPTU/ITU/ITR): _____________________________;<br/>
-      e) Endereço: <strong>${val(data.property_address)}</strong>;<br/>
-      f) Descrição do imóvel: <strong>${val(data.property_description)}</strong>.</p>
-      
-      <p><strong>II) De propriedade do(s) segundo(s) permutante(s) o imóvel com as seguintes características:</strong><br/>
-      a) Matrícula: _____________________________;<br/>
-      b) Cartório: _____________________________;<br/>
-      c) Título aquisitivo: _____________________________;<br/>
-      d) Inscrição municipal (IPTU/ITU/ITR): _____________________________;<br/>
-      e) Endereço: <strong>${val(data.permuta_address)}</strong>;<br/>
-      f) Descrição do imóvel: <strong>${val(data.permuta_description)}</strong>.</p>
-      
-      <p>2) As partes permutantes declaram, em relação aos seus imóveis, que:<br/>
-      a) São respectivamente proprietários e possuidores a justo título dos imóveis descritos nos itens I e II da cláusula 2ª e que eles estão livres e desembaraçados de qualquer ônus ou gravame, judicial ou extrajudicial, inclusive de natureza tributária;<br/>
-      b) Não têm contra si qualquer débito, protesto ou ação cível, criminal ou trabalhista cuja garantia possa vir a ser o imóvel acima descrito;<br/>
-      c) Inexiste a seus encargos responsabilidade oriunda de tutela, curatela ou testamentária.</p>
-      
-      <h2>Cláusula 3ª – Preço do imóvel</h2>
-      <p>1) Os imóveis descritos nos itens I e II da cláusula 2ª têm o preço, cada qual, de <strong>R$ ${val(data.total_value)}</strong>, sendo este o valor do negócio.</p>
-      
-      <h2>Cláusula 4ª – Honorários do corretor de imóveis</h2>
-      <p>1) O presente negócio foi intermediado pelo corretor de imóveis <strong>${resolvedBrokerDisplayName}</strong>, que apresentou, ao oferecer o imóvel, dados rigorosamente certos, não omitiu detalhes que o depreciem, e informou às partes dos riscos e demais circunstâncias que pudessem influenciar o negócio.<br/>
-      2) As partes permutantes declaram que previamente examinaram e verificaram as procurações, o título aquisitivo, a escritura e as certidões registrais do imóvel objeto do presente contrato e isentam o corretor de imóveis acerca da veracidade desses documentos.<br/>
-      3) Pelos serviços de intermediação cada qual das partes permutantes pagará ao corretor de imóveis o importe de R$ __________________, no ato da assinatura do presente contrato.<br/>
-      4) O arrependimento posterior de qualquer das partes permutantes não implica na devolução dos honorários profissionais.<br/>
-      5) A responsabilidade do corretor de imóveis limita-se à intermediação da presente transação, excluindo de si todas e quaisquer obrigações assumidas pelas partes.</p>
-      
-      <h2>Cláusula 5ª – Certidões negativas e lavratura da escritura</h2>
-      <p>1) As partes permutantes, neste ato, entregam uma para a outra os documentos e certidões reais e pessoais necessários à lavratura da escritura pública de permuta, que deverá ser lavrada no prazo máximo de ______ dias.<br/>
-      2) A inadimplência de qualquer das partes permutantes em promover a lavratura da escritura pública de permuta no prazo pactuado isenta a outra da obrigação de apresentação de novas certidões ou do seu teor.<br/>
-      3) A inadimplência de qualquer das partes permutantes na outorga da escritura pública de permuta ensejará o direito da outra parte em requerer a adjudicação compulsória do imóvel, sem prejuízo da cláusula penal e perdas e danos.</p>
-      
-      <h2>Cláusula 6ª – Despesas com a transmissão imobiliária</h2>
-      <p>1) Cada qual das partes permutantes arcará com as despesas para apresentação das respectivas certidões reais e pessoais necessárias à lavratura da escritura pública de permuta.<br/>
-      2) Cada qual das partes permutantes arcará com os impostos, taxas, emolumentos notariais e registrais, despachantes, bem assim outras que vierem a ser necessárias para lavratura da escritura de permuta e posterior registro cartorial.</p>
-      
-      <h2>Cláusula 7ª a 10ª – Disposições gerais e Rescisão</h2>
-      <p>1) O(s) adquirente(s) poderão ceder ou transferir os direitos decorrentes deste contrato, independentemente de anuência da outra parte, ficando cedentes e cessionários solidários.<br/>
-      2) Cada qual das partes permutantes arcará com as despesas de energia e água lançadas até a data de entrega do imóvel dado em permuta, obrigando-se a transferir a titularidade em até 60 dias.<br/>
-      3) As partes declaram que vistoriaram os imóveis, aceitando-os no estado em que se encontram, sendo a posse transmitida neste ato com a entrega das chaves.<br/>
-      4) O presente contrato é celebrado sob a condição expressa de irrevogabilidade e irretratabilidade. Para tal as partes permutantes renunciam expressamente à faculdade de arrependimento prevista no art. 420 do Código Civil.</p>
-      
-      <h2>Cláusula 11ª – Cláusula Penal</h2>
-      <p>1) Será devido pela parte permutante que infringir qualquer das obrigações estabelecidas neste contrato multa de <strong>20% (vinte por cento)</strong> sobre o preço do contrato a ser pago à parte permutante inocente, sem prejuízo de perdas e danos.</p>
-      
-      <h2>Cláusula 12ª e 13ª – Foro e Fechamento</h2>
-      <p>1) Todas as questões eventualmente oriundas do presente contrato, serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede na Rua 56, Qd CH Lt 07, Goiânia - GO consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.<br/>
-      2) As partes permutantes assinam abaixo, juntamente com 02 (duas) testemunhas, em 03 (três) vias de igual teor.</p>
-      
-      <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
-      
+      <h2 style="text-align: center; color: #1e293b;">CONTRATO PARTICULAR DE PERMUTA DE IMÓVEIS (COM TORNA)</h2>
+      <h3 style="color: #334155; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">IDENTIFICAÇÃO DAS PARTES</h3>
+      <p><strong>PRIMEIRO(A) PERMUTANTE:</strong> ${val(data.seller_name)}, documento nº ${val(data.seller_document)}, residente na {{vendedor_endereco}}.</p>
+      <p><strong>SEGUNDO(A) PERMUTANTE:</strong> ${val(data.buyer_name)}, documento nº ${val(data.buyer_document)}, residente na {{comprador_endereco}}.</p>
+      <h3 style="color: #334155;">CLÁUSULA PRIMEIRA E SEGUNDA - DOS IMÓVEIS E DA TORNA</h3>
+      <p><strong>1.1. IMÓVEL A (Do Primeiro Permutante):</strong> ${val(data.property_description, data.property?.title)}, situado na ${val(data.property_address)}.</p>
+      <p><strong>1.2. IMÓVEL B (Do Segundo Permutante):</strong> Conforme acordado e vistoriado.</p>
+      <p><strong>2.1.</strong> O IMÓVEL A é avaliado no valor de <strong>R$ ${val(data.sale_total_value, data.total_value)}</strong>. O IMÓVEL B entra como parte do pagamento no valor de <strong>R$ ${val(data.permutation_value)}</strong>.</p>
+      <h3 style="color: #334155;">CLÁUSULA TERCEIRA - DO FORO</h3>
+      <p><strong>3.1.</strong> As partes elegem o foro da <strong>{{foro_comarca}}</strong> para dirimir quaisquer dúvidas oriundas deste contrato.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">DAS DISPOSIÇÕES GERAIS, LGPD E ASSINATURA ELETRÔNICA</h3>
+      <p style="text-align: justify;"><strong>1.</strong> As partes reconhecem como válidas e eficazes as assinaturas eletrônicas lançadas neste instrumento, equiparando-as a assinaturas de próprio punho (Art. 10, § 2º, da MP nº 2.200-2/2001 e Lei nº 14.063/2020).</p>
+      <p style="text-align: justify;"><strong>2.</strong> As partes autorizam o tratamento de seus dados pessoais constantes neste instrumento estritamente para a finalidade de execução contratual e proteção do crédito, nos termos da LGPD (Lei nº 13.709/2018).</p>
+      ${type.startsWith('rent') ? '<p style="text-align: justify;"><strong>3.</strong> A multa rescisória será sempre cobrada de forma estritamente proporcional ao tempo restante de contrato, conforme determina o Art. 4º da Lei nº 8.245/91.</p>' : ''}
+      <p style="margin-top: 30px; text-align: center;">{{local_data}}</p>
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_PROPRIETARIO}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Primeiro Permutante</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_PROPRIETARIO}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/><span style="font-size: 14px; color: #000;">Primeiro Permutante</span>
         </div>
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_COMPRADOR}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Segundo Permutante</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_COMPRADOR}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/><span style="font-size: 14px; color: #000;">Segundo Permutante</span>
         </div>
       </div>
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
-        ${brokerSignature('Intermediador')}
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_TESTEMUNHA_1}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
-          <span style="font-size: 14px; color: #000;">CPF:</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_1}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
         </div>
-      </div>
-      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
-        <div class="signature-line" style="display: table-cell; width: 100%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_TESTEMUNHA_2}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
-          <span style="font-size: 14px; color: #000;">CPF:</span>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_2}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
         </div>
       </div>
     `;
   } else if (type === 'rent_noguarantee') {
     contractContent = `
       <h1>CONTRATO DE LOCAÇÃO RESIDENCIAL SEM GARANTIA</h1>
-      
+
       <h2>IDENTIFICAÇÃO DAS PARTES CONTRATANTES</h2>
-      
-      <p><strong>LOCADOR:</strong> <strong>${val(data.landlord_name)}</strong>, ${val(data.landlord_nationality, 'brasileiro(a)')}, ${val(data.landlord_marital_status)}, ${val(data.landlord_profession)}, portador(a) da cédula de identidade RG nº ${val(data.landlord_rg)} e CPF nº ${val(data.landlord_document)}${spouseText(data.landlord_spouse_name, data.landlord_spouse_document, data.landlord_spouse_rg, data.landlord_spouse_profession)}, residente e domiciliado(a) à ${val(data.landlord_address)}.</p>
-      
-      <p><strong>LOCATÁRIO:</strong> <strong>${val(data.tenant_name)}</strong>, ${val(data.tenant_nationality, 'brasileiro(a)')}, ${val(data.tenant_marital_status)}, ${val(data.tenant_profession)}, portador(a) da cédula de identidade RG nº ${val(data.tenant_rg)} e CPF nº ${val(data.tenant_document)}${spouseText(data.tenant_spouse_name, data.tenant_spouse_document, data.tenant_spouse_rg, data.tenant_spouse_profession)}, residente e domiciliado(a) à ${val(data.tenant_address)}.</p>
-      
-      <p><strong>REPRESENTANTE DO LOCADOR / ADMINISTRADOR:</strong> <strong>${resolvedBrokerDisplayName}</strong>, corretor(a) de imóveis, inscrito(a) no CPF nº ${resolvedBrokerDisplayDoc.replace('CPF/CNPJ: ', '')}${resolvedBrokerDisplayCreci ? ` e ${resolvedBrokerDisplayCreci}` : ''}, atuando neste ato como administrador do imóvel e representante legal do locador.</p>
-      
-      <p><em>As partes acima identificadas têm, entre si, justo e acertado o presente Contrato de Locação Residencial sem garantia locatícia, que se regerá pelas cláusulas seguintes e pelas condições de preço, forma e termo de pagamento descritas no presente.</em></p>
-      
-      <h2>DO OBJETO DO CONTRATO E UTILIZAÇÃO</h2>
-      <p>Cláusula 1ª. O presente tem como OBJETO o imóvel de propriedade do LOCADOR, situado na <strong>${val(data.property_address)}</strong>, livre de ônus ou quaisquer dívidas.<br/>
-      Parágrafo único: O imóvel entregue na data da assinatura deste contrato, pelo LOCADOR ao LOCATÁRIO, possui as características contidas no auto de vistoria anexo, que desde já aceitam expressamente.</p>
-      
-      <p>Cláusula 2ª. A presente LOCAÇÃO destina-se restritivamente ao uso do imóvel para fins residenciais, restando proibido ao LOCATÁRIO sublocá-lo ou usá-lo de forma diferente do previsto, salvo autorização expressa do LOCADOR.</p>
-      
-      <h2>DAS CONDIÇÕES DO IMÓVEL, BENFEITORIAS E CONSTRUÇÕES</h2>
-      <p>Cláusula 3ª. O imóvel objeto deste contrato será entregue nas condições descritas no auto de vistoria, ou seja, com instalações elétricas e hidráulicas em perfeito funcionamento, com todos os cômodos e paredes pintados, devendo o LOCATÁRIO mantê-lo desta forma. Fica acordado que o imóvel será devolvido nas mesmas condições previstas no auto de vistoria, e com todos os tributos e despesas pagas.</p>
-      
-      <p>Cláusula 4ª. Qualquer benfeitoria ou construção deverá, de imediato, ser submetida a autorização expressa do LOCADOR. Vindo a ser feita benfeitoria, faculta ao LOCADOR aceitá-la ou não. As benfeitorias, consertos ou reparos farão parte integrante do imóvel, não assistindo ao LOCATÁRIO o direito de retenção ou indenização.</p>
-      
-      <h2>DA DEVOLUÇÃO DO IMÓVEL E DO CONDOMÍNIO</h2>
-      <p>Cláusula 5ª. O LOCATÁRIO restituirá o imóvel locado nas mesmas condições as quais o recebeu, salvo as deteriorações decorrentes do uso normal e habitual do imóvel.<br/>
-      Parágrafo único. Os autos de vistoria inicial e final conterão assinatura de duas testemunhas e dos contratantes.</p>
-      
-      <p>Cláusula 6ª. Fica desde já ciente o LOCATÁRIO que, em caso de imóvel onde haja condomínio, restará o mesmo obrigado por todas as cláusulas constantes na Convenção e no Regulamento Interno existente.</p>
-      
-      <h2>DO DIREITO DE PREFERÊNCIA E VISTORIAS</h2>
-      <p>Cláusula 7ª. Caso o LOCADOR manifeste vontade de vender o imóvel, deverá propor por escrito ao LOCATÁRIO que se obrigará a emitir a resposta em 30 (trinta) dias.</p>
-      
-      <p>Cláusula 8ª e 9ª. O LOCATÁRIO permitirá ao LOCADOR realizar vistorias no imóvel em dia e hora a serem combinados. Constatando-se algum vício que afete a estrutura física do imóvel, ficará compelido o LOCATÁRIO a realizar o conserto. Não se manifestando, o LOCATÁRIO permitirá desde logo ao LOCADOR vistoriar o imóvel com possíveis pretendentes.</p>
-      
-      <h2>DOS ATOS DE INFORMAÇÃO E SEGURO CONTRA INCÊNDIO</h2>
-      <p>Cláusula 10ª. As partes integrantes deste contrato ficam acordadas a se comunicarem somente por escrito.</p>
-      
-      <p>Cláusula 11ª e 12ª. O LOCATÁRIO fica desde já obrigado a fazer seguro contra incêndios do imóvel locado. Qualquer acidente que ocorra no imóvel por culpa ou dolo do LOCATÁRIO, o mesmo ficará obrigado a pagar todas as despesas por danos causados.</p>
-      
-      <h2>DO VALOR DO ALUGUEL, REAJUSTE, DESPESAS E TRIBUTOS</h2>
-      <p>Cláusula 13ª. Como aluguel mensal, o LOCATÁRIO se obrigará a pagar o valor de <strong>R$ ${val(data.rent_value)}</strong>, a ser efetuado diretamente ao LOCADOR ou seu procurador, até o dia <strong>${val(data.due_day)}</strong> de cada mês subsequente ao vencido.</p>
-      
-      <p>Cláusula 14ª e 15ª. Fica obrigado o LOCADOR a emitir recibo da quantia paga. O valor do aluguel será reajustado anualmente, tendo como base os índices previstos (IPCA, IGPM, etc).</p>
-      
-      <p>Cláusula 16ª e 17ª. Faculta ao LOCADOR cobrar do LOCATÁRIO o(s) aluguel(éis) e tributo(s) vencido(s). Todas as despesas diretamente ligadas à conservação do imóvel, água, luz, gás, telefone, condomínio e tributos, ficarão sob a responsabilidade do LOCATÁRIO.</p>
-      
-      <h2>DA MULTA, ATRASO, DESCONTO E TOLERÂNCIA</h2>
-      <p>Cláusula 18ª e 19ª. O LOCATÁRIO, não vindo a efetuar o pagamento do aluguel até a data estipulada, fica obrigado a pagar multa de mora de 10% (dez por cento) sobre o valor do aluguel, juros de mora de 1% (um por cento) ao mês e correção monetária.</p>
-      
-      <p>Cláusula 20ª e 21ª. O LOCATÁRIO terá desconto de R$ _________________ caso pague o valor do aluguel até o 1º dia útil do mês subsequente. Terá um prazo de tolerância para efetuar o pagamento do aluguel até o 2º (segundo) dia útil após o vencimento.</p>
-      
-      <h2>DA MULTA POR INFRAÇÃO E RESCISÃO CONTRATUAL</h2>
-      <p>Cláusula 22ª. As partes estipulam o pagamento da multa no valor de 03 (três) aluguéis vigentes à época da ocorrência àquele que venha a infringir quaisquer das cláusulas contidas neste contrato.</p>
-      
-      <p>Cláusula 23ª e 24ª. Ocorrerá a rescisão do presente contrato quando ocorrer sinistro, incêndio ou desapropriação do imóvel. Caso o imóvel seja utilizado de forma diversa da locação residencial, restará facultado ao LOCADOR rescindir o presente contrato de plano.</p>
-      
-      <h2>DO PRAZO DE LOCAÇÃO E PRORROGAÇÃO</h2>
-      <p>Cláusula 25ª. A presente locação terá o lapso temporal de validade de <strong>${val(data.lease_duration)} meses</strong>, a iniciar-se no dia ${val(data.start_date)} e findar-se no dia ${val(data.end_date)}, efetivando-se com a entrega das chaves.</p>
-      
-      <p>Cláusula 26ª a 28ª. Ultrapassando o contrato a data prevista, tornando-se contrato por tempo indeterminado, poderá o LOCADOR rescindi-lo a qualquer tempo, com notificação de 30 dias. Os herdeiros e sucessores se obrigam ao inteiro teor deste contrato.</p>
-      
-      <h2>DO FORO</h2>
-      <p>Cláusula 29ª. O presente contrato passa a vigorar a partir da assinatura. Todas as questões eventualmente oriundas do presente contrato serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede na Rua 56, nº 390, Jardim Goiás, Goiânia – GO, consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.</p>
-      
-      <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
-      
+
+      <p><strong>LOCADOR:</strong> <strong>${val(data.owner_name, data.landlord_name)}</strong>, ${val(data.landlord_nationality, 'brasileiro(a)')}, ${val(data.landlord_marital_status)}, ${val(data.landlord_profession)}, portador(a) da cédula de identidade RG nº ${val(data.landlord_rg)} e CPF nº ${val(data.owner_document, data.landlord_document)}${spouseText(data.landlord_spouse_name, data.landlord_spouse_document, data.landlord_spouse_rg || '', data.landlord_spouse_profession)}, residente e domiciliado(a) à {{locador_endereco}}.</p>
+
+      <p><strong>LOCATÁRIO:</strong> <strong>${val(data.tenant_name)}</strong>, ${val(data.tenant_nationality, 'brasileiro(a)')}, ${val(data.tenant_marital_status)}, ${val(data.tenant_profession)}, portador(a) da cédula de identidade RG nº ${val(data.tenant_rg)} e CPF nº ${val(data.tenant_document)}${spouseText(data.tenant_spouse_name, data.tenant_spouse_document, data.tenant_spouse_rg || '', data.tenant_spouse_profession)}, residente e domiciliado(a) à {{locatario_endereco}}.</p>
+
+      <p><em>As partes acima identificadas têm, entre si, justo e acertado o presente Contrato de Locação Residencial Sem Garantia, que se regerá pelas cláusulas seguintes e pelas condições descritas no presente.</em></p>
+
+      <h2>Cláusula 1ª – DO OBJETO DA LOCAÇÃO</h2>
+      <p>O presente contrato tem como OBJETO o imóvel de propriedade do LOCADOR, situado na <strong>${val(data.property_address)}</strong>, livre de ônus ou quaisquer dívidas.<br/>
+      Parágrafo único: O imóvel é entregue na data da assinatura deste contrato nas condições descritas no auto de vistoria anexo.</p>
+
+      <h2>Cláusula 2ª – DO PRAZO E ALUGUEL</h2>
+      <p>A presente locação terá o lapso temporal de validade de <strong>${val(data.lease_duration)} meses</strong>, a iniciar-se na data de assinatura deste contrato.<br/>
+      Como aluguel mensal, o LOCATÁRIO se obrigará a pagar o valor de <strong>R$ ${val(data.rent_value)}</strong>, até o dia <strong>{{dia_vencimento}}</strong> de cada mês. Fica estipulado um desconto de pontualidade no valor de <strong>{{desconto_pontualidade}}</strong> se o pagamento for efetuado no prazo.</p>
+
+      <h2>Cláusula 3ª – DA AUSÊNCIA DE GARANTIA E DO DESPEJO SUMÁRIO</h2>
+      <p>O presente contrato é firmado <strong>SEM NENHUMA GARANTIA LOCATÍCIA</strong>, dispensando-se o LOCATÁRIO da apresentação de fiador, seguro-fiança, caução ou qualquer outra modalidade prevista no art. 37 da Lei nº 8.245/91.<br/>
+      Parágrafo único: Face à total ausência de garantia, o LOCATÁRIO declara-se ciente de que, em caso de inadimplência no pagamento do aluguel ou encargos, o LOCADOR poderá ajuizar ação de despejo com pedido de liminar para desocupação em 15 (quinze) dias, independentemente da audiência da parte contrária, mediante o depósito caução previsto no inciso IX do § 1º do art. 59 da Lei nº 8.245/91.</p>
+
+      <h2>Cláusula 4ª – DA RESCISÃO E DO FORO</h2>
+      <p>A infração de qualquer das cláusulas sujeitará o infrator à multa de 03 (três) vezes o valor do aluguel.<br/>
+      As partes elegem o foro da <strong>{{foro_comarca}}</strong> para dirimir litígios decorrentes deste contrato.</p>
+
+      <p style="margin-top: 40px; text-align: right;">{{local_data}}</p>
+
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_PROPRIETARIO}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.landlord_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Locador(a)</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_PROPRIETARIO}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.owner_name, data.landlord_name)}</strong><br/><span style="font-size: 14px; color: #000;">Locador(a)</span>
         </div>
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_INQUILINO}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.tenant_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Locatário(a)</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_INQUILINO}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.tenant_name)}</strong><br/><span style="font-size: 14px; color: #000;">Locatário(a)</span>
         </div>
       </div>
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
-        ${brokerSignature('Administrador do Imóvel')}
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_TESTEMUNHA_1}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">Testemunha</strong><br/>
-          <span style="font-size: 14px; color: #000;">CPF:</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_1}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_2}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
+        </div>
+      </div>
+    `;
+    contractContent = `
+      <h2 style="text-align: center; color: #1e293b; font-size: 18px; margin-bottom: 20px;">CONTRATO DE LOCAÇÃO RESIDENCIAL SEM GARANTIA</h2>
+      <h3 style="color: #334155; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">IDENTIFICAÇÃO DAS PARTES</h3>
+      <p style="text-align: justify;"><strong>LOCADOR(A):</strong> ${val(data.owner_name, data.landlord_name)}, portador(a) da Cédula de Identidade e inscrito(a) no CPF/MF sob o nº ${val(data.owner_document, data.landlord_document)}, residente e domiciliado(a) na {{locador_endereco}}.</p>
+      <p style="text-align: justify;"><strong>LOCATÁRIO(A):</strong> ${val(data.tenant_name)}, portador(a) da Cédula de Identidade e inscrito(a) no CPF/MF sob o nº ${val(data.tenant_document)}, residente e domiciliado(a) na {{locatario_endereco}}.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA PRIMEIRA - DO OBJETO</h3>
+      <p style="text-align: justify;"><strong>1.1.</strong> O objeto deste contrato é a locação do imóvel residencial de propriedade do(a) LOCADOR(A), situado na <strong>${val(data.property_address)}</strong>.</p>
+      <p style="text-align: justify;"><strong>1.2.</strong> O(A) LOCATÁRIO(A) declara ter vistoriado o imóvel e recebê-lo no estado em que se encontra, conforme Termo de Vistoria em anexo.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA SEGUNDA - DO PRAZO</h3>
+      <p style="text-align: justify;"><strong>2.1.</strong> O prazo da locação é de <strong>${val(data.lease_duration)} meses</strong>, iniciando-se na data da assinatura deste.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA TERCEIRA - DO ALUGUEL E ENCARGOS</h3>
+      <p style="text-align: justify;"><strong>3.1.</strong> O valor do aluguel mensal é de <strong>R$ ${val(data.rent_value)}</strong>, a ser pago até o dia <strong>{{dia_vencimento}}</strong> do mês subsequente ao vencido.</p>
+      <p style="text-align: justify;"><strong>3.2.</strong> Fica estipulado um <strong>desconto de pontualidade no valor de {{desconto_pontualidade}}</strong> para pagamentos efetuados rigorosamente até a data de vencimento. O atraso implicará na perda do desconto, multa de 10% (dez por cento) sobre o débito e juros de 1% (um por cento) ao mês.</p>
+      <p style="text-align: justify;"><strong>3.3.</strong> Além do aluguel, é de responsabilidade do(a) LOCATÁRIO(A) o pagamento pontual do IPTU, da taxa de condomínio e contas de consumo.</p>
+      <p style="text-align: justify;"><strong>3.4. TRANSFERÊNCIA DE TITULARIDADE:</strong> O(A) LOCATÁRIO(A) obriga-se a transferir para o seu CPF/CNPJ, no prazo improrrogável de 05 (cinco) dias úteis contados da assinatura deste, a titularidade das contas de consumo (energia elétrica, água/esgoto e gás) junto às concessionárias locais. O descumprimento sujeita o infrator à multa contratual, respondendo integralmente por perdas e danos caso o LOCADOR sofra qualquer restrição de crédito (SPC/Serasa) decorrente de faturas não pagas.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA QUARTA - DA AUSÊNCIA DE GARANTIA E DESPEJO</h3>
+      <p style="text-align: justify;"><strong>4.1.</strong> As partes acordam que o presente contrato é firmado SEM a exigência de qualquer das modalidades de garantia previstas no art. 37 da Lei nº 8.245/91.</p>
+      <p style="text-align: justify;"><strong>4.2.</strong> Em face da ausência de garantia, fica ressalvado ao(à) LOCADOR(A) o direito de exigir o pagamento do aluguel e encargos de forma antecipada, até o sexto dia útil do mês vincendo (art. 42 da Lei do Inquilinato).</p>
+      <p style="text-align: justify;"><strong>4.3.</strong> Em caso de falta de pagamento, o(a) LOCADOR(A) poderá ajuizar ação de despejo com pedido de concessão de medida liminar para desocupação em 15 (quinze) dias, independentemente de audiência da parte contrária, conforme previsto no art. 59, § 1º, inciso IX, da Lei nº 8.245/91.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA QUINTA - DA RESCISÃO E DO FORO</h3>
+      <p style="text-align: justify;"><strong>5.1.</strong> A infração de qualquer cláusula sujeita a parte infratora ao pagamento de multa correspondente a 3 (três) aluguéis vigentes.</p>
+      <p style="text-align: justify;"><strong>5.2.</strong> Fica eleito o foro da <strong>{{foro_comarca}}</strong> para dirimir quaisquer litígios decorrentes deste contrato.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">DAS DISPOSIÇÕES GERAIS, LGPD E ASSINATURA ELETRÔNICA</h3>
+      <p style="text-align: justify;"><strong>1.</strong> As partes reconhecem como válidas e eficazes as assinaturas eletrônicas lançadas neste instrumento, equiparando-as a assinaturas de próprio punho (Art. 10, § 2º, da MP nº 2.200-2/2001 e Lei nº 14.063/2020).</p>
+      <p style="text-align: justify;"><strong>2.</strong> As partes autorizam o tratamento de seus dados pessoais constantes neste instrumento estritamente para a finalidade de execução contratual e proteção do crédito, nos termos da LGPD (Lei nº 13.709/2018).</p>
+      ${type.startsWith('rent') ? '<p style="text-align: justify;"><strong>3.</strong> A multa rescisória será sempre cobrada de forma estritamente proporcional ao tempo restante de contrato, conforme determina o Art. 4º da Lei nº 8.245/91.</p>' : ''}
+      <p style="margin-top: 30px; text-align: center;">{{local_data}}</p>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_PROPRIETARIO}}</div>
+          _________________________________________________<br/><strong>${val(data.owner_name, data.landlord_name)}</strong><br/>Locador(a)
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_INQUILINO}}</div>
+          _________________________________________________<br/><strong>${val(data.tenant_name)}</strong><br/>Locatário(a)
         </div>
       </div>
     `;
   } else if (type === 'rent_commercial') {
     contractContent = `
-      <h1>CONTRATO DE LOCAÇÃO COMERCIAL</h1>
-      
-      <p><strong>LOCADOR(A):</strong> ${val(data.landlord_name)}<br/>
-      <strong>LOCATÁRIO(A):</strong> ${val(data.tenant_name)}<br/>
-      <strong>FIADOR(A):</strong> ${val(data.guarantor_name, '_________________________________')}<br/>
-      <strong>IMÓVEL:</strong> ${val(data.property_address)}<br/>
-      <strong>PRAZO:</strong> ${val(data.lease_duration)} meses<br/>
-      <strong>INÍCIO DA LOCAÇÃO:</strong> ${val(data.start_date)}<br/>
-      <strong>TÉRMINO DA LOCAÇÃO:</strong> ${val(data.end_date)}<br/>
-      <strong>VALOR MENSAL:</strong> R$ ${val(data.rent_value)}<br/>
-      <strong>REAJUSTE:</strong> ANUAL (IPCA)<br/>
-      <strong>DESTINAÇÃO:</strong> COMERCIAL</p>
-      
-      <p>Pelo presente instrumento, e na melhor forma de direito, as partes contratantes abaixo qualificadas e designadas, tem entre si justo e contratado conforme segue:</p>
-      
-      <h2>I – DAS PARTES CONTRATANTES:</h2>
-      <p>I.1) <strong>Locador(a):</strong> <strong>${val(data.landlord_name)}</strong>, ${val(data.landlord_nationality, 'brasileiro(a)')}, ${val(data.landlord_marital_status)}, ${val(data.landlord_profession)}, portador(a) da cédula de identidade RG nº ${val(data.landlord_rg)} e CPF nº ${val(data.landlord_document)}${spouseText(data.landlord_spouse_name, data.landlord_spouse_document, data.landlord_spouse_rg, data.landlord_spouse_profession)}, residente e domiciliado(a) à ${val(data.landlord_address)}.</p>
-      
-      <p>I.2) <strong>Locatário(a):</strong> <strong>${val(data.tenant_name)}</strong>, ${val(data.tenant_nationality, 'brasileiro(a)')}, ${val(data.tenant_marital_status)}, ${val(data.tenant_profession)}, portador(a) da cédula de identidade RG nº ${val(data.tenant_rg)} e CPF nº ${val(data.tenant_document)}${spouseText(data.tenant_spouse_name, data.tenant_spouse_document, data.tenant_spouse_rg, data.tenant_spouse_profession)}, residente e domiciliado(a) à ${val(data.tenant_address)}.</p>
-      
-      <h2>II – DO IMÓVEL:</h2>
-      <p>II.1) O imóvel objeto da presente locação situa-se na <strong>${val(data.property_address)}</strong>.</p>
-      
-      <h2>III – DO PRAZO:</h2>
-      <p>III.1) O presente contrato tem o prazo de <strong>${val(data.lease_duration)} meses</strong>, com início em ${val(data.start_date)} e término em ${val(data.end_date)}.</p>
-      
-      <p>III.2) Findo o presente contrato, obriga-se a Locatária a restituir o imóvel desimpedido de pessoas e de coisas, independente de qualquer aviso ou notificação, ou ainda de interpelação de qualquer espécie.</p>
-      
-      <h2>IV – DO ALUGUEL:</h2>
-      <p>IV.1) O aluguel é livremente ajustado entre as partes em <strong>R$ ${val(data.rent_value)}</strong> mensais, para os 12 (doze) primeiros meses de locação respeitada as cláusulas subsequentes.</p>
-      
-      <p>IV.2) O índice de reajuste utilizado é o IPCA - Índice Nacional de Preços ao Consumidor Amplo (IBGE), ou outro que venha a substituí-lo, na menor periodicidade permitida em lei, ou seja, a cada 12 meses de locação.</p>
-      
-      <p>IV.3) O aluguel deverá ser pago até o dia <strong>${val(data.due_day)}</strong> de cada mês subsequente ao vencido, devendo os pagamentos ser efetuados via transferência bancária ou em local indicado pela Administradora.</p>
-      
-      <p>IV.4) O atraso no pagamento do aluguel ou de qualquer outro encargo da locação implicará na incidência de multa penal de 10% (dez por cento) sobre o valor total do débito, acrescido de juros de mora de 1% (um por cento) ao mês e correção monetária.</p>
-      
-      <h2>V – DOS ENCARGOS DA LOCAÇÃO:</h2>
-      <p>V.1) Além do aluguel, caberá à Locatária o pagamento de todos os impostos, taxas, tarifas de água, luz, gás, telefone, bem como as despesas ordinárias de condomínio (se houver), que recaiam ou venham a recair sobre o imóvel locado, durante o prazo da locação.</p>
-      
-      <p>V.2) A Locatária obriga-se a apresentar ao Locador ou Administradora, quando solicitado, os comprovantes de pagamento dos encargos previstos no item anterior.</p>
-      
-      <h2>VI – DA CONSERVAÇÃO E REPAROS:</h2>
-      <p>VI.1) A Locatária declara receber o imóvel em perfeito estado de conservação, pintura e funcionamento, conforme termo de vistoria, obrigando-se a mantê-lo e restituí-lo nas mesmas condições.</p>
-      
-      <p>VI.2) A manutenção e conservação do imóvel, suas instalações e equipamentos, serão de exclusiva responsabilidade da Locatária.</p>
-      
-      <p>VI.3) Fica expressamente vedado à Locatária realizar quaisquer obras, modificações ou benfeitorias no imóvel sem o prévio e expresso consentimento por escrito do Locador. As benfeitorias, sejam úteis, necessárias ou voluptuárias, incorporar-se-ão ao imóvel, não assistindo à Locatária direito a retenção ou indenização.</p>
-      
-      <h2>VII – DA VISTORIA:</h2>
-      <p>VII.1) O Locador ou seu representante legal poderá vistoriar o imóvel, em dia e hora previamente ajustados com a Locatária, com antecedência mínima de 24 (vinte e quatro) horas.</p>
-      
-      <h2>VIII – DOS FIADORES:</h2>
-      <p>VIII.1) Assina(m) o presente contrato, na qualidade de fiador(es) e principal(is) pagador(es), solidariamente responsável(is) com a Locatária pelo exato cumprimento de todas as obrigações: <strong>${val(data.guarantor_name, '_________________________________')}</strong>, CPF nº <strong>${val(data.guarantor_document, '_________________')}</strong>.</p>
-      
-      <p>VIII.2) A responsabilidade do(s) fiador(es) estende-se até a efetiva entrega das chaves do imóvel, renunciando expressamente aos benefícios de ordem e direitos previstos nos artigos 827, 835 e 838 do Código Civil Brasileiro.</p>
-      
-      <h2>IX – DA RESCISÃO E MULTA:</h2>
-      <p>IX.1) A infração a qualquer das cláusulas do presente contrato ensejará a sua imediata rescisão, sujeitando a parte infratora ao pagamento de multa equivalente a 03 (três) vezes o valor do aluguel vigente à época da infração.</p>
-      
-      <h2>X – DAS DISPOSIÇÕES GERAIS:</h2>
-      <p>X.1) Qualquer comunicação entre as partes deverá ser feita por escrito, mediante protocolo ou correspondência com aviso de recebimento.</p>
-      
-      <p>X.2) A tolerância de qualquer das partes quanto ao descumprimento de obrigações pela outra parte não constituirá novação ou renúncia a direitos.</p>
-      
-      <p>X.3) A responsabilidade pela obtenção de alvarás de funcionamento, laudos do Corpo de Bombeiros e demais licenças exigidas pelo Poder Público, bem como as adaptações exigidas para o exercício da atividade comercial, será de responsabilidade única da Locatária.</p>
-      
-      <p>X.4) Este contrato obriga as partes, herdeiros e sucessores.</p>
-      
-      <p>X.5) Na hipótese de ação de despejo por falta de pagamento ou qualquer outra que o Locador venha a ajuizar em face da Locatária fica ajustado entre as partes que os honorários do advogado do Locador serão de 20% (vinte por cento) sobre o valor da causa.</p>
-      
-      <p>X.6) Todas as questões eventualmente oriundas do presente contrato, serão resolvidas, de forma definitiva via conciliatória ou arbitral, na 8ª Corte de Conciliação e Arbitragem de Goiânia (8ª CCA), com sede na Rua 56, nº 390, Jardim Goiás, Goiânia – GO, consoante os preceitos ditados pela Lei nº 9.307 de 23/09/1996.</p>
-      
-      <p>E por estarem assim, justos e contratados, ratificam todas as cláusulas e dizeres constantes no presente instrumento, lidos, discutidos e entendidos, assinando-os em 02 (duas) vias de igual teor, na presença de duas testemunhas.</p>
-      
-      <p style="margin-top: 40px; text-align: right;">Local e data: ______________________, _____ de ______________ de _______.</p>
-      
+      <h1>CONTRATO DE LOCAÇÃO NÃO RESIDENCIAL (COMERCIAL)</h1>
+
+      <h2>IDENTIFICAÇÃO DAS PARTES CONTRATANTES</h2>
+
+      <p><strong>LOCADOR:</strong> <strong>${val(data.owner_name, data.landlord_name)}</strong>, ${val(data.landlord_nationality, 'brasileiro(a)')}, ${val(data.landlord_marital_status)}, ${val(data.landlord_profession)}, portador(a) da cédula de identidade RG nº ${val(data.landlord_rg)} e CPF nº ${val(data.owner_document, data.landlord_document)}${spouseText(data.landlord_spouse_name, data.landlord_spouse_document, data.landlord_spouse_rg || '', data.landlord_spouse_profession)}, residente e domiciliado(a) à {{locador_endereco}}.</p>
+
+      <p><strong>LOCATÁRIO:</strong> <strong>${val(data.tenant_name)}</strong>, ${val(data.tenant_nationality, 'brasileiro(a)')}, ${val(data.tenant_marital_status)}, ${val(data.tenant_profession)}, portador(a) da cédula de identidade RG nº ${val(data.tenant_rg)} e CNPJ/CPF nº ${val(data.tenant_document)}${spouseText(data.tenant_spouse_name, data.tenant_spouse_document, data.tenant_spouse_rg || '', data.tenant_spouse_profession)}, estabelecido à {{locatario_endereco}}.</p>
+
+      <h2>Cláusula 1ª – DO OBJETO E DA DESTINAÇÃO</h2>
+      <p>O presente contrato tem como OBJETO o imóvel comercial situado na <strong>${val(data.property_address)}</strong>.<br/>
+      O imóvel destina-se única e exclusivamente à exploração de <strong>atividade comercial</strong>, sendo terminantemente proibida a sua destinação para fins residenciais ou alteração de ramo sem consentimento prévio, sob pena de rescisão contratual.</p>
+
+      <h2>Cláusula 2ª – DO PRAZO E DA AÇÃO RENOVATÓRIA</h2>
+      <p>O prazo da locação é de <strong>${val(data.lease_duration)} meses</strong>.<br/>
+      Parágrafo único: Caso a soma dos prazos ininterruptos dos contratos atinja 5 (cinco) anos, e o LOCATÁRIO exerça o mesmo ramo há pelo menos 3 (três) anos, ficará resguardado o direito à ação renovatória, respeitados os prazos decadenciais previstos no art. 51, § 5º, da Lei 8.245/91.</p>
+
+      <h2>Cláusula 3ª – DO ALUGUEL E DESCONTO</h2>
+      <p>O aluguel mensal é de <strong>R$ ${val(data.rent_value)}</strong>, pago até o dia <strong>{{dia_vencimento}}</strong>, com desconto de <strong>{{desconto_pontualidade}}</strong> se pago pontualmente.<br/>
+      <strong>Parágrafo Único – TRANSFERÊNCIA DE TITULARIDADE:</strong> O(A) LOCATÁRIO(A) obriga-se a transferir para o seu CPF/CNPJ, no prazo improrrogável de 05 (cinco) dias úteis contados da assinatura deste, a titularidade das contas de consumo (energia elétrica, água/esgoto e gás) junto às concessionárias locais. O descumprimento sujeita o infrator à multa contratual, respondendo integralmente por perdas e danos caso o LOCADOR sofra qualquer restrição de crédito (SPC/Serasa) decorrente de faturas não pagas.</p>
+
+      <h2>Cláusula 4ª – DAS BENFEITORIAS E DA RENÚNCIA DE RETENÇÃO</h2>
+      <p>O LOCATÁRIO não poderá realizar obras ou benfeitorias sem autorização expressa do LOCADOR.<br/>
+      Parágrafo único: O LOCATÁRIO renuncia expressamente ao direito de retenção ou indenização por quaisquer benfeitorias realizadas (úteis, necessárias ou voluptuárias), as quais ficarão incorporadas ao imóvel, em estrita obediência à <strong>Súmula 335 do Superior Tribunal de Justiça (STJ)</strong>.</p>
+
+      <h2>Cláusula 5ª – DO FORO</h2>
+      <p>As partes elegem o foro da <strong>{{foro_comarca}}</strong> para dirimir quaisquer dúvidas decorrentes deste contrato.</p>
+
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">DAS DISPOSIÇÕES GERAIS, LGPD E ASSINATURA ELETRÔNICA</h3>
+      <p style="text-align: justify;"><strong>1.</strong> As partes reconhecem como válidas e eficazes as assinaturas eletrônicas lançadas neste instrumento, equiparando-as a assinaturas de próprio punho (Art. 10, § 2º, da MP nº 2.200-2/2001 e Lei nº 14.063/2020).</p>
+      <p style="text-align: justify;"><strong>2.</strong> As partes autorizam o tratamento de seus dados pessoais constantes neste instrumento estritamente para a finalidade de execução contratual e proteção do crédito, nos termos da LGPD (Lei nº 13.709/2018).</p>
+      ${type.startsWith('rent') ? '<p style="text-align: justify;"><strong>3.</strong> A multa rescisória será sempre cobrada de forma estritamente proporcional ao tempo restante de contrato, conforme determina o Art. 4º da Lei nº 8.245/91.</p>' : ''}
+      <p style="margin-top: 40px; text-align: right;">{{local_data}}</p>
+
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_PROPRIETARIO}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.landlord_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Locador(a)</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_PROPRIETARIO}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.owner_name, data.landlord_name)}</strong><br/><span style="font-size: 14px; color: #000;">Locador(a)</span>
         </div>
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_INQUILINO}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.tenant_name)}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Locatário(a)</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_INQUILINO}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">${val(data.tenant_name)}</strong><br/><span style="font-size: 14px; color: #000;">Locatário(a) / Empresa</span>
         </div>
       </div>
       <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_FIADOR}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">${val(data.guarantor_name, '_________________________________')}</strong><br/>
-          <span style="font-size: 14px; color: #000;">Fiador(a) Principal</span>
-        </div>
-        ${brokerSignature('Administrador do Imóvel')}
-      </div>
-      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
-        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_TESTEMUNHA_1}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
-          <span style="font-size: 14px; color: #000;">CPF:</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_1}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
         </div>
         <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
-          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
-            {{ASSINATURA_TESTEMUNHA_2}}
-          </div>
-          _________________________________________________<br/>
-          <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
-          <span style="font-size: 14px; color: #000;">CPF:</span>
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">{{ASSINATURA_TESTEMUNHA_2}}</div>
+          _________________________________________________<br/><strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/><span style="font-size: 14px; color: #000;">CPF: ___________________</span>
         </div>
       </div>
     `;
@@ -2059,7 +1594,7 @@ export const buildContractHtml = async (
   }
 
   // Renderiza o HTML final na nova janela com cabeçalho de repetição (thead)
-  const html = `<!DOCTYPE html>
+  let html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
@@ -2103,6 +1638,43 @@ export const buildContractHtml = async (
   </script>
 </body>
 </html>`;
+
+  // --- MOTOR DE SUBSTITUIÇÃO GLOBAL (ENDEREÇOS, DATAS E FINANCEIRO) ---
+  html = html.replace(/\{\{vendedor_endereco\}\}/g, data.owner_address || data.seller_address || '_______________________');
+  html = html.replace(/\{\{locador_endereco\}\}/g, data.owner_address || data.landlord_address || '_______________________');
+  html = html.replace(/\{\{comprador_endereco\}\}/g, data.buyer_address || data.tenant_address || '_______________________');
+  html = html.replace(/\{\{inquilino_endereco\}\}/g, data.tenant_address || '_______________________');
+  html = html.replace(/\{\{locatario_endereco\}\}/g, data.tenant_address || '_______________________');
+  html = html.replace(/\{\{fiador_endereco\}\}/g, data.guarantor_address || '_______________________');
+
+  const dayDue = data.due_day || '05';
+  html = html.replace(/\{\{dia_vencimento\}\}/g, dayDue);
+  html = html.replace(/\{\{data_vencimento\}\}/g, dayDue);
+  html = html.replace(/\{\{vencimento\}\}/g, dayDue);
+
+  const discountValue = data.punctuality_discount ? Number(data.punctuality_discount) : 0;
+  const formattedDiscount = discountValue > 0 ? discountValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '_______________';
+  html = html.replace(/\{\{desconto_pontualidade\}\}/g, formattedDiscount);
+  html = html.replace(/\{\{desconto\}\}/g, formattedDiscount);
+  html = html.replace(/\{\{valor_desconto\}\}/g, formattedDiscount);
+
+  const today = new Date();
+  const day = String(today.getDate()).padStart(2, '0');
+  const monthStr = today.toLocaleString('pt-BR', { month: 'long' });
+  const year = String(today.getFullYear());
+  const formattedFullDate = `${day} de ${monthStr} de ${year}`;
+
+  html = html.replace(/\{\{cidade\}\}/g, cityLocation);
+  html = html.replace(/\{\{estado\}\}/g, stateLocation);
+  html = html.replace(/\{\{uf\}\}/g, stateLocation);
+  html = html.replace(/\{\{data_atual\}\}/g, formattedFullDate);
+  html = html.replace(/\{\{dia_atual\}\}/g, day);
+  html = html.replace(/\{\{mes_atual\}\}/g, monthStr);
+  html = html.replace(/\{\{ano_atual\}\}/g, year);
+  html = html.replace(/\{\{local_data\}\}/g, `${cityLocation} - ${stateLocation}, ${formattedFullDate}`);
+
+  const foroText = `Comarca de ${cityLocation} - ${stateLocation}`;
+  html = html.replace(/\{\{foro_comarca\}\}/g, foroText);
 
   return html;
 };
@@ -2195,7 +1767,7 @@ export const appendSignatureManifest = (
 };
 
 export const generateContract = async (type: string, data: any, tenant: any, companyLogo?: string, broker_name?: string, broker_document?: string, broker_creci?: string, company_name?: string, customTemplateContent?: string) => {
-  const html = await buildContractHtml(
+  let html = await buildContractHtml(
     type,
     data,
     tenant,
@@ -2206,6 +1778,21 @@ export const generateContract = async (type: string, data: any, tenant: any, com
     company_name,
     customTemplateContent
   );
+
+  // Limpeza das tags APENAS para a tela de pré-visualização (não afeta o salvamento no banco)
+  const signatureTags = [
+    '{{ASSINATURA_PROPRIETARIO}}',
+    '{{ASSINATURA_INQUILINO}}',
+    '{{ASSINATURA_COMPRADOR}}',
+    '{{ASSINATURA_IMOBILIARIA}}',
+    '{{ASSINATURA_FIADOR}}',
+    '{{ASSINATURA_CONJUGE_FIADOR}}',
+    '{{ASSINATURA_TESTEMUNHA_1}}',
+    '{{ASSINATURA_TESTEMUNHA_2}}'
+  ];
+  signatureTags.forEach(tag => {
+    html = html.split(tag).join('');
+  });
 
   const printWindow = window.open('', '_blank');
   if (!printWindow) {

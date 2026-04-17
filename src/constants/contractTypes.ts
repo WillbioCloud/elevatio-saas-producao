@@ -6,6 +6,7 @@ export const SALE_DOCUMENTS = [
 
 export const RENT_DOCUMENTS = [
   { id: 'rent_guarantor', title: 'Locação com Fiador' },
+  { id: 'rent_deposit', title: 'Locação com Caução' },
   { id: 'rent_noguarantee', title: 'Locação sem Garantia' },
   { id: 'rent_commercial', title: 'Locação Comercial' },
 ];

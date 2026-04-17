@@ -1,0 +1,179 @@
+# PowerShell script to replace contract templates
+$ErrorActionPreference = "Stop"
+
+# Read the file
+$lines = Get-Content "src/utils/contractGenerator.ts"
+
+# Extract parts
+$before = $lines[0..1395]  # Everything before line 1397 (0-indexed)
+$after = $lines[1638..($lines.Count-1)]  # Everything from line 1639 onwards (inspection and after)
+
+# The new templates section (from user's message - EXACT COPY)
+$newTemplates = @'
+  } else if (type === 'sale_cash') {
+    contractContent = `
+      <h2 style="text-align: center; color: #1e293b; font-size: 18px; margin-bottom: 20px;">CONTRATO PARTICULAR DE PROMESSA DE COMPRA E VENDA DE IMÓVEL (À VISTA)</h2>
+      <h3 style="color: #334155; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">IDENTIFICAÇÃO DAS PARTES</h3>
+      <p style="text-align: justify;"><strong>PROMITENTE VENDEDOR(A):</strong> ${val(data.seller_name)}, ${val(data.seller_marital_status, 'Estado Civil')}, ${val(data.seller_profession, 'Profissão')}, portador(a) do documento nº ${val(data.seller_document)}${spouseText(data.seller_spouse_name, data.seller_spouse_document, data.seller_spouse_rg || '', data.seller_spouse_profession)}, residente e domiciliado(a) na {{vendedor_endereco}}, doravante denominado simplesmente VENDEDOR.</p>
+      <p style="text-align: justify;"><strong>PROMITENTE COMPRADOR(A):</strong> ${val(data.buyer_name)}, ${val(data.buyer_marital_status, 'Estado Civil')}, ${val(data.buyer_profession, 'Profissão')}, portador(a) do documento nº ${val(data.buyer_document)}${spouseText(data.buyer_spouse_name, data.buyer_spouse_document, data.buyer_spouse_rg || '', data.buyer_spouse_profession)}, residente e domiciliado(a) na {{comprador_endereco}}, doravante denominado simplesmente COMPRADOR.</p>
+      <p style="text-align: justify; margin-top: 15px;">As partes acima identificadas têm, entre si, justo e acertado o presente Contrato Particular de Promessa de Compra e Venda de Imóvel, que se regerá pelas cláusulas seguintes:</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA PRIMEIRA - DO OBJETO</h3>
+      <p style="text-align: justify;"><strong>1.1.</strong> O VENDEDOR promete vender ao COMPRADOR o imóvel situado na <strong>${val(data.property_address)}</strong> (${val(data.property_description, data.property?.title)}).</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA SEGUNDA - DO PREÇO E DA FORMA DE PAGAMENTO</h3>
+      <p style="text-align: justify;"><strong>2.1.</strong> O preço total e certo para a venda do imóvel é de <strong>R$ ${val(data.sale_total_value, data.total_value)}</strong>.</p>
+      <p style="text-align: justify;"><strong>2.2. SINAL (ARRAS):</strong> A título de sinal, o COMPRADOR paga neste ato o valor de <strong>R$ ${val(data.sale_down_payment, data.down_payment)}</strong>.</p>
+      <p style="text-align: justify;"><strong>2.3. SALDO REMANESCENTE:</strong> O saldo remanescente será pago à vista no ato da assinatura da Escritura Pública de Compra e Venda.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA TERCEIRA - DA IRRETRATABILIDADE E DO FORO</h3>
+      <p style="text-align: justify;"><strong>3.1.</strong> O presente contrato é celebrado em caráter irrevogável e irretratável. O descumprimento de qualquer cláusula sujeita a parte infratora à multa de 20% sobre o valor da transação.</p>
+      <p style="text-align: justify;"><strong>3.2.</strong> Para dirimir quaisquer controvérsias, as partes elegem o foro da <strong>{{foro_comarca}}</strong>.</p>
+      <p style="margin-top: 30px; text-align: center;">{{local_data}}</p>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Vendedor(a)</span>
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_COMPRADOR}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Comprador(a)</span>
+        </div>
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_1}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF: ___________________</span>
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_2}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF: ___________________</span>
+        </div>
+      </div>
+    `;
+  } else if (type === 'sale_standard') {
+    contractContent = `
+      <h2 style="text-align: center; color: #1e293b; font-size: 18px; margin-bottom: 20px;">CONTRATO DE COMPRA E VENDA DE IMÓVEL A PRAZO (COM ALIENAÇÃO FIDUCIÁRIA)</h2>
+      <h3 style="color: #334155; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">IDENTIFICAÇÃO DAS PARTES</h3>
+      <p style="text-align: justify;"><strong>VENDEDOR(A) / CREDOR(A) FIDUCIÁRIO(A):</strong> ${val(data.seller_name)}, ${val(data.seller_marital_status, 'Estado Civil')}, ${val(data.seller_profession, 'Profissão')}, documento nº ${val(data.seller_document)}${spouseText(data.seller_spouse_name, data.seller_spouse_document, data.seller_spouse_rg || '', data.seller_spouse_profession)}, residente e domiciliado(a) na {{vendedor_endereco}}.</p>
+      <p style="text-align: justify;"><strong>COMPRADOR(A) / DEVEDOR(A) FIDUCIANTE:</strong> ${val(data.buyer_name)}, ${val(data.buyer_marital_status, 'Estado Civil')}, ${val(data.buyer_profession, 'Profissão')}, documento nº ${val(data.buyer_document)}${spouseText(data.buyer_spouse_name, data.buyer_spouse_document, data.buyer_spouse_rg || '', data.buyer_spouse_profession)}, residente e domiciliado(a) na {{comprador_endereco}}.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA PRIMEIRA E SEGUNDA - DO OBJETO E PAGAMENTO</h3>
+      <p style="text-align: justify;"><strong>1.1.</strong> O objeto deste contrato é o imóvel situado na <strong>${val(data.property_address)}</strong>.</p>
+      <p style="text-align: justify;"><strong>2.1.</strong> O preço total para a venda do imóvel é de <strong>R$ ${val(data.sale_total_value, data.total_value)}</strong>, pago da seguinte forma:</p>
+      <p style="text-align: justify;"><strong>2.1.1. SINAL:</strong> O valor de <strong>R$ ${val(data.sale_down_payment, data.down_payment)}</strong>, pago neste ato pelo COMPRADOR(A).</p>
+      <p style="text-align: justify;"><strong>2.1.2. SALDO DEVEDOR:</strong> O saldo remanescente, no valor de <strong>R$ ${val(data.sale_financing_value)}</strong>, financiado ou parcelado entre as partes.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA TERCEIRA - DA GARANTIA E FORO</h3>
+      <p style="text-align: justify;"><strong>3.1.</strong> Para garantia do pagamento, o COMPRADOR(A), aliena fiduciariamente ao VENDEDOR(A) o próprio imóvel, nos termos da Lei nº 9.514/97.</p>
+      <p style="text-align: justify;"><strong>3.2.</strong> Fica eleito o foro da <strong>{{foro_comarca}}</strong> para dirimir litígios decorrentes deste contrato.</p>
+      <p style="margin-top: 30px; text-align: center;">{{local_data}}</p>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Credor Fiduciário</span>
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_COMPRADOR}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Devedor Fiduciante</span>
+        </div>
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_1}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF: ___________________</span>
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_2}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF: ___________________</span>
+        </div>
+      </div>
+    `;
+  } else if (type === 'permuta') {
+    contractContent = `
+      <h2 style="text-align: center; color: #1e293b; font-size: 18px; margin-bottom: 20px;">CONTRATO PARTICULAR DE PERMUTA DE IMÓVEIS (COM TORNA)</h2>
+      <h3 style="color: #334155; font-size: 14px; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px;">IDENTIFICAÇÃO DAS PARTES</h3>
+      <p style="text-align: justify;"><strong>PRIMEIRO(A) PERMUTANTE:</strong> ${val(data.seller_name)}, documento nº ${val(data.seller_document)}, residente na {{vendedor_endereco}}.</p>
+      <p style="text-align: justify;"><strong>SEGUNDO(A) PERMUTANTE:</strong> ${val(data.buyer_name)}, documento nº ${val(data.buyer_document)}, residente na {{comprador_endereco}}.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA PRIMEIRA E SEGUNDA - DOS IMÓVEIS E DA TORNA</h3>
+      <p style="text-align: justify;"><strong>1.1. IMÓVEL A (Do Primeiro Permutante):</strong> ${val(data.property_description, data.property?.title)}, situado na ${val(data.property_address)}.</p>
+      <p style="text-align: justify;"><strong>1.2. IMÓVEL B (Do Segundo Permutante):</strong> Conforme acordado e vistoriado.</p>
+      <p style="text-align: justify;"><strong>2.1.</strong> O IMÓVEL A é avaliado no valor de <strong>R$ ${val(data.sale_total_value, data.total_value)}</strong>. O IMÓVEL B entra como parte do pagamento no valor de <strong>R$ ${val(data.permutation_value)}</strong>.</p>
+      <h3 style="color: #334155; font-size: 14px; margin-top: 20px;">CLÁUSULA TERCEIRA - DO FORO</h3>
+      <p style="text-align: justify;"><strong>3.1.</strong> As partes elegem o foro da <strong>{{foro_comarca}}</strong> para dirimir quaisquer dúvidas oriundas deste contrato.</p>
+      <p style="margin-top: 30px; text-align: center;">{{local_data}}</p>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_PROPRIETARIO}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.seller_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Primeiro Permutante</span>
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_COMPRADOR}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">${val(data.buyer_name)}</strong><br/>
+          <span style="font-size: 14px; color: #000;">Segundo Permutante</span>
+        </div>
+      </div>
+      <div class="signatures" style="display: table; width: 100%; margin-top: 50px; page-break-inside: avoid; table-layout: fixed;">
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_1}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 1</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF: ___________________</span>
+        </div>
+        <div class="signature-line" style="display: table-cell; width: 50%; text-align: center; vertical-align: top; padding: 0 10px; border-top: none; padding-top: 0; margin-top: 0;">
+          <div style="min-height: 55px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 5px;">
+            {{ASSINATURA_TESTEMUNHA_2}}
+          </div>
+          _________________________________________________<br/>
+          <strong style="font-size: 14px; color: #000;">Testemunha 2</strong><br/>
+          <span style="font-size: 14px; color: #000;">CPF: ___________________</span>
+        </div>
+      </div>
+    `;
+'@
+
+# Combine all parts
+$newContent = $before + $newTemplates.Split("`n") + $after
+
+# Write back to file
+$newContent | Set-Content "src/utils/contractGenerator.ts" -Encoding UTF8
+
+Write-Output "Replacement complete!"
+Write-Output "Original lines: $($lines.Count)"
+Write-Output "New lines: $($newContent.Count)"
