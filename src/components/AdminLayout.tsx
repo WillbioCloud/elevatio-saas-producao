@@ -9,6 +9,7 @@ import { CrmNotificationsMenu } from './CrmNotificationsMenu';
 import { useInstallmentReminders } from '../hooks/useInstallmentReminders';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 import BillingPortalModal from './BillingPortalModal';
+import BillingGuard from './BillingGuard';
 import ProductTour from './ProductTour';
 import SetupWizardModal from './SetupWizardModal';
 import AuraChatWidget from './AuraChatWidget';
@@ -377,7 +378,8 @@ const AdminLayout: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[#070d1f] overflow-hidden font-sans selection:bg-brand-500/30 text-slate-800 dark:text-slate-200">
+    <BillingGuard>
+      <div className="flex h-screen bg-[#070d1f] overflow-hidden font-sans selection:bg-brand-500/30 text-slate-800 dark:text-slate-200">
       {shouldShowWizard && <SetupWizardModal onComplete={handleRefresh} />}
       <ProductTour isSidebarCollapsed={isSidebarCollapsed} />
       <aside
@@ -1009,7 +1011,8 @@ const AdminLayout: React.FC = () => {
       </main>
 
       {!hasContextualAura ? <AuraChatWidget /> : null}
-    </div>
+      </div>
+    </BillingGuard>
   );
 };
 
