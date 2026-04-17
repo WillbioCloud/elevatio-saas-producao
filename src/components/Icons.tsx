@@ -40,6 +40,7 @@ import {
   Activity,
   Radio,
   Clock,
+  Timer,
   Loader2,
   MessageCircle,
   CheckSquare,
@@ -209,6 +210,7 @@ export const Icons = {
   Activity,
   Radio,
   Clock,
+  Timer,
   Loader2,
 
   Dashboard: LayoutDashboard,

@@ -97,6 +97,9 @@ type TenantFinanceRecord = Pick<
   'id' | 'name' | 'document' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template' | 'logo_url' | 'admin_signature_url'
 > & {
   finance_config?: FinanceConfig | null;
+  subscription_status?: string | null;
+  plan_status?: string | null;
+  trial_ends_at?: string | null;
 };
 
 const CONFIG_TABS: ConfigTab[] = ['profile', 'company', 'team', 'traffic', 'subscription', 'site', 'contracts', 'integrations', 'finance', 'permissions'];
@@ -1078,7 +1081,9 @@ const AdminConfig: React.FC = () => {
         default_commission,
         broker_commission,
         manual_discount_value,
-        manual_discount_type
+        manual_discount_type,
+        plan_status,
+        trial_ends_at
       `)
       .eq('id', user.company_id)
       .maybeSingle();
@@ -1122,6 +1127,9 @@ const AdminConfig: React.FC = () => {
         broker_commission: data.broker_commission ?? parsedFinanceConfig?.broker_commission ?? undefined,
         manual_discount_value: data.manual_discount_value ?? null,
         manual_discount_type: data.manual_discount_type ?? null,
+        plan_status: data.plan_status ?? null,
+        subscription_status: data.plan_status === 'trial' ? 'trialing' : (data.plan_status ?? null),
+        trial_ends_at: data.trial_ends_at ?? null,
       });
       setCompanyForm({
         name: data.name || '',
@@ -3223,6 +3231,24 @@ const AdminConfig: React.FC = () => {
 
       {activeTab === 'subscription' && user?.role === 'owner' && (
         <div className="space-y-8 animate-fade-in">
+          {tenant?.subscription_status === 'trialing' && tenant?.trial_ends_at && (
+            <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-3xl p-6 text-white shadow-xl shadow-orange-500/20 flex flex-col sm:flex-row items-center justify-between gap-6 border border-orange-400/50 mb-8">
+              <div className="flex items-center gap-4">
+                <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md">
+                  <Icons.Timer size={28} className="animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black tracking-tight">
+                    Seu período de teste acaba em {Math.ceil((new Date(tenant.trial_ends_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))} dias!
+                  </h3>
+                  <p className="text-orange-50 font-medium mt-1">
+                    Assine um plano abaixo para evitar a suspensão da sua imobiliária.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Cabeçalho da Assinatura */}
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
@@ -3551,16 +3577,26 @@ const AdminConfig: React.FC = () => {
                     const displayPrice = isYearly ? yearlyPrice : (acceptFidelity ? fidelityPrice : monthlyPrice);
                     const yearlyTotalPrice = monthlyPrice * 12 * 0.85;
                     const hasDiscount = displayPrice < monthlyPrice;
+                    const isPopularPlan = planId.includes('premium') || String(plan.name || '').toLowerCase().includes('premium');
                     
                     return (
                       <div
                         key={plan.id || plan.name}
-                        className={`relative bg-white dark:bg-dark-card rounded-2xl border p-6 flex flex-col h-full transition-colors ${
+                        className={`relative flex flex-col h-full bg-white/60 dark:bg-[#0a0f1c]/60 backdrop-blur-2xl rounded-3xl p-8 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl border border-white/20 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] ${
+                          isPopularPlan
+                            ? 'md:scale-105 border-brand-400/80 dark:border-brand-400/50 ring-2 ring-brand-500/20 shadow-brand-500/20'
+                            : ''
+                        } ${
                           isCurrentPlan
-                            ? 'border-brand-200 dark:border-brand-700 ring-2 ring-brand-500 bg-brand-50/10 dark:bg-brand-900/10'
-                            : 'border-slate-200 dark:border-dark-border hover:border-brand-300 dark:hover:border-brand-700'
+                            ? 'border-brand-300 dark:border-brand-500 ring-2 ring-brand-500 bg-brand-50/40 dark:bg-brand-900/20'
+                            : 'hover:border-brand-300 dark:hover:border-brand-700'
                         }`}
                       >
+                        {isPopularPlan && (
+                          <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-brand-600 px-4 py-1.5 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-brand-500/30">
+                            Mais escolhido
+                          </div>
+                        )}
                         {isCurrentPlan && (
                           <div className="mb-4">
                             <span className="inline-flex items-center rounded-full border border-brand-200 bg-brand-500/10 px-3 py-1 text-xs font-bold text-brand-700 dark:border-brand-500/20 dark:text-brand-300">
@@ -5577,9 +5613,9 @@ const AdminConfig: React.FC = () => {
               ? 'R$ 0,00'
               : `+ ${formatCurrency(primaryPrice)} /ano`;
           return (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in">
-                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 backdrop-blur-xl p-4">
+              <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in">
+                <div className="p-6 border-b border-slate-200/60 dark:border-white/10 bg-white/60 dark:bg-slate-900/60 flex justify-between items-center">
                   <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
                     <Icons.ShoppingCart className="text-brand-500" /> Resumo do Pedido
                   </h3>
@@ -5590,7 +5626,7 @@ const AdminConfig: React.FC = () => {
 
                 <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
                   {/* Item 1: O Plano */}
-                  <div className="border border-brand-200 dark:border-brand-800 bg-brand-50/50 dark:bg-brand-900/20 rounded-xl p-5">
+                  <div className="border border-brand-200/70 dark:border-brand-500/20 bg-white/80 dark:bg-slate-900/50 backdrop-blur-xl rounded-2xl p-5 shadow-sm">
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <h4 className="font-bold text-slate-800 dark:text-white text-lg">
@@ -5607,8 +5643,8 @@ const AdminConfig: React.FC = () => {
                       </div>
                     </div>
                     <div className="mt-4 pt-4 border-t border-brand-200/50 dark:border-brand-800/50 text-sm text-slate-600 dark:text-slate-400 flex flex-wrap gap-2">
-                      <span className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md shadow-sm">Até {selectedPlanForCheckout.max_users} usuários</span>
-                      <span className="bg-white dark:bg-slate-800 px-2 py-1 rounded-md shadow-sm">{selectedPlanForCheckout.max_properties} imóveis</span>
+                      <span className="bg-white/80 dark:bg-slate-800/80 px-2 py-1 rounded-md shadow-sm">Até {selectedPlanForCheckout.max_users} usuários</span>
+                      <span className="bg-white/80 dark:bg-slate-800/80 px-2 py-1 rounded-md shadow-sm">{selectedPlanForCheckout.max_properties} imóveis</span>
                       {isPrimaryFree && (
                         <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded-md shadow-sm font-medium">
                           Domínio Grátis (1º ano)
@@ -5618,14 +5654,14 @@ const AdminConfig: React.FC = () => {
                   </div>
 
                   {/* Item 2: Upsell de Domínio (O seu código inteligente original!) */}
-                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-800/50">
+                  <div className="border border-slate-200/60 dark:border-white/10 rounded-2xl p-5 bg-white/80 dark:bg-slate-900/50 backdrop-blur-xl shadow-sm">
                     <h4 className="font-bold text-slate-800 dark:text-white mb-3 flex items-center gap-2">
                       <Icons.Globe size={18} className="text-slate-400" /> Seu Domínio Profissional
                     </h4>
                     
                     <div className="space-y-3">
                       {/* Domínio Principal */}
-                      <label className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${isPrimaryFree || isDomainActive ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : (checkoutAddons.buyDomainBr ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800')}`}>
+                      <label className={`flex items-center justify-between p-3 rounded-xl border transition-colors ${isPrimaryFree || isDomainActive ? 'border-green-500 bg-green-50/90 dark:bg-green-900/20' : (checkoutAddons.buyDomainBr ? 'border-brand-500 bg-brand-50/90 dark:bg-brand-900/20' : 'border-slate-200/70 dark:border-white/10 cursor-pointer bg-white/70 dark:bg-slate-950/20 hover:bg-slate-50 dark:hover:bg-slate-800')}`}>
                         <div className="flex items-center gap-3">
                           <input
                             type="checkbox"
@@ -5652,7 +5688,7 @@ const AdminConfig: React.FC = () => {
 
                       {/* Domínio Adicional (Proteção de marca) */}
                       {autoSecondaryDomain && (
-                        <div className="mt-6 rounded-xl border border-brand-200 bg-brand-50/50 p-5 dark:border-brand-800 dark:bg-brand-900/10">
+                        <div className="mt-6 rounded-2xl border border-brand-200/70 bg-brand-50/70 p-5 backdrop-blur-xl dark:border-brand-500/20 dark:bg-brand-900/10">
                           <h4 className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-white">
                             <Icons.Globe size={16} className="text-brand-600" />
                             Proteja sua marca (Domínio Secundário)
@@ -5667,7 +5703,7 @@ const AdminConfig: React.FC = () => {
                                 type="text"
                                 readOnly
                                 value={autoSecondaryDomain}
-                                className="w-full rounded-lg border-0 bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-800 dark:text-slate-300"
+                                className="w-full rounded-xl border border-slate-200/60 bg-white/80 px-4 py-3 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-brand-500 dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-300"
                               />
                               <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center">
                                 {isCheckingSecondary && <Icons.Loader2 size={18} className="animate-spin text-brand-500" />}
@@ -5740,7 +5776,7 @@ const AdminConfig: React.FC = () => {
                   </div>
 
                   {/* Item 3: Cupom de Desconto (Adicionado) */}
-                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50 dark:bg-slate-800/30">
+                  <div className="border border-slate-200/60 dark:border-white/10 rounded-2xl p-5 bg-white/80 dark:bg-slate-900/50 backdrop-blur-xl shadow-sm">
                     <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Possui Cupom de Desconto?</label>
                     <div className="flex gap-2">
                       <input 
@@ -5753,12 +5789,12 @@ const AdminConfig: React.FC = () => {
                           }
                         }} 
                         placeholder="INSERIR CÓDIGO" 
-                        className="flex-1 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-sm uppercase outline-none focus:border-brand-500 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold" 
+                        className="flex-1 border border-slate-300/80 dark:border-white/10 rounded-xl px-4 py-2 text-sm uppercase outline-none focus:border-brand-500 bg-white/90 dark:bg-slate-950/50 text-slate-900 dark:text-white font-bold" 
                       />
                       <button 
                         onClick={handleValidateCheckoutCoupon} 
                         disabled={validatingCoupon || !checkoutCoupon} 
-                        className="bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-6 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
+                        className="bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-6 py-2 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
                       >
                         {validatingCoupon ? <Icons.Loader2 size={16} className="animate-spin" /> : 'Aplicar'}
                       </button>
@@ -5770,7 +5806,7 @@ const AdminConfig: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="bg-slate-900 dark:bg-black p-5 rounded-xl space-y-3 shadow-inner border border-slate-800">
+                  <div className="bg-slate-950/90 dark:bg-black/70 backdrop-blur-xl p-5 rounded-2xl space-y-3 shadow-inner border border-white/10">
                     <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Resumo do Pagamento</h5>
                     
                     <div className="flex justify-between gap-4 text-slate-300 text-sm">
@@ -5810,7 +5846,7 @@ const AdminConfig: React.FC = () => {
                       </div>
                     )}
 
-                    <div className="pt-3 mt-3 border-t border-slate-800 flex justify-between items-end">
+                    <div className="pt-3 mt-3 border-t border-white/10 flex justify-between items-end">
                       <span className="text-slate-400 font-bold">Total Final</span>
                       <span className="text-2xl font-black text-white">{formatCurrency(finalTotal)}</span>
                     </div>
@@ -5818,7 +5854,7 @@ const AdminConfig: React.FC = () => {
                 </div>
 
                 {/* Footer do Checkout com a Matemática Precisa */}
-                <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex justify-end items-center">
+                <div className="p-6 border-t border-slate-200/60 dark:border-white/10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl flex justify-end items-center">
                   <button 
                     onClick={async () => {
                       setIsCheckoutModalOpen(false);
@@ -5875,10 +5911,10 @@ const AdminConfig: React.FC = () => {
                       }
                     }}
                     disabled={isLoading}
-                    className="w-full py-4 bg-brand-600 hover:bg-brand-700 text-white text-lg font-black rounded-xl transition-all shadow-lg hover:shadow-brand-500/25 disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full py-4 bg-brand-600 hover:bg-brand-700 text-white text-lg font-black rounded-xl transition-all shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     {isLoading ? <Icons.Loader2 className="animate-spin" /> : <Icons.CreditCard size={20} />}
-                    Finalizar Compra
+                    Pagar com Asaas
                   </button>
                 </div>
               </div>
