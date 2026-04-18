@@ -493,44 +493,6 @@ const AdminLeads: React.FC = () => {
   // 1. Controle de Permissão Dinâmico (RBAC)
   const [canExportLeads, setCanExportLeads] = useState(false);
 
-  useEffect(() => {
-    async function checkExportPermission() {
-      // Dono e Super Admin têm passe livre sempre
-      if (user?.role === 'owner' || user?.role === 'super_admin') {
-        setCanExportLeads(true);
-        return;
-      }
-
-      // Se tiver empresa e cargo, verifica no banco de dados a matriz de permissões
-      if (user?.company_id && user?.role) {
-        try {
-          const { data, error } = await supabase
-            .from('settings')
-            .select('permissions')
-            .eq('company_id', user.company_id)
-            .single();
-
-          if (!error && data?.permissions) {
-            // Suporta tanto o JSON direto quanto encapsulado em role_permissions
-            const perms: any = data.permissions;
-            const rolePerms = perms.role_permissions ? perms.role_permissions[user.role] : perms[user.role];
-
-            if (rolePerms && rolePerms.export_leads === true) {
-              setCanExportLeads(true);
-              return;
-            }
-          }
-        } catch (err) {
-          console.error('Erro ao validar permissão RBAC:', err);
-        }
-      }
-
-      setCanExportLeads(false);
-    }
-
-    checkExportPermission();
-  }, [user]);
-
   // 2. Funcao de Exportacao para Remarketing (Nome, Email, Telefone)
   const handleExportCSV = () => {
     if (!filteredLeads || filteredLeads.length === 0) {
@@ -647,19 +609,51 @@ const AdminLeads: React.FC = () => {
 
   useEffect(() => {
     const fetchSettings = async () => {
-      const { data } = await supabase.from('settings').select('kanban_config, include_admins_in_roulette').eq('id', 1).single();
-      if (data) {
-        if (data.kanban_config) {
-          setKanbanConfig(data.kanban_config as Record<string, string[]>);
-        }
-        if (data.include_admins_in_roulette !== undefined) {
-          setIncludeAdmins(data.include_admins_in_roulette);
-        }
+      if (!user) {
+        setCanExportLeads(false);
+        return;
+      }
+
+      if (user.role === 'owner' || user.role === 'super_admin') {
+        setCanExportLeads(true);
+      } else {
+        setCanExportLeads(false);
+      }
+
+      if (!user.company_id) return;
+
+      const { data: settingsData, error: settingsError } = await supabase
+        .from('settings')
+        .select('kanban_config, permissions')
+        .eq('company_id', user.company_id)
+        .maybeSingle();
+
+      if (settingsError) {
+        console.error('Erro ao carregar configurações do funil:', settingsError);
+        return;
+      }
+
+      if (settingsData?.kanban_config) {
+        setKanbanConfig(settingsData.kanban_config as Record<string, string[]>);
+      }
+
+      if (user.role === 'owner' || user.role === 'super_admin') {
+        setCanExportLeads(true);
+      } else if (settingsData?.permissions) {
+        const perms: any = settingsData.permissions;
+        const mappedRole = user.role === 'corretor' ? 'agent' : user.role === 'atendente' ? 'attendant' : user.role;
+        const rolePerms = perms.role_permissions
+          ? perms.role_permissions[mappedRole] ?? perms.role_permissions[user.role]
+          : perms[mappedRole] ?? perms[user.role];
+
+        setCanExportLeads(rolePerms?.export_leads === true);
+      } else {
+        setCanExportLeads(false);
       }
     };
 
     fetchSettings();
-  }, []);
+  }, [user]);
 
   const fetchAvailableProperties = async () => {
     try {
@@ -876,7 +870,6 @@ const AdminLeads: React.FC = () => {
     setUpdatingAdminToggle(true);
     setIncludeAdmins(newValue);
     try {
-      await supabase.from('settings').update({ include_admins_in_roulette: newValue }).eq('id', 1);
       await fetchRoletaStats(newValue);
     } catch (e) {
       console.error('Erro ao atualizar config da roleta', e);
@@ -1212,7 +1205,13 @@ const AdminLeads: React.FC = () => {
 
     setSavingNewLead(true);
 
-    const { data: settings } = await supabase.from('settings').select('route_to_central').single();
+    const { data: settings } = user.company_id
+      ? await supabase
+          .from('settings')
+          .select('route_to_central')
+          .eq('company_id', user.company_id)
+          .maybeSingle()
+      : { data: null };
     const routeToCentral = settings?.route_to_central ?? true;
 
     const payload = {
