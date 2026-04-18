@@ -22,7 +22,8 @@ export const getAsaasApiUrl = () => getRequiredEnv('ASAAS_API_URL').replace(/\/+
 
 export const createSupabaseAdmin = () => createClient(
   getRequiredEnv('SUPABASE_URL'),
-  getRequiredEnv('SUPABASE_SERVICE_ROLE_KEY')
+  getRequiredEnv('SUPABASE_SERVICE_ROLE_KEY'),
+  { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
 )
 
 const getAuthorizationHeader = (req: Request) => {
@@ -55,25 +56,29 @@ export const createSupabaseForRequest = (req: Request) => {
 }
 
 export async function validateUser(req: Request) {
-  const authHeader = getAuthorizationHeader(req)
+  const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization')
+  if (!authHeader) throw new HttpError('Acesso negado: Token não fornecido.', 401)
+
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+  if (!token) throw new HttpError('Acesso negado: Token malformado.', 401)
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')
 
   if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Erro de configuração do Servidor: Variaveis do Supabase ausentes.')
+    throw new HttpError('Erro interno: Variaveis do Supabase ausentes.', 500)
   }
 
+  // Adicionando global headers para repassar a identidade nas queries
   const supabaseClient = createClient(supabaseUrl, supabaseKey, {
-    global: { headers: { Authorization: authHeader } },
-    auth: { persistSession: false }
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
   })
 
-  const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+  const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token)
 
   if (userError || !user) {
-    console.error('Erro na validação do usuário:', userError)
-    throw new HttpError('Acesso negado: sessao invalida.', 401)
+    throw new HttpError(`Acesso negado: ${userError?.message || 'sessao invalida'}`, 401)
   }
 
   return { supabaseClient, user }
@@ -83,23 +88,23 @@ export const requireBillingCompanyAccess = async (req: Request, companyId: strin
   if (!companyId) throw new HttpError('ID da empresa nao informado.', 400)
 
   const { supabaseClient: supabaseUser, user } = await validateUser(req)
+  const supabaseAdmin = createSupabaseAdmin()
 
-  const { data: profile, error: profileError } = await supabaseUser
+  const { data: profile, error: profileError } = await supabaseAdmin
     .from('profiles')
-    .select('id, email, name, full_name, phone, company_id, role')
+    .select('id, email, name, phone, company_id, role')
     .eq('id', user.id)
     .maybeSingle()
 
   if (profileError || !profile) {
-    throw new HttpError('Acesso negado: perfil do usuario nao encontrado.', 403)
+    console.error('Erro de Perfil:', profileError, 'UserID:', user.id)
+    throw new HttpError('Acesso negado: perfil do usuario nao encontrado no banco.', 403)
   }
 
   const role = String(profile.role ?? '')
   const isSuperAdmin = role === 'super_admin'
 
-  if (isSuperAdmin) {
-    return { supabaseUser, user, profile, isSuperAdmin }
-  }
+  if (isSuperAdmin) return { supabaseUser, user, profile, isSuperAdmin }
 
   if (profile.company_id !== companyId || !BILLING_ROLES.has(role)) {
     throw new HttpError('Acesso negado: voce nao pode gerenciar esta assinatura.', 403)

@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { getAsaasApiUrl, getErrorStatus, requireBillingCompanyAccess } from '../_shared/billing-security.ts'
+import { getAsaasApiUrl, getErrorStatus, requireBillingCompanyAccess, createSupabaseAdmin } from '../_shared/billing-security.ts'
 
 const normalizeString = (value: unknown) => {
   if (typeof value !== 'string') return ''
@@ -83,12 +82,16 @@ serve(async (req) => {
 
     const { user, profile: authProfile, isSuperAdmin } = await requireBillingCompanyAccess(req, companyId)
 
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')!
     const ASAAS_URL = getAsaasApiUrl()
+    const asaasHeaders = {
+      'access_token': ASAAS_API_KEY,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'Elevatio-SaaS/1.0 (Supabase Edge Functions)'
+    }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    const supabase = createSupabaseAdmin()
 
     let billingProfile = authProfile
     if (isSuperAdmin && authProfile?.company_id !== companyId) {
@@ -174,7 +177,7 @@ serve(async (req) => {
       const document = company.document?.replace(/\D/g, '') || company.cpf_cnpj?.replace(/\D/g, '') || ''
       if (document) {
         const searchRes = await fetch(`${ASAAS_URL}/customers?cpfCnpj=${document}`, {
-          headers: { 'access_token': ASAAS_API_KEY }
+          headers: asaasHeaders
         })
         const searchData = await searchRes.json()
         if (searchData.data && searchData.data.length > 0) customerId = searchData.data[0].id
@@ -183,7 +186,7 @@ serve(async (req) => {
       if (!customerId) {
         const customerRes = await fetch(`${ASAAS_URL}/customers`, {
           method: 'POST',
-          headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
+          headers: asaasHeaders,
           body: JSON.stringify({
             name: company.name || billingProfile?.full_name || 'Empresa Sem Nome',
             email: billingProfile?.email || authProfile?.email || user.email || 'email@padrao.com',
@@ -283,7 +286,7 @@ serve(async (req) => {
 
     if (subscriptionId) {
       const subGet = await fetch(`${ASAAS_URL}/subscriptions/${subscriptionId}`, {
-        headers: { 'access_token': ASAAS_API_KEY }
+        headers: asaasHeaders
       })
       const subData = await subGet.json()
 
@@ -291,7 +294,7 @@ serve(async (req) => {
         if (subData.cycle !== targetCycle || subData.status === 'INACTIVE') {
           await fetch(`${ASAAS_URL}/subscriptions/${subscriptionId}`, {
             method: 'DELETE',
-            headers: { 'access_token': ASAAS_API_KEY }
+            headers: asaasHeaders
           })
 
           const createPayload: Record<string, unknown> = {
@@ -309,7 +312,7 @@ serve(async (req) => {
 
           const createRes = await fetch(`${ASAAS_URL}/subscriptions`, {
             method: 'POST',
-            headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
+            headers: asaasHeaders,
             body: JSON.stringify(createPayload)
           })
           const createData = await createRes.json()
@@ -326,7 +329,7 @@ serve(async (req) => {
 
           await fetch(`${ASAAS_URL}/subscriptions/${subscriptionId}`, {
             method: 'PUT',
-            headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
+            headers: asaasHeaders,
             body: JSON.stringify(updatePayload)
           })
         }
@@ -351,7 +354,7 @@ serve(async (req) => {
 
       const createRes = await fetch(`${ASAAS_URL}/subscriptions`, {
         method: 'POST',
-        headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
+        headers: asaasHeaders,
         body: JSON.stringify(createPayload)
       })
       const createData = await createRes.json()
@@ -361,7 +364,7 @@ serve(async (req) => {
     let keptPaymentId = null
     if (newSubscriptionId) {
       const paymentsRes = await fetch(`${ASAAS_URL}/payments?subscription=${newSubscriptionId}&status=PENDING`, {
-        headers: { 'access_token': ASAAS_API_KEY }
+        headers: asaasHeaders
       })
       const paymentsData = await paymentsRes.json()
 
@@ -374,7 +377,7 @@ serve(async (req) => {
 
         await fetch(`${ASAAS_URL}/payments/${currentPayment.id}`, {
           method: 'POST',
-          headers: { 'access_token': ASAAS_API_KEY, 'Content-Type': 'application/json' },
+          headers: asaasHeaders,
           body: JSON.stringify({ value: finalPaymentValue, description: finalPaymentDesc })
         })
       }
@@ -382,7 +385,7 @@ serve(async (req) => {
 
     if (customerId) {
       const allPaymentsRes = await fetch(`${ASAAS_URL}/payments?customer=${customerId}&status=PENDING`, {
-        headers: { 'access_token': ASAAS_API_KEY }
+        headers: asaasHeaders
       })
       const allPaymentsData = await allPaymentsRes.json()
       if (allPaymentsData?.data) {
@@ -390,14 +393,14 @@ serve(async (req) => {
           if (payment.id !== keptPaymentId) {
             await fetch(`${ASAAS_URL}/payments/${payment.id}`, {
               method: 'DELETE',
-              headers: { 'access_token': ASAAS_API_KEY }
+              headers: asaasHeaders
             })
           }
         }
       }
 
       const allSubsRes = await fetch(`${ASAAS_URL}/subscriptions?customer=${customerId}&status=ACTIVE`, {
-        headers: { 'access_token': ASAAS_API_KEY }
+        headers: asaasHeaders
       })
       const allSubsData = await allSubsRes.json()
       if (allSubsData?.data) {
@@ -405,7 +408,7 @@ serve(async (req) => {
           if (sub.id !== newSubscriptionId) {
             await fetch(`${ASAAS_URL}/subscriptions/${sub.id}`, {
               method: 'DELETE',
-              headers: { 'access_token': ASAAS_API_KEY }
+              headers: asaasHeaders
             })
           }
         }

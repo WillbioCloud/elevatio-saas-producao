@@ -43,12 +43,16 @@ serve(async (req) => {
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
     const ASAAS_URL = getAsaasApiUrl()
+    const asaasHeaders = {
+      'access_token': ASAAS_API_KEY!,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'Elevatio-SaaS/1.0 (Supabase Edge Functions)'
+    }
 
     const payRes = await fetch(`${ASAAS_URL}/payments?customer=${company.asaas_customer_id}&status=PENDING`, {
       method: 'GET',
-      headers: {
-        'access_token': ASAAS_API_KEY!
-      }
+      headers: asaasHeaders
     })
 
     const payData = await payRes.json()
