@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+import { getAsaasApiUrl, getErrorStatus, requireBillingCompanyAccess } from '../_shared/billing-security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -96,12 +97,6 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization')
-    if (!authHeader) throw new Error('Acesso negado: token ausente.')
-
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-    if (!token) throw new Error('Acesso negado: token ausente.')
-
     const reqText = await req.text()
     if (!reqText) throw new Error("A requisição do CRM veio vazia.")
 
@@ -119,6 +114,9 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization')
+    const token = authHeader?.replace(/^Bearer\s+/i, '').trim()
+    await requireBillingCompanyAccess(req, companyId)
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
     if (authError || !user) throw new Error('Acesso negado: sessão inválida.')
 
@@ -190,7 +188,7 @@ serve(async (req) => {
     const cleanDocument = company.document?.replace(/\D/g, '') || company.cpf_cnpj?.replace(/\D/g, '') || ''
     const cleanPhone = company.phone || ''
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
-    const ASAAS_URL = 'https://sandbox.asaas.com/api/v3'
+    const ASAAS_URL = getAsaasApiUrl()
 
     const customerPayload = {
       name: company.name,
@@ -317,7 +315,7 @@ serve(async (req) => {
     console.error('ERRO EDGE FUNCTION:', error.message)
     return new Response(
       JSON.stringify({ error: error.message }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: getErrorStatus(error) }
     )
   }
 })

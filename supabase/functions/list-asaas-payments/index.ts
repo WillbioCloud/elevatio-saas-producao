@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+import { getAsaasApiUrl } from '../_shared/billing-security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -41,7 +42,7 @@ serve(async (req) => {
     if (authError || !user) throw new Error('Acesso negado: sessao invalida.')
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
-    const ASAAS_URL = 'https://sandbox.asaas.com/api/v3'
+    const ASAAS_URL = getAsaasApiUrl()
 
     const body: RequestPayload = await req.json().catch(() => ({}))
     const requestedCompanyId = typeof body.company_id === 'string' ? body.company_id.trim() : ''

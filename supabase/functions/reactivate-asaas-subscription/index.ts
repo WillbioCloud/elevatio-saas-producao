@@ -1,9 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+import {
+  createSupabaseAdmin,
+  getAsaasApiUrl,
+  getErrorStatus,
+  requireBillingCompanyAccess,
+} from '../_shared/billing-security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
+}
+
+const normalizeString = (value: unknown) => {
+  if (typeof value !== 'string') return ''
+  return value.trim()
 }
 
 serve(async (req) => {
@@ -11,26 +21,26 @@ serve(async (req) => {
 
   try {
     const { company_id, plan_name, billing_cycle, price } = await req.json()
+    const companyId = normalizeString(company_id)
+    const planName = normalizeString(plan_name)
 
-    if (!company_id || !plan_name || !price) throw new Error("Dados incompletos para reativação.")
+    if (!companyId || !planName || !price) throw new Error("Dados incompletos para reativacao.")
 
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    await requireBillingCompanyAccess(req, companyId)
+
+    const supabaseAdmin = createSupabaseAdmin()
 
     const { data: company, error: compError } = await supabaseAdmin
       .from('companies')
       .select('asaas_customer_id')
-      .eq('id', company_id)
+      .eq('id', companyId)
       .single()
 
-    if (compError || !company?.asaas_customer_id) throw new Error("Cliente não encontrado no Asaas.")
+    if (compError || !company?.asaas_customer_id) throw new Error("Cliente nao encontrado no Asaas.")
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
-    const ASAAS_URL = 'https://sandbox.asaas.com/api/v3'
+    const ASAAS_URL = getAsaasApiUrl()
 
-    // 1. Cria uma NOVA assinatura no Asaas
     const cycleAsaas = billing_cycle === 'yearly' ? 'YEARLY' : 'MONTHLY'
     const newSubRes = await fetch(`${ASAAS_URL}/subscriptions`, {
       method: 'POST',
@@ -42,35 +52,33 @@ serve(async (req) => {
         customer: company.asaas_customer_id,
         billingType: 'CREDIT_CARD',
         value: price,
-        nextDueDate: new Date().toISOString().split('T')[0], // Cobra hoje
+        nextDueDate: new Date().toISOString().split('T')[0],
         cycle: cycleAsaas,
-        description: `Reativação: Assinatura Elevatio Vendas - Plano ${plan_name.toUpperCase()}`
+        description: `Reativacao: Assinatura Elevatio Vendas - Plano ${planName.toUpperCase()}`
       })
     })
 
     const newSubData = await newSubRes.json()
     if (!newSubRes.ok) throw new Error(`Erro no Asaas: ${newSubData.errors?.[0]?.description || 'Falha ao criar assinatura'}`)
 
-    // 2. Atualiza o banco com o NOVO ID da assinatura e volta o status para active/pending
     await supabaseAdmin
       .from('companies')
       .update({ asaas_subscription_id: newSubData.id })
-      .eq('id', company_id)
+      .eq('id', companyId)
 
     await supabaseAdmin
       .from('saas_contracts')
       .update({
-        status: 'pending', // Ficará active quando o webhook confirmar o pagamento
-        plan_name: plan_name,
-        billing_cycle: billing_cycle,
+        status: 'pending',
+        plan_name: planName,
+        billing_cycle,
         canceled_at: null,
         cancel_reason: null,
         fidelity_end_date: null,
         has_fidelity: false
       })
-      .eq('company_id', company_id)
+      .eq('company_id', companyId)
 
-    // 3. Pega o link de pagamento da primeira fatura gerada por essa nova assinatura
     const payRes = await fetch(`${ASAAS_URL}/payments?subscription=${newSubData.id}`, {
       method: 'GET',
       headers: { 'access_token': ASAAS_API_KEY! }
@@ -86,7 +94,7 @@ serve(async (req) => {
   } catch (error: any) {
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
+      status: getErrorStatus(error),
     })
   }
 })

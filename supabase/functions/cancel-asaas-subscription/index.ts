@@ -1,9 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+import {
+  createSupabaseAdmin,
+  getAsaasApiUrl,
+  getErrorStatus,
+  requireBillingCompanyAccess,
+} from '../_shared/billing-security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
+}
+
+const normalizeString = (value: unknown) => {
+  if (typeof value !== 'string') return ''
+  return value.trim()
 }
 
 serve(async (req) => {
@@ -13,51 +23,48 @@ serve(async (req) => {
 
   try {
     const { company_id, reason, other_reason } = await req.json()
-    
-    if (!company_id) throw new Error("ID da empresa não fornecido.")
+    const companyId = normalizeString(company_id)
 
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    if (!companyId) throw new Error("ID da empresa nao fornecido.")
+
+    await requireBillingCompanyAccess(req, companyId)
+
+    const supabaseAdmin = createSupabaseAdmin()
 
     const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
       .select('asaas_subscription_id')
-      .eq('id', company_id)
+      .eq('id', companyId)
       .single()
 
     if (companyError || !company?.asaas_subscription_id) {
-      throw new Error('Assinatura não encontrada no Asaas.')
+      throw new Error('Assinatura nao encontrada no Asaas.')
     }
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
-    const ASAAS_URL = 'https://sandbox.asaas.com/api/v3'
+    const ASAAS_URL = getAsaasApiUrl()
 
-    // 1. Cancela a assinatura no Asaas (Evita cobranças futuras)
     const asaasRes = await fetch(`${ASAAS_URL}/subscriptions/${company.asaas_subscription_id}`, {
       method: 'DELETE',
       headers: { 'access_token': ASAAS_API_KEY! }
-    });
+    })
 
-    const asaasData = await asaasRes.json();
+    const asaasData = await asaasRes.json()
 
     if (!asaasRes.ok) {
-      throw new Error(`Erro no Asaas: ${asaasData.errors?.[0]?.description || 'Falha ao cancelar'}`);
+      throw new Error(`Erro no Asaas: ${asaasData.errors?.[0]?.description || 'Falha ao cancelar'}`)
     }
 
-    // 2. Formata o motivo
-    const finalReason = reason === 'Outro' ? `Outro: ${other_reason}` : reason;
+    const finalReason = reason === 'Outro' ? `Outro: ${other_reason}` : reason
 
-    // 3. Atualiza o banco de dados (Muda para 'canceled' mas preserva a end_date para o cliente continuar usando)
     await supabaseAdmin
       .from('saas_contracts')
-      .update({ 
-        status: 'canceled', 
+      .update({
+        status: 'canceled',
         cancel_reason: finalReason,
         canceled_at: new Date().toISOString()
       })
-      .eq('company_id', company_id);
+      .eq('company_id', companyId)
 
     return new Response(
       JSON.stringify({ success: true }),
@@ -72,7 +79,7 @@ serve(async (req) => {
       JSON.stringify({ error: error.message }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
+        status: getErrorStatus(error),
       }
     )
   }

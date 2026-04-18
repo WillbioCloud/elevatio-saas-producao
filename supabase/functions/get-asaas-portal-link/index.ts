@@ -1,9 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+import {
+  createSupabaseAdmin,
+  getAsaasApiUrl,
+  getErrorStatus,
+  requireBillingCompanyAccess,
+} from '../_shared/billing-security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
+}
+
+const normalizeString = (value: unknown) => {
+  if (typeof value !== 'string') return ''
+  return value.trim()
 }
 
 serve(async (req) => {
@@ -11,27 +21,27 @@ serve(async (req) => {
 
   try {
     const { company_id } = await req.json()
-    if (!company_id) throw new Error("ID da empresa não informado.")
+    const companyId = normalizeString(company_id)
 
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    if (!companyId) throw new Error("ID da empresa nao informado.")
+
+    await requireBillingCompanyAccess(req, companyId)
+
+    const supabaseAdmin = createSupabaseAdmin()
 
     const { data: company, error: compError } = await supabaseAdmin
       .from('companies')
       .select('asaas_customer_id')
-      .eq('id', company_id)
+      .eq('id', companyId)
       .single()
 
     if (compError || !company?.asaas_customer_id) {
-      throw new Error("Cliente não possui cadastro no Asaas.")
+      throw new Error("Cliente nao possui cadastro no Asaas.")
     }
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
-    const ASAAS_URL = 'https://sandbox.asaas.com/api/v3'
+    const ASAAS_URL = getAsaasApiUrl()
 
-    // Busca a cobrança mais recente (independente do status) para servir de portal
     const payRes = await fetch(`${ASAAS_URL}/payments?customer=${company.asaas_customer_id}&limit=1`, {
       method: 'GET',
       headers: { 'access_token': ASAAS_API_KEY! }
@@ -53,7 +63,7 @@ serve(async (req) => {
   } catch (error: any) {
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
+      status: getErrorStatus(error),
     })
   }
 })

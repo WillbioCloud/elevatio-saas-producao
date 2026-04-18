@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { getAsaasApiUrl } from '../_shared/billing-security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,9 +35,7 @@ serve(async (req) => {
     if (!invoice.company?.payment_api_key) throw new Error('A Imobiliária não configurou a chave da API do Asaas.')
 
     const asaasApiKey = invoice.company.payment_api_key
-    const asaasBaseUrl = asaasApiKey.includes('sandbox') || asaasApiKey.includes('$aact') 
-      ? 'https://sandbox.asaas.com/api/v3' 
-      : 'https://api.asaas.com/v3'
+    const asaasBaseUrl = getAsaasApiUrl()
 
     // 4. Criar Cliente no Asaas
     const customerRes = await fetch(`${asaasBaseUrl}/customers`, {

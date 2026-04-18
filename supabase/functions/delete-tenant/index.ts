@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+import { getAsaasApiUrl } from '../_shared/billing-security.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -110,8 +111,9 @@ serve(async (req) => {
     // 1. CANCELA NO ASAAS
     if (company.asaas_subscription_id) {
       const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
+      const ASAAS_URL = getAsaasApiUrl()
       try {
-        const asaasRes = await fetch(`https://sandbox.asaas.com/api/v3/subscriptions/${company.asaas_subscription_id}`, {
+        const asaasRes = await fetch(`${ASAAS_URL}/subscriptions/${company.asaas_subscription_id}`, {
           method: 'DELETE',
           headers: { 'access_token': ASAAS_API_KEY!, 'Content-Type': 'application/json' }
         })

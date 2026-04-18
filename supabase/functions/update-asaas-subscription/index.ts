@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { getAsaasApiUrl, getErrorStatus, requireBillingCompanyAccess } from '../_shared/billing-security.ts'
 
 const normalizeString = (value: unknown) => {
   if (typeof value !== 'string') return ''
@@ -106,10 +107,12 @@ serve(async (req) => {
       throw new Error('Dados obrigatórios da assinatura não foram informados.')
     }
 
+    await requireBillingCompanyAccess(req, companyId)
+
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')!
-    const ASAAS_URL = 'https://sandbox.asaas.com/api/v3'
+    const ASAAS_URL = getAsaasApiUrl()
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
@@ -504,7 +507,7 @@ serve(async (req) => {
   } catch (error: any) {
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400
+      status: getErrorStatus(error)
     })
   }
 })
