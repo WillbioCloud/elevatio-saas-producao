@@ -2,15 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { FinanceConfig } from '../types';
-
-const MASTER_DOMAINS = [
-  'localhost',
-  'lvh.me',
-  'app-elevatiovendas.vercel.app',
-  'elevatiovendas.com.br',
-  'elevatiovendas.vercel.app',
-  'www.elevatiovendas.com.br',
-] as const;
+import { buildTenantNotFoundRedirectUrl, getHostData } from '../utils/domain';
 
 export type Company = {
   id: string;
@@ -54,68 +46,17 @@ type TenantContextType = {
 
 const TenantContext = createContext<TenantContextType | undefined>(undefined);
 
-const getHostData = (hostname: string): {
-  isMasterDomain: boolean;
-  slug: string | null;
-  customDomain: string | null;
-} => {
-  const normalizedHostname = hostname.toLowerCase();
-  const isMasterDomain = MASTER_DOMAINS.includes(normalizedHostname as (typeof MASTER_DOMAINS)[number]);
-
-  if (isMasterDomain) {
-    return { isMasterDomain: true, slug: null, customDomain: null };
-  }
-
-  if (normalizedHostname.endsWith('.lvh.me')) {
-    return {
-      isMasterDomain: false,
-      slug: normalizedHostname.replace(/\.lvh\.me$/, ''),
-      customDomain: null
-    };
-  }
-
-  if (normalizedHostname.endsWith('.localhost') && normalizedHostname !== 'localhost') {
-    return {
-      isMasterDomain: false,
-      slug: normalizedHostname.replace(/\.localhost$/, ''),
-      customDomain: null
-    };
-  }
-
-  if (normalizedHostname.endsWith('.vercel.app')) {
-    return {
-      isMasterDomain: false,
-      slug: normalizedHostname.replace(/\.vercel\.app$/, ''),
-      customDomain: null
-    };
-  }
-
-  if (normalizedHostname.endsWith('.elevatiovendas.com.br')) {
-    return {
-      isMasterDomain: false,
-      slug: normalizedHostname.replace(/\.elevatiovendas\.com\.br$/, ''),
-      customDomain: null
-    };
-  }
-
-  return {
-    isMasterDomain: false,
-    slug: null,
-    customDomain: normalizedHostname,
-  };
-};
-
 export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [tenant, setTenant] = useState<Company | null>(null);
   const [isLoadingTenant, setIsLoadingTenant] = useState(true);
   const [isMasterDomain, setIsMasterDomain] = useState(true);
+  const [isRedirectingTenant, setIsRedirectingTenant] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
 
     const resolveTenant = async () => {
       const hostname = window.location.hostname;
-      const cleanHostname = hostname.replace('www.', '');
       const hostData = getHostData(hostname);
 
       setIsMasterDomain(hostData.isMasterDomain);
@@ -131,14 +72,18 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         let query = supabase
           .from('companies')
-          .select(
-            'id, name, subdomain, domain, document, template, logo_url, admin_signature_url, plan, active, site_data, finance_config, use_asaas, default_commission, broker_commission, payment_api_key'
-          );
+          .select('*')
+          .eq('active', true);
 
         if (hostData.customDomain) {
-          query = query.eq('domain', cleanHostname);
+          query = query.eq('domain', hostData.customDomain);
         } else if (hostData.slug) {
           query = query.eq('subdomain', hostData.slug);
+        } else {
+          if (isMounted) {
+            setTenant(null);
+          }
+          return;
         }
 
         const { data, error } = await query.limit(1).maybeSingle();
@@ -146,6 +91,15 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (error) {
           console.error('Erro na query do banco:', error);
           throw error;
+        }
+
+        if (!data && hostData.slug && hostData.shouldRedirectOnTenantNotFound) {
+          if (isMounted) {
+            setIsRedirectingTenant(true);
+          }
+
+          window.location.replace(buildTenantNotFoundRedirectUrl(hostData.slug));
+          return;
         }
 
         const parsedFinanceConfig =
@@ -266,6 +220,15 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       <div className="min-h-screen w-full flex flex-col items-center justify-center text-brand-600 bg-white dark:bg-slate-900">
         <Loader2 className="animate-spin mb-4" size={46} />
         <p className="text-slate-600 dark:text-slate-200">Carregando imobiliária...</p>
+      </div>
+    );
+  }
+
+  if (isRedirectingTenant) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center text-brand-600 bg-white dark:bg-slate-900">
+        <Loader2 className="animate-spin mb-4" size={46} />
+        <p className="text-slate-600 dark:text-slate-200">Redirecionando para a Elevatio Vendas...</p>
       </div>
     );
   }

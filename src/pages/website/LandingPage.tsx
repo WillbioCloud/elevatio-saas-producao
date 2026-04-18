@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ScrollSmoother } from 'gsap/ScrollSmoother';
@@ -1184,9 +1184,19 @@ const Footer: React.FC = () => (
 // ── ROOT ──────────────────────────────────────────────────────
 export default function LandingPage() {
   useScrollSmoother();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [plans, setPlans] = useState<any[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [dynamicReviews, setDynamicReviews] = useState<any[]>([]);
+  const tenantNotFound = searchParams.get('tenant_status') === 'not-found';
+  const tenantSlug = searchParams.get('tenant_slug') || '';
+
+  const dismissTenantNotice = () => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('tenant_status');
+    nextParams.delete('tenant_slug');
+    setSearchParams(nextParams, { replace: true });
+  };
 
   useEffect(() => {
     const fetchPlans = async () => {
@@ -1306,6 +1316,37 @@ export default function LandingPage() {
       `}</style>
 
       <Navbar />
+
+      {tenantNotFound && (
+        <div
+          role="alert"
+          className="fixed left-1/2 top-24 z-[500] w-[calc(100%-32px)] max-w-xl -translate-x-1/2 rounded-xl border border-amber-200 bg-white px-5 py-4 shadow-2xl"
+        >
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+              <Globe size={18} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-['DM_Sans'] text-sm font-bold text-slate-900">
+                Empresa nao encontrada
+              </p>
+              <p className="mt-1 font-['DM_Sans'] text-sm leading-relaxed text-slate-600">
+                {tenantSlug
+                  ? `Nao encontramos uma imobiliaria ativa para o subdominio "${tenantSlug}".`
+                  : 'Nao encontramos uma imobiliaria ativa para este subdominio.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={dismissTenantNotice}
+              className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Fechar aviso"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div id="smooth-wrapper">
         <div id="smooth-content">

@@ -67,56 +67,19 @@ import SaasTemplates from './pages/saas/SaasTemplates';
 import SaasDomains from './pages/saas/SaasDomains';
 import SaasReviews from './pages/saas/SaasReviews';
 import { SUPER_ADMIN_BASE_PATH } from './config/routes';
+import { getEnvironment as resolveHostEnvironment } from './utils/domain';
 
 // ============================================================================
 // 🧠 ROTEADOR INTELIGENTE MULTI-TENANT (Elevatio Vendas SaaS)
 // ============================================================================
 /**
  * Identifica o tipo de ambiente baseado no hostname:
- * - 'landing': Domínio principal (elevatiovendas.com) → Landing Page do SaaS
- * - 'superadmin': Subdomínio admin (admin.elevatiovendas.com) → Painel Super Admin
- * - 'app': Subdomínio de cliente (imobiliaria.elevatiovendas.com) → CRM da Imobiliária
+ * - 'landing': Domínio principal (elevatiovendas.com.br) → Landing Page do SaaS
+ * - 'superadmin': Subdomínio admin (admin.elevatiovendas.com.br) → Painel Super Admin
+ * - 'app': Subdomínio de cliente (imobiliaria.elevatiovendas.com.br) → CRM da Imobiliária
  * - 'website': Domínio customizado (www.imobiliariadojoao.com.br) → Site do Cliente
  */
-const getEnvironment = () => {
-  const hostname = window.location.hostname;
-
-  // Para desenvolvimento local (localhost) - Força o modo app/crm para facilitar o dev
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return { type: 'app', subdomain: 'dev' };
-  }
-
-  // Domínios principais da plataforma SaaS
-  const mainDomains = ['elevatiovendas.com', 'elevatiovendas.com.br', 'elevatiovendas.vercel.app', 'lvh.me'];
-  
-  const isMainDomain = mainDomains.some(domain => 
-    hostname === domain || hostname === `www.${domain}`
-  );
-  
-  if (isMainDomain) {
-    return { type: 'landing' }; // Mostra a Landing Page do SaaS (LandingPage)
-  }
-
-  const isAdminDomain = mainDomains.some(domain => 
-    hostname === `admin.${domain}`
-  );
-  
-  if (isAdminDomain) {
-    return { type: 'superadmin' }; // Redireciona para o painel do Dono do SaaS
-  }
-
-  const isSubdomain = mainDomains.some(domain => 
-    hostname.endsWith(`.${domain}`)
-  );
-  
-  if (isSubdomain) {
-    const subdomain = hostname.split('.')[0];
-    return { type: 'app', subdomain }; // CRM da Imobiliária (ex: nomedaimobiliaria.elevatiovendas.com)
-  }
-
-  // Se não caiu em nenhuma regra acima, é um Domínio Customizado de um cliente!
-  return { type: 'website', customDomain: hostname }; // Site do Cliente (ex: www.imobiliariadojoao.com.br)
-};
+const getEnvironment = () => resolveHostEnvironment(window.location.hostname);
 
 const ScrollToTop = () => {
   const { pathname } = useLocation();
