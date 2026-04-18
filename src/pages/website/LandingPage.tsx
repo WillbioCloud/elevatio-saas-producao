@@ -926,7 +926,7 @@ const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeat
               <Globe size={20} />
             </div>
             <p className="text-sm text-slate-400 leading-relaxed">
-              <strong className="text-slate-200">Nota:</strong> O valor do domínio não está incluso (.com.br ~R$40 | .com ~R$70). A configuração técnica e o apontamento são por nossa conta.
+              <strong className="text-slate-200">Nota:</strong> O valor do domínio não está incluso (.com.br ~R$53 | .com ~R$89). A configuração técnica e o apontamento são por nossa conta.
             </p>
           </div>
         </div>
