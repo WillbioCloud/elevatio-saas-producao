@@ -490,8 +490,46 @@ const AdminLeads: React.FC = () => {
 
   const filteredLeads = displayedLeads;
 
-  // 1. Controle de Permissao (Restrito a Donos, Super Admins ou permissao especifica no futuro)
-  const canExportLeads = user?.role === 'owner' || user?.role === 'super_admin' || user?.role === 'manager';
+  // 1. Controle de Permissão Dinâmico (RBAC)
+  const [canExportLeads, setCanExportLeads] = useState(false);
+
+  useEffect(() => {
+    async function checkExportPermission() {
+      // Dono e Super Admin têm passe livre sempre
+      if (user?.role === 'owner' || user?.role === 'super_admin') {
+        setCanExportLeads(true);
+        return;
+      }
+
+      // Se tiver empresa e cargo, verifica no banco de dados a matriz de permissões
+      if (user?.company_id && user?.role) {
+        try {
+          const { data, error } = await supabase
+            .from('settings')
+            .select('permissions')
+            .eq('company_id', user.company_id)
+            .single();
+
+          if (!error && data?.permissions) {
+            // Suporta tanto o JSON direto quanto encapsulado em role_permissions
+            const perms: any = data.permissions;
+            const rolePerms = perms.role_permissions ? perms.role_permissions[user.role] : perms[user.role];
+
+            if (rolePerms && rolePerms.export_leads === true) {
+              setCanExportLeads(true);
+              return;
+            }
+          }
+        } catch (err) {
+          console.error('Erro ao validar permissão RBAC:', err);
+        }
+      }
+
+      setCanExportLeads(false);
+    }
+
+    checkExportPermission();
+  }, [user]);
 
   // 2. Funcao de Exportacao para Remarketing (Nome, Email, Telefone)
   const handleExportCSV = () => {
