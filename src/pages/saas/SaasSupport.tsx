@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Search,
   Filter,
@@ -8,8 +8,11 @@ import {
   MessageSquare,
   Send,
   MoreVertical,
-  Paperclip
+  Paperclip,
+  Smile
 } from "lucide-react"
+import EmojiPicker from "emoji-picker-react"
+import imageCompression from "browser-image-compression"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -38,6 +41,26 @@ interface Ticket {
   timeElapsed: string
   messages: Message[]
   createdAt: string
+}
+
+interface TicketMessageRow {
+  id: string
+  ticket_id: string
+  sender_type: string | null
+  message: string | null
+  created_at: string
+}
+
+interface TicketRow {
+  id: string
+  subject: string | null
+  priority: string | null
+  status: string | null
+  created_at: string
+  company?: {
+    name: string | null
+  } | null
+  saas_ticket_messages: TicketMessageRow[] | null
 }
 
 const PriorityBadge = ({ priority }: { priority: Priority }) => {
@@ -98,6 +121,43 @@ const formatMessageTimestamp = (createdAt: string) => {
   return date.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })
 }
 
+const mapMessageRow = (message: TicketMessageRow): Message => ({
+  id: message.id,
+  sender: message.sender_type === "admin" ? "admin" : "client",
+  text: message.message ?? "",
+  timestamp: formatMessageTimestamp(message.created_at),
+  createdAt: message.created_at
+})
+
+const mapTicketRow = (ticket: TicketRow): Ticket => ({
+  id: ticket.id,
+  clientName: ticket.company?.name ?? "ImobiliÃ¡ria",
+  subject: ticket.subject ?? "Sem assunto",
+  priority: normalizePriority(ticket.priority),
+  status: normalizeStatus(ticket.status),
+  timeElapsed: formatTimeElapsed(ticket.created_at),
+  createdAt: ticket.created_at,
+  messages: [...(ticket.saas_ticket_messages ?? [])]
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .map(mapMessageRow)
+})
+
+const appendMessageToTickets = (tickets: Ticket[], message: TicketMessageRow) =>
+  tickets.map((ticket) => {
+    if (ticket.id !== message.ticket_id || ticket.messages.some((item) => item.id === message.id)) {
+      return ticket
+    }
+
+    return {
+      ...ticket,
+      messages: [...ticket.messages, mapMessageRow(message)].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      )
+    }
+  })
+
+const getAttachmentUrl = (text: string) => text.match(/!\[Anexo\]\(([^)]+)\)/)?.[1] ?? null
+
 export default function Support() {
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
@@ -105,37 +165,29 @@ export default function Support() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("Todos")
   const [replyText, setReplyText] = useState("")
+  const [isOtherPartyTyping, setIsOtherPartyTyping] = useState(false)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const roomRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const currentUserRole = "admin" as const
 
-  const fetchTickets = async () => {
+  const fetchTickets = useCallback(async () => {
     setIsLoading(true)
     const { data, error } = await supabase
       .from("saas_tickets")
-      .select("*, companies(name), saas_ticket_messages(*)")
+      .select("*, company:companies(name), saas_ticket_messages(*)")
       .order("created_at", { ascending: false })
 
-    if (!error && data) {
-      const mappedTickets: Ticket[] = data.map((ticket: any) => {
-        const orderedMessages = [...(ticket.saas_ticket_messages ?? [])].sort(
-          (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        )
-        return {
-          id: ticket.id,
-          clientName: ticket.companies?.name ?? "Imobiliária",
-          subject: ticket.subject ?? "Sem assunto",
-          priority: normalizePriority(ticket.priority),
-          status: normalizeStatus(ticket.status),
-          timeElapsed: formatTimeElapsed(ticket.created_at),
-          createdAt: ticket.created_at,
-          messages: orderedMessages.map((message: any) => ({
-            id: message.id,
-            sender: message.sender_type === "admin" ? "admin" : "client",
-            text: message.message ?? "",
-            timestamp: formatMessageTimestamp(message.created_at),
-            createdAt: message.created_at
-          }))
-        }
-      })
+    if (error) {
+      console.error("Erro ao buscar tickets:", error)
+      setIsLoading(false)
+      return
+    }
+
+    if (data) {
+      const mappedTickets: Ticket[] = (data as TicketRow[]).map(mapTicketRow)
       setTickets(mappedTickets)
       setSelectedTicketId((currentSelected) => {
         if (currentSelected && mappedTickets.some((ticket) => ticket.id === currentSelected)) {
@@ -145,16 +197,63 @@ export default function Support() {
       })
     }
     setIsLoading(false)
-  }
+  }, [])
 
   useEffect(() => {
-    fetchTickets()
-  }, [])
+    void fetchTickets()
+  }, [fetchTickets])
 
   const selectedTicket = useMemo(
     () => tickets.find((ticket) => ticket.id === selectedTicketId),
     [tickets, selectedTicketId]
   )
+
+  useEffect(() => {
+    if (!selectedTicket?.id) return
+
+    const channel = supabase.channel(`ticket-room-${selectedTicket.id}`, {
+      config: { broadcast: { ack: false } }
+    })
+    roomRef.current = channel
+
+    channel.on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "saas_ticket_messages",
+        filter: `ticket_id=eq.${selectedTicket.id}`
+      },
+      () => {
+        void fetchTickets()
+      }
+    )
+
+    channel.on("broadcast", { event: "typing" }, (payload) => {
+      if (payload.payload.sender !== currentUserRole) {
+        setIsOtherPartyTyping(true)
+
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+        typingTimeoutRef.current = setTimeout(() => {
+          setIsOtherPartyTyping(false)
+        }, 3000)
+      }
+    })
+
+    channel.subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+        typingTimeoutRef.current = null
+      }
+      if (roomRef.current === channel) {
+        roomRef.current = null
+      }
+      setIsOtherPartyTyping(false)
+    }
+  }, [selectedTicket?.id])
 
   useEffect(() => {
     if (messagesContainerRef.current) {
@@ -169,26 +268,106 @@ export default function Support() {
     return matchesSearch && matchesStatus
   })
 
-  const handleSendReply = async () => {
-    if (!replyText.trim() || !selectedTicketId) return
-    const { error } = await supabase.from("saas_ticket_messages").insert({
-      ticket_id: selectedTicketId,
-      sender_type: "admin",
-      message: replyText.trim()
-    })
-    if (!error) {
-      setReplyText("")
-      await fetchTickets()
+  const sendTypingBroadcast = useCallback(
+    () => {
+      if (!selectedTicket?.id) return
+
+      void roomRef.current?.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { sender: currentUserRole }
+      })
+    },
+    [selectedTicket?.id]
+  )
+
+  const handleReplyTextChange = (value: string) => {
+    setReplyText(value)
+    if (value.trim()) {
+      sendTypingBroadcast()
     }
   }
 
-  const handleResolveTicket = async () => {
+  const handleEmojiClick = (emojiData: { emoji: string }) => {
+    setReplyText((current) => `${current}${emojiData.emoji}`)
+    setShowEmojiPicker(false)
+    sendTypingBroadcast()
+  }
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !selectedTicket?.id) return
+
+    setIsUploadingImage(true)
+
+    try {
+      const options = { maxSizeMB: 0.5, maxWidthOrHeight: 1200, useWebWorker: true }
+      const compressedFile = await imageCompression(file, options)
+      const fileExt = file.name.split(".").pop() || "jpg"
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
+      const filePath = `${selectedTicket.id}/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from("support_attachments")
+        .upload(filePath, compressedFile)
+
+      if (uploadError) throw uploadError
+
+      const {
+        data: { publicUrl }
+      } = supabase.storage.from("support_attachments").getPublicUrl(filePath)
+
+      const { error: insertError } = await supabase.from("saas_ticket_messages").insert({
+        ticket_id: selectedTicket.id,
+        sender_type: "admin",
+        message: `![Anexo](${publicUrl})`
+      })
+
+      if (insertError) throw insertError
+
+      setShowEmojiPicker(false)
+      await fetchTickets()
+    } catch (error) {
+      console.error("Erro no upload:", error)
+    } finally {
+      setIsUploadingImage(false)
+      event.target.value = ""
+    }
+  }
+
+  const handleSendReply = async () => {
+    if (!replyText.trim() || !selectedTicketId) return
+    const message = replyText.trim()
+
+    try {
+      const { error } = await supabase.from("saas_ticket_messages").insert({
+        ticket_id: selectedTicketId,
+        sender_type: "admin",
+        message
+      })
+
+      if (error) throw error
+
+      setReplyText("")
+      await fetchTickets()
+    } catch (error) {
+      console.error("Erro ao enviar resposta:", error)
+    }
+  }
+
+  const handleStatusChange = async (status: Status) => {
     if (!selectedTicketId) return
     const { error } = await supabase
       .from("saas_tickets")
-      .update({ status: "Resolvido" })
+      .update({ status })
       .eq("id", selectedTicketId)
-    if (!error) await fetchTickets()
+
+    if (error) {
+      console.error("Erro ao atualizar status do ticket:", error)
+      return
+    }
+
+    await fetchTickets()
   }
 
   if (isLoading && tickets.length === 0) {
@@ -308,7 +487,7 @@ export default function Support() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={handleResolveTicket}
+                    onClick={() => void handleStatusChange("Resolvido")}
                     className="hidden sm:flex h-8 bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800"
                   >
                     <CheckCircle2 className="h-4 w-4 mr-1.5" />
@@ -323,8 +502,10 @@ export default function Support() {
 
             {/* Chat Messages */}
             <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-muted/10">
-              {selectedTicket.messages.map((msg) => {
+              {selectedTicket.messages.map((msg, index) => {
                 const isAdmin = msg.sender === "admin"
+                const showReadReceipt = index === selectedTicket.messages.length - 1 && !isAdmin
+                const attachmentUrl = getAttachmentUrl(msg.text)
                 return (
                   <div key={msg.id} className={cn("flex w-full", isAdmin ? "justify-end" : "justify-start")}>
                     <div className={cn("flex max-w-[80%] gap-3", isAdmin ? "flex-row-reverse" : "flex-row")}>
@@ -352,8 +533,15 @@ export default function Support() {
                               : "bg-card text-foreground border border-border rounded-tl-sm"
                           )}
                         >
-                          {msg.text}
+                          {attachmentUrl ? (
+                            <img src={attachmentUrl} className="max-w-xs rounded-lg mt-2" alt="Anexo" />
+                          ) : (
+                            msg.text
+                          )}
                         </div>
+                        {showReadReceipt && (
+                          <span className="mt-1 text-[10px] text-muted-foreground">Visualizado agora</span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -368,29 +556,65 @@ export default function Support() {
                   Este ticket foi marcado como resolvido. Não é possível enviar novas mensagens.
                 </div>
               ) : (
-                <div className="flex items-end gap-2">
-                  <Button variant="ghost" size="icon" className="shrink-0 h-10 w-10 text-muted-foreground">
-                    <Paperclip className="h-5 w-5" />
-                  </Button>
-                  <Textarea
-                    placeholder="Escreva a sua resposta..."
-                    className="min-h-[40px] max-h-32 resize-none py-3"
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault()
-                        handleSendReply()
-                      }
-                    }}
-                  />
-                  <Button
-                    className="shrink-0 h-10 w-10 p-0 rounded-full"
-                    onClick={handleSendReply}
-                    disabled={!replyText.trim()}
-                  >
-                    <Send className="h-4 w-4 ml-0.5" />
-                  </Button>
+                <div className="space-y-2">
+                  {isOtherPartyTyping && (
+                    <span className="text-xs text-brand-500 animate-pulse ml-2 mb-1 block">
+                      {currentUserRole === "admin" ? "O cliente está digitando..." : "O suporte está digitando..."}
+                    </span>
+                  )}
+                  {isUploadingImage && (
+                    <p className="px-1 text-xs font-medium text-muted-foreground">Enviando imagem...</p>
+                  )}
+                  <div className="relative flex items-end gap-2">
+                    {showEmojiPicker && (
+                      <div className="absolute bottom-12 left-12 z-50">
+                        <EmojiPicker onEmojiClick={handleEmojiClick} />
+                      </div>
+                    )}
+                    <label
+                      className={cn(
+                        "inline-flex shrink-0 h-10 w-10 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                        isUploadingImage && "pointer-events-none opacity-50"
+                      )}
+                    >
+                      <Paperclip className="h-5 w-5" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={isUploadingImage}
+                        onChange={(event) => void handleImageUpload(event)}
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 h-10 w-10 text-muted-foreground"
+                      onClick={() => setShowEmojiPicker((current) => !current)}
+                    >
+                      <Smile className="h-5 w-5" />
+                    </Button>
+                    <Textarea
+                      placeholder="Escreva a sua resposta..."
+                      className="min-h-[40px] max-h-32 resize-none py-3"
+                      value={replyText}
+                      onChange={(e) => handleReplyTextChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault()
+                          handleSendReply()
+                        }
+                      }}
+                    />
+                    <Button
+                      className="shrink-0 h-10 w-10 p-0 rounded-full"
+                      onClick={handleSendReply}
+                      disabled={isUploadingImage || !replyText.trim()}
+                    >
+                      <Send className="h-4 w-4 ml-0.5" />
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
