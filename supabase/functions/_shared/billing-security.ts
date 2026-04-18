@@ -27,37 +27,66 @@ export const createSupabaseAdmin = () => createClient(
 
 const getAuthorizationHeader = (req: Request) => {
   const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization')
-  if (!authHeader) throw new HttpError('Acesso negado: token ausente.', 401)
+  if (!authHeader) throw new HttpError('Acesso negado: Token não fornecido.', 401)
 
   const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-  if (!token) throw new HttpError('Acesso negado: token ausente.', 401)
+  if (!token) throw new HttpError('Acesso negado: Token não fornecido.', 401)
 
   return authHeader
 }
 
 export const createSupabaseForRequest = (req: Request) => {
   const authHeader = getAuthorizationHeader(req)
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Erro de configuração do Servidor: Variaveis do Supabase ausentes.')
+  }
 
   return createClient(
-    getRequiredEnv('SUPABASE_URL'),
-    getRequiredEnv('SUPABASE_ANON_KEY'),
-    { global: { headers: { Authorization: authHeader } } }
+    supabaseUrl,
+    supabaseKey,
+    {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false }
+    }
   )
+}
+
+export async function validateUser(req: Request) {
+  const authHeader = getAuthorizationHeader(req)
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Erro de configuração do Servidor: Variaveis do Supabase ausentes.')
+  }
+
+  const supabaseClient = createClient(supabaseUrl, supabaseKey, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false }
+  })
+
+  const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+
+  if (userError || !user) {
+    console.error('Erro na validação do usuário:', userError)
+    throw new HttpError('Acesso negado: sessao invalida.', 401)
+  }
+
+  return { supabaseClient, user }
 }
 
 export const requireBillingCompanyAccess = async (req: Request, companyId: string) => {
   if (!companyId) throw new HttpError('ID da empresa nao informado.', 400)
 
-  const supabaseUser = createSupabaseForRequest(req)
-  const { data: { user }, error: authError } = await supabaseUser.auth.getUser()
-
-  if (authError || !user) {
-    throw new HttpError('Acesso negado: sessao invalida.', 401)
-  }
+  const { supabaseClient: supabaseUser, user } = await validateUser(req)
 
   const { data: profile, error: profileError } = await supabaseUser
     .from('profiles')
-    .select('id, email, name, phone, company_id, role')
+    .select('id, email, name, full_name, phone, company_id, role')
     .eq('id', user.id)
     .maybeSingle()
 

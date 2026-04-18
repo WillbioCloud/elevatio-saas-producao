@@ -59,12 +59,6 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization')
-    if (!authHeader) throw new Error('Acesso negado: token ausente.')
-
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
-    if (!token) throw new Error('Acesso negado: token ausente.')
-
     const {
       company_id,
       new_plan,
@@ -87,7 +81,7 @@ serve(async (req) => {
       throw new Error('Dados obrigatórios da assinatura não foram informados.')
     }
 
-    await requireBillingCompanyAccess(req, companyId)
+    const { user, profile: authProfile, isSuperAdmin } = await requireBillingCompanyAccess(req, companyId)
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -95,24 +89,6 @@ serve(async (req) => {
     const ASAAS_URL = getAsaasApiUrl()
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) throw new Error('Acesso negado: sessão inválida.')
-
-    const { data: authProfile } = await supabase
-      .from('profiles')
-      .select('email, full_name, phone, company_id, role')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    const isSuperAdmin = authProfile?.role === 'super_admin'
-    if (!isSuperAdmin && !authProfile?.company_id) {
-      throw new Error('Acesso negado: empresa do usuário não encontrada.')
-    }
-
-    if (!isSuperAdmin && authProfile?.company_id !== companyId) {
-      throw new Error('Acesso negado: empresa inválida.')
-    }
 
     let billingProfile = authProfile
     if (isSuperAdmin && authProfile?.company_id !== companyId) {

@@ -64,27 +64,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const authHeader = req.headers.get('Authorization') ?? req.headers.get('authorization')
-    const token = authHeader?.replace(/^Bearer\s+/i, '').trim()
-    await requireBillingCompanyAccess(req, companyId)
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
-    if (authError || !user) throw new Error('Acesso negado: sessão inválida.')
-
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('email, company_id, role')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    const isSuperAdmin = profile?.role === 'super_admin'
-
-    if (!isSuperAdmin && !profile?.company_id) {
-      throw new Error('Acesso negado: empresa do usuário não encontrada.')
-    }
-
-    if (!isSuperAdmin && profile?.company_id !== companyId) {
-      throw new Error('Acesso negado: empresa inválida.')
-    }
+    const { user, profile, isSuperAdmin } = await requireBillingCompanyAccess(req, companyId)
 
     let customerEmail = profile?.email || user.email || 'email@padrao.com'
 
