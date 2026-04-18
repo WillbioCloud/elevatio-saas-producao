@@ -282,10 +282,10 @@ serve(async (req) => {
     let domainStatusToSave = contract?.domain_status || 'pending'
 
     const isCom = (company.domain || '').endsWith('.com')
-    const primaryPrice = isCom ? 73.00 : 53.00
+    const primaryPrice = isCom ? 89.00 : 53.00
     const secondaryPrice = normalizedSecondaryDomain
-      ? (normalizedSecondaryDomain.endsWith('.com') ? 73.00 : 53.00)
-      : (isCom ? 53.00 : 73.00)
+      ? (normalizedSecondaryDomain.endsWith('.com') ? 89.00 : 53.00)
+      : (isCom ? 53.00 : 89.00)
 
     if (addons?.buyDomainBr && !(billingCycle === 'yearly' && has_free_domain)) {
       domainPriceToCharge += primaryPrice

@@ -400,7 +400,7 @@ const sanitizeExistingDomain = (value: string) =>
     .trim();
 
 
-const getDomainAnnualPrice = (domain: string) => (domain.endsWith('.com') ? 73.0 : 53.0);
+const getDomainAnnualPrice = (domain: string) => (domain.endsWith('.com') ? 89.0 : 53.0);
 
 const getDomainStatusMeta = (status: CompanyDomainStatus) => {
   if (status === 'active') {

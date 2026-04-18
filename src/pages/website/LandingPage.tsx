@@ -739,6 +739,8 @@ const Pricing: React.FC<{ plans: SaasPlan[]; loadingPlans: boolean }> = ({ plans
                 boxShadow: plan.is_popular ? '0 24px 64px rgba(26,86,219,0.25)' : '0 2px 12px rgba(0,0,0,0.04)',
                 transform: plan.is_popular ? 'scale(1.03)' : 'scale(1)',
                 zIndex: plan.is_popular ? 10 : 1,
+                display: 'flex',
+                flexDirection: 'column',
               }}>
                 {plan.badge && (
                   <div style={{ position: 'absolute', top: 16, right: 16, background: 'linear-gradient(135deg, #0ea5e9, #38bdf8)', color: '#fff', fontSize: 11, fontWeight: 700, fontFamily: "'DM Sans',sans-serif", padding: '4px 12px', borderRadius: 100 }}>{plan.badge}</div>
@@ -775,7 +777,7 @@ const Pricing: React.FC<{ plans: SaasPlan[]; loadingPlans: boolean }> = ({ plans
                 <button
                   onClick={() => navigate(`/admin/login?mode=signup&plan=${plan.name.toLowerCase()}`)}
                   className={plan.is_popular ? 'ev-btn-primary' : 'ev-btn-light'}
-                  style={{ display: 'block', width: '100%', textAlign: 'center', fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 700, padding: '13px 0', borderRadius: 12, border: 'none', cursor: 'pointer' }}
+                  style={{ display: 'block', width: '100%', textAlign: 'center', fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 700, padding: '13px 0', borderRadius: 12, border: 'none', cursor: 'pointer', marginTop: 'auto'  }}
                 >
                   Testar grátis
                 </button>
