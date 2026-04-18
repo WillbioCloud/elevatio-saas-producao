@@ -13,11 +13,19 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import {
+  getPlanAnnualDiscountPercent,
+  getPlanMonthlyPrice,
+  getPlanYearlyTotal,
+  normalizeSaasPlan,
+} from "../../hooks/useSaasPlans";
 
 interface Plan {
   id: string;
   name: string;
-  price: number;
+  price_monthly: number;
+  price_yearly: number;
+  active: boolean;
   description: string;
   icon: string;
   badge: string;
@@ -44,7 +52,9 @@ interface Plan {
 const newPlanTemplate: Plan = {
   id: "",
   name: "",
-  price: 0,
+  price_monthly: 0,
+  price_yearly: 0,
+  active: true,
   description: "",
   icon: "star",
   badge: "",
@@ -102,12 +112,11 @@ export default function SaasPlans() {
     const { data, error } = await supabase
       .from("saas_plans")
       .select("*")
-      .order("price", { ascending: true });
+      .order("price_monthly", { ascending: true });
     if (!error && data) {
       const normalizedPlans = (data as Partial<Plan>[]).map((plan) => ({
         ...newPlanTemplate,
-        ...plan,
-        features: Array.isArray(plan.features) ? plan.features : [],
+        ...normalizeSaasPlan(plan as Record<string, unknown>),
       }));
       setPlans(normalizedPlans as Plan[]);
     }
@@ -136,7 +145,9 @@ export default function SaasPlans() {
     if (!editingPlan) return;
     const payload = {
       name: editingPlan.name,
-      price: editingPlan.price,
+      price_monthly: editingPlan.price_monthly,
+      price_yearly: editingPlan.price_yearly,
+      active: editingPlan.active,
       description: editingPlan.description,
       icon: editingPlan.icon,
       badge: editingPlan.badge,
@@ -248,8 +259,14 @@ export default function SaasPlans() {
             </CardHeader>
             <CardContent className="flex-1 space-y-4">
               <div className="flex items-baseline gap-1">
-                <span className="text-4xl font-black tracking-tight">R$ {plan.price.toFixed(2).replace(".", ",")}</span>
+                <span className="text-4xl font-black tracking-tight">
+                  R$ {getPlanMonthlyPrice(plan).toFixed(2).replace(".", ",")}
+                </span>
                 <span className="text-sm font-medium text-muted-foreground">/mês</span>
+              </div>
+              <div className="text-xs font-medium text-muted-foreground">
+                Anual: R$ {getPlanYearlyTotal(plan).toFixed(2).replace(".", ",")}
+                {getPlanAnnualDiscountPercent(plan) > 0 ? ` (${getPlanAnnualDiscountPercent(plan)}% OFF)` : ""}
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <span className="col-span-2 px-2 py-1 rounded-lg bg-muted/50 text-muted-foreground">
@@ -304,11 +321,13 @@ export default function SaasPlans() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div><Label>Nome do Plano</Label><Input value={editingPlan.name} onChange={(e) => setEditingPlan({ ...editingPlan, name: e.target.value })} /></div>
                   <div><Label>Badge do Plano</Label><Input value={editingPlan.badge} onChange={(e) => setEditingPlan({ ...editingPlan, badge: e.target.value })} placeholder="Ex: Recomendado" /></div>
-                  <div><Label>Preço (R$)</Label><Input type="number" value={editingPlan.price} onChange={(e) => setEditingPlan({ ...editingPlan, price: Number(e.target.value) })} /></div>
+                  <div><Label>Preço Mensal (R$)</Label><Input type="number" value={editingPlan.price_monthly} onChange={(e) => setEditingPlan({ ...editingPlan, price_monthly: Number(e.target.value) })} /></div>
+                  <div><Label>Preço Anual (R$)</Label><Input type="number" value={editingPlan.price_yearly} onChange={(e) => setEditingPlan({ ...editingPlan, price_yearly: Number(e.target.value) })} /></div>
                   <div><Label>Ícone (Nome)</Label><Input value={editingPlan.icon} onChange={(e) => setEditingPlan({ ...editingPlan, icon: e.target.value })} placeholder="Ex: rocket, star, crown" /></div>
                 </div>
                 <div><Label>Descrição Curta</Label><Textarea value={editingPlan.description} onChange={(e) => setEditingPlan({ ...editingPlan, description: e.target.value })} rows={3} /></div>
                 <div className="flex items-center gap-2"><Switch checked={editingPlan.is_popular} onCheckedChange={(v) => setEditingPlan({ ...editingPlan, is_popular: v })} /><Label>Destacar como Mais Popular</Label></div>
+                <div className="flex items-center gap-2"><Switch checked={editingPlan.active} onCheckedChange={(v) => setEditingPlan({ ...editingPlan, active: v })} /><Label>Plano ativo para checkout</Label></div>
 
                 <div className="space-y-4 pt-2 border-t border-border"><h4 className="font-bold">Limites Numéricos</h4><div className="grid grid-cols-2 md:grid-cols-4 gap-4"><div><Label className="text-xs">Usuários</Label><Input type="number" value={editingPlan.max_users} onChange={(e) => setEditingPlan({ ...editingPlan, max_users: Number(e.target.value) })} /></div><div><Label className="text-xs">Imóveis</Label><Input type="number" value={editingPlan.max_properties} onChange={(e) => setEditingPlan({ ...editingPlan, max_properties: Number(e.target.value) })} /></div><div><Label className="text-xs">Máx. Locações Ativas</Label><Input type="number" value={editingPlan.max_contracts} onChange={(e) => setEditingPlan({ ...editingPlan, max_contracts: Number(e.target.value) })} /></div><div><Label className="text-xs">Fotos</Label><Input type="number" value={editingPlan.max_photos} onChange={(e) => setEditingPlan({ ...editingPlan, max_photos: Number(e.target.value) })} /></div></div></div>
 

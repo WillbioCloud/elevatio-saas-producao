@@ -5,6 +5,14 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ScrollSmoother } from 'gsap/ScrollSmoother';
 import { Bot, Check, FileSignature, Globe, Headset, Kanban, Target, X, Zap } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import {
+  getPlanAnnualDiscountPercent,
+  getPlanMonthlyPrice,
+  getPlanYearlyMonthlyPrice,
+  getPlanYearlyTotal,
+  type SaasPlan,
+  useSaasPlans,
+} from '../../hooks/useSaasPlans';
 
 gsap.registerPlugin(ScrollTrigger, ScrollSmoother);
 
@@ -12,17 +20,6 @@ gsap.registerPlugin(ScrollTrigger, ScrollSmoother);
 // ELEVATIO VENDAS — Landing Page SaaS (Versão Fundida)
 // Cards: novo design Webflow | Comparação: tabela completa
 // ============================================================
-
-interface SaaSPlan {
-  id?: string;
-  name: string;
-  price: number | string;
-  description?: string;
-  is_popular?: boolean;
-  badge?: string;
-  features?: string[];
-  [key: string]: any;
-}
 
 // ── Linhas da tabela de comparação (completa do antigo) ──────
 type PlanComparisonFeature = {
@@ -682,10 +679,13 @@ const Features: React.FC = () => {
 };
 
 // ── PRICING CARDS (novo design Webflow) ───────────────────────
-const Pricing: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans, loadingPlans }) => {
+const Pricing: React.FC<{ plans: SaasPlan[]; loadingPlans: boolean }> = ({ plans, loadingPlans }) => {
   const navigate = useNavigate();
   const [annual, setAnnual] = useState(false);
   const isYearly = annual;
+  const annualDiscount = plans.length > 0
+    ? Math.round(plans.reduce((sum, plan) => sum + getPlanAnnualDiscountPercent(plan), 0) / plans.length)
+    : 0;
   const ref = useRef<HTMLElement>(null);
   useFadeIn(ref, { selector: '.ev-plan', stagger: 0.08, y: 30 });
 
@@ -704,7 +704,7 @@ const Pricing: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans
               <div style={{ position: 'absolute', top: 2, left: annual ? 22 : 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.25s', boxShadow: '0 1px 4px rgba(0,0,0,0.15)' }} />
             </button>
             <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 600, color: annual ? '#0f172a' : '#94a3b8' }}>
-              Anual <span style={{ color: '#16a34a', fontSize: 12 }}>−15%</span>
+              Anual {annualDiscount > 0 && <span style={{ color: '#16a34a', fontSize: 12 }}>-{annualDiscount}%</span>}
             </span>
           </div>
         </div>
@@ -728,9 +728,9 @@ const Pricing: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans
         ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
           {plans.map((plan, i) => {
-            const basePrice = Number(plan.price || 0);
-            const price = annual ? basePrice * 0.85 : basePrice;
-            const totalAnual = annual ? price * 12 : null;
+            const price = annual ? getPlanYearlyMonthlyPrice(plan) : getPlanMonthlyPrice(plan);
+            const totalAnual = annual ? getPlanYearlyTotal(plan) : null;
+            const planDiscount = getPlanAnnualDiscountPercent(plan);
             return (
               <div key={i} className={`ev-plan ${!plan.is_popular ? 'ev-card-hover' : ''}`} style={{
                 borderRadius: 20, padding: '32px 28px', position: 'relative', overflow: 'hidden',
@@ -751,6 +751,7 @@ const Pricing: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans
                   {annual && (
                     <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: plan.is_popular ? '#7dd3fc' : '#0f172a', marginTop: 4 }}>
                       Total anual: <b>R${totalAnual!.toFixed(2).replace('.',',')}</b>
+                      {planDiscount > 0 ? ` (${planDiscount}% OFF)` : ''}
                     </div>
                   )}
                 </div>
@@ -800,10 +801,13 @@ const Pricing: React.FC<{ plans: SaaSPlan[]; loadingPlans: boolean }> = ({ plans
 };
 
 // ── COMPARAÇÃO DE PLANOS (tabela completa do antigo, visual novo) ──
-const PlanComparison: React.FC<{ plans: any[]; features: PlanComparisonFeature[]; loadingPlans: boolean }> = ({ plans, features, loadingPlans }) => {
+const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeature[]; loadingPlans: boolean }> = ({ plans, features, loadingPlans }) => {
   const navigate = useNavigate();
   const ref = useRef<HTMLElement>(null);
   const [annual, setAnnual] = useState(false);
+  const annualDiscount = plans.length > 0
+    ? Math.round(plans.reduce((sum, plan) => sum + getPlanAnnualDiscountPercent(plan), 0) / plans.length)
+    : 0;
   useFadeIn(ref, { y: 30 });
 
   useIsomorphicLayoutEffect(() => {
@@ -904,7 +908,7 @@ const PlanComparison: React.FC<{ plans: any[]; features: PlanComparisonFeature[]
               <div style={{ position: 'absolute', top: 1, left: annual ? 19 : 1, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.25s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />
             </button>
             <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 600, color: annual ? '#e2e8f0' : '#475569' }}>
-              Anual <span style={{ color: '#4ade80', fontSize: 11 }}>−15%</span>
+              Anual {annualDiscount > 0 && <span style={{ color: '#4ade80', fontSize: 11 }}>-{annualDiscount}%</span>}
             </span>
           </div>
         </div>
@@ -941,7 +945,7 @@ const PlanComparison: React.FC<{ plans: any[]; features: PlanComparisonFeature[]
                   Recurso
                 </th>
                 {plans.map((plan, i) => {
-                  const price = annual ? Number(plan.price || 0) * 0.85 : Number(plan.price || 0);
+                  const price = annual ? getPlanYearlyMonthlyPrice(plan) : getPlanMonthlyPrice(plan);
                   const isPro = plan.is_popular;
                   return (
                     <th key={i} style={{ padding: '12px 16px', textAlign: 'center', minWidth: 130, background: isPro ? 'rgba(14,165,233,0.08)' : '#070d1f', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
@@ -1185,8 +1189,7 @@ const Footer: React.FC = () => (
 export default function LandingPage() {
   useScrollSmoother();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [plans, setPlans] = useState<any[]>([]);
-  const [loadingPlans, setLoadingPlans] = useState(true);
+  const { plans, loading: loadingPlans } = useSaasPlans();
   const [dynamicReviews, setDynamicReviews] = useState<any[]>([]);
   const tenantNotFound = searchParams.get('tenant_status') === 'not-found';
   const tenantSlug = searchParams.get('tenant_slug') || '';
@@ -1197,19 +1200,6 @@ export default function LandingPage() {
     nextParams.delete('tenant_slug');
     setSearchParams(nextParams, { replace: true });
   };
-
-  useEffect(() => {
-    const fetchPlans = async () => {
-      try {
-        const { data } = await supabase.from('saas_plans').select('*').order('price', { ascending: true });
-        setPlans(data || []);
-      } finally {
-        setLoadingPlans(false);
-      }
-    };
-
-    fetchPlans();
-  }, []);
 
   useEffect(() => {
     const fetchReviews = async () => {

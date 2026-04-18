@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "../../../components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { supabase } from '@/lib/supabase'
-import { PLANS } from '../../config/plans'
+import { getPlanMonthlyPrice, useSaasPlans } from '../../hooks/useSaasPlans'
 
 type DomainStatus = 'pending' | 'active' | 'error' | 'idle' | 'expired' | null
 
@@ -50,6 +50,7 @@ export default function Clients() {
   const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false)
   const [newCompany, setNewCompany] = useState({ name: "", plan: "business" })
   const [isCreating, setIsCreating] = useState(false)
+  const { plans: saasPlans } = useSaasPlans()
 
   const fetchCompanies = async () => {
     setLoading(true)
@@ -154,6 +155,14 @@ export default function Clients() {
       case 'canceled': return { label: 'Cancelado', dot: 'bg-slate-500', badge: 'bg-slate-100 text-slate-700 border-slate-200' }
       default: return { label: 'Aguardando Pagamento', dot: 'bg-slate-400', badge: 'bg-slate-100 text-slate-600 border-slate-200' }
     }
+  }
+
+  const findSaasPlan = (planValue?: string | null) => {
+    const normalizedPlan = String(planValue || '').toLowerCase()
+    return saasPlans.find((plan) =>
+      String(plan.id || '').toLowerCase() === normalizedPlan ||
+      String(plan.name || '').toLowerCase() === normalizedPlan
+    ) || null
   }
 
   if (loading && clients.length === 0) {
@@ -528,12 +537,11 @@ export default function Clients() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="starter">Starter</SelectItem>
-                  <SelectItem value="basic">Basic</SelectItem>
-                  <SelectItem value="profissional">Profissional</SelectItem>
-                  <SelectItem value="business">Business</SelectItem>
-                  <SelectItem value="premium">Premium</SelectItem>
-                  <SelectItem value="elite">Elite</SelectItem>
+                  {saasPlans.map((plan) => (
+                    <SelectItem key={plan.id || plan.name} value={String(plan.id || plan.name).toLowerCase()}>
+                      {plan.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -580,14 +588,14 @@ export default function Clients() {
             <div className="bg-muted/30 p-4 rounded-xl border border-border">
               <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Resumo da Mensalidade</h4>
               {(() => {
-                const plan = PLANS.find(p => p.id === discountModal.company?.plan) || PLANS[0]
-                const basePrice = plan.price
+                const plan = findSaasPlan(discountModal.company?.plan)
+                const basePrice = plan ? getPlanMonthlyPrice(plan) : 0
                 const discount = discountType === 'fixed' ? discountValue : (basePrice * (discountValue / 100))
                 const finalPrice = Math.max(0, basePrice - discount)
                 return (
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span>Valor Base ({plan.name}):</span>
+                      <span>Valor Base ({plan?.name || discountModal.company?.plan || 'Plano'}):</span>
                       <span className="font-medium">R$ {basePrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between text-sm text-red-500">
@@ -609,8 +617,8 @@ export default function Clients() {
               onClick={async () => {
                 if (!discountModal.company) return
                 setIsSavingDiscount(true)
-                const plan = PLANS.find(p => p.id === discountModal.company.plan) || PLANS[0]
-                const basePrice = plan.price
+                const plan = findSaasPlan(discountModal.company.plan)
+                const basePrice = plan ? getPlanMonthlyPrice(plan) : 0
                 const finalPrice = discountType === 'percentage' ? basePrice - (basePrice * (discountValue / 100)) : Math.max(0, basePrice - discountValue)
                 const { error: companyError } = await supabase.from('companies').update({
                   manual_discount_value: discountValue,

@@ -1,12 +1,12 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import type { FinanceConfig } from '../types';
 import { buildTenantNotFoundRedirectUrl, getHostData } from '../utils/domain';
 
 export type Company = {
   id: string;
   name: string;
+  slug?: string | null;
   subdomain: string | null;
   domain: string | null;
   document?: string | null;
@@ -16,16 +16,14 @@ export type Company = {
   logo_white_url?: string | null;
   admin_signature_url?: string | null;
   plan?: string | null;
+  plan_status?: string | null;
+  trial_ends_at?: string | null;
   active?: boolean | null;
+  theme_color?: string | null;
   phone?: string | null;
   email?: string | null;
   address?: string | null;
   site_data?: any;
-  finance_config?: FinanceConfig | string | null;
-  use_asaas?: boolean | null;
-  default_commission?: number | null;
-  broker_commission?: number | null;
-  payment_api_key?: string | null;
   [key: string]: unknown;
 };
 
@@ -45,6 +43,22 @@ type TenantContextType = {
 };
 
 const TenantContext = createContext<TenantContextType | undefined>(undefined);
+
+const PUBLIC_COMPANY_SELECT = `
+  id,
+  name,
+  slug,
+  subdomain,
+  domain,
+  template,
+  logo_url,
+  plan,
+  plan_status,
+  trial_ends_at,
+  active,
+  site_data,
+  theme_color
+`;
 
 export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [tenant, setTenant] = useState<Company | null>(null);
@@ -72,7 +86,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         let query = supabase
           .from('companies')
-          .select('*')
+          .select(PUBLIC_COMPANY_SELECT)
           .eq('active', true);
 
         if (hostData.customDomain) {
@@ -101,17 +115,6 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           window.location.replace(buildTenantNotFoundRedirectUrl(hostData.slug));
           return;
         }
-
-        const parsedFinanceConfig =
-          typeof data?.finance_config === 'string'
-            ? (() => {
-                try {
-                  return JSON.parse(data.finance_config) as FinanceConfig;
-                } catch {
-                  return null;
-                }
-              })()
-            : ((data?.finance_config as FinanceConfig | null) ?? null);
 
         const parsedSiteData =
           typeof data?.site_data === 'string'
@@ -177,16 +180,6 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                       : null,
                   template: normalizedTemplate,
                   template_id: siteDataTemplateId ?? normalizedTemplate,
-                  finance_config: parsedFinanceConfig,
-                  use_asaas:
-                    typeof data.use_asaas === 'boolean'
-                      ? data.use_asaas
-                      : parsedFinanceConfig?.use_asaas ?? false,
-                  default_commission:
-                    data.default_commission ?? parsedFinanceConfig?.default_commission ?? null,
-                  broker_commission:
-                    data.broker_commission ?? parsedFinanceConfig?.broker_commission ?? null,
-                  payment_api_key: data.payment_api_key ?? null,
                 } as Company)
               : null
           );

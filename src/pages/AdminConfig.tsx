@@ -23,6 +23,14 @@ import {
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, ImageOff, Loader2, Upload, X, XCircle } from 'lucide-react';
 import { useProperties } from '../hooks/useProperties';
 import { usePlanLimits } from '../hooks/usePlanLimits';
+import {
+  getPlanAnnualDiscountPercent,
+  getPlanBillingPrice,
+  getPlanMonthlyPrice,
+  getPlanYearlyMonthlyPrice,
+  getPlanYearlyTotal,
+  useSaasPlans,
+} from '../hooks/useSaasPlans';
 import { generateZapXML } from '../utils/zapXmlGenerator';
 import { useSearchParams } from 'react-router-dom';
 import { getLevelInfo } from '../services/gamification';
@@ -801,8 +809,7 @@ const AdminConfig: React.FC = () => {
   const [savingFinance, setSavingFinance] = useState(false);
   const [showAsaasModal, setShowAsaasModal] = useState(false);
   const [tempApiKey, setTempApiKey] = useState('');
-  const [plans, setPlans] = useState<any[]>([]);
-  const [loadingPlans, setLoadingPlans] = useState(true);
+  const { plans, loading: loadingPlans } = useSaasPlans();
   const [isUsageExpanded, setIsUsageExpanded] = useState(false);
   const [usageStats, setUsageStats] = useState({ users: 1, properties: 0, activeContracts: 0 });
   // Estados do Cupom no Checkout
@@ -1120,15 +1127,6 @@ const AdminConfig: React.FC = () => {
     }
   };
 
-  const fetchPlans = async () => {
-    try {
-      const { data } = await supabase.from('saas_plans').select('*').order('price', { ascending: true });
-      setPlans(data || []);
-    } finally {
-      setLoadingPlans(false);
-    }
-  };
-
   const fetchContract = async () => {
     if (!user?.company_id) return;
     setLoadingContract(true);
@@ -1338,7 +1336,6 @@ const AdminConfig: React.FC = () => {
       fetchCompanyPermissions();
       fetchContract();
       fetchCompanyData();
-      fetchPlans();
     }
   }, [isAdmin, user?.id]);
 
@@ -2274,9 +2271,7 @@ const AdminConfig: React.FC = () => {
   const handleReactivate = async (plan: any) => {
     setIsReactivating(true);
     try {
-      const monthlyPrice = Number(plan.price || 0);
-      const yearlyPrice = monthlyPrice * 0.85;
-      const priceToPay = billingCycle === 'monthly' ? monthlyPrice : yearlyPrice;
+      const priceToPay = getPlanBillingPrice(plan, billingCycle);
       const planId = String(plan.id || plan.name || '').toLowerCase();
 
       const { data, error } = await supabase.functions.invoke('reactivate-asaas-subscription', {
@@ -2320,6 +2315,13 @@ const AdminConfig: React.FC = () => {
 
       if (!plan || !plan.name) throw new Error('Plano não encontrado.');
 
+      const totalPrice =
+        typeof planParam?.total_price === 'number'
+          ? planParam.total_price
+          : getPlanBillingPrice(plan, isYearly ? 'yearly' : 'monthly', {
+              hasFidelity: !isYearly && acceptFidelity,
+            });
+
       // Update otimista para feedback imediato na UI
       setContract((prev) => {
         if (!prev) return prev;
@@ -2349,7 +2351,7 @@ const AdminConfig: React.FC = () => {
           addons: planParam.addons || { buyDomainBr: false, buyDomainCom: false },
           coupon_code: planParam.coupon_code || null,
           domain_secondary: planParam.domain_secondary || null,
-          total_price: typeof planParam.total_price === 'number' ? planParam.total_price : null,
+          total_price: totalPrice,
           domain_count: planParam.domain_count || 0
         })
       });
@@ -3478,7 +3480,7 @@ const AdminConfig: React.FC = () => {
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
                 }`}
               >
-                Anual (15% OFF)
+                Anual
               </button>
             </div>
 
@@ -3773,12 +3775,13 @@ const AdminConfig: React.FC = () => {
                     const isCycleUpgrade = planId === activePlanId && contract?.billing_cycle === 'monthly' && billingCycle === 'yearly';
                     const isCycleDowngrade = planId === activePlanId && contract?.billing_cycle === 'yearly' && billingCycle === 'monthly';
                     const isReactivationFlow = contract?.status === 'canceled' || contract?.status === 'expired';
-                    const monthlyPrice = Number(plan.price || 0);
-                    const yearlyPrice = monthlyPrice * 0.85;
+                    const monthlyPrice = getPlanMonthlyPrice(plan);
+                    const yearlyPrice = getPlanYearlyMonthlyPrice(plan);
                     const fidelityPrice = monthlyPrice * 0.90;
                     const displayPrice = isYearly ? yearlyPrice : (acceptFidelity ? fidelityPrice : monthlyPrice);
-                    const yearlyTotalPrice = monthlyPrice * 12 * 0.85;
+                    const yearlyTotalPrice = getPlanYearlyTotal(plan);
                     const hasDiscount = displayPrice < monthlyPrice;
+                    const annualDiscountPercent = getPlanAnnualDiscountPercent(plan);
                     const isPopularPlan = planId.includes('premium') || String(plan.name || '').toLowerCase().includes('premium');
                     
                     return (
@@ -3828,6 +3831,7 @@ const AdminConfig: React.FC = () => {
                             {billingCycle === 'yearly' && (
                               <span className="text-xs text-brand-600 dark:text-brand-400 font-medium">
                                 Faturado R$ {formatPlanPrice(yearlyTotalPrice)} / ano
+                                {annualDiscountPercent > 0 ? ` (${annualDiscountPercent}% OFF)` : ''}
                               </span>
                             )}
                           </div>
@@ -5809,7 +5813,11 @@ const AdminConfig: React.FC = () => {
           const secondaryPrice = getDomainAnnualPrice(secondaryDomainStr);
           const isPrimaryFree = isModalYearly && selectedPlanForCheckout.has_free_domain;
           const shouldIncludePrimaryDomain = isDomainActive || isPrimaryFree || checkoutAddons.buyDomainBr;
-          const basePlanPrice = Number(selectedPlanForCheckout.price * (isModalYearly ? 12 * 0.85 : (isModalFidelity ? 0.9 : 1)));
+          const basePlanPrice = getPlanBillingPrice(
+            selectedPlanForCheckout,
+            isModalYearly ? 'yearly' : 'monthly',
+            { hasFidelity: Boolean(isModalFidelity) },
+          );
           const manualDiscountValue = Number(tenant?.manual_discount_value ?? user?.company?.manual_discount_value ?? 0);
           const manualDiscountType = tenant?.manual_discount_type ?? user?.company?.manual_discount_type ?? null;
           const courtesyAmount = manualDiscountValue > 0
@@ -6091,6 +6099,7 @@ const AdminConfig: React.FC = () => {
                         handleUpgrade({
                           ...selectedPlanForCheckout,
                           addons: checkoutAddons,
+                          total_price: finalTotal,
                           domain_secondary: isSecondaryConfirmed ? autoSecondaryDomain : null,
                         });
                       } else {
@@ -6120,6 +6129,7 @@ const AdminConfig: React.FC = () => {
                               has_fidelity: contract?.has_fidelity || false,
                               addons: checkoutAddons,
                               coupon_code: validatedCoupon?.code,
+                              total_price: finalTotal,
                               domain_secondary: isSecondaryConfirmed ? autoSecondaryDomain : null
                             })
                           });

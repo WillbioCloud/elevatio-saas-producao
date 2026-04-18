@@ -165,7 +165,7 @@ serve(async (req) => {
 
     const { data: planRecord } = await supabase
       .from('saas_plans')
-      .select('id, has_free_domain')
+      .select('id, has_free_domain, price_monthly, price_yearly, price')
       .ilike('name', planName)
       .maybeSingle()
 
@@ -246,24 +246,20 @@ serve(async (req) => {
         .eq('id', companyId)
     }
 
-    const plans = {
-      starter: { price: 54.90 },
-      basic: { price: 74.90 },
-      profissional: { price: 119.90 },
-      business: { price: 179.90 },
-      premium: { price: 249.90 },
-      elite: { price: 479.90 },
+    const monthlyPlanPrice = Number(planRecord?.price_monthly ?? planRecord?.price ?? 0)
+    const yearlyPlanPrice = Number(planRecord?.price_yearly ?? 0)
+    if (!planRecord || !Number.isFinite(monthlyPlanPrice) || monthlyPlanPrice < 0) {
+      throw new Error('Plano inválido ou sem preço configurado.')
     }
 
-    const planData = plans[planName.toLowerCase() as keyof typeof plans]
-    if (!planData) throw new Error('Plano inválido')
-
-    let basePrice = planData.price
+    let basePrice = monthlyPlanPrice
     let finalHasFidelity = has_fidelity
     let fidelityEndDate = contract?.fidelity_end_date || null
 
     if (billingCycle === 'yearly') {
-      basePrice = basePrice * 12 * 0.85
+      basePrice = Number.isFinite(yearlyPlanPrice) && yearlyPlanPrice > 0
+        ? yearlyPlanPrice
+        : monthlyPlanPrice * 12 * 0.85
       finalHasFidelity = false
     } else if (has_fidelity) {
       basePrice = basePrice * 0.90

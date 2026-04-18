@@ -147,7 +147,7 @@ export default function AdminSiteBuilder() {
 
       const { data, error } = await supabase
         .from('companies')
-        .select('*')
+        .select('id, name, slug, subdomain, active, logo_url, site_data')
         .eq('id', user.company_id)
         .single();
 
