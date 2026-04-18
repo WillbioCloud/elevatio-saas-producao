@@ -51,6 +51,7 @@ export default function SystemReviewModal({ isOpen, onClose }: SystemReviewModal
   const [hoveredRating, setHoveredRating] = useState(0);
   const [comment, setComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const role = user?.role ?? (user?.user_metadata as Record<string, unknown> | undefined)?.role;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -74,7 +75,7 @@ export default function SystemReviewModal({ isOpen, onClose }: SystemReviewModal
   );
 
   const handleSubmit = async () => {
-    if (!user || !rating || isSubmitting) return;
+    if (!user || role !== 'owner' || !rating || isSubmitting) return;
 
     setIsSubmitting(true);
 

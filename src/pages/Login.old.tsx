@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Icons } from '../components/Icons';
 import { COMPANY_NAME } from '../constants';
 import { supabase } from '../lib/supabase';
+import { SUPER_ADMIN_BASE_PATH } from '../config/routes';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -39,7 +40,7 @@ const Login: React.FC = () => {
           : undefined;
 
       if (role === 'super_admin') {
-        navigate('/saas/dashboard', { replace: true, state: navState });
+        navigate(`${SUPER_ADMIN_BASE_PATH}/dashboard`, { replace: true, state: navState });
       } else {
         navigate('/admin/dashboard', { replace: true, state: navState });
       }
@@ -63,7 +64,7 @@ const Login: React.FC = () => {
         const currentUser = (await supabase.auth.getUser()).data.user;
         const role = (currentUser as { role?: string })?.role ?? (currentUser?.user_metadata as Record<string, unknown>)?.role;
         if (role === 'super_admin') {
-          navigate('/saas/dashboard', { replace: true, state: navState });
+          navigate(`${SUPER_ADMIN_BASE_PATH}/dashboard`, { replace: true, state: navState });
         } else {
           navigate('/admin/dashboard', { replace: true, state: navState });
         }
@@ -76,7 +77,7 @@ const Login: React.FC = () => {
         const currentUser = (await supabase.auth.getUser()).data.user;
         const role = (currentUser as { role?: string })?.role ?? (currentUser?.user_metadata as Record<string, unknown>)?.role;
         if (role === 'super_admin') {
-          navigate('/saas/dashboard', { replace: true, state: navState });
+          navigate(`${SUPER_ADMIN_BASE_PATH}/dashboard`, { replace: true, state: navState });
         } else {
           navigate('/admin/dashboard', { replace: true, state: navState });
         }

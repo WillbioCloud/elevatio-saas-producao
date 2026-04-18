@@ -229,6 +229,20 @@ export default function Support() {
       }
     )
 
+    // Escuta mudanças de STATUS ou PRIORIDADE no próprio ticket
+    channel.on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "saas_tickets",
+        filter: `id=eq.${selectedTicket.id}`
+      },
+      () => {
+        void fetchTickets()
+      }
+    )
+
     channel.on("broadcast", { event: "typing" }, (payload) => {
       if (payload.payload.sender !== currentUserRole) {
         setIsOtherPartyTyping(true)
@@ -253,7 +267,7 @@ export default function Support() {
       }
       setIsOtherPartyTyping(false)
     }
-  }, [selectedTicket?.id])
+  }, [fetchTickets, selectedTicket?.id])
 
   useEffect(() => {
     if (messagesContainerRef.current) {

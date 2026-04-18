@@ -66,7 +66,7 @@ interface AuthContextType {
   isManager: boolean;
   isAtendente: boolean;
   hasPermission: (permissionName: string) => boolean;
-  signIn: (email: string, password: string) => Promise<{ error: unknown }>;
+  signIn: (email: string, password: string) => Promise<{ error: unknown; user?: UserWithRole | null }>;
   signUp: (
     name: string,
     email: string,
@@ -509,15 +509,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password });
+    let signedUser: UserWithRole | null = null;
 
     if (!error && authData?.user) {
-      const signedUser = authData.session
+      signedUser = authData.session
         ? await fetchProfileData(authData.session)
         : buildFallbackUser(authData.user);
       setUser(signedUser);
     }
 
-    return { error };
+    return { error, user: signedUser };
   };
 
   const signUp = async (

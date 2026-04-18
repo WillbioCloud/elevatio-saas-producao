@@ -2,6 +2,7 @@ import React, { useEffect, useState, useLayoutEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { SUPER_ADMIN_BASE_PATH } from '../config/routes';
 
 // ============================================================
 // ELEVATIO VENDAS — Login / Cadastro Unificado
@@ -130,6 +131,9 @@ const RightPanel: React.FC<{ isSignup: boolean }> = ({ isSignup }) => {
 };
 
 // ── Componente principal ─────────────────────────────────────
+const getPostAuthPath = (role?: unknown) =>
+  role === 'super_admin' ? `${SUPER_ADMIN_BASE_PATH}/dashboard` : '/admin/dashboard';
+
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -179,7 +183,10 @@ const Login: React.FC = () => {
 
   // Redirecionar se já logado
   useEffect(() => {
-    if (user) navigate('/admin/dashboard', { replace: true });
+    if (!user) return;
+
+    const role = user.role ?? (user.user_metadata as Record<string, unknown> | undefined)?.role;
+    navigate(getPostAuthPath(role), { replace: true });
   }, [user, navigate]);
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -189,9 +196,10 @@ const Login: React.FC = () => {
 
     try {
       if (isLogin) {
-        const { error } = await signIn(email, password);
+        const { error, user: signedUser } = await signIn(email, password);
         if (error) throw error;
-        navigate('/admin/dashboard');
+        const role = signedUser?.role ?? (signedUser?.user_metadata as Record<string, unknown> | undefined)?.role;
+        navigate(getPostAuthPath(role), { replace: true });
       } else {
         if (!name.trim()) throw new Error('Por favor, informe seu nome.');
         if (!companyName.trim()) throw new Error('Por favor, informe o nome da sua imobiliária.');

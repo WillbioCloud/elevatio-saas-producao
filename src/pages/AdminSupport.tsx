@@ -227,6 +227,20 @@ export default function AdminSupport() {
       }
     );
 
+    // Escuta mudanças de STATUS ou PRIORIDADE no próprio ticket
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'saas_tickets',
+        filter: `id=eq.${selectedTicket.id}`,
+      },
+      () => {
+        void fetchMyTickets({ preferredTicketId: selectedTicket.id });
+      }
+    );
+
     channel.on('broadcast', { event: 'typing' }, (payload) => {
       if (payload.payload.sender !== currentUserRole) {
         setIsOtherPartyTyping(true);
@@ -251,7 +265,7 @@ export default function AdminSupport() {
       }
       setIsOtherPartyTyping(false);
     };
-  }, [selectedTicket?.id]);
+  }, [fetchMyTickets, selectedTicket?.id]);
 
   const filteredTickets = useMemo(
     () => tickets.filter((ticket) => ticket.subject.toLowerCase().includes(searchTerm.toLowerCase())),

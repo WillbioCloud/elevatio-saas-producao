@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../contexts/ToastContext';
 import { useNotification } from '../contexts/NotificationContext';
+import { SUPER_ADMIN_BASE_PATH } from '../config/routes';
 
 type SupportMessageRow = {
   id: string;
@@ -13,7 +14,8 @@ type SupportMessageRow = {
 
 const getCurrentSupportSenderType = (role?: string | null) => (role === 'super_admin' ? 'admin' : 'client');
 
-const getSupportLink = (role?: string | null) => (role === 'super_admin' ? '/saas/suporte' : '/admin/suporte');
+const getSupportLink = (role?: string | null) =>
+  role === 'super_admin' ? `${SUPER_ADMIN_BASE_PATH}/suporte` : '/admin/suporte';
 
 const getSupportMessagePreview = (message?: string | null) => {
   if (!message) return 'Nova mensagem recebida no suporte.';

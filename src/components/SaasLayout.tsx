@@ -41,8 +41,9 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { SaasNotificationsMenu } from './SaasNotificationsMenu';
+import { SUPER_ADMIN_BASE_PATH } from '@/config/routes';
 
-const BASE = '/saas';
+const BASE = SUPER_ADMIN_BASE_PATH;
 
 const navigation = [
   {

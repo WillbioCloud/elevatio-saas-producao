@@ -66,6 +66,7 @@ import SaasCoupons from './pages/saas/SaasCoupons';
 import SaasTemplates from './pages/saas/SaasTemplates';
 import SaasDomains from './pages/saas/SaasDomains';
 import SaasReviews from './pages/saas/SaasReviews';
+import { SUPER_ADMIN_BASE_PATH } from './config/routes';
 
 // ============================================================================
 // 🧠 ROTEADOR INTELIGENTE MULTI-TENANT (Elevatio Vendas SaaS)
@@ -219,7 +220,7 @@ const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomai
 
           {/* === 6. ROTAS SUPER ADMIN (PAINEL SaaS) === */}
           <Route
-            path="/saas"
+            path={SUPER_ADMIN_BASE_PATH}
             element={
               <ProtectedRoute>
                 <SuperAdminRoute>
