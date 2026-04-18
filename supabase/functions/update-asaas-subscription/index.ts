@@ -17,7 +17,7 @@ const buildSubscriptionDiscount = (coupon: Record<string, any> | null, baseValue
     return { value: Math.min(100, couponValue), type: 'PERCENTAGE' as const }
   }
 
-  if (couponType === 'free_month') {
+  if (couponType === 'free') {
     return { value: Math.max(0, Number(baseValue)), type: 'FIXED' as const }
   }
 
@@ -42,26 +42,6 @@ const hasCouponExpired = (couponStartDate: unknown, durationMonths: unknown) => 
     + (currentDate.getMonth() - startDate.getMonth())
 
   return monthsPassed >= duration
-}
-
-const incrementCouponUsage = async (supabase: ReturnType<typeof createClient>, coupon: Record<string, any>) => {
-  const nextUsageCount = Number(coupon.used_count ?? coupon.current_usages ?? 0) + 1
-
-  let { error } = await supabase
-    .from('saas_coupons')
-    .update({ used_count: nextUsageCount })
-    .eq('id', coupon.id)
-
-  if (error && /used_count/i.test(error.message || '')) {
-    const fallback = await supabase
-      .from('saas_coupons')
-      .update({ current_usages: nextUsageCount })
-      .eq('id', coupon.id)
-
-    error = fallback.error
-  }
-
-  if (error) throw error
 }
 
 serve(async (req) => {
@@ -176,7 +156,6 @@ serve(async (req) => {
     const has_free_domain = planRecord?.has_free_domain || false
 
     let couponRecord: Record<string, any> | null = null
-    let shouldIncrementCouponUsage = false
     let shouldPersistCoupon = false
     let shouldClearCoupon = false
 
@@ -190,14 +169,13 @@ serve(async (req) => {
 
       if (!data) throw new Error('Cupom inválido ou expirado.')
 
-      const maxUses = data.max_uses ?? data.usage_limit
-      if (typeof maxUses === 'number' && maxUses > 0 && Number(data.used_count ?? data.current_usages ?? 0) >= maxUses) {
+      const maxUses = Number(data.max_uses ?? data.usage_limit ?? 0)
+      if (maxUses > 0 && Number(data.used_count ?? data.current_uses ?? data.current_usages ?? 0) >= maxUses) {
         throw new Error('Cupom esgotado.')
       }
 
       couponRecord = data as Record<string, any>
       shouldPersistCoupon = true
-      shouldIncrementCouponUsage = company.applied_coupon_id !== couponRecord.id
     } else if (company.applied_coupon_id) {
       const { data } = await supabase
         .from('saas_coupons')
@@ -293,7 +271,7 @@ serve(async (req) => {
           recurringPrice,
           (couponRecord.discount_type ?? couponRecord.type) === 'percentage'
             ? recurringPrice * (Number(couponRecord.discount_value ?? couponRecord.value ?? 0) / 100)
-            : (couponRecord.discount_type ?? couponRecord.type) === 'free_month'
+            : (couponRecord.discount_type ?? couponRecord.type) === 'free'
               ? recurringPrice
               : Number(couponRecord.discount_value ?? couponRecord.value ?? 0)
         )
@@ -483,9 +461,9 @@ serve(async (req) => {
 
     if (shouldPersistCoupon && couponRecord?.id) {
       companyUpdate.applied_coupon_id = couponRecord.id
-      companyUpdate.coupon_start_date = company.applied_coupon_id === couponRecord.id && company.coupon_start_date
-        ? company.coupon_start_date
-        : new Date().toISOString()
+      if (company.applied_coupon_id !== couponRecord.id || !company.coupon_start_date) {
+        companyUpdate.coupon_start_date = null
+      }
     } else if (shouldClearCoupon) {
       companyUpdate.applied_coupon_id = null
       companyUpdate.coupon_start_date = null
@@ -495,10 +473,6 @@ serve(async (req) => {
       .from('companies')
       .update(companyUpdate)
       .eq('id', companyId)
-
-    if (shouldIncrementCouponUsage && couponRecord) {
-      await incrementCouponUsage(supabase, couponRecord)
-    }
 
     return new Response(JSON.stringify({ success: true, subscription_id: newSubscriptionId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

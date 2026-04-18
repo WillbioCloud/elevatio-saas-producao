@@ -30,7 +30,7 @@ const buildSubscriptionDiscount = (coupon: Record<string, any> | null, baseValue
     return { value: Math.min(100, couponValue), type: 'PERCENTAGE' as const }
   }
 
-  if (couponType === 'free_month') {
+  if (couponType === 'free') {
     return { value: Math.max(0, Number(baseValue)), type: 'FIXED' as const }
   }
 
@@ -39,56 +39,6 @@ const buildSubscriptionDiscount = (coupon: Record<string, any> | null, baseValue
   }
 
   return null
-}
-
-const incrementCouponUsage = async (supabaseAdmin: ReturnType<typeof createClient>, couponId: string) => {
-  const { data: couponData, error: couponError } = await supabaseAdmin
-    .from('saas_coupons')
-    .select('current_uses, current_usages, used_count, max_uses, usage_limit')
-    .eq('id', couponId)
-    .single()
-
-  if (couponError) throw couponError
-  if (!couponData) return
-
-  const currentUses = Number(couponData.current_uses ?? couponData.current_usages ?? couponData.used_count ?? 0)
-  const maxUses = Number(couponData.max_uses ?? couponData.usage_limit ?? 0)
-  const newUses = currentUses + 1
-  const isActive = maxUses > 0 ? newUses < maxUses : true
-
-  let { error } = await supabaseAdmin
-    .from('saas_coupons')
-    .update({
-      current_uses: newUses,
-      active: isActive
-    })
-    .eq('id', couponId)
-
-  if (error && /current_uses/i.test(error.message || '')) {
-    const fallback = await supabaseAdmin
-      .from('saas_coupons')
-      .update({
-        current_usages: newUses,
-        active: isActive
-      })
-      .eq('id', couponId)
-
-    error = fallback.error
-  }
-
-  if (error && /(current_usages|current_uses)/i.test(error.message || '')) {
-    const fallback = await supabaseAdmin
-      .from('saas_coupons')
-      .update({
-        used_count: newUses,
-        active: isActive
-      })
-      .eq('id', couponId)
-
-    error = fallback.error
-  }
-
-  if (error) throw error
 }
 
 serve(async (req) => {
@@ -160,6 +110,31 @@ serve(async (req) => {
 
     if (companyError || !company) throw new Error('Empresa não encontrada no banco.')
 
+    const { data: planRecord, error: planError } = await supabaseAdmin
+      .from('saas_plans')
+      .select('id, name, price_monthly, price_yearly, price')
+      .ilike('name', planName)
+      .eq('active', true)
+      .maybeSingle()
+
+    if (planError) throw planError
+    if (!planRecord) throw new Error('Plano inválido ou inativo.')
+
+    const monthlyPlanPrice = Number(planRecord.price_monthly ?? planRecord.price ?? 0)
+    const yearlyPlanPrice = Number(planRecord.price_yearly ?? 0)
+    if (!Number.isFinite(monthlyPlanPrice) || monthlyPlanPrice < 0) {
+      throw new Error('Plano inválido ou sem preço configurado.')
+    }
+
+    const isYearly = billingCycle === 'yearly'
+    const planValue = isYearly
+      ? Number.isFinite(yearlyPlanPrice) && yearlyPlanPrice > 0
+        ? yearlyPlanPrice
+        : monthlyPlanPrice * 12 * 0.85
+      : monthlyPlanPrice
+    const asaasCycle = isYearly ? 'YEARLY' : 'MONTHLY'
+    const planKey = String(planRecord.name ?? planName).toLowerCase()
+
     let couponRecord: Record<string, any> | null = null
     if (couponId || couponCode) {
       let couponQuery = supabaseAdmin
@@ -177,8 +152,8 @@ serve(async (req) => {
 
       if (!coupon) throw new Error('Cupom inválido ou inativo.')
 
-      const maxUses = coupon.max_uses ?? coupon.usage_limit
-      if (typeof maxUses === 'number' && maxUses > 0 && Number(coupon.used_count ?? coupon.current_usages ?? 0) >= maxUses) {
+      const maxUses = Number(coupon.max_uses ?? coupon.usage_limit ?? 0)
+      if (maxUses > 0 && Number(coupon.used_count ?? coupon.current_uses ?? coupon.current_usages ?? 0) >= maxUses) {
         throw new Error('Cupom esgotado.')
       }
 
@@ -217,23 +192,6 @@ serve(async (req) => {
 
     if (!customerRes.ok) throw new Error(`Erro ao criar cliente Asaas: ${customerData.errors?.[0]?.description || customerText}`)
 
-    const planPrices: Record<string, { monthly: number, yearly: number }> = {
-      starter: { monthly: 54.90, yearly: 527.04 },
-      basic: { monthly: 74.90, yearly: 719.04 },
-      profissional: { monthly: 119.90, yearly: 1151.04 },
-      professional: { monthly: 119.90, yearly: 1151.04 },
-      business: { monthly: 179.90, yearly: 1727.04 },
-      premium: { monthly: 249.90, yearly: 2399.04 },
-      elite: { monthly: 349.90, yearly: 3359.04 }
-    }
-
-    const planKey = planName.toLowerCase()
-    const selectedPlan = planPrices[planKey]
-    if (!selectedPlan) throw new Error('Plano inválido.')
-
-    const isYearly = billingCycle === 'yearly'
-    const planValue = isYearly ? selectedPlan.yearly : selectedPlan.monthly
-    const asaasCycle = isYearly ? 'YEARLY' : 'MONTHLY'
     const subscriptionDiscount = buildSubscriptionDiscount(couponRecord, planValue)
     if (couponRecord && !subscriptionDiscount) throw new Error('Tipo de cupom inválido.')
 
@@ -277,34 +235,32 @@ serve(async (req) => {
       asaas_subscription_id: subData.id
     }
 
-    await supabaseAdmin
+    const { error: companyUpdateError } = await supabaseAdmin
       .from('companies')
       .update(companyUpdate)
       .eq('id', companyId)
 
-    // Se a assinatura foi criada e tinha um cupom, registra o uso e vincula à empresa
-    if (couponId) {
-      // 1. Vincula o cupom à imobiliária
-      await supabaseAdmin
+    if (companyUpdateError) throw companyUpdateError
+
+    if (couponRecord?.id) {
+      const couponLinkUpdate: Record<string, unknown> = { applied_coupon_id: couponRecord.id }
+      if (company.applied_coupon_id !== couponRecord.id || !company.coupon_start_date) {
+        couponLinkUpdate.coupon_start_date = null
+      }
+
+      const { error: couponLinkError } = await supabaseAdmin
         .from('companies')
-        .update({
-          applied_coupon_id: couponId,
-          coupon_start_date: new Date().toISOString()
-        })
+        .update(couponLinkUpdate)
         .eq('id', companyId)
 
-      // 2. Busca o cupom para incrementar o uso
-      await incrementCouponUsage(supabaseAdmin, couponId)
-    } else if (couponRecord?.id) {
-      await supabaseAdmin
+      if (couponLinkError) throw couponLinkError
+    } else if (company.applied_coupon_id && !company.coupon_start_date) {
+      const { error: couponClearError } = await supabaseAdmin
         .from('companies')
-        .update({
-          applied_coupon_id: couponRecord.id,
-          coupon_start_date: new Date().toISOString()
-        })
+        .update({ applied_coupon_id: null, coupon_start_date: null })
         .eq('id', companyId)
 
-      await incrementCouponUsage(supabaseAdmin, couponRecord.id)
+      if (couponClearError) throw couponClearError
     }
 
     return new Response(

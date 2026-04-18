@@ -95,6 +95,56 @@ const upsertSaasPayment = async (
   if (error) throw error
 }
 
+const incrementCouponUsage = async (supabaseAdmin: ReturnType<typeof createClient>, couponId: string) => {
+  const { data: couponData, error: couponError } = await supabaseAdmin
+    .from('saas_coupons')
+    .select('*')
+    .eq('id', couponId)
+    .maybeSingle()
+
+  if (couponError) throw couponError
+  if (!couponData) return
+
+  const currentUses = Number(couponData.current_uses ?? couponData.current_usages ?? couponData.used_count ?? 0)
+  const maxUses = Number(couponData.max_uses ?? couponData.usage_limit ?? 0)
+  const newUses = currentUses + 1
+  const isActive = maxUses > 0 ? newUses < maxUses : true
+
+  let { error } = await supabaseAdmin
+    .from('saas_coupons')
+    .update({
+      current_uses: newUses,
+      active: isActive
+    })
+    .eq('id', couponId)
+
+  if (error && /current_uses/i.test(error.message || '')) {
+    const fallback = await supabaseAdmin
+      .from('saas_coupons')
+      .update({
+        current_usages: newUses,
+        active: isActive
+      })
+      .eq('id', couponId)
+
+    error = fallback.error
+  }
+
+  if (error && /(current_usages|current_uses)/i.test(error.message || '')) {
+    const fallback = await supabaseAdmin
+      .from('saas_coupons')
+      .update({
+        used_count: newUses,
+        active: isActive
+      })
+      .eq('id', couponId)
+
+    error = fallback.error
+  }
+
+  if (error) throw error
+}
+
 serve(async (req) => {
   try {
     const webhookSecret = Deno.env.get('ASAAS_WEBHOOK_SECRET')?.trim()
@@ -170,6 +220,22 @@ serve(async (req) => {
           end_date: nextRenewal.toISOString()
         })
         .eq('company_id', company.id)
+
+      if (event === 'PAYMENT_CONFIRMED' && company.applied_coupon_id && !company.coupon_start_date) {
+        const confirmedAt = today.toISOString()
+        await incrementCouponUsage(supabaseAdmin, company.applied_coupon_id)
+
+        const { error: couponStartError } = await supabaseAdmin
+          .from('companies')
+          .update({ coupon_start_date: confirmedAt })
+          .eq('id', company.id)
+
+        if (couponStartError) throw couponStartError
+
+        company.coupon_start_date = confirmedAt
+
+        console.log(`Cupom ${company.applied_coupon_id} iniciado para a empresa ${company.id}.`)
+      }
 
       if (event === 'PAYMENT_RECEIVED' && company.applied_coupon_id && company.coupon_start_date) {
         const { data: coupon } = await supabaseAdmin

@@ -71,7 +71,7 @@ interface Contract {
 
 type CheckoutCoupon = {
   code: string;
-  type: 'percentage' | 'fixed' | 'free_month';
+  type: 'percentage' | 'fixed' | 'free';
   value: number;
 };
 
@@ -2228,8 +2228,8 @@ const AdminConfig: React.FC = () => {
 
       if (error || !data) throw new Error('Cupom inválido');
 
-      const maxUses = data.max_uses ?? data.usage_limit;
-      if (typeof maxUses === 'number' && maxUses > 0 && Number(data.used_count ?? 0) >= maxUses) {
+      const maxUses = Number(data.max_uses ?? data.usage_limit ?? 0);
+      if (maxUses > 0 && Number(data.used_count ?? data.current_uses ?? data.current_usages ?? 0) >= maxUses) {
         throw new Error('Cupom esgotado');
       }
 
@@ -5834,7 +5834,7 @@ const AdminConfig: React.FC = () => {
                 subtotalAfterCourtesy,
                 validatedCoupon.type === 'percentage'
                   ? subtotalAfterCourtesy * (validatedCoupon.value / 100)
-                  : validatedCoupon.type === 'free_month'
+                  : validatedCoupon.type === 'free'
                     ? subtotalAfterCourtesy
                     : validatedCoupon.value
               )

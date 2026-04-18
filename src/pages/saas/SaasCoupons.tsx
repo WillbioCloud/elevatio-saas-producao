@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '../../../components/ui/skeleton'
 import { supabase } from '@/lib/supabase'
 
-type CouponType = 'percentage' | 'fixed' | 'free_month'
+type CouponType = 'percentage' | 'fixed' | 'free'
 
 interface Coupon {
   id: string
@@ -31,6 +31,8 @@ interface Coupon {
   max_uses?: number | null
   usage_limit?: number | null
   used_count: number
+  current_uses?: number
+  current_usages?: number
   active: boolean
   created_at?: string
 }
@@ -82,14 +84,14 @@ export default function SaasCoupons() {
     switch (type) {
       case 'percentage': return 'Porcentagem'
       case 'fixed': return 'Valor Fixo'
-      case 'free_month': return 'Mensalidade Grátis'
+      case 'free': return 'Mensalidade Grátis'
       default: return type
     }
   }
 
   const getValueLabel = (coupon: Coupon) => {
     if (coupon.type === 'percentage') return `${coupon.value}%`
-    if (coupon.type === 'free_month') return '100% da mensalidade'
+    if (coupon.type === 'free') return '100% da mensalidade'
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(coupon.value || 0)
   }
 
@@ -102,7 +104,7 @@ export default function SaasCoupons() {
     const payload = {
       code: form.code.trim().toUpperCase(),
       discount_type: form.type,
-      discount_value: form.type === 'free_month' ? 0 : Number(form.value || 0),
+      discount_value: form.type === 'free' ? 0 : Number(form.value || 0),
       duration_months: Number(form.durationMonths || 0),
       used_count: 0,
       active: true,
@@ -181,14 +183,14 @@ export default function SaasCoupons() {
                       <span className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold bg-muted text-muted-foreground">
                         {coupon.type === 'percentage' && <Percent className="h-3.5 w-3.5" />}
                         {coupon.type === 'fixed' && <BadgeDollarSign className="h-3.5 w-3.5" />}
-                        {coupon.type === 'free_month' && <Gift className="h-3.5 w-3.5" />}
+                        {coupon.type === 'free' && <Gift className="h-3.5 w-3.5" />}
                         {getTypeLabel(coupon.type)}
                       </span>
                     </TableCell>
                     <TableCell className="text-foreground">{getValueLabel(coupon)}</TableCell>
                     <TableCell className="text-foreground">{coupon.duration_months} mês(es)</TableCell>
                     <TableCell className="text-foreground">
-                      {coupon.used_count || 0}/{coupon.max_uses ?? coupon.usage_limit ?? 0}
+                      {coupon.used_count ?? coupon.current_uses ?? coupon.current_usages ?? 0}/{coupon.max_uses ?? coupon.usage_limit ?? 0}
                     </TableCell>
                   </TableRow>
                 ))
@@ -219,13 +221,21 @@ export default function SaasCoupons() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="type">Tipo de Desconto</Label>
-                <Select value={form.type} onValueChange={(v) => setForm((prev) => ({ ...prev, type: v as CouponType }))}>
+                <Select
+                  value={form.type}
+                  onValueChange={(v) => setForm((prev) => ({
+                    ...prev,
+                    type: v as CouponType,
+                    value: v === 'free' ? 0 : prev.value,
+                  }))}
+                >
                   <SelectTrigger id="type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="percentage">Porcentagem (%)</SelectItem>
                     <SelectItem value="fixed">Valor Fixo (R$)</SelectItem>
+                    <SelectItem value="free">Mensalidade Grátis</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -238,10 +248,11 @@ export default function SaasCoupons() {
                     value={form.value}
                     onChange={(e) => setForm((prev) => ({ ...prev, value: Number(e.target.value) }))}
                     placeholder="Ex: 20"
+                    disabled={form.type === 'free'}
                     className="pr-10"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-bold">
-                    {form.type === 'percentage' ? '%' : 'R$'}
+                    {form.type === 'percentage' ? '%' : form.type === 'free' ? '100%' : 'R$'}
                   </span>
                 </div>
               </div>

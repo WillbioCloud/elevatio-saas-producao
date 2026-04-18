@@ -57,7 +57,7 @@ serve(async (req) => {
 
     const finalReason = reason === 'Outro' ? `Outro: ${other_reason}` : reason
 
-    await supabaseAdmin
+    const { error: contractUpdateError } = await supabaseAdmin
       .from('saas_contracts')
       .update({
         status: 'canceled',
@@ -65,6 +65,15 @@ serve(async (req) => {
         canceled_at: new Date().toISOString()
       })
       .eq('company_id', companyId)
+
+    if (contractUpdateError) throw contractUpdateError
+
+    const { error: companyUpdateError } = await supabaseAdmin
+      .from('companies')
+      .update({ plan_status: 'canceled' })
+      .eq('id', companyId)
+
+    if (companyUpdateError) throw companyUpdateError
 
     return new Response(
       JSON.stringify({ success: true }),
