@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import gsap from 'gsap';
 import { createClient } from '@supabase/supabase-js';
-import { ArrowRight, CheckCircle, Loader2, LogIn, UserCircle } from 'lucide-react';
+import { ArrowRight, CheckCircle, Loader2, LogIn, Mail, UserCircle } from 'lucide-react';
 
 export default function SiteSignup() {
   const navigate = useNavigate();
@@ -15,6 +15,7 @@ export default function SiteSignup() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [signupSuccess, setSignupSuccess] = useState(false);
+  const [isEmailSent, setIsEmailSent] = useState(false);
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -92,8 +93,13 @@ export default function SiteSignup() {
 
       if (authError) throw new Error(`Erro ao criar conta: ${authError.message}`);
 
+      if (data.user && !data.session) {
+        setIsEmailSent(true);
+        return;
+      }
+
       if (data.user) {
-        Maps('/admin/pendente', { state: { plan: selectedPlan } });
+        navigate('/admin/pendente', { state: { plan: selectedPlan } });
       }
       
       // A CHAVE EXTRA ESTAVA AQUI, FOI REMOVIDA!
@@ -105,6 +111,34 @@ export default function SiteSignup() {
       setIsLoading(false);
     }
   };
+
+  if (isEmailSent) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 p-4 animate-in fade-in zoom-in duration-500">
+        <div className="max-w-md w-full bg-white dark:bg-slate-800 rounded-3xl p-8 text-center shadow-2xl border border-slate-100 dark:border-slate-700">
+          <div className="w-20 h-20 bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Mail size={40} />
+          </div>
+          <h2 className="text-3xl font-black text-slate-800 dark:text-white mb-4 tracking-tight">
+            Verifique seu E-mail
+          </h2>
+          <p className="text-slate-600 dark:text-slate-300 text-lg leading-relaxed mb-8">
+            Enviamos um link de confirmação para o seu endereço de e-mail. Por favor, clique no link para ativar sua conta e acessar a plataforma.
+          </p>
+          <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl text-amber-700 dark:text-amber-400 text-sm font-medium">
+            Não encontrou o e-mail? Verifique sua caixa de Spam ou Lixo Eletrônico.
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/admin/login')}
+            className="mt-8 text-brand-600 dark:text-brand-400 font-bold hover:underline"
+          >
+            Ir para a tela de Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

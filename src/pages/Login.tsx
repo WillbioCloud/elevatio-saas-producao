@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useLayoutEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Mail } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { SUPER_ADMIN_BASE_PATH } from '../config/routes';
@@ -159,6 +160,7 @@ const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isEmailSent, setIsEmailSent] = useState(false);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -213,7 +215,7 @@ const Login: React.FC = () => {
         localStorage.setItem('trimoveis_company_name', companyName.trim());
         localStorage.setItem('elevatio_company_name', companyName.trim());
 
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
           options: {
@@ -225,6 +227,11 @@ const Login: React.FC = () => {
           },
         });
         if (error) throw error;
+
+        if (data.user && !data.session) {
+          setIsEmailSent(true);
+          return;
+        }
 
         navigate('/admin/dashboard', {
           replace: true,
@@ -250,6 +257,7 @@ const Login: React.FC = () => {
   const switchMode = () => {
     setIsLogin(!isLogin);
     setError('');
+    setIsEmailSent(false);
     setName('');
     setEmail('');
     setPassword('');
@@ -257,6 +265,38 @@ const Login: React.FC = () => {
   };
 
   // ── Input reutilizável ────────────────────────────────────
+  if (isEmailSent) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 p-4 animate-in fade-in zoom-in duration-500">
+        <div className="max-w-md w-full bg-white dark:bg-slate-800 rounded-3xl p-8 text-center shadow-2xl border border-slate-100 dark:border-slate-700">
+          <div className="w-20 h-20 bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Mail size={40} />
+          </div>
+          <h2 className="text-3xl font-black text-slate-800 dark:text-white mb-4 tracking-tight">
+            Verifique seu E-mail
+          </h2>
+          <p className="text-slate-600 dark:text-slate-300 text-lg leading-relaxed mb-8">
+            Enviamos um link de confirmação para o seu endereço de e-mail. Por favor, clique no link para ativar sua conta e acessar a plataforma.
+          </p>
+          <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl text-amber-700 dark:text-amber-400 text-sm font-medium">
+            Não encontrou o e-mail? Verifique sua caixa de Spam ou Lixo Eletrônico.
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsEmailSent(false);
+              setIsLogin(true);
+              navigate('/admin/login', { replace: true });
+            }}
+            className="mt-8 text-brand-600 dark:text-brand-400 font-bold hover:underline"
+          >
+            Ir para a tela de Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '12px 16px 12px 44px',
     fontFamily: "'DM Sans', sans-serif", fontSize: 15, fontWeight: 400,
