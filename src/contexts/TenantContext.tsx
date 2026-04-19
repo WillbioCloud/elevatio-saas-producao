@@ -56,8 +56,7 @@ const PUBLIC_COMPANY_SELECT = `
   plan_status,
   trial_ends_at,
   active,
-  site_data,
-  theme_color
+  site_data
 `;
 
 export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
