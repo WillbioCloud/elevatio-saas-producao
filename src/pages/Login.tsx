@@ -224,6 +224,7 @@ const Login: React.FC = () => {
               company_name: companyName.trim(),
               role: 'owner',
             },
+            emailRedirectTo: `${window.location.origin}/admin/login`,
           },
         });
         if (error) throw error;

@@ -475,6 +475,16 @@ const getDomainStatusMeta = (status: CompanyDomainStatus) => {
   };
 };
 
+const getDomainOwnership = (domainType: unknown): 'elevatio' | 'custom' | null => {
+  if (typeof domainType !== 'string') return null;
+
+  const normalized = domainType.trim().toLowerCase();
+  if (normalized === 'elevatio' || normalized === 'new') return 'elevatio';
+  if (normalized === 'custom' || normalized === 'existing') return 'custom';
+
+  return null;
+};
+
 const compressAvatar = (file: File | Blob, maxSize = 512): Promise<Blob> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -903,6 +913,7 @@ const AdminConfig: React.FC = () => {
       id: tenant?.id || user?.company_id || null,
       subdomain: companySubdomain || tenant?.subdomain || null,
       domain: savedSiteDomain || tenant?.domain || null,
+      domain_type: companyDomainType ?? tenant?.domain_type ?? null,
       domain_secondary: tenant?.domain_secondary || null,
       domain_status: companyDomainStatus ?? tenant?.domain_status ?? null,
       domain_secondary_status: tenant?.domain_secondary_status ?? null,
@@ -914,9 +925,11 @@ const AdminConfig: React.FC = () => {
       user?.company_id,
       companySubdomain,
       savedSiteDomain,
+      companyDomainType,
       companyDomainStatus,
       tenant?.subdomain,
       tenant?.domain,
+      tenant?.domain_type,
       tenant?.domain_secondary,
       tenant?.domain_status,
       tenant?.domain_secondary_status,
@@ -986,6 +999,27 @@ const AdminConfig: React.FC = () => {
 
   const primaryDomainStatusMeta = getDomainStatusMeta(company.domain_status);
   const secondaryDomainStatusMeta = getDomainStatusMeta(company.domain_secondary_status);
+  const primaryDomainOwnership = getDomainOwnership(company.domain_type);
+  const isPrimaryElevatioDomain = primaryDomainOwnership === 'elevatio';
+  const isPrimaryCustomDomain =
+    primaryDomainOwnership === 'custom' || (!primaryDomainOwnership && Boolean(company.domain));
+  const shouldShowCustomDnsInstructions =
+    Boolean(company.domain) && isPrimaryCustomDomain && company.domain_status === 'pending';
+  const shouldShowElevatioPendingNotice =
+    Boolean(company.domain) && isPrimaryElevatioDomain && company.domain_status === 'pending';
+  const shouldShowElevatioActiveNotice =
+    Boolean(company.domain) && isPrimaryElevatioDomain && company.domain_status === 'active';
+  const shouldShowCustomActiveNotice =
+    Boolean(company.domain) && isPrimaryCustomDomain && company.domain_status === 'active';
+  const primaryDomainHelperText = isPrimaryElevatioDomain
+    ? company.domain_status === 'pending'
+      ? 'Registro em andamento pela equipe Elevatio'
+      : null
+    : primaryDomainStatusMeta.helperText;
+  const primaryDomainHelperClassName = isPrimaryElevatioDomain
+    ? 'mt-2 flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400'
+    : primaryDomainStatusMeta.helperClassName;
+  const primaryDomainHelperIcon = isPrimaryElevatioDomain ? 'clock' : primaryDomainStatusMeta.helperIcon;
 
   useEffect(() => {
     setAcceptedFidelityTerms(false);
@@ -4536,10 +4570,10 @@ const AdminConfig: React.FC = () => {
                   <p className="break-all text-sm font-black text-brand-600 dark:text-brand-400">
                     {company.domain}
                   </p>
-                  {primaryDomainStatusMeta.helperText && (
-                    <p className={primaryDomainStatusMeta.helperClassName}>
-                      {primaryDomainStatusMeta.helperIcon === 'alert' ? <Icons.AlertTriangle size={10} /> : <Icons.Clock size={10} />}
-                      {primaryDomainStatusMeta.helperText}
+                  {primaryDomainHelperText && (
+                    <p className={primaryDomainHelperClassName}>
+                      {primaryDomainHelperIcon === 'alert' ? <Icons.AlertTriangle size={10} /> : <Icons.Clock size={10} />}
+                      {primaryDomainHelperText}
                     </p>
                   )}
                 </div>
@@ -4570,7 +4604,7 @@ const AdminConfig: React.FC = () => {
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
                 <label className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-white">
                   <Icons.Link2 size={17} className="text-brand-600" />
-                  Dominio proprio
+                  {isPrimaryElevatioDomain ? 'Domínio adquirido pela Elevatio' : 'Domínio próprio'}
                 </label>
                 <div className="relative mt-3">
                   <Icons.Globe size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -4583,68 +4617,127 @@ const AdminConfig: React.FC = () => {
                   />
                 </div>
                 <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                  Informe o dominio sem https://. Ao salvar, ele sera vinculado automaticamente ao projeto na Vercel.
+                  {isPrimaryElevatioDomain
+                    ? 'Nossa equipe acompanha o registro e a configuração técnica deste domínio.'
+                    : 'Informe o domínio sem https://. Ao salvar, ele será vinculado automaticamente ao projeto na Vercel.'}
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-5 dark:border-sky-900/30 dark:bg-sky-950/20">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-sky-600 shadow-sm dark:bg-sky-900/40 dark:text-sky-300">
-                    <Icons.Info size={18} />
-                  </span>
-                  <div>
-                    <h4 className="text-sm font-black text-slate-900 dark:text-white">Instrucoes de DNS</h4>
-                    <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-                      Para ativar seu dominio proprio, acesse onde voce o comprou (Registro.br, Hostinger, etc.) e crie dois apontamentos de DNS:
+              <div className="space-y-4">
+                {shouldShowElevatioPendingNotice && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-900/30 dark:bg-amber-950/20">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm dark:bg-amber-900/40 dark:text-amber-300">
+                        <Icons.Clock size={18} />
+                      </span>
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white">Registro em andamento</h4>
+                        <p className="mt-1 text-xs leading-relaxed text-amber-800 dark:text-amber-300">
+                          Registro em andamento pela equipe Elevatio. Em breve seu domínio estará no ar.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {shouldShowElevatioActiveNotice && (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 dark:border-emerald-900/30 dark:bg-emerald-950/20">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm dark:bg-emerald-900/40 dark:text-emerald-300">
+                        <Icons.CheckCircle2 size={18} />
+                      </span>
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white">Domínio ativo</h4>
+                        <p className="mt-1 text-xs leading-relaxed text-emerald-800 dark:text-emerald-300">
+                          Domínio registrado e configurado com sucesso pela Elevatio.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {shouldShowCustomActiveNotice && (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 dark:border-emerald-900/30 dark:bg-emerald-950/20">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm dark:bg-emerald-900/40 dark:text-emerald-300">
+                        <Icons.CheckCircle2 size={18} />
+                      </span>
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white">Conexão concluída</h4>
+                        <p className="mt-1 text-xs leading-relaxed text-emerald-800 dark:text-emerald-300">
+                          Seu domínio próprio está ativo e conectado perfeitamente.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {shouldShowCustomDnsInstructions && (
+                  <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-5 dark:border-sky-900/30 dark:bg-sky-950/20">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-sky-600 shadow-sm dark:bg-sky-900/40 dark:text-sky-300">
+                        <Icons.Info size={18} />
+                      </span>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-black text-slate-900 dark:text-white">Instrucoes de DNS</h4>
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                            Aguardando propagação
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                          Para ativar seu dominio proprio, acesse onde voce o comprou (Registro.br, Hostinger, etc.) e crie dois apontamentos de DNS:
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 overflow-hidden rounded-xl border border-sky-100 bg-white dark:border-white/10 dark:bg-slate-950">
+                      <div className="grid grid-cols-[72px_1fr_42px] items-center gap-3 border-b border-slate-100 px-4 py-3 text-xs dark:border-white/10 sm:grid-cols-[90px_130px_1fr_42px]">
+                        <span className="font-black uppercase tracking-widest text-sky-600 dark:text-sky-300">A</span>
+                        <span className="hidden font-semibold text-slate-500 dark:text-slate-400 sm:block">Nome: @</span>
+                        <span className="min-w-0 font-mono text-slate-800 dark:text-slate-100">76.76.21.21</span>
+                        <button
+                          type="button"
+                          title="Copiar destino A"
+                          onClick={() => {
+                            navigator.clipboard.writeText('76.76.21.21');
+                            addToast('Destino A copiado.', 'success');
+                          }}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
+                        >
+                          <Icons.Copy size={14} />
+                        </button>
+                        <span className="col-span-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 sm:hidden">
+                          Nome: @ ou deixe em branco
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-[72px_1fr_42px] items-center gap-3 px-4 py-3 text-xs sm:grid-cols-[90px_130px_1fr_42px]">
+                        <span className="font-black uppercase tracking-widest text-sky-600 dark:text-sky-300">CNAME</span>
+                        <span className="hidden font-semibold text-slate-500 dark:text-slate-400 sm:block">Nome: www</span>
+                        <span className="min-w-0 break-all font-mono text-slate-800 dark:text-slate-100">cname.vercel-dns.com</span>
+                        <button
+                          type="button"
+                          title="Copiar destino CNAME"
+                          onClick={() => {
+                            navigator.clipboard.writeText('cname.vercel-dns.com');
+                            addToast('Destino CNAME copiado.', 'success');
+                          }}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
+                        >
+                          <Icons.Copy size={14} />
+                        </button>
+                        <span className="col-span-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 sm:hidden">
+                          Nome: www
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="mt-3 text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-300">
+                      Seu site estara no ar com certificado de seguranca (SSL) em ate 24 horas.
                     </p>
                   </div>
-                </div>
-
-                <div className="mt-4 overflow-hidden rounded-xl border border-sky-100 bg-white dark:border-white/10 dark:bg-slate-950">
-                  <div className="grid grid-cols-[72px_1fr_42px] items-center gap-3 border-b border-slate-100 px-4 py-3 text-xs dark:border-white/10 sm:grid-cols-[90px_130px_1fr_42px]">
-                    <span className="font-black uppercase tracking-widest text-sky-600 dark:text-sky-300">A</span>
-                    <span className="hidden font-semibold text-slate-500 dark:text-slate-400 sm:block">Nome: @</span>
-                    <span className="min-w-0 font-mono text-slate-800 dark:text-slate-100">76.76.21.21</span>
-                    <button
-                      type="button"
-                      title="Copiar destino A"
-                      onClick={() => {
-                        navigator.clipboard.writeText('76.76.21.21');
-                        addToast('Destino A copiado.', 'success');
-                      }}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
-                    >
-                      <Icons.Copy size={14} />
-                    </button>
-                    <span className="col-span-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 sm:hidden">
-                      Nome: @ ou deixe em branco
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-[72px_1fr_42px] items-center gap-3 px-4 py-3 text-xs sm:grid-cols-[90px_130px_1fr_42px]">
-                    <span className="font-black uppercase tracking-widest text-sky-600 dark:text-sky-300">CNAME</span>
-                    <span className="hidden font-semibold text-slate-500 dark:text-slate-400 sm:block">Nome: www</span>
-                    <span className="min-w-0 break-all font-mono text-slate-800 dark:text-slate-100">cname.vercel-dns.com</span>
-                    <button
-                      type="button"
-                      title="Copiar destino CNAME"
-                      onClick={() => {
-                        navigator.clipboard.writeText('cname.vercel-dns.com');
-                        addToast('Destino CNAME copiado.', 'success');
-                      }}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
-                    >
-                      <Icons.Copy size={14} />
-                    </button>
-                    <span className="col-span-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 sm:hidden">
-                      Nome: www
-                    </span>
-                  </div>
-                </div>
-
-                <p className="mt-3 text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-300">
-                  Seu site estara no ar com certificado de seguranca (SSL) em ate 24 horas.
-                </p>
+                )}
               </div>
             </div>
 

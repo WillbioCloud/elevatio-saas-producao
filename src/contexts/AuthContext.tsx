@@ -542,6 +542,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: 'owner', // Todo novo cadastro via Landing Page nasce como Dono
             ...metaData,
           },
+          emailRedirectTo: `${window.location.origin}/admin/login`,
         },
       });
 

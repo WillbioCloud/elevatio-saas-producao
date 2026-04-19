@@ -361,6 +361,8 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
   };
 
   if (setupSuccess) {
+    const isCustomDomainSetup = formData.hasDomain === 'sim';
+
     return (
       <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-900/35 p-4 pt-16 backdrop-blur-sm sm:items-center sm:pt-4">
         <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -375,37 +377,53 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
           </div>
 
           <div className="space-y-5 p-6">
-            <div className="rounded-2xl border border-brand-100 bg-brand-50/70 p-5">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-brand-700 shadow-sm">
-                  <Globe className="h-5 w-5" />
+            {isCustomDomainSetup ? (
+              <div className="rounded-2xl border border-brand-100 bg-brand-50/70 p-5">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-brand-700 shadow-sm">
+                    <Globe className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-brand-950">Apontamentos DNS para dominio proprio</h3>
+                    <p className="text-sm text-brand-700">
+                      Configure estes registros no provedor onde o dominio foi registrado.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-brand-950">Apontamentos DNS para dominio proprio</h3>
-                  <p className="text-sm text-brand-700">
-                    Configure estes registros no provedor onde o dominio foi registrado.
-                  </p>
-                </div>
-              </div>
 
-              <div className="overflow-hidden rounded-xl border border-brand-100 bg-white">
-                <div className="grid grid-cols-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500">
-                  <span>Tipo</span>
-                  <span>Nome</span>
-                  <span>Valor</span>
-                </div>
-                <div className="grid grid-cols-3 items-center border-b border-slate-100 px-4 py-3 text-sm text-slate-700">
-                  <span className="font-bold">A</span>
-                  <span className="font-mono">@</span>
-                  <span className="font-mono">76.76.21.21</span>
-                </div>
-                <div className="grid grid-cols-3 items-center px-4 py-3 text-sm text-slate-700">
-                  <span className="font-bold">CNAME</span>
-                  <span className="font-mono">www</span>
-                  <span className="font-mono">cname.vercel-dns.com</span>
+                <div className="overflow-hidden rounded-xl border border-brand-100 bg-white">
+                  <div className="grid grid-cols-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500">
+                    <span>Tipo</span>
+                    <span>Nome</span>
+                    <span>Valor</span>
+                  </div>
+                  <div className="grid grid-cols-3 items-center border-b border-slate-100 px-4 py-3 text-sm text-slate-700">
+                    <span className="font-bold">A</span>
+                    <span className="font-mono">@</span>
+                    <span className="font-mono">76.76.21.21</span>
+                  </div>
+                  <div className="grid grid-cols-3 items-center px-4 py-3 text-sm text-slate-700">
+                    <span className="font-bold">CNAME</span>
+                    <span className="font-mono">www</span>
+                    <span className="font-mono">cname.vercel-dns.com</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm">
+                    <CheckCircle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-emerald-950">Domínio solicitado com sucesso</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-emerald-800">
+                      Tudo certo! Nossa equipe técnica já recebeu a sua solicitação e realizará o registro e configuração do seu novo domínio. Seu site estará no ar automaticamente.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <button
               type="button"
