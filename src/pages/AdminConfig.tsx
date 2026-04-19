@@ -2807,7 +2807,7 @@ const AdminConfig: React.FC = () => {
       window.open(`http://${companySubdomain}.localhost${port}`, '_blank');
     } else {
       // Força o uso do domínio de teste base do sistema (ex: https://imob.elevatiovendas.com)
-      const baseDomain = hostname.replace(/^admin\./, '');
+      const baseDomain = hostname.replace(/^admin\./, '').replace(/^www\./, '');
       window.open(`https://${companySubdomain}.${baseDomain}`, '_blank');
     }
   };

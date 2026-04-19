@@ -557,7 +557,7 @@ const AdminLayout: React.FC = () => {
         if (isLocalhost) {
           alert(`O seu site em produção ficará no endereço: https://${company.subdomain}.elevatiovendas.com`);
         } else {
-          const baseDomain = hostname.replace(/^admin\./, '');
+          const baseDomain = hostname.replace(/^admin\./, '').replace(/^www\./, '');
           window.open(`https://${company.subdomain}.${baseDomain}`, '_blank');
         }
         return;
