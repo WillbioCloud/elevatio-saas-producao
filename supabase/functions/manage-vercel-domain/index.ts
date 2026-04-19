@@ -1,127 +1,64 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-type DomainAction = 'add' | 'remove'
-
-const buildCorsHeaders = (req: Request) => ({
+// Headers de CORS obrigatórios para requisições do navegador
+const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    req.headers.get('Access-Control-Request-Headers') ||
-    'authorization, x-client-info, apikey, content-type, accept, x-application-name',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-})
-
-const normalizeDomain = (value: unknown) => {
-  if (typeof value !== 'string') return ''
-
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/^www\./, '')
-    .replace(/\/.*$/, '')
-    .replace(/\.$/, '')
-}
-
-const isValidDomain = (domain: string) =>
-  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)
-
-const readVercelPayload = async (response: Response) => {
-  const contentType = response.headers.get('content-type') || ''
-
-  if (contentType.includes('application/json')) {
-    return response.json().catch(() => null)
-  }
-
-  const text = await response.text().catch(() => '')
-  return text ? { message: text } : null
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
 serve(async (req) => {
-  const corsHeaders = buildCorsHeaders(req)
-
+  // 1. Responde ao preflight do navegador
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  if (req.method !== 'POST') {
-    return new Response(
-      JSON.stringify({ error: 'Metodo nao permitido. Use POST.' }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 405 }
-    )
-  }
-
   try {
-    const vercelToken = Deno.env.get('VERCEL_API_TOKEN')
-    const projectId = Deno.env.get('VERCEL_PROJECT_ID')
+    const { domain } = await req.json()
+    if (!domain) throw new Error('Dominio não fornecido.')
 
-    if (!vercelToken || !projectId) {
-      throw new Error('Variaveis VERCEL_API_TOKEN e VERCEL_PROJECT_ID precisam estar configuradas.')
+    const VERCEL_API_TOKEN = Deno.env.get('VERCEL_API_TOKEN')
+    const VERCEL_PROJECT_ID = Deno.env.get('VERCEL_PROJECT_ID')
+    const VERCEL_TEAM_ID = Deno.env.get('VERCEL_TEAM_ID') // Opcional
+
+    if (!VERCEL_API_TOKEN || !VERCEL_PROJECT_ID) {
+      throw new Error('Credenciais da Vercel ausentes no Supabase.')
     }
 
-    const body = await req.json().catch(() => ({}))
-    const domain = normalizeDomain(body.domain)
-    const action = (body.action as DomainAction | undefined) ?? 'add'
-
-    if (!domain || !isValidDomain(domain)) {
-      return new Response(
-        JSON.stringify({ error: 'Dominio invalido.', domain }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
-      )
+    let url = `https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/domains`
+    // Se a conta for de Time, anexa o Team ID na URL
+    if (VERCEL_TEAM_ID) {
+      url += `?teamId=${VERCEL_TEAM_ID}`
     }
 
-    if (action !== 'add' && action !== 'remove') {
-      return new Response(
-        JSON.stringify({ error: 'Acao invalida. Use add ou remove.' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
-      )
-    }
+    console.log(`Enviando dominio ${domain} para a Vercel (Project: ${VERCEL_PROJECT_ID})...`)
 
-    const endpoint =
-      action === 'add'
-        ? `https://api.vercel.com/v10/projects/${projectId}/domains`
-        : `https://api.vercel.com/v9/projects/${projectId}/domains/${encodeURIComponent(domain)}`
-
-    const vercelResponse = await fetch(endpoint, {
-      method: action === 'add' ? 'POST' : 'DELETE',
+    const response = await fetch(url, {
+      method: 'POST',
       headers: {
-        Authorization: `Bearer ${vercelToken}`,
+        'Authorization': `Bearer ${VERCEL_API_TOKEN}`,
         'Content-Type': 'application/json',
       },
-      body: action === 'add' ? JSON.stringify({ name: domain }) : undefined,
+      body: JSON.stringify({ name: domain }),
     })
 
-    const vercelPayload = await readVercelPayload(vercelResponse)
-    const fallbackMessage = action === 'add'
-      ? 'A Vercel nao conseguiu adicionar o dominio.'
-      : 'A Vercel nao conseguiu remover o dominio.'
-    const vercelError =
-      (vercelPayload as any)?.error?.message ||
-      (vercelPayload as any)?.message ||
-      fallbackMessage
+    const data = await response.json()
 
-    return new Response(
-      JSON.stringify({
-        success: vercelResponse.ok,
-        action,
-        domain,
-        vercelStatus: vercelResponse.status,
-        vercel: vercelPayload,
-        ...(vercelResponse.ok ? {} : { error: vercelError }),
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
-    )
+    if (!response.ok) {
+      console.error('Erro retornado pela Vercel:', data)
+      throw new Error(data.error?.message || 'Falha na API da Vercel')
+    }
+
+    console.log('Dominio adicionado com sucesso:', data)
+
+    return new Response(JSON.stringify({ success: true, data }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    })
   } catch (error: any) {
-    console.error('Erro ao gerenciar dominio na Vercel:', error)
-
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error.message || 'Erro interno ao gerenciar dominio.',
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-    )
+    console.error('Erro na Edge Function:', error.message)
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400,
+    })
   }
 })
