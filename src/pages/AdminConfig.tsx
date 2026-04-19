@@ -12,6 +12,7 @@ import GamificationModal from '../components/GamificationModal';
 import FidelityTermsModal from '../components/FidelityTermsModal';
 import BillingPortalModal from '../components/BillingPortalModal';
 import { uploadCompanyAsset } from '../lib/storage';
+import { GlassCard } from '../components/ui/GlassCard';
 import {
   DEFAULT_COMPANY_PERMISSIONS,
   type AppUserRole,
@@ -98,6 +99,7 @@ interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_sec
 type SitePartner = NonNullable<SiteData['partners']>[number];
 type OfficialSignatureTab = 'draw' | 'type' | 'upload';
 type ConfigTab = 'profile' | 'company' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance' | 'permissions';
+type LeadRoutingMode = 'round_robin' | 'centralized';
 type SiteSubTab = 'templates' | 'identity' | 'hero' | 'about' | 'social';
 type PermissionRole = 'manager' | 'agent' | 'attendant' | 'admin';
 type RolePermissionKey =
@@ -938,6 +940,75 @@ const AdminConfig: React.FC = () => {
     ]
   );
 
+  const adWebhookDomain = useMemo(
+    () => sanitizeExistingDomain(company.domain || '') || 'seudominio.com.br',
+    [company.domain]
+  );
+
+  const adIntegrations = useMemo(
+    () => [
+      {
+        id: 'meta',
+        name: 'Meta Ads',
+        subtitle: 'Facebook e Instagram Lead Ads',
+        description: 'Receba leads de formularios nativos diretamente no CRM.',
+        icon: <Icons.Share2 size={20} />,
+        accent: 'text-blue-600 dark:text-blue-400',
+        iconBox: 'bg-blue-50 text-blue-600 ring-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900/50',
+        action: 'Salvar Credenciais',
+        actionClassName: 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20',
+        fields: [
+          { label: 'Access Token / Token de Verificacao', placeholder: 'Cole o token da Meta aqui' },
+          { label: 'Pixel ID (Opcional)', placeholder: 'Ex: 1234567890' },
+        ],
+      },
+      {
+        id: 'google',
+        name: 'Google Ads',
+        subtitle: 'Conversoes e formularios',
+        description: 'Centralize sinais de conversao e leads vindos das campanhas Google.',
+        icon: <Icons.Google className="h-5 w-5" />,
+        accent: 'text-rose-600 dark:text-rose-400',
+        iconBox: 'bg-rose-50 text-rose-600 ring-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-900/50',
+        action: 'Salvar Google Ads',
+        actionClassName: 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20',
+        fields: [
+          { label: 'ID de Acompanhamento', placeholder: 'AW-123456789' },
+          { label: 'Rotulo de Conversao (Opcional)', placeholder: 'Ex: abcD-efGh123' },
+        ],
+      },
+      {
+        id: 'tiktok',
+        name: 'TikTok Ads',
+        subtitle: 'Lead Generation e Pixel',
+        description: 'Conecte formularios de lead e eventos de conversao das campanhas TikTok.',
+        icon: <Icons.Target size={20} />,
+        accent: 'text-slate-900 dark:text-slate-100',
+        iconBox: 'bg-slate-100 text-slate-900 ring-slate-200 dark:bg-slate-800 dark:text-white dark:ring-slate-700',
+        action: 'Salvar TikTok Ads',
+        actionClassName: 'bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100 shadow-slate-900/20',
+        fields: [
+          { label: 'Access Token', placeholder: 'Cole o token do TikTok aqui' },
+          { label: 'Pixel ID (Opcional)', placeholder: 'Ex: CABC1234567890' },
+        ],
+      },
+    ].map((integration) => ({
+      ...integration,
+      webhookUrl: `https://${adWebhookDomain}/api/webhooks/${integration.id}`,
+    })),
+    [adWebhookDomain]
+  );
+
+  const copyAdWebhookUrl = async (url: string, platformName: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      addToast(`URL do webhook ${platformName} copiada.`, 'success');
+    } catch (error) {
+      console.error('Erro ao copiar webhook:', error);
+      addToast('Nao foi possivel copiar a URL do webhook.', 'error');
+    }
+  };
+
   useEffect(() => {
     if (!company?.id) return;
 
@@ -1610,11 +1681,52 @@ const AdminConfig: React.FC = () => {
     await supabase.from('profiles').update({ distribution_rules: newRules }).eq('id', user.id);
   };
 
-  const togglePropertyType = (type: string) => {
-    const newTypes = distRules.types.includes(type)
-      ? distRules.types.filter((t) => t !== type)
-      : [...distRules.types, type];
-    updateDistRules({ types: newTypes });
+  const selectLeadRoutingMode = async (mode: LeadRoutingMode) => {
+    if (mode === 'round_robin') {
+      setSiteSettings((prev) => ({
+        ...prev,
+        route_to_central: false,
+        central_user_id: '',
+        central_whatsapp: '',
+      }));
+      await updateDistRules({ enabled: true });
+      return;
+    }
+
+    setSiteSettings((prev) => ({
+      ...prev,
+      route_to_central: true,
+    }));
+    await updateDistRules({ enabled: false });
+  };
+
+  const handleCentralUserSelect = (selectedId: string) => {
+    if (!selectedId) {
+      setSiteSettings((prev) => ({
+        ...prev,
+        central_user_id: '',
+        central_whatsapp: '',
+      }));
+      return;
+    }
+
+    const selectedProfile = profiles.find((profile) => profile.id === selectedId);
+    const selectedPhone = selectedProfile?.phone?.trim() || '';
+    const cleanPhone = selectedPhone.replace(/\D/g, '');
+
+    if (!selectedProfile || cleanPhone.length < 8) {
+      addToast(
+        'O usuário selecionado precisa ter um número de WhatsApp/Telefone cadastrado no perfil para fazer o pré-atendimento.',
+        'error'
+      );
+      return;
+    }
+
+    setSiteSettings((prev) => ({
+      ...prev,
+      central_user_id: selectedId,
+      central_whatsapp: selectedPhone,
+    }));
   };
 
   const copyInviteLink = async (role: 'admin' | 'corretor') => {
@@ -2218,24 +2330,53 @@ const AdminConfig: React.FC = () => {
     e.preventDefault();
     setSavingSettings(true);
 
-    const cleanNumber = siteSettings.central_whatsapp.replace(/\D/g, '');
+    const selectedMode: LeadRoutingMode = distRules.enabled || !siteSettings.route_to_central ? 'round_robin' : 'centralized';
+    const selectedCentralizer = profiles.find((profile) => profile.id === siteSettings.central_user_id);
+    const selectedPhone = selectedCentralizer?.phone?.trim() || '';
+    const cleanNumber = selectedPhone.replace(/\D/g, '');
+    const isCentralized = selectedMode === 'centralized';
 
-    const { error } = await supabase
-      .from('settings')
-      .update({
-        route_to_central: siteSettings.route_to_central,
-        central_whatsapp: cleanNumber,
-        central_user_id: siteSettings.central_user_id || null,
-      })
-      .eq('id', 1);
-
-    if (error) {
-      alert('Erro ao salvar configurações de tráfego: ' + error.message);
-    } else {
-      alert('Configurações de tráfego salvas com sucesso!');
-      setSiteSettings(prev => ({ ...prev, central_whatsapp: cleanNumber }));
+    if (isCentralized && (!selectedCentralizer || cleanNumber.length < 8)) {
+      addToast(
+        'O usuário selecionado precisa ter um número de WhatsApp/Telefone cadastrado no perfil para fazer o pré-atendimento.',
+        'error'
+      );
+      setSavingSettings(false);
+      return;
     }
-    setSavingSettings(false);
+
+    try {
+      if (selectedMode === 'round_robin' && !distRules.enabled) {
+        await updateDistRules({ enabled: true });
+      }
+
+      if (selectedMode === 'centralized' && distRules.enabled) {
+        await updateDistRules({ enabled: false });
+      }
+
+      const { error } = await supabase
+        .from('settings')
+        .update({
+          route_to_central: isCentralized,
+          central_whatsapp: isCentralized ? cleanNumber : '',
+          central_user_id: isCentralized ? siteSettings.central_user_id : null,
+        })
+        .eq('id', 1);
+
+      if (error) throw error;
+
+      setSiteSettings((prev) => ({
+        ...prev,
+        route_to_central: isCentralized,
+        central_whatsapp: isCentralized ? cleanNumber : '',
+        central_user_id: isCentralized ? prev.central_user_id : '',
+      }));
+      addToast('Roteamento de leads salvo com sucesso!', 'success');
+    } catch (error: any) {
+      addToast(`Erro ao salvar configurações de tráfego: ${error.message || 'erro desconhecido'}`, 'error');
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   const handleCheckout = async () => {
@@ -2654,6 +2795,7 @@ const AdminConfig: React.FC = () => {
 
   const currentXP = Math.max(0, Number(user?.xp_points ?? 0));
   const { currentLevel: currentLeague, nextLevel: nextLeague, progress: currentLeagueProgress } = getLevelInfo(currentXP);
+  const leadRoutingMode: LeadRoutingMode = distRules.enabled || !siteSettings.route_to_central ? 'round_robin' : 'centralized';
 
   const roleLabel = useMemo(() => getRoleLabel(user?.role), [user?.role]);
 
@@ -3357,184 +3499,168 @@ const AdminConfig: React.FC = () => {
         <div className="space-y-6">
           <div>
             <h3 className="text-lg font-bold text-slate-800 dark:text-white">Roteamento de Leads</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Defina para qual fila ou usuário os leads de cada canal de tráfego devem ser enviados.
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Escolha um único fluxo operacional para todos os leads recebidos.
             </p>
           </div>
 
-          <div className={`p-6 rounded-2xl border shadow-sm transition-all ${distRules.enabled ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-white border-gray-200 dark:bg-dark-card dark:border-dark-border'}`}>
-            <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
-              <div>
-                <h3 className="font-bold text-slate-800 dark:text-white">Distribuição dos MEUS Imóveis</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Transfira automaticamente leads interessados nos seus imóveis para a equipe.
-                </p>
-              </div>
+          <form onSubmit={handleSaveTrafficSettings} className="space-y-6">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" role="radiogroup" aria-label="Modo de roteamento de leads">
               <button
-                onClick={() => updateDistRules({ enabled: !distRules.enabled })}
-                className={`px-5 py-2 rounded-xl font-bold transition-colors ${distRules.enabled ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-900 hover:bg-slate-800 text-white'}`}
+                type="button"
+                role="radio"
+                aria-checked={leadRoutingMode === 'round_robin'}
+                onClick={() => void selectLeadRoutingMode('round_robin')}
+                className={`group flex h-full min-h-[220px] flex-col rounded-2xl border p-6 text-left shadow-sm transition-all ${
+                  leadRoutingMode === 'round_robin'
+                    ? 'border-emerald-300 bg-emerald-50 shadow-emerald-500/10 ring-2 ring-emerald-500/20 dark:border-emerald-700 dark:bg-emerald-950/30'
+                    : 'border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40 dark:border-slate-800 dark:bg-dark-card dark:hover:border-emerald-900/60 dark:hover:bg-emerald-950/10'
+                }`}
               >
-                {distRules.enabled ? 'Desativar Distribuição' : 'Ativar Distribuição'}
+                <div className="flex items-start justify-between gap-4">
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${
+                    leadRoutingMode === 'round_robin'
+                      ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'
+                      : 'bg-slate-100 text-slate-500 group-hover:bg-emerald-100 group-hover:text-emerald-700 dark:bg-slate-800 dark:text-slate-300'
+                  }`}>
+                    <Icons.RefreshCw size={22} />
+                  </div>
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-full border transition-colors ${
+                    leadRoutingMode === 'round_robin'
+                      ? 'border-emerald-600 bg-emerald-600 text-white'
+                      : 'border-slate-300 bg-white text-transparent dark:border-slate-700 dark:bg-slate-900'
+                  }`}>
+                    <Icons.Check size={16} />
+                  </span>
+                </div>
+
+                <div className="mt-6">
+                  <h4 className="text-lg font-black text-slate-900 dark:text-white">Distribuição Automática (Roleta)</h4>
+                  <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                    Os leads são distribuídos automaticamente e de forma igualitária entre os corretores, ignorando o pré-atendimento. Quando o lead vier pela página de um imóvel específico, ele será direcionado ao corretor responsável pela captação/anúncio. <strong>Se os imóveis estiverem atribuídos apenas ao dono ou gerente, a roleta global será aplicada.</strong>
+                  </p>
+                </div>
+
+                <div className="mt-auto pt-5">
+                  <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold ${
+                    leadRoutingMode === 'round_robin'
+                      ? 'bg-white text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-800'
+                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                  }`}>
+                    <Icons.Users size={14} />
+                    Sem atendente centralizador
+                  </span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                role="radio"
+                aria-checked={leadRoutingMode === 'centralized'}
+                onClick={() => void selectLeadRoutingMode('centralized')}
+                className={`group flex h-full min-h-[220px] flex-col rounded-2xl border p-6 text-left shadow-sm transition-all ${
+                  leadRoutingMode === 'centralized'
+                    ? 'border-brand-300 bg-brand-50 shadow-brand-500/10 ring-2 ring-brand-500/20 dark:border-brand-700 dark:bg-brand-950/30'
+                    : 'border-slate-200 bg-white hover:border-brand-200 hover:bg-brand-50/40 dark:border-slate-800 dark:bg-dark-card dark:hover:border-brand-900/60 dark:hover:bg-brand-950/10'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${
+                    leadRoutingMode === 'centralized'
+                      ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/20'
+                      : 'bg-slate-100 text-slate-500 group-hover:bg-brand-100 group-hover:text-brand-700 dark:bg-slate-800 dark:text-slate-300'
+                  }`}>
+                    <Icons.UserCheck size={22} />
+                  </div>
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-full border transition-colors ${
+                    leadRoutingMode === 'centralized'
+                      ? 'border-brand-600 bg-brand-600 text-white'
+                      : 'border-slate-300 bg-white text-transparent dark:border-slate-700 dark:bg-slate-900'
+                  }`}>
+                    <Icons.Check size={16} />
+                  </span>
+                </div>
+
+                <div className="mt-6">
+                  <h4 className="text-lg font-black text-slate-900 dark:text-white">Triagem e Centralização (Pré-atendimento)</h4>
+                  <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                    Todos os leads caem para um único Atendente/SDR. Ele fará o pré-atendimento e qualificará o lead antes de distribuir manualmente para os corretores.
+                  </p>
+                </div>
+
+                <div className="mt-auto pt-5">
+                  <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold ${
+                    leadRoutingMode === 'centralized'
+                      ? 'bg-white text-brand-700 ring-1 ring-brand-200 dark:bg-brand-950 dark:text-brand-300 dark:ring-brand-800'
+                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                  }`}>
+                    <Icons.MessageCircle size={14} />
+                    Exige WhatsApp no perfil
+                  </span>
+                </div>
               </button>
             </div>
 
-            {distRules.enabled && (
-              <div className="pt-4 border-t border-emerald-200/50 dark:border-emerald-800/50">
-                <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Quais categorias deseja distribuir?</p>
-                <div className="flex flex-wrap gap-2">
-                  {['Casa', 'Apartamento', 'Terreno', 'Chácara', 'Comercial', 'Aluguel'].map((type) => (
-                    <label key={type} className="flex items-center gap-2 bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer hover:border-brand-400 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={distRules.types.includes(type)}
-                        onChange={() => togglePropertyType(type)}
-                        className="rounded text-brand-600 focus:ring-brand-500"
-                      />
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{type}</span>
+            {leadRoutingMode === 'centralized' && (
+              <GlassCard variant="elevated" className="animate-fade-in">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-end">
+                  <div className="flex-1">
+                    <label className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Atendente Centralizador
                     </label>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white dark:bg-dark-card rounded-2xl border border-brand-200 dark:border-brand-900/30 overflow-hidden shadow-sm">
-              <div className="bg-brand-50 dark:bg-brand-900/10 p-4 border-b border-brand-100 dark:border-brand-900/20 flex items-center gap-3">
-                <div className="w-10 h-10 bg-white dark:bg-dark-bg rounded-full flex items-center justify-center text-brand-600 shadow-sm">
-                  <Icons.Globe size={20} />
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-800 dark:text-white">Tráfego Orgânico (Site)</h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Leads gerados pela página dos imóveis.</p>
-                </div>
-              </div>
-
-              <form onSubmit={handleSaveTrafficSettings} className="p-6 space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-bold text-sm text-slate-800 dark:text-white">Pré-atendimento Centralizado</p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Se ativo, leads vão para o gestor abaixo. Se inativo, vão para o corretor dono do imóvel.
+                    <select
+                      value={siteSettings.central_user_id}
+                      onChange={(e) => handleCentralUserSelect(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                    >
+                      <option value="">Selecione o responsável pelo pré-atendimento</option>
+                      {profiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name} ({getRoleLabel(profile.role)}){profile.phone ? '' : ' - sem telefone'}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-2 flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                      <Icons.ShieldCheck size={14} className="mt-0.5 shrink-0 text-emerald-600" />
+                      A seleção só é aceita quando o usuário possui WhatsApp/Telefone cadastrado no perfil.
                     </p>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
+
+                  <div className="w-full lg:w-80">
+                    <label className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      WhatsApp sincronizado
+                    </label>
                     <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={siteSettings.route_to_central}
-                      onChange={(e) => setSiteSettings(prev => ({ ...prev, route_to_central: e.target.checked }))}
+                      type="text"
+                      readOnly
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-500 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
+                      value={siteSettings.central_whatsapp}
+                      placeholder="Selecione um usuário com telefone"
                     />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-500"></div>
-                  </label>
+                  </div>
                 </div>
+              </GlassCard>
+            )}
 
-                {siteSettings.route_to_central && (
-                  <div className="space-y-4 animate-fade-in pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Responsável pelos Leads (Admin)</label>
-                      <select
-                        value={siteSettings.central_user_id}
-                        onChange={(e) => {
-                          const selectedId = e.target.value;
-                          const selectedAdmin = profiles.find(p => p.id === selectedId);
-                          setSiteSettings(prev => ({
-                            ...prev,
-                            central_user_id: selectedId,
-                            central_whatsapp: selectedAdmin?.phone || ''
-                          }));
-                        }}
-                        className="w-full px-4 py-2 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                      >
-                        <option value="">Ninguém (Fica na fila geral)</option>
-                        {profiles.filter(p => ['owner', 'manager', 'admin'].includes(p.role)).map(admin => (
-                          <option key={admin.id} value={admin.id}>{admin.name} ({getRoleLabel(admin.role)})</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">WhatsApp da Central (Sincronizado)</label>
-                      <input
-                        type="text"
-                        disabled
-                        className="w-full px-4 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400"
-                        value={siteSettings.central_whatsapp}
-                        placeholder="Usuário não possui telefone no perfil"
-                      />
-                      <p className="text-[10px] text-amber-600 mt-1 flex items-center gap-1"><Icons.AlertTriangle size={12}/> Para alterar o número, o responsável deve atualizar o próprio Perfil.</p>
-                    </div>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={savingSettings}
-                  className="w-full bg-brand-600 text-white py-2.5 rounded-xl font-bold hover:bg-brand-700 disabled:opacity-60 transition-colors"
-                >
-                  {savingSettings ? 'Salvando...' : 'Salvar Regras do Site'}
-                </button>
-              </form>
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-800 dark:text-white mt-8 border-t border-slate-100 dark:border-slate-800 pt-6">Integrações de Anúncios</h3>
-
-              <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border overflow-hidden">
-                <div className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-blue-50/50 dark:bg-blue-900/10 gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600"><Icons.Share2 size={20} /></div>
-                    <div>
-                      <h4 className="font-bold text-slate-800 dark:text-white">Meta Ads (Facebook & Instagram)</h4>
-                      <p className="text-xs text-slate-500">Receba leads de formulários nativos diretamente no CRM</p>
-                    </div>
-                  </div>
-                  <button type="button" onClick={() => alert("1. Vá no Gerenciador de Anúncios da Meta.\n2. Nas configurações do Formulário de Lead, vá em 'Configuração de Webhook'.\n3. Cole a URL fornecida abaixo.\n4. Insira o seu Access Token para autenticar.")} className="text-xs font-bold text-blue-600 bg-blue-100 px-3 py-1.5 rounded-lg hover:bg-blue-200 transition-colors flex items-center gap-1">
-                    <Icons.Info size={14}/> Como configurar?
-                  </button>
-                </div>
-                <div className="p-4 space-y-4 bg-slate-50/50 dark:bg-slate-900/20">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sua URL de Webhook (Copie e cole na Meta)</label>
-                    <div className="flex gap-2">
-                      <input type="text" readOnly value={`https://[SEU-DOMINIO]/api/webhook/meta/${user?.company_id}`} className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/50 text-slate-500 outline-none" />
-                      <button type="button" onClick={() => navigator.clipboard.writeText(`https://[SEU-DOMINIO]/api/webhook/meta/${user?.company_id}`)} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl text-slate-700 dark:text-slate-200 transition-colors"><Icons.Copy size={16}/></button>
-                    </div>
-                    <p className="text-[10px] text-slate-400 mt-1">Esta é a "porta de entrada" exclusiva da sua imobiliária para receber leads.</p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Access Token / Token de Verificação</label>
-                      <input type="text" placeholder="Cole o token da Meta aqui" className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-brand-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pixel ID (Opcional)</label>
-                      <input type="text" placeholder="Ex: 1234567890" className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-brand-500" />
-                    </div>
-                  </div>
-                  <button type="button" className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition-colors shadow-md">Salvar Credenciais</button>
-                </div>
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/50 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-bold text-slate-800 dark:text-white">
+                  Modo ativo: {leadRoutingMode === 'round_robin' ? 'Distribuição Automática (Roleta)' : 'Triagem e Centralização'}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Ao salvar, o modo selecionado desativa automaticamente o fluxo concorrente.
+                </p>
               </div>
-
-              <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-dark-border overflow-hidden">
-                <div className="p-4 flex items-center justify-between bg-red-50/50 dark:bg-red-900/10">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-500"><Icons.Search size={20} /></div>
-                    <div>
-                      <h4 className="font-bold text-slate-800 dark:text-white">Google Ads</h4>
-                      <p className="text-xs text-slate-500">Rastreamento de conversões (Tag Global)</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-4 space-y-4 bg-slate-50/50 dark:bg-slate-900/20">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">ID de Acompanhamento (AW-XXXXX)</label>
-                    <input type="text" placeholder="AW-123456789" className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-brand-500" />
-                  </div>
-                  <button type="button" className="bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition-colors shadow-md">Salvar Configuração Google</button>
-                </div>
-              </div>
+              <button
+                type="submit"
+                disabled={savingSettings}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/20 transition-colors hover:bg-brand-700 disabled:opacity-60"
+              >
+                {savingSettings ? <Icons.Loader2 size={18} className="animate-spin" /> : <Icons.Save size={18} />}
+                Salvar roteamento
+              </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
@@ -5499,10 +5625,99 @@ const AdminConfig: React.FC = () => {
         <div className="space-y-6 animate-fade-in">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
             <div>
-              <h2 className="text-2xl font-serif font-bold text-slate-800 dark:text-white">Integração com Portais</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Sincronize seus imóveis com o Zap Imóveis, Viva Real, OLX e outros.</p>
+              <h2 className="text-2xl font-serif font-bold text-slate-800 dark:text-white">Integrações</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Conecte anúncios, webhooks e portais imobiliários ao CRM.</p>
             </div>
           </div>
+          <section className="space-y-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 dark:text-white">Anúncios e Webhooks</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  URLs prontas para copiar usando o domínio principal da imobiliária.
+                </p>
+              </div>
+              <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                <Icons.Globe size={14} />
+                {adWebhookDomain}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              {adIntegrations.map((integration) => (
+                <GlassCard key={integration.id} variant="elevated" padding="none" hoverable className="overflow-hidden">
+                  <div className="flex h-full flex-col">
+                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 p-5 dark:border-slate-800">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ${integration.iconBox}`}>
+                          {integration.icon}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="font-bold text-slate-900 dark:text-white">{integration.name}</h4>
+                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900/60">
+                              Webhook
+                            </span>
+                          </div>
+                          <p className={`mt-1 text-xs font-bold ${integration.accent}`}>{integration.subtitle}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-1 flex-col gap-4 p-5">
+                      <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">{integration.description}</p>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          URL do Webhook
+                        </label>
+                        <div className="flex min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-inner dark:border-slate-800 dark:bg-slate-950/60">
+                          <input
+                            type="text"
+                            readOnly
+                            value={integration.webhookUrl}
+                            className="min-w-0 flex-1 bg-transparent px-3 py-2.5 font-mono text-xs text-slate-600 outline-none dark:text-slate-300"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void copyAdWebhookUrl(integration.webhookUrl, integration.name)}
+                            className="flex w-11 shrink-0 items-center justify-center border-l border-slate-200 text-slate-500 transition-colors hover:bg-white hover:text-brand-600 dark:border-slate-800 dark:hover:bg-slate-900 dark:hover:text-brand-400"
+                            aria-label={`Copiar URL do webhook ${integration.name}`}
+                            title="Copiar URL"
+                          >
+                            <Icons.Copy size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3">
+                        {integration.fields.map((field) => (
+                          <div key={field.label}>
+                            <label className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              {field.label}
+                            </label>
+                            <input
+                              type="text"
+                              placeholder={field.placeholder}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        className={`mt-auto inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold shadow-lg transition ${integration.actionClassName}`}
+                      >
+                        {integration.action}
+                      </button>
+                    </div>
+                  </div>
+                </GlassCard>
+              ))}
+            </div>
+          </section>
+
           <div className="bg-white dark:bg-dark-card rounded-3xl border border-slate-200 dark:border-dark-border p-6 md:p-8 shadow-sm">
             <div className="flex items-start gap-6">
               <div className="w-16 h-16 bg-brand-500/10 rounded-2xl flex items-center justify-center shrink-0">
