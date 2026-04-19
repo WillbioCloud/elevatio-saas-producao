@@ -85,6 +85,7 @@ type SaasTemplate = {
 };
 
 type CompanyDomainStatus = 'pending' | 'active' | 'error' | 'idle' | 'expired' | null;
+type VercelDomainAction = 'add' | 'remove';
 
 interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_secondary' | 'domain_status'> {
   subdomain: string | null;
@@ -396,9 +397,41 @@ const sanitizeExistingDomain = (value: string) =>
   value
     .toLowerCase()
     .replace(/^(https?:\/\/)?(www\.)?/, '')
-    .replace(/\/+$/, '')
+    .replace(/\/.*$/, '')
+    .replace(/\.$/, '')
     .trim();
 
+const manageVercelProjectDomain = async (domain: string, action: VercelDomainAction) => {
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+  if (sessionError) throw new Error(sessionError.message);
+  if (!session?.access_token) {
+    throw new Error('Sessao expirada. Entre novamente para configurar o dominio.');
+  }
+
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-vercel-domain`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ domain, action }),
+  });
+
+  const responseData = await response.json().catch(() => ({}));
+
+  if (!response.ok || responseData?.success === false) {
+    throw new Error(
+      responseData?.error ||
+      responseData?.vercel?.error?.message ||
+      responseData?.vercel?.message ||
+      `A Vercel retornou erro ao ${action === 'add' ? 'adicionar' : 'remover'} o dominio.`
+    );
+  }
+
+  return responseData;
+};
 
 const getDomainAnnualPrice = (domain: string) => (domain.endsWith('.com') ? 89.0 : 53.0);
 
@@ -2424,14 +2457,27 @@ const AdminConfig: React.FC = () => {
 
   const handleSaveSiteConfig = async () => {
     setIsSavingSite(true);
+    let provisionedDomain: string | null = null;
     try {
       if (!user?.company_id) throw new Error("ID da empresa não encontrado.");
 
       // Limpa o domínio caso o usuário digite com http ou www
-      const cleanDomain = siteDomain.replace(/^(https?:\/\/)?(www\.)?/, '').trim();
+      const cleanDomain = sanitizeExistingDomain(siteDomain);
       const finalDomain = cleanDomain === '' ? null : cleanDomain;
       const previousDomain = savedSiteDomain || null;
       const domainChanged = previousDomain !== finalDomain;
+      let previousDomainRemovalWarning: string | null = null;
+
+      if (domainChanged && finalDomain) {
+        addToast('Conectando dominio proprio na Vercel...', 'info');
+        await manageVercelProjectDomain(finalDomain, 'add');
+        provisionedDomain = finalDomain;
+      }
+
+      if (domainChanged && previousDomain && !finalDomain) {
+        addToast('Removendo dominio proprio da Vercel...', 'info');
+        await manageVercelProjectDomain(previousDomain, 'remove');
+      }
 
       const companyUpdate: Record<string, unknown> = {
         template: siteTemplate,
@@ -2467,8 +2513,33 @@ const AdminConfig: React.FC = () => {
             : prev
         );
       }
+
+      if (domainChanged && previousDomain && finalDomain) {
+        try {
+          await manageVercelProjectDomain(previousDomain, 'remove');
+        } catch (removeError: any) {
+          console.error('Erro ao remover dominio antigo da Vercel:', removeError);
+          previousDomainRemovalWarning = removeError.message || 'Nao foi possivel remover o dominio antigo da Vercel.';
+        }
+      }
+
+      if (previousDomainRemovalWarning) {
+        addToast(`Site salvo, mas revise o dominio antigo na Vercel: ${previousDomainRemovalWarning}`, 'info');
+      } else if (domainChanged && finalDomain) {
+        addToast('Dominio enviado para a Vercel. Aguarde a propagacao do DNS.', 'success');
+      } else if (domainChanged && previousDomain && !finalDomain) {
+        addToast('Dominio removido da Vercel com sucesso.', 'success');
+      }
       alert('Configurações do site salvas com sucesso!');
     } catch (error: any) {
+      if (provisionedDomain) {
+        try {
+          await manageVercelProjectDomain(provisionedDomain, 'remove');
+        } catch (rollbackError) {
+          console.error('Nao foi possivel desfazer o dominio criado na Vercel:', rollbackError);
+        }
+      }
+
       alert('Erro ao salvar configurações: ' + error.message);
     } finally {
       setIsSavingSite(false);
@@ -4493,6 +4564,88 @@ const AdminConfig: React.FC = () => {
                   )}
                 </div>
               )}
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+                <label className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-white">
+                  <Icons.Link2 size={17} className="text-brand-600" />
+                  Dominio proprio
+                </label>
+                <div className="relative mt-3">
+                  <Icons.Globe size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={siteDomain}
+                    onChange={(event) => setSiteDomain(event.target.value)}
+                    placeholder="suaimobiliaria.com.br"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm font-semibold text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:ring-4 focus:ring-brand-500/10 dark:border-white/10 dark:bg-slate-950 dark:text-white dark:focus:bg-slate-900"
+                  />
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                  Informe o dominio sem https://. Ao salvar, ele sera vinculado automaticamente ao projeto na Vercel.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-5 dark:border-sky-900/30 dark:bg-sky-950/20">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-sky-600 shadow-sm dark:bg-sky-900/40 dark:text-sky-300">
+                    <Icons.Info size={18} />
+                  </span>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 dark:text-white">Instrucoes de DNS</h4>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                      Para ativar seu dominio proprio, acesse onde voce o comprou (Registro.br, Hostinger, etc.) e crie dois apontamentos de DNS:
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 overflow-hidden rounded-xl border border-sky-100 bg-white dark:border-white/10 dark:bg-slate-950">
+                  <div className="grid grid-cols-[72px_1fr_42px] items-center gap-3 border-b border-slate-100 px-4 py-3 text-xs dark:border-white/10 sm:grid-cols-[90px_130px_1fr_42px]">
+                    <span className="font-black uppercase tracking-widest text-sky-600 dark:text-sky-300">A</span>
+                    <span className="hidden font-semibold text-slate-500 dark:text-slate-400 sm:block">Nome: @</span>
+                    <span className="min-w-0 font-mono text-slate-800 dark:text-slate-100">76.76.21.21</span>
+                    <button
+                      type="button"
+                      title="Copiar destino A"
+                      onClick={() => {
+                        navigator.clipboard.writeText('76.76.21.21');
+                        addToast('Destino A copiado.', 'success');
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
+                    >
+                      <Icons.Copy size={14} />
+                    </button>
+                    <span className="col-span-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 sm:hidden">
+                      Nome: @ ou deixe em branco
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-[72px_1fr_42px] items-center gap-3 px-4 py-3 text-xs sm:grid-cols-[90px_130px_1fr_42px]">
+                    <span className="font-black uppercase tracking-widest text-sky-600 dark:text-sky-300">CNAME</span>
+                    <span className="hidden font-semibold text-slate-500 dark:text-slate-400 sm:block">Nome: www</span>
+                    <span className="min-w-0 break-all font-mono text-slate-800 dark:text-slate-100">cname.vercel-dns.com</span>
+                    <button
+                      type="button"
+                      title="Copiar destino CNAME"
+                      onClick={() => {
+                        navigator.clipboard.writeText('cname.vercel-dns.com');
+                        addToast('Destino CNAME copiado.', 'success');
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-white"
+                    >
+                      <Icons.Copy size={14} />
+                    </button>
+                    <span className="col-span-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 sm:hidden">
+                      Nome: www
+                    </span>
+                  </div>
+                </div>
+
+                <p className="mt-3 text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-300">
+                  Seu site estara no ar com certificado de seguranca (SSL) em ate 24 horas.
+                </p>
+              </div>
             </div>
 
             {!company.domain && (
