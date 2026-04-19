@@ -58,6 +58,25 @@ const sanitizeExistingDomain = (value: string) =>
     .replace(/\/+$/, '')
     .trim();
 
+const formatCpfCnpj = (value: string) => {
+  const numbers = value.replace(/\D/g, '');
+
+  if (numbers.length <= 11) {
+    return numbers
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d{1,2})/, '$1-$2')
+      .slice(0, 14);
+  }
+
+  return numbers
+    .replace(/(\d{2})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1/$2')
+    .replace(/(\d{4})(\d{1,2})/, '$1-$2')
+    .slice(0, 18);
+};
+
 export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) {
   const { user } = useAuth();
   const location = useLocation();
@@ -519,15 +538,16 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
 
                   <div>
                     <label className="mb-1 block text-sm text-slate-600">
-                      CPF ou CNPJ (para a fatura)
+                      CPF / CNPJ (para a fatura)
                     </label>
                     <input
                       required
                       type="text"
                       value={formData.document}
-                      onChange={(e) => setFormData({ ...formData, document: e.target.value })}
+                      onChange={(e) => setFormData({ ...formData, document: formatCpfCnpj(e.target.value) })}
+                      maxLength={18}
                       className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-900 outline-none focus:border-brand-500"
-                      placeholder="000.000.000-00"
+                      placeholder="000.000.000-00 ou 00.000.000/0001-00"
                     />
                   </div>
 

@@ -137,6 +137,25 @@ const LEGACY_CONFIG_TAB_ALIASES: Partial<Record<string, ConfigTab>> = {
   empresa: 'company',
 };
 
+const formatCpfCnpj = (value: string) => {
+  const numbers = value.replace(/\D/g, '');
+
+  if (numbers.length <= 11) {
+    return numbers
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d{1,2})/, '$1-$2')
+      .slice(0, 14);
+  }
+
+  return numbers
+    .replace(/(\d{2})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1/$2')
+    .replace(/(\d{4})(\d{1,2})/, '$1-$2')
+    .slice(0, 18);
+};
+
 const normalizeProfileRole = (role: unknown): AppUserRole => {
   switch (role) {
     case 'owner':
@@ -2938,14 +2957,15 @@ const AdminConfig: React.FC = () => {
 
               <div>
                 <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-300">
-                  CNPJ
+                  CPF / CNPJ
                 </label>
                 <input
                   type="text"
                   value={companyForm.cnpj}
-                  onChange={(e) => setCompanyForm((prev) => ({ ...prev, cnpj: e.target.value }))}
+                  onChange={(e) => setCompanyForm((prev) => ({ ...prev, cnpj: formatCpfCnpj(e.target.value) }))}
+                  maxLength={18}
                   className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                  placeholder="00.000.000/0001-00"
+                  placeholder="000.000.000-00 ou 00.000.000/0001-00"
                 />
               </div>
             </div>
