@@ -28,6 +28,8 @@ type CompanyProfile = {
   payment_api_key?: string;
   manual_discount_value?: number | null;
   manual_discount_type?: 'fixed' | 'percentage' | null;
+  plan_status?: string | null;
+  trial_ends_at?: string | null;
 };
 
 type ProfileData = {
@@ -116,7 +118,7 @@ const normalizeCompanyPermissions = (permissions: unknown): CompanyPermissions =
 };
 
 const COMPANY_PROFILE_SELECT =
-  'name, plan, document, logo_url, admin_signature_url, use_asaas, default_commission, broker_commission, payment_api_key, manual_discount_value, manual_discount_type';
+  'name, plan, document, logo_url, admin_signature_url, use_asaas, default_commission, broker_commission, payment_api_key, manual_discount_value, manual_discount_type, plan_status, trial_ends_at';
 
 const buildFallbackUser = (supabaseUser: User): UserWithRole => {
   const metadata = (supabaseUser.user_metadata as Record<string, unknown> | undefined) ?? {};

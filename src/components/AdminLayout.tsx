@@ -36,6 +36,11 @@ type AsaasPaymentLinkCandidate = {
   invoiceUrl?: string | null;
 };
 
+type TrialSidebarInfo = {
+  trialEndsAt: string | null;
+  planStatus: string | null;
+};
+
 const PAST_DUE_GRACE_DAYS = 7;
 const DAY_IN_MS = 1000 * 60 * 60 * 24;
 const paidSaasPaymentStatuses = new Set(['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH']);
@@ -72,6 +77,21 @@ const getOverdueDays = (dueDate: string | null | undefined) => {
 const getPaymentDueTimestamp = (payment: AsaasPaymentLinkCandidate) =>
   parseLocalDate(payment.dueDate)?.getTime() ?? Number.MAX_SAFE_INTEGER;
 
+const getTrialDaysLeft = (trialEndsAt: string | null | undefined) => {
+  if (!trialEndsAt) return null;
+
+  const trialEnd = new Date(trialEndsAt);
+  if (Number.isNaN(trialEnd.getTime())) return null;
+
+  const diff = trialEnd.getTime() - Date.now();
+  if (diff < 0) return null;
+
+  return Math.max(0, Math.ceil(diff / DAY_IN_MS));
+};
+
+const isTrialLikeStatus = (status: string) =>
+  !status || status === 'trial' || status === 'trialing' || status === 'pending';
+
 const AdminLayout: React.FC = () => {
   const { user, signOut, refreshUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -90,6 +110,10 @@ const AdminLayout: React.FC = () => {
   const [isOpeningPaymentLink, setIsOpeningPaymentLink] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [hasContextualAura, setHasContextualAura] = useState(false);
+  const [trialInfo, setTrialInfo] = useState<TrialSidebarInfo>({
+    trialEndsAt: user?.company?.trial_ends_at ?? null,
+    planStatus: user?.company?.plan_status ?? null,
+  });
   const [dismissedUntil, setDismissedUntil] = useState<number>(() => {
     const saved = localStorage.getItem(`hideBillingWarning_${user?.company_id}`);
     const parsed = saved ? parseInt(saved, 10) : 0;
@@ -257,6 +281,46 @@ const AdminLayout: React.FC = () => {
       isMounted = false;
     };
   }, [user?.company_id]);
+
+  useEffect(() => {
+    if (!user?.company_id || role === 'super_admin') {
+      setTrialInfo({ trialEndsAt: null, planStatus: null });
+      return;
+    }
+
+    let isMounted = true;
+
+    setTrialInfo({
+      trialEndsAt: user.company?.trial_ends_at ?? null,
+      planStatus: user.company?.plan_status ?? null,
+    });
+
+    const fetchTrialInfo = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('companies')
+          .select('trial_ends_at, plan_status')
+          .eq('id', user.company_id)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!isMounted) return;
+
+        setTrialInfo({
+          trialEndsAt: data?.trial_ends_at ?? user.company?.trial_ends_at ?? null,
+          planStatus: data?.plan_status ?? user.company?.plan_status ?? null,
+        });
+      } catch (error) {
+        console.warn('Nao foi possivel sincronizar os dias de trial da empresa.', error);
+      }
+    };
+
+    void fetchTrialInfo();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [role, user?.company_id, user?.company?.plan_status, user?.company?.trial_ends_at]);
 
   useEffect(() => {
     if (!user?.company_id) {
@@ -551,6 +615,14 @@ const AdminLayout: React.FC = () => {
   const billingGraceBlockText = billingGraceWarning
     ? `${billingGraceWarning.daysUntilBlock} ${billingGraceWarning.daysUntilBlock === 1 ? 'dia' : 'dias'}`
     : '';
+  const trialDaysLeft = getTrialDaysLeft(trialInfo.trialEndsAt);
+  const normalizedTrialStatus = normalizeBillingStatus(trialInfo.planStatus);
+  const shouldShowTrialBadge = trialDaysLeft !== null && isTrialLikeStatus(normalizedTrialStatus);
+  const trialRemainingPercent = trialDaysLeft === null ? 0 : Math.min(100, Math.round((trialDaysLeft / 7) * 100));
+  const trialDaysLabel =
+    trialDaysLeft === 0
+      ? 'Termina hoje'
+      : `${trialDaysLeft} ${trialDaysLeft === 1 ? 'dia restante' : 'dias restantes'}`;
 
   return (
     <BillingGuard>
@@ -849,6 +921,42 @@ const AdminLayout: React.FC = () => {
         </nav>
 
         <div className="p-4 border-t border-slate-800 bg-slate-900/50 transition-all">
+          {shouldShowTrialBadge && (
+            <button
+              type="button"
+              onClick={() => navigate('/admin/config?tab=subscription')}
+              title={isSidebarCollapsed ? `Trial: ${trialDaysLabel}` : undefined}
+              className={`mb-3 w-full overflow-hidden rounded-xl border border-amber-400/20 bg-amber-400/10 text-left text-amber-100 transition-all hover:border-amber-300/40 hover:bg-amber-400/15 ${
+                isSidebarCollapsed ? 'flex h-11 items-center justify-center px-0' : 'p-3'
+              }`}
+            >
+              {isSidebarCollapsed ? (
+                <div className="flex flex-col items-center justify-center leading-none">
+                  <Icons.Clock size={16} className="text-amber-300" />
+                  <span className="mt-0.5 text-[10px] font-black">{trialDaysLeft ?? 0}d</span>
+                </div>
+              ) : (
+                <div className="animate-in fade-in duration-300">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-300/15 text-amber-300">
+                      <Icons.Clock size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">Trial ativo</p>
+                      <p className="truncate text-xs font-bold text-white">{trialDaysLabel}</p>
+                    </div>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-amber-300 transition-all duration-500"
+                      style={{ width: `${trialRemainingPercent}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </button>
+          )}
+
           <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'} mb-3`}>
             <div
               className="h-9 w-9 overflow-hidden rounded-full border-2 border-slate-200 bg-slate-100 shrink-0"
@@ -1134,6 +1242,25 @@ const AdminLayout: React.FC = () => {
 
             {/* 4. Rodapé Mobile (Usuário e Sair) */}
             <div className="pt-4 border-t border-slate-100 mt-2 space-y-2 pb-4">
+              {shouldShowTrialBadge && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigate('/admin/config?tab=subscription');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="mx-4 mb-3 flex w-[calc(100%-2rem)] items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-amber-800"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+                    <Icons.Clock size={17} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-widest">Trial ativo</p>
+                    <p className="truncate text-sm font-bold">{trialDaysLabel}</p>
+                  </div>
+                </button>
+              )}
+
               <div className="flex items-center gap-3 px-4 py-2">
                 <div className="h-9 w-9 overflow-hidden rounded-full border-2 border-slate-200 bg-slate-100">
                   {user?.avatar_url ? (

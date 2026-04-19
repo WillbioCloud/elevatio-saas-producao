@@ -15,6 +15,7 @@ import { Icons } from '../components/Icons';
 import { getPlanConfig } from '../config/plans';
 import Loading from '../components/Loading';
 import DashboardCalendar from '../components/DashboardCalendar';
+import OnboardingChecklist from '../components/OnboardingChecklist';
 import {
   Tooltip,
   TooltipContent,
@@ -152,7 +153,6 @@ const AdminDashboard: React.FC = () => {
   const canAccessGamification = planConfig.features.gamification;
   const { leads, loading: leadsLoading } = useLeads();
   const { properties, loading: propsLoading } = useProperties();
-  const userPlan = user?.company?.plan;
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
@@ -178,11 +178,6 @@ const AdminDashboard: React.FC = () => {
   const [dragOverWidget, setDragOverWidget] = useState<string | null>(null);
   const [dragSource, setDragSource] = useState<'dashboard' | 'sidebar' | null>(null);
   const [contractStatus, setContractStatus] = useState<string | null>(null);
-  const [trialDaysLeft] = useState(0);
-  const [trialExpiresAt, setTrialExpiresAt] = useState<string | null>(null);
-  const [trialTimeLeft, setTrialTimeLeft] = useState<{ d: number; h: number; m: number; s: number } | null>(null);
-  const contract = useMemo(() => ({ status: contractStatus, trial_end: trialExpiresAt }), [contractStatus, trialExpiresAt]);
-  const isTrial = contract?.status === 'trialing' || (contract?.trial_end && new Date(contract.trial_end) > new Date());
 
   useEffect(() => {
     if (!user?.id) return;
@@ -203,37 +198,6 @@ const AdminDashboard: React.FC = () => {
       localStorage.setItem(storageKey, JSON.stringify(nextLayout));
     }
   }, [user?.id]);
-
-  useEffect(() => {
-    if (!user || user.role === 'super_admin' || !isTrial || !trialExpiresAt) {
-      setTrialTimeLeft(null);
-      return;
-    }
-
-    const expireDate = new Date(trialExpiresAt);
-
-    const calculateTimeLeft = () => {
-      const now = new Date().getTime();
-      const difference = expireDate.getTime() - now;
-
-      if (difference <= 0) {
-        setTrialTimeLeft({ d: 0, h: 0, m: 0, s: 0 });
-        return;
-      }
-
-      setTrialTimeLeft({
-        d: Math.floor(difference / (1000 * 60 * 60 * 24)),
-        h: Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-        m: Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60)),
-        s: Math.floor((difference % (1000 * 60)) / 1000),
-      });
-    };
-
-    calculateTimeLeft();
-    const timer = window.setInterval(calculateTimeLeft, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [user, isTrial, trialExpiresAt]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -390,26 +354,24 @@ const AdminDashboard: React.FC = () => {
 
     let isMounted = true;
 
-    const fetchTrialStatus = async () => {
+    const fetchContractStatus = async () => {
       try {
-        // Puxa o company_id e também a data de criação da empresa como "Plano B"
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('company_id, companies(created_at)')
+          .select('company_id')
           .eq('id', user.id)
           .single();
 
         if (profileError || !profile?.company_id) {
           if (isMounted) {
             setContractStatus(null);
-            setTrialExpiresAt(null);
           }
           return;
         }
 
         const { data: contractData, error: contractError } = await supabase
           .from('saas_contracts')
-          .select('status, created_at, end_date')
+          .select('status')
           .eq('company_id', profile.company_id)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -418,35 +380,19 @@ const AdminDashboard: React.FC = () => {
         if (!isMounted) return;
 
         if (contractError) {
-          console.warn('Contrato não encontrado/indisponível. Aplicando fallback de trial:', contractError.message);
+          console.warn('Contrato não encontrado/indisponível. Usando status pendente:', contractError.message);
         }
 
-        // Fallback: Se não houver contrato, assume que é um usuário novo no período de teste (pending)
-        const currentStatus = contractData?.status || 'pending';
-        const startDate = contractData?.created_at || (profile as any).companies?.created_at || new Date().toISOString();
-
-        setContractStatus(currentStatus);
-
-        if (currentStatus === 'pending' || currentStatus === 'trialing') {
-          const trialEnd = contractData?.end_date ? new Date(contractData.end_date) : new Date(startDate);
-          if (!contractData?.end_date) {
-            trialEnd.setDate(trialEnd.getDate() + 7);
-          }
-          setTrialExpiresAt(trialEnd.toISOString());
-          return;
-        }
-
-        setTrialExpiresAt(null);
+        setContractStatus(contractData?.status || 'pending');
       } catch (error) {
         console.error('Erro ao buscar status do contrato:', error);
         if (isMounted) {
           setContractStatus(null);
-          setTrialExpiresAt(null);
         }
       }
     };
 
-    fetchTrialStatus();
+    fetchContractStatus();
 
     return () => {
       isMounted = false;
@@ -556,12 +502,6 @@ const AdminDashboard: React.FC = () => {
 
   const handleActivatePlan = () => {
     navigate('/admin/config');
-  };
-
-  const handleStartTour = () => {
-    localStorage.setItem('trimoveis-product-tour-pending', 'true');
-    localStorage.removeItem('trimoveis-product-tour-completed');
-    window.dispatchEvent(new Event('trimoveis:start-product-tour'));
   };
 
   // --- CLASSES CSS PREMIUM COMPARTILHADAS ---
@@ -867,104 +807,7 @@ const AdminDashboard: React.FC = () => {
         )}
       </div>
 
-      {isTrial && trialTimeLeft && (
-        <div className="relative overflow-hidden rounded-2xl border border-amber-300/50 bg-gradient-to-r from-amber-50 to-orange-50 p-6 shadow-sm dark:border-amber-700/30 dark:from-amber-950/40 dark:to-orange-950/40">
-          <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-amber-400/10 blur-3xl"></div>
-
-          <div className="relative z-10 flex flex-col items-center justify-between gap-6 sm:flex-row">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 shadow-inner dark:bg-amber-900/50 dark:text-amber-400">
-                <Icons.Clock size={24} />
-              </div>
-              <div>
-                <h3 className="text-lg font-black tracking-tight text-slate-800 dark:text-amber-50">
-                  Voce está no período de teste!
-                </h3>
-                <p className="mt-1 max-w-xl text-sm font-medium leading-relaxed text-slate-600 dark:text-amber-200/80">
-                  Aproveite as funcionalidades completas do Elevatio Vendas. Assim que se acostumar com o sistema, escolha um plano para não perder o acesso ao CRM, Site e Gestão Financeira.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex shrink-0 flex-col items-center gap-3 sm:items-end">
-              <div className="flex items-center gap-2 font-mono">
-                <div className="flex flex-col items-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white font-black text-amber-600 shadow-sm dark:bg-slate-900 dark:text-amber-400">{String(trialTimeLeft.d).padStart(2, '0')}</div>
-                  <span className="mt-1 text-[10px] font-bold uppercase text-slate-500">Dias</span>
-                </div>
-                <span className="pb-4 text-xl font-black text-amber-600/50">:</span>
-                <div className="flex flex-col items-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white font-black text-amber-600 shadow-sm dark:bg-slate-900 dark:text-amber-400">{String(trialTimeLeft.h).padStart(2, '0')}</div>
-                  <span className="mt-1 text-[10px] font-bold uppercase text-slate-500">Hrs</span>
-                </div>
-                <span className="pb-4 text-xl font-black text-amber-600/50">:</span>
-                <div className="flex flex-col items-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white font-black text-amber-600 shadow-sm dark:bg-slate-900 dark:text-amber-400">{String(trialTimeLeft.m).padStart(2, '0')}</div>
-                  <span className="mt-1 text-[10px] font-bold uppercase text-slate-500">Min</span>
-                </div>
-                <span className="pb-4 text-xl font-black text-amber-600/50">:</span>
-                <div className="flex flex-col items-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white font-black text-red-500 shadow-sm dark:bg-slate-900 dark:text-red-400">{String(trialTimeLeft.s).padStart(2, '0')}</div>
-                  <span className="mt-1 text-[10px] font-bold uppercase text-red-500/70">Seg</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => navigate('/admin/config?tab=assinatura')}
-                className="group relative inline-flex items-center gap-2 overflow-hidden rounded-xl bg-amber-500 px-6 py-2.5 font-bold text-white shadow-lg transition-all hover:bg-amber-600 hover:shadow-amber-500/25 active:scale-95"
-              >
-                <Icons.CreditCard size={18} />
-                <span>Escolher um Plano</span>
-                <div className="absolute inset-0 -translate-x-full bg-white/20 transition-transform duration-500 group-hover:translate-x-full"></div>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {false && userPlan === 'free' && trialTimeLeft && (
-        <div className="relative overflow-hidden rounded-2xl border border-amber-300/50 bg-gradient-to-r from-amber-50 to-orange-50 p-6 shadow-sm dark:border-amber-700/30 dark:from-amber-950/40 dark:to-orange-950/40">
-          <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-amber-400/10 blur-3xl"></div>
-          <div className="relative z-10 flex flex-col items-center justify-between gap-6 sm:flex-row">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 shadow-inner dark:bg-amber-900/50 dark:text-amber-400">
-                <Icons.Clock size={24} />
-              </div>
-              <div>
-                <h3 className="text-lg font-black tracking-tight text-slate-800 dark:text-amber-50">
-                  O seu período de teste está a terminar!
-                Você está no período de teste
-              </h3>
-              <h2 className="mt-1 text-lg font-bold text-white">
-                {trialDaysLeft > 0
-                  ? `Faltam ${trialDaysLeft} dias para o seu teste gratuito terminar.`
-                  : 'O seu período de teste acabou hoje!'}
-              </h2>
-              <p className="mt-1 text-sm text-amber-100/90">Ative o plano definitivo para manter o acesso completo ao CRM sem interrupções.</p>
-            </div>
-
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={handleActivatePlan}
-                className="inline-flex items-center justify-center rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-orange-700 shadow-lg shadow-orange-950/20 transition hover:bg-orange-50"
-              >
-                Ativar Plano Definitivo
-              </button>
-              <button
-                type="button"
-                onClick={handleStartTour}
-                className="inline-flex items-center justify-center rounded-xl border border-amber-100/80 bg-orange-500/30 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-orange-500/40"
-              >
-                Iniciar Tour
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <OnboardingChecklist />
 
       {(contractStatus === 'expired' || contractStatus === 'canceled') && (
         <div className="relative overflow-hidden rounded-2xl border border-red-400/60 bg-red-900/90 p-5 shadow-xl shadow-red-950/30">
