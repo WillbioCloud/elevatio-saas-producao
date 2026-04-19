@@ -24,6 +24,54 @@ const getSmartNavigationBasePath = (pathname: string) => {
   return pathname;
 };
 
+type BillingGraceWarning = {
+  dueDate: string;
+  daysOverdue: number;
+  daysUntilBlock: number;
+};
+
+type AsaasPaymentLinkCandidate = {
+  status?: string | null;
+  dueDate?: string | null;
+  invoiceUrl?: string | null;
+};
+
+const PAST_DUE_GRACE_DAYS = 7;
+const DAY_IN_MS = 1000 * 60 * 60 * 24;
+const paidSaasPaymentStatuses = new Set(['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH']);
+
+const normalizeBillingStatus = (status: unknown) =>
+  typeof status === 'string' ? status.trim().toLowerCase() : '';
+
+const parseLocalDate = (value: string | null | undefined) => {
+  if (!value) return null;
+
+  const dateOnly = value.split('T')[0];
+  const [year, month, day] = dateOnly.split('-').map(Number);
+
+  if (Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day)) {
+    const parsedDate = new Date(year, month - 1, day);
+    return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+  }
+
+  const parsedDate = new Date(value);
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+};
+
+const getOverdueDays = (dueDate: string | null | undefined) => {
+  const parsedDueDate = parseLocalDate(dueDate);
+  if (!parsedDueDate) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  parsedDueDate.setHours(0, 0, 0, 0);
+
+  return Math.max(0, Math.floor((today.getTime() - parsedDueDate.getTime()) / DAY_IN_MS));
+};
+
+const getPaymentDueTimestamp = (payment: AsaasPaymentLinkCandidate) =>
+  parseLocalDate(payment.dueDate)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+
 const AdminLayout: React.FC = () => {
   const { user, signOut, refreshUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -37,7 +85,9 @@ const AdminLayout: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [contractPlanName, setContractPlanName] = useState(() => user?.company?.plan ?? '');
   const [billingWarning, setBillingWarning] = useState<{ dueDate: string; daysLeft: number; isOverdue: boolean } | null>(null);
+  const [billingGraceWarning, setBillingGraceWarning] = useState<BillingGraceWarning | null>(null);
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+  const [isOpeningPaymentLink, setIsOpeningPaymentLink] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [hasContextualAura, setHasContextualAura] = useState(false);
   const [dismissedUntil, setDismissedUntil] = useState<number>(() => {
@@ -220,6 +270,70 @@ const AdminLayout: React.FC = () => {
   }, [user?.company_id]);
 
   useEffect(() => {
+    if (!user?.company_id || role === 'super_admin') {
+      setBillingGraceWarning(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    const checkPastDueGrace = async () => {
+      try {
+        const [{ data: company, error: companyError }, { data: payment, error: paymentError }] = await Promise.all([
+          supabase
+            .from('companies')
+            .select('plan_status')
+            .eq('id', user.company_id)
+            .maybeSingle(),
+          supabase
+            .from('saas_payments')
+            .select('due_date, status')
+            .eq('company_id', user.company_id)
+            .in('status', ['PENDING', 'OVERDUE', 'pending', 'overdue'])
+            .order('due_date', { ascending: true })
+            .limit(1)
+            .maybeSingle(),
+        ]);
+
+        if (companyError) throw companyError;
+        if (paymentError) throw paymentError;
+        if (!isMounted) return;
+
+        const overdueDays = getOverdueDays(payment?.due_date ?? null);
+
+        if (
+          normalizeBillingStatus(company?.plan_status) === 'past_due' &&
+          payment?.due_date &&
+          overdueDays !== null &&
+          overdueDays <= PAST_DUE_GRACE_DAYS
+        ) {
+          setBillingGraceWarning({
+            dueDate: payment.due_date,
+            daysOverdue: overdueDays,
+            daysUntilBlock: Math.max(1, PAST_DUE_GRACE_DAYS + 1 - overdueDays),
+          });
+        } else {
+          setBillingGraceWarning(null);
+        }
+      } catch (error) {
+        console.error('Erro ao checar tolerancia de pagamento do SaaS:', error);
+        if (isMounted) setBillingGraceWarning(null);
+      }
+    };
+
+    void checkPastDueGrace();
+
+    const interval = setInterval(() => {
+      void checkPastDueGrace();
+    }, 60 * 60 * 1000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [role, user?.company_id]);
+
+  useEffect(() => {
     if (!user?.company_id || role !== 'owner') return;
 
     let isMounted = true;
@@ -290,6 +404,54 @@ const AdminLayout: React.FC = () => {
     const hideUntil = Date.now() + 10800000;
     localStorage.setItem(`hideBillingWarning_${user?.company_id}`, hideUntil.toString());
     setDismissedUntil(hideUntil);
+  };
+
+  const handlePayNow = async () => {
+    if (!user?.company_id || isOpeningPaymentLink) return;
+
+    setIsOpeningPaymentLink(true);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/list-asaas-payments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionData.session?.access_token ?? ''}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ company_id: user.company_id }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Nao foi possivel buscar o link de pagamento.');
+      }
+
+      const payments: AsaasPaymentLinkCandidate[] = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload?.payments)
+          ? payload.payments
+          : [];
+
+      const payableInvoice = payments
+        .filter((payment) => {
+          const status = typeof payment.status === 'string' ? payment.status.toUpperCase() : '';
+          return payment.invoiceUrl && !paidSaasPaymentStatuses.has(status);
+        })
+        .sort((a, b) => getPaymentDueTimestamp(a) - getPaymentDueTimestamp(b))[0];
+
+      if (!payableInvoice?.invoiceUrl) {
+        throw new Error('Nenhuma fatura aberta com link de pagamento foi encontrada.');
+      }
+
+      window.open(payableInvoice.invoiceUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      console.error('Erro ao abrir link de pagamento:', error);
+      setIsBillingModalOpen(true);
+    } finally {
+      setIsOpeningPaymentLink(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -380,6 +542,15 @@ const AdminLayout: React.FC = () => {
     if (path === '/admin/suporte') return 'order-10';
     return '';
   };
+
+  const billingGraceOverdueText = billingGraceWarning
+    ? billingGraceWarning.daysOverdue === 0
+      ? 'hoje'
+      : `ha ${billingGraceWarning.daysOverdue} ${billingGraceWarning.daysOverdue === 1 ? 'dia' : 'dias'}`
+    : '';
+  const billingGraceBlockText = billingGraceWarning
+    ? `${billingGraceWarning.daysUntilBlock} ${billingGraceWarning.daysUntilBlock === 1 ? 'dia' : 'dias'}`
+    : '';
 
   return (
     <BillingGuard>
@@ -737,7 +908,7 @@ const AdminLayout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            {isOwner && billingWarning && Date.now() > dismissedUntil && (
+            {isOwner && billingWarning && !billingGraceWarning && Date.now() > dismissedUntil && (
               <div className="relative group hidden md:block">
                 <button
                   className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold border transition-colors ${
@@ -818,6 +989,40 @@ const AdminLayout: React.FC = () => {
             </div>
           </div>
         </header>
+
+        {billingGraceWarning && (
+          <div className="shrink-0 border-b border-red-200 bg-red-50 px-4 py-3 text-red-700 shadow-sm dark:border-red-500/20 dark:bg-red-950/40 dark:text-red-200 md:px-8">
+            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-200">
+                  <Icons.AlertTriangle size={18} />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-red-800 dark:text-red-100">
+                    Sua fatura venceu {billingGraceOverdueText}.
+                  </p>
+                  <p className="text-xs font-medium text-red-700/80 dark:text-red-200/80">
+                    Seu acesso sera bloqueado em {billingGraceBlockText}. Regularize para manter o CRM ativo.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handlePayNow}
+                disabled={isOpeningPaymentLink}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-xs font-black text-white shadow-sm transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isOpeningPaymentLink ? (
+                  <Icons.Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <Icons.CreditCard size={15} />
+                )}
+                {isOpeningPaymentLink ? 'Abrindo...' : 'Pagar Agora'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {isMobileMenuOpen && (
           <div className="md:hidden absolute top-[70px] left-0 right-0 bg-white border-b border-slate-100 shadow-xl z-50 p-4 max-h-[calc(100vh-70px)] overflow-y-auto custom-scrollbar flex flex-col gap-2 animate-in fade-in slide-in-from-top-4 duration-200">

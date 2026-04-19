@@ -101,9 +101,16 @@ serve(async (req) => {
       endpoint = `${ASAAS_URL}/payments?customer=${encodeURIComponent(customer_id)}&limit=100`
     }
 
+    const asaasHeaders = {
+      'access_token': ASAAS_API_KEY!,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'Elevatio-SaaS/1.0 (Supabase Edge Functions)'
+    }
+
     const payRes = await fetch(endpoint, {
       method: 'GET',
-      headers: { access_token: ASAAS_API_KEY! },
+      headers: asaasHeaders,
     })
 
     const payData = await payRes.json()

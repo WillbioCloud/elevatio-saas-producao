@@ -74,23 +74,12 @@ const upsertSaasPayment = async (
     paid_at: paidAt,
   }
 
-  const { data: existingPayment, error: lookupError } = await supabaseAdmin
+  const { error } = await supabaseAdmin
     .from('saas_payments')
-    .select('id')
-    .eq('asaas_payment_id', payment.id)
-    .limit(1)
-    .maybeSingle()
-
-  if (lookupError) throw lookupError
-
-  const { error } = existingPayment?.id
-    ? await supabaseAdmin
-      .from('saas_payments')
-      .update(payload)
-      .eq('id', existingPayment.id)
-    : await supabaseAdmin
-      .from('saas_payments')
-      .insert(payload)
+    .upsert(payload, {
+      onConflict: 'asaas_payment_id',
+      ignoreDuplicates: false
+    })
 
   if (error) throw error
 }

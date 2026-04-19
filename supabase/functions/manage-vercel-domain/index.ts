@@ -60,7 +60,7 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}))
     const domain = normalizeDomain(body.domain)
-    const action = body.action as DomainAction
+    const action = (body.action as DomainAction | undefined) ?? 'add'
 
     if (!domain || !isValidDomain(domain)) {
       return new Response(
@@ -99,10 +99,6 @@ serve(async (req) => {
       (vercelPayload as any)?.message ||
       fallbackMessage
 
-    const responseStatus = [204, 205, 304].includes(vercelResponse.status)
-      ? 200
-      : vercelResponse.status
-
     return new Response(
       JSON.stringify({
         success: vercelResponse.ok,
@@ -114,15 +110,18 @@ serve(async (req) => {
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: responseStatus,
+        status: 200,
       }
     )
   } catch (error: any) {
     console.error('Erro ao gerenciar dominio na Vercel:', error)
 
     return new Response(
-      JSON.stringify({ error: error.message || 'Erro interno ao gerenciar dominio.' }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+      JSON.stringify({
+        success: false,
+        error: error.message || 'Erro interno ao gerenciar dominio.',
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
   }
 })

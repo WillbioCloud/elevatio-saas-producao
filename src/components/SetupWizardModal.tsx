@@ -21,6 +21,10 @@ type SaasTemplate = {
   exclusive_company_id: string | null;
 };
 
+type SetupSuccess = {
+  domain: string;
+};
+
 const normalizePlanFromNav = (value: unknown): PlanType | undefined => {
   if (typeof value !== 'string') return undefined;
 
@@ -100,6 +104,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
   });
   const [domainExtension, setDomainExtension] = useState('.com.br');
   const [domainStatus, setDomainStatus] = useState<DomainStatus>('idle');
+  const [setupSuccess, setSetupSuccess] = useState<SetupSuccess | null>(null);
 
   useEffect(() => {
     const fetchWizardTemplates = async () => {
@@ -143,6 +148,24 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
   useEffect(() => {
     setDomainStatus('idle');
   }, [formData.domain, formData.hasDomain, domainExtension]);
+
+  const syncVercelDomain = (domain: string) => {
+    const normalizedDomain = sanitizeExistingDomain(domain);
+    if (!normalizedDomain) return;
+
+    void supabase.functions
+      .invoke('manage-vercel-domain', {
+        body: { domain: normalizedDomain },
+      })
+      .then(({ data, error }) => {
+        if (error || data?.success === false) {
+          console.warn('Dominio salvo, mas a Vercel nao confirmou a automacao:', error || data);
+        }
+      })
+      .catch((vercelError) => {
+        console.warn('Dominio salvo, mas nao foi possivel acionar a Vercel:', vercelError);
+      });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -251,6 +274,8 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
           throw new Error('Erro ao criar contrato inicial: ' + contractError.message);
         }
 
+        syncVercelDomain(selectedProductionDomain);
+
         try {
           const { data: { session } } = await supabase.auth.getSession();
           const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-asaas-subscription`, {
@@ -285,11 +310,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       localStorage.removeItem('trimoveis_company_name');
       localStorage.removeItem('elevatio_company_name');
 
-      onComplete();
-
-      // Forca o recarregamento total da aplicacao para o SessionManager
-      // ler a nova empresa e o novo contrato direto do banco
-      window.location.href = '/admin/dashboard';
+      setSetupSuccess({ domain: selectedProductionDomain });
     } catch (error: unknown) {
       const message =
         error instanceof Error
@@ -299,6 +320,14 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleEnterDashboard = () => {
+    onComplete();
+
+    // Forca o recarregamento total da aplicacao para o SessionManager
+    // ler a nova empresa e o novo contrato direto do banco
+    window.location.href = '/admin/dashboard';
   };
 
   const isEligibleForFreeDomain =
@@ -330,6 +359,66 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       setDomainStatus('error');
     }
   };
+
+  if (setupSuccess) {
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-900/35 p-4 pt-16 backdrop-blur-sm sm:items-center sm:pt-4">
+        <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div className="border-b border-slate-200 bg-gradient-to-r from-white via-emerald-50/70 to-white p-6">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+              <CheckCircle className="h-8 w-8" />
+            </div>
+            <h2 className="text-2xl font-bold text-slate-900">Tudo pronto para comecar</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Sua imobiliaria foi configurada e o dominio {setupSuccess.domain} foi enviado para automacao.
+            </p>
+          </div>
+
+          <div className="space-y-5 p-6">
+            <div className="rounded-2xl border border-brand-100 bg-brand-50/70 p-5">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-brand-700 shadow-sm">
+                  <Globe className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-brand-950">Apontamentos DNS para dominio proprio</h3>
+                  <p className="text-sm text-brand-700">
+                    Configure estes registros no provedor onde o dominio foi registrado.
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-xl border border-brand-100 bg-white">
+                <div className="grid grid-cols-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500">
+                  <span>Tipo</span>
+                  <span>Nome</span>
+                  <span>Valor</span>
+                </div>
+                <div className="grid grid-cols-3 items-center border-b border-slate-100 px-4 py-3 text-sm text-slate-700">
+                  <span className="font-bold">A</span>
+                  <span className="font-mono">@</span>
+                  <span className="font-mono">76.76.21.21</span>
+                </div>
+                <div className="grid grid-cols-3 items-center px-4 py-3 text-sm text-slate-700">
+                  <span className="font-bold">CNAME</span>
+                  <span className="font-mono">www</span>
+                  <span className="font-mono">cname.vercel-dns.com</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleEnterDashboard}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 px-8 py-3 font-bold text-white shadow-sm hover:bg-brand-500"
+            >
+              <CheckCircle className="h-5 w-5" /> Acessar CRM
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-start sm:items-center justify-center bg-slate-900/35 p-4 pt-16 sm:pt-4 overflow-y-auto backdrop-blur-sm">
