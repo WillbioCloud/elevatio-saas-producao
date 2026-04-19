@@ -6631,10 +6631,10 @@ const AdminConfig: React.FC = () => {
                       }
                     }}
                     disabled={isLoading}
-                    className="w-full py-4 bg-brand-600 hover:bg-brand-700 text-white text-lg font-black rounded-xl transition-all shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-60 py-4 bg-brand-600 hover:bg-brand-700 text-white text-lg font-black rounded-xl transition-all shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     {isLoading ? <Icons.Loader2 className="animate-spin" /> : <Icons.CreditCard size={20} />}
-                    Pagar com Asaas
+                    Finalizar pagamento
                   </button>
                 </div>
               </div>
