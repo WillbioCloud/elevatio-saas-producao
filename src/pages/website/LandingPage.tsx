@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ScrollSmoother } from 'gsap/ScrollSmoother';
-import { Bot, Check, FileSignature, Globe, Headset, Kanban, Target, X, Zap } from 'lucide-react';
+import { Bot, Check, FileSignature, Globe, Headset, Kanban, Menu, Target, X, Zap } from 'lucide-react';
 import CookieBanner from '../../components/ui/CookieBanner';
 import { supabase } from '../../lib/supabase';
 import {
@@ -151,6 +151,7 @@ type NavbarProps = {
 export const Navbar: React.FC<NavbarProps> = ({ forceSolid = false, rootAnchors = false }) => {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ref = useRef<HTMLElement>(null);
 
@@ -185,6 +186,7 @@ export const Navbar: React.FC<NavbarProps> = ({ forceSolid = false, rootAnchors 
   const solid = forceSolid || scrolled;
   const navigateToSection = (id: string) => {
     setMenuOpen(false);
+    setIsMobileMenuOpen(false);
 
     if (rootAnchors) {
       window.location.href = id === 'hero' ? '/' : `/#${id}`;
@@ -229,7 +231,7 @@ export const Navbar: React.FC<NavbarProps> = ({ forceSolid = false, rootAnchors 
         </a>
 
         {/* Nav links */}
-        <nav style={{ display: 'flex', gap: 4, alignItems: 'center' }} className="ev-nav-desktop">
+        <nav style={{ gap: 4, alignItems: 'center' }} className="ev-nav-desktop hidden md:flex">
 
           <button onClick={() => navigateToSection('hero')} className="ev-nav-link ev-nav-btn" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', color: textColor, transition: 'color 0.2s', padding: '8px 14px', borderRadius: 8 }}>Início</button>
 
@@ -351,10 +353,62 @@ export const Navbar: React.FC<NavbarProps> = ({ forceSolid = false, rootAnchors 
         </nav>
 
         {/* CTAs direita */}
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+        <div className="hidden md:flex" style={{ gap: 12, alignItems: 'center', flexShrink: 0 }}>
           <a href="/admin/login" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 600, textDecoration: 'none', color: solid ? '#374151' : '#ffffff', padding: '8px 16px', transition: 'opacity 0.2s' }}>Entrar</a>
           <button onClick={() => navigateToSection('planos')} className="ev-btn-primary" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 700, border: 'none', cursor: 'pointer', padding: '10px 22px', borderRadius: 10 }}>Teste grátis</button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setIsMobileMenuOpen((open) => !open)}
+          className="inline-flex md:hidden"
+          aria-label="Abrir menu"
+          aria-expanded={isMobileMenuOpen}
+          style={{ width: 42, height: 42, borderRadius: 10, border: solid ? '1px solid #e2e8f0' : '1px solid rgba(255,255,255,0.22)', background: solid ? '#ffffff' : 'rgba(255,255,255,0.08)', color: solid ? '#0f172a' : '#ffffff', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+        >
+          {isMobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
+
+        {isMobileMenuOpen && (
+          <div
+            className="md:hidden"
+            style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 16, right: 16, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, boxShadow: '0 24px 64px rgba(15,23,42,0.14), 0 2px 12px rgba(15,23,42,0.06)', padding: 16, zIndex: 350 }}
+          >
+            {[
+              ['In\u00edcio', 'hero'],
+              ['Recursos', 'solucoes'],
+              ['Planos', 'planos'],
+              ['Comparar', 'comparar'],
+              ['FAQ', 'faq'],
+            ].map(([label, id]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => navigateToSection(id)}
+                style={{ width: '100%', padding: '12px 10px', border: 'none', background: 'transparent', textAlign: 'left' as const, fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 700, color: '#0f172a', cursor: 'pointer', borderRadius: 10 }}
+              >
+                {label}
+              </button>
+            ))}
+            <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 8, paddingTop: 14, display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+              <a
+                href="/admin/login"
+                onClick={() => setIsMobileMenuOpen(false)}
+                style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 700, textDecoration: 'none', color: '#374151', padding: '11px 10px', borderRadius: 10 }}
+              >
+                Entrar
+              </a>
+              <button
+                type="button"
+                onClick={() => navigateToSection('planos')}
+                className="ev-btn-primary"
+                style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 700, border: 'none', cursor: 'pointer', padding: '12px 18px', borderRadius: 10, width: '100%' }}
+              >
+                {'Teste gr\u00e1tis'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </header>
   );
@@ -384,7 +438,7 @@ const Hero: React.FC = () => {
   }, []);
 
   return (
-    <section id="hero" ref={heroRef} style={{ minHeight: '100vh', background: 'linear-gradient(150deg, #0c1445 0%, #0f2460 35%, #1a3a7a 65%, #0c2d6e 100%)', display: 'flex', alignItems: 'center', position: 'relative', overflow: 'hidden', paddingTop: 72 }}>
+    <section id="hero" ref={heroRef} className="flex-col md:flex-row" style={{ minHeight: '100vh', background: 'linear-gradient(150deg, #0c1445 0%, #0f2460 35%, #1a3a7a 65%, #0c2d6e 100%)', display: 'flex', alignItems: 'center', position: 'relative', overflow: 'hidden', paddingTop: 72 }}>
       <div className="ev-orb-1" style={{ position: 'absolute', top: '10%', right: '5%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(14,165,233,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
       <div className="ev-orb-2" style={{ position: 'absolute', bottom: '5%', left: '-5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(26,86,219,0.2) 0%, transparent 70%)', pointerEvents: 'none' }} />
       <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)', backgroundSize: '60px 60px', pointerEvents: 'none' }} />
@@ -394,20 +448,20 @@ const Hero: React.FC = () => {
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#0ea5e9', animation: 'ev-pulse 2s infinite' }} />
             <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 700, color: '#bae6fd', letterSpacing: '0.05em' }}>Tudo para sua imobiliária crescer</span>
           </div>
-          <h1 ref={h1Ref} style={{ fontFamily: "'Sora',sans-serif", fontSize: 'clamp(42px,6vw,72px)', fontWeight: 800, lineHeight: 1.08, letterSpacing: '-2px', color: '#ffffff', marginBottom: 24 }}>
+          <h1 ref={h1Ref} style={{ fontFamily: "'Sora',sans-serif", fontSize: 'clamp(36px,6vw,72px)', fontWeight: 800, lineHeight: 1.08, letterSpacing: '-2px', color: '#ffffff', marginBottom: 24 }}>
             Site e CRM<br />
             <span style={{ background: 'linear-gradient(90deg, #38bdf8, #7dd3fc, #e0f2fe)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>em um só lugar</span>
           </h1>
           <p ref={subRef} style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 20, lineHeight: 1.65, color: 'rgba(255,255,255,0.8)', marginBottom: 44, maxWidth: 560 }}>
             Gerencie imóveis, leads e equipe com automação, Kanban e templates exclusivos. Escolha o plano ideal e simplifique sua rotina.
           </p>
-          <div ref={ctaRef} style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <div ref={ctaRef} className="flex-col md:flex-row" style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <button onClick={() => scrollToSection('planos')} className="ev-btn-primary" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 16, fontWeight: 700, border: 'none', cursor: 'pointer', padding: '16px 36px', borderRadius: 12, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               Ver planos <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </button>
             <button onClick={() => scrollToSection('solucoes')} className="ev-btn-secondary" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 16, fontWeight: 600, border: 'none', cursor: 'pointer', padding: '16px 36px', borderRadius: 12 }}>Demonstração</button>
           </div>
-          <div ref={proofRef} style={{ marginTop: 56, display: 'flex', alignItems: 'center', gap: 20 }}>
+          <div ref={proofRef} className="flex-col md:flex-row" style={{ marginTop: 56, display: 'flex', alignItems: 'center', gap: 20 }}>
             <div style={{ display: 'flex' }}>
               {['RD','CT','LP','FR'].map((ini,i) => (
                 <div key={i} style={{ width: 36, height: 36, borderRadius: '50%', background: `hsl(${210+i*20},70%,55%)`, border: '2px solid rgba(12,20,69,0.8)', marginLeft: i>0?-10:0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', fontFamily: "'DM Sans',sans-serif" }}>{ini}</div>
@@ -495,7 +549,7 @@ const StatCounter: React.FC<{ num: number; prefix: string; suffix: string; label
 const Stats: React.FC = () => (
   <section style={{ background: '#fff', borderBottom: '1px solid #f1f5f9' }}>
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '72px 32px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
+      <div className="grid-cols-1 md:grid-cols-2 lg:grid-cols-4" style={{ display: 'grid', gap: 8 }}>
         {STATS_PARSED.map((s, i) => (
           <div key={i} style={{ borderRight: i < STATS_PARSED.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
             <StatCounter {...s} index={i} />
@@ -568,7 +622,7 @@ const Solucoes: React.FC = () => {
         </div>
 
         {/* Grid principal 3 colunas + CTA */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
+        <div className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3" style={{ display: 'grid', gap: 20 }}>
 
           {/* Coluna 1 — Gestão de Imóveis */}
           <div className="ev-sol-card" style={{ background: '#f8fafc', borderRadius: 20, padding: '28px 20px 20px', border: '1px solid #e2e8f0' }}>
@@ -632,7 +686,7 @@ const Solucoes: React.FC = () => {
             </div>
 
             {/* Lista de planos compacta */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, padding: '0 8px', flex: 1 }}>
+            <div className="grid-cols-1 md:grid-cols-2" style={{ display: 'grid', gap: 6, padding: '0 8px', flex: 1 }}>
               {planItems.map((p, i) => (
                 <a key={i} href={`/admin/login?mode=signup&plan=${p.label.toLowerCase()}`}
                   style={{ display: 'block', padding: '10px 12px', borderRadius: 12, textDecoration: 'none', transition: 'all 0.15s',
@@ -694,9 +748,9 @@ const Features: React.FC = () => {
           <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 'clamp(32px,4vw,48px)', fontWeight: 800, letterSpacing: '-1.5px', color: '#0f172a', marginBottom: 16 }}>Seu site e CRM em minutos</h2>
           <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 18, color: '#64748b', maxWidth: 500, margin: '0 auto' }}>4 templates: Minimalista, Luxuoso, Classic ou sob demanda.</p>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24 }}>
+        <div className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3" style={{ display: 'grid', gap: 24 }}>
           {FEATURES_LIST.map((f, i) => (
-            <div key={i} className="ev-feat ev-card-hover" style={{ background: '#fff', borderRadius: 20, padding: '40px 36px', border: '1px solid #e2e8f0', position: 'relative', overflow: 'hidden' }}>
+            <div key={i} className="ev-feat ev-card-hover p-6 md:px-9 md:py-10" style={{ background: '#fff', borderRadius: 20, border: '1px solid #e2e8f0', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: -20, right: -10, fontFamily: "'Sora',sans-serif", fontSize: 80, fontWeight: 900, color: 'rgba(26,86,219,0.04)', lineHeight: 1, userSelect: 'none' as const }}>{f.step}</div>
               <div style={{ width: 48, height: 48, borderRadius: 12, marginBottom: 20, background: 'linear-gradient(135deg, rgba(26,86,219,0.1), rgba(14,165,233,0.1))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {featureIcons[i]}
@@ -743,7 +797,7 @@ const Pricing: React.FC<{ plans: SaasPlan[]; loadingPlans: boolean }> = ({ plans
         </div>
 
         {loadingPlans ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+          <div className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3" style={{ display: 'grid', gap: 20 }}>
             {[1, 2, 3].map((skeleton) => (
               <div
                 key={skeleton}
@@ -759,7 +813,7 @@ const Pricing: React.FC<{ plans: SaasPlan[]; loadingPlans: boolean }> = ({ plans
             ))}
           </div>
         ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+        <div className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" style={{ display: 'grid', gap: 20 }}>
           {plans.map((plan, i) => {
             const price = annual ? getPlanYearlyMonthlyPrice(plan) : getPlanMonthlyPrice(plan);
             const totalAnual = annual ? getPlanYearlyTotal(plan) : null;
@@ -954,7 +1008,7 @@ const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeat
         >
           <div id="orb-follow" className="absolute w-96 h-96 bg-brand-500/25 rounded-full blur-[80px] opacity-0 pointer-events-none -translate-x-1/2 -translate-y-1/2" />
 
-          <div className="relative z-10 flex items-center gap-4">
+          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center gap-4">
             <div className="w-10 h-10 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-400 border border-brand-500/30">
               <Globe size={20} />
             </div>
@@ -965,18 +1019,18 @@ const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeat
         </div>
 
         {/* Tabela */}
-        <div className="ev-custom-scrollbar" style={{ overflowX: 'auto', paddingBottom: 8 }}>
+        <div className="w-full overflow-x-auto custom-scrollbar pb-4">
           {loadingPlans && (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 220, color: '#94a3b8', fontFamily: "'DM Sans',sans-serif" }}>
               Carregando planos...
             </div>
           )}
           {!loadingPlans && (
-          <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', minWidth: 1020 }}>
+          <table className="w-full min-w-[800px] lg:min-w-full" style={{ textAlign: 'left', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                 {/* Coluna fixa: recurso */}
-                <th style={{ padding: '16px 20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 20, minWidth: 230, fontFamily: "'Sora',sans-serif", color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const }}>
+                <th className="sticky left-0 z-20 border-r border-slate-200" style={{ padding: '16px 20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 20, minWidth: 230, fontFamily: "'Sora',sans-serif", color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const }}>
                   Recurso
                 </th>
                 {plans.map((plan, i) => {
@@ -998,7 +1052,7 @@ const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeat
             <tbody style={{ fontSize: 14, color: '#cbd5e1' }}>
               {features.map((feature) => (
                 <tr key={feature.key} className="ev-row-hover" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                  <td style={{ padding: '14px 20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '4px 0 20px -8px rgba(0,0,0,0.6)' }}>
+                  <td className="sticky left-0 z-20 border-r border-slate-200" style={{ padding: '14px 20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '4px 0 20px -8px rgba(0,0,0,0.6)' }}>
                     {featureIcons[feature.key] && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{featureIcons[feature.key]}</span>}
                     <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 500, color: '#cbd5e1' }}>{feature.name}</span>
                   </td>
@@ -1016,7 +1070,7 @@ const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeat
 
               {/* Linha de botões CTA */}
               <tr style={{ borderTop: '2px solid rgba(255,255,255,0.1)' }}>
-                <td style={{ padding: '20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 10 }}>
+                <td className="sticky left-0 z-20 border-r border-slate-200" style={{ padding: '20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 20 }}>
                   <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Começar</span>
                 </td>
                 {plans.map((plan, i) => (
@@ -1089,7 +1143,7 @@ const Testimonials: React.FC<{ dynamicReviews: any[] }> = ({ dynamicReviews }) =
           <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.12em', color: '#1a56db', textTransform: 'uppercase' as const, display: 'block', marginBottom: 16 }}>Depoimentos de clientes</span>
           <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 'clamp(28px,4vw,44px)', fontWeight: 800, letterSpacing: '-1.5px', color: '#0f172a' }}>Resultados que transformam negócios</h2>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
+        <div className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" style={{ display: 'grid', gap: 20 }}>
           {dynamicReviews.map((item, i) => {
             const rating = Math.max(0, Math.min(5, Number(item.rating || 0)));
             const t = { role: '', company: '' };
@@ -1171,7 +1225,7 @@ const FinalCTA: React.FC = () => {
         <span style={{ display: 'inline-block', fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.12em', color: '#0ea5e9', textTransform: 'uppercase' as const, marginBottom: 20 }}>Escolha o plano certo para você</span>
         <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 'clamp(32px,5vw,56px)', fontWeight: 800, letterSpacing: '-2px', color: '#fff', marginBottom: 20, lineHeight: 1.1 }}>Impulsione sua imobiliária hoje</h2>
         <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 18, color: 'rgba(255,255,255,0.7)', marginBottom: 44 }}>Comece grátis por 7 dias. Sem cartão de crédito.</p>
-        <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
+        <div className="flex-col md:flex-row" style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
           <button onClick={() => scrollToSection('planos')} className="ev-btn-primary" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 16, fontWeight: 700, border: 'none', cursor: 'pointer', padding: '16px 40px', borderRadius: 12 }}>Começar agora</button>
           <a href="mailto:contato@elevatiovendas.com" className="ev-btn-secondary" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 16, fontWeight: 600, textDecoration: 'none', padding: '16px 40px', borderRadius: 12 }}>Falar com equipe</a>
         </div>
@@ -1185,7 +1239,7 @@ const FinalCTA: React.FC = () => {
 const Footer: React.FC = () => (
   <footer style={{ background: '#070d1f', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '56px 0 32px' }}>
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 32px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 40, marginBottom: 48 }}>
+      <div className="grid-cols-1 md:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr]" style={{ display: 'grid', gap: 40, marginBottom: 48 }}>
         <div>
           <div className="mb-6 flex items-center gap-3">
             <img src="/logo/logo.png" alt="Elevatio Vendas Logo" className="h-10 w-auto object-contain drop-shadow-md opacity-90 grayscale transition-all duration-300 hover:grayscale-0" />
@@ -1210,7 +1264,7 @@ const Footer: React.FC = () => (
           </div>
         </div>
       </div>
-      <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' as const, gap: 12 }}>
+      <div className="flex-col md:flex-row" style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' as const, gap: 12 }}>
         <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.3)' }}>© {new Date().getFullYear()} Elevatio Vendas. Todos os direitos reservados.</p>
         <div style={{ display: 'flex', gap: 24 }}>
           {[
@@ -1296,8 +1350,6 @@ export default function LandingPage() {
           from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
           to   { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
-        .ev-nav-desktop { display: flex; }
-
         .ev-btn-primary {
           background: linear-gradient(135deg, #1a56db, #0ea5e9);
           color: #fff;
@@ -1339,14 +1391,18 @@ export default function LandingPage() {
         .ev-nav-link:hover { color: #0ea5e9 !important; }
         .ev-nav-btn { font-family: inherit; }
 
-        .ev-custom-scrollbar::-webkit-scrollbar { height: 5px; }
-        .ev-custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius: 10px; }
-        .ev-custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 10px; }
-        .ev-custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+        .ev-custom-scrollbar::-webkit-scrollbar,
+        .custom-scrollbar::-webkit-scrollbar { height: 5px; }
+        .ev-custom-scrollbar::-webkit-scrollbar-track,
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius: 10px; }
+        .ev-custom-scrollbar::-webkit-scrollbar-thumb,
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 10px; }
+        .ev-custom-scrollbar::-webkit-scrollbar-thumb:hover,
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
 
         @media (max-width: 768px) {
           .ev-nav-desktop { display: none !important; }
-          #smooth-wrapper { position: static !important; height: auto !important; overflow: visible !important; }
+          #smooth-wrapper { position: static !important; height: auto !important; overflow-x: hidden !important; overflow-y: visible !important; }
           #smooth-content { will-change: auto !important; }
         }
       `}</style>
@@ -1384,8 +1440,8 @@ export default function LandingPage() {
         </div>
       )}
 
-      <div id="smooth-wrapper">
-        <div id="smooth-content">
+      <div id="smooth-wrapper" className="overflow-x-hidden">
+        <div id="smooth-content" className="overflow-x-hidden">
           <Hero />
           <Stats />
           <Solucoes />
