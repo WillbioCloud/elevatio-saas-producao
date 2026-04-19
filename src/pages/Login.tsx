@@ -172,6 +172,9 @@ const Login: React.FC = () => {
       ''
   );
   const [keepLogged, setKeepLogged] = useState(true);
+  const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(false);
+  const [signupTrap, setSignupTrap] = useState('');
+  const signupStartedAtRef = useRef(Date.now());
 
   // Tratar error_description do OAuth
   useEffect(() => {
@@ -191,6 +194,14 @@ const Login: React.FC = () => {
     navigate(getPostAuthPath(role), { replace: true });
   }, [user, navigate]);
 
+  useEffect(() => {
+    if (!isLogin) {
+      signupStartedAtRef.current = Date.now();
+      setAcceptedLegalTerms(false);
+      setSignupTrap('');
+    }
+  }, [isLogin]);
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -203,6 +214,15 @@ const Login: React.FC = () => {
         const role = signedUser?.role ?? (signedUser?.user_metadata as Record<string, unknown> | undefined)?.role;
         navigate(getPostAuthPath(role), { replace: true });
       } else {
+        // Captcha MVP: honeypot + tempo mínimo de interação.
+        // Futuro: substituir por Cloudflare Turnstile com validação do token no backend.
+        if (signupTrap.trim()) throw new Error('Não foi possível concluir o cadastro.');
+        if (Date.now() - signupStartedAtRef.current < 2000) {
+          throw new Error('Aguarde alguns segundos antes de enviar o cadastro.');
+        }
+        if (!acceptedLegalTerms) {
+          throw new Error('Você precisa aceitar os Termos de Uso e a Política de Privacidade.');
+        }
         if (!name.trim()) throw new Error('Por favor, informe seu nome.');
         if (!companyName.trim()) throw new Error('Por favor, informe o nome da sua imobiliária.');
 
@@ -244,6 +264,7 @@ const Login: React.FC = () => {
       }
     } catch (err: any) {
       let msg = 'Ocorreu um erro inesperado.';
+      if (err.message) msg = err.message;
       if (err.message?.includes('invalid format')) msg = 'Formato de e-mail inválido.';
       if (err.message?.includes('already registered')) msg = 'Este e-mail já está cadastrado.';
       if (err.message?.includes('password')) msg = 'A senha deve ter no mínimo 6 caracteres.';
@@ -317,6 +338,8 @@ const Login: React.FC = () => {
     position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
     color: '#94a3b8', pointerEvents: 'none',
   };
+
+  const isSubmitDisabled = loading || (!isLogin && !acceptedLegalTerms);
 
   return (
     <>
@@ -492,20 +515,60 @@ const Login: React.FC = () => {
                   </div>
                 )}
 
+                {!isLogin && (
+                  <>
+                    <div
+                      aria-hidden="true"
+                      style={{ position: 'absolute', left: '-10000px', top: 'auto', width: 1, height: 1, overflow: 'hidden' }}
+                    >
+                      <label htmlFor="signup-company-site">Site da empresa</label>
+                      <input
+                        id="signup-company-site"
+                        type="text"
+                        tabIndex={-1}
+                        autoComplete="off"
+                        value={signupTrap}
+                        onChange={(e) => setSignupTrap(e.target.value)}
+                      />
+                    </div>
+
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        required
+                        checked={acceptedLegalTerms}
+                        onChange={(e) => setAcceptedLegalTerms(e.target.checked)}
+                        style={{ width: 18, height: 18, marginTop: 2, accentColor: '#1a56db', flexShrink: 0 }}
+                      />
+                      <span style={{ fontSize: 13, lineHeight: 1.55, color: '#64748b', fontWeight: 500 }}>
+                        Li e concordo com os{' '}
+                        <Link to="/termos" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="ev-link" style={{ color: '#1a56db', fontWeight: 700, textDecoration: 'underline', textUnderlineOffset: 3 }}>
+                          Termos de Uso
+                        </Link>{' '}
+                        e a{' '}
+                        <Link to="/privacidade" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="ev-link" style={{ color: '#1a56db', fontWeight: 700, textDecoration: 'underline', textUnderlineOffset: 3 }}>
+                          Política de Privacidade
+                        </Link>
+                        .
+                      </span>
+                    </label>
+                  </>
+                )}
+
                 {/* Botão principal */}
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={isSubmitDisabled}
                   style={{
                     width: '100%', padding: '14px',
                     fontFamily: "'DM Sans', sans-serif", fontSize: 15, fontWeight: 700,
-                    background: loading ? '#94a3b8' : 'linear-gradient(135deg, #1a56db, #0ea5e9)',
-                    color: '#fff', border: 'none', borderRadius: 12, cursor: loading ? 'not-allowed' : 'pointer',
-                    boxShadow: loading ? 'none' : '0 6px 20px rgba(26,86,219,0.35)',
+                    background: isSubmitDisabled ? '#94a3b8' : 'linear-gradient(135deg, #1a56db, #0ea5e9)',
+                    color: '#fff', border: 'none', borderRadius: 12, cursor: isSubmitDisabled ? 'not-allowed' : 'pointer',
+                    boxShadow: isSubmitDisabled ? 'none' : '0 6px 20px rgba(26,86,219,0.35)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                     transition: 'all 0.2s', marginTop: 4,
                   }}
-                  onMouseEnter={e => { if (!loading) { (e.currentTarget as HTMLElement).style.opacity = '0.92'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; } }}
+                  onMouseEnter={e => { if (!isSubmitDisabled) { (e.currentTarget as HTMLElement).style.opacity = '0.92'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; } }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; }}
                 >
                   {loading ? (
@@ -531,7 +594,9 @@ const Login: React.FC = () => {
                   {isLogin ? 'Cadastrar' : 'Fazer login'}
                 </button>
               </p>
-              <a href="#" style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'none' }}>Termos & Condições</a>
+              <Link to="/termos" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'none' }}>
+                Termos & Condições
+              </Link>
             </div>
           </div>
 

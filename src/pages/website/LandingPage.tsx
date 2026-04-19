@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ScrollSmoother } from 'gsap/ScrollSmoother';
 import { Bot, Check, FileSignature, Globe, Headset, Kanban, Target, X, Zap } from 'lucide-react';
+import CookieBanner from '../../components/ui/CookieBanner';
 import { supabase } from '../../lib/supabase';
 import {
   getPlanAnnualDiscountPercent,
@@ -142,17 +143,28 @@ const MENU_PLANS: { label: string; desc: string; highlight?: boolean }[] = [
 ];
 
 // ── NAVBAR ────────────────────────────────────────────────────
-const Navbar: React.FC = () => {
+type NavbarProps = {
+  forceSolid?: boolean;
+  rootAnchors?: boolean;
+};
+
+export const Navbar: React.FC<NavbarProps> = ({ forceSolid = false, rootAnchors = false }) => {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
+    if (forceSolid) {
+      setScrolled(true);
+      return;
+    }
+
     const fn = () => setScrolled(window.scrollY > 40);
+    fn();
     window.addEventListener('scroll', fn);
     return () => window.removeEventListener('scroll', fn);
-  }, []);
+  }, [forceSolid]);
 
   useLayoutEffect(() => {
     const ctx = gsap.context(() => {
@@ -170,7 +182,19 @@ const Navbar: React.FC = () => {
     hoverTimer.current = setTimeout(() => setMenuOpen(false), 150);
   };
 
-  const textColor = scrolled ? '#1e293b' : '#ffffff';
+  const solid = forceSolid || scrolled;
+  const navigateToSection = (id: string) => {
+    setMenuOpen(false);
+
+    if (rootAnchors) {
+      window.location.href = id === 'hero' ? '/' : `/#${id}`;
+      return;
+    }
+
+    scrollToSection(id);
+  };
+
+  const textColor = solid ? '#1e293b' : '#ffffff';
   const bgDropdown: React.CSSProperties = {
     position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)',
     width: 920, background: '#fff', borderRadius: 20,
@@ -183,14 +207,23 @@ const Navbar: React.FC = () => {
   };
 
   return (
-    <header ref={ref} style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200, transition: 'all 0.35s ease', background: scrolled ? 'rgba(255,255,255,0.97)' : 'transparent', backdropFilter: scrolled ? 'blur(16px)' : 'none', borderBottom: scrolled ? '1px solid rgba(0,0,0,0.05)' : '1px solid transparent', boxShadow: scrolled ? '0 4px 30px rgba(0,0,0,0.05)' : 'none' }}>
+    <header ref={ref} style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200, transition: 'all 0.35s ease', background: solid ? 'rgba(255,255,255,0.97)' : 'transparent', backdropFilter: solid ? 'blur(16px)' : 'none', borderBottom: solid ? '1px solid rgba(0,0,0,0.05)' : '1px solid transparent', boxShadow: solid ? '0 4px 30px rgba(0,0,0,0.05)' : 'none' }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 32px', height: 72, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative' }}>
 
         {/* Logo */}
-        <a href="#" className="-m-1.5 flex shrink-0 items-center gap-3 p-1.5 transition-opacity hover:opacity-80">
+        <a
+          href={rootAnchors ? '/' : '#hero'}
+          onClick={(event) => {
+            if (!rootAnchors) {
+              event.preventDefault();
+              navigateToSection('hero');
+            }
+          }}
+          className="-m-1.5 flex shrink-0 items-center gap-3 p-1.5 transition-opacity hover:opacity-80"
+        >
           <span className="sr-only">Elevatio Vendas</span>
           <img src="/logo/logo.png" alt="Elevatio Vendas Logo" className="h-10 w-auto object-contain drop-shadow-md" />
-          <span style={{ fontFamily: "'Sora',sans-serif", fontWeight: 700, fontSize: 20, letterSpacing: '-0.5px', color: scrolled ? '#0f172a' : '#ffffff' }}>
+          <span style={{ fontFamily: "'Sora',sans-serif", fontWeight: 700, fontSize: 20, letterSpacing: '-0.5px', color: solid ? '#0f172a' : '#ffffff' }}>
             Elevatio<span style={{ color: '#0ea5e9' }}>Vendas</span>
           </span>
         </a>
@@ -198,7 +231,7 @@ const Navbar: React.FC = () => {
         {/* Nav links */}
         <nav style={{ display: 'flex', gap: 4, alignItems: 'center' }} className="ev-nav-desktop">
 
-          <button onClick={() => scrollToSection('hero')} className="ev-nav-link ev-nav-btn" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', color: textColor, transition: 'color 0.2s', padding: '8px 14px', borderRadius: 8 }}>Início</button>
+          <button onClick={() => navigateToSection('hero')} className="ev-nav-link ev-nav-btn" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', color: textColor, transition: 'color 0.2s', padding: '8px 14px', borderRadius: 8 }}>Início</button>
 
           {/* Recursos com megamenu hover */}
           <div
@@ -207,8 +240,8 @@ const Navbar: React.FC = () => {
             onMouseLeave={handleMouseLeave}
           >
             <button
-              onClick={() => { scrollToSection('solucoes'); setMenuOpen(false); }}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 600, color: menuOpen ? '#1a56db' : textColor, background: menuOpen ? (scrolled ? 'rgba(26,86,219,0.07)' : 'rgba(255,255,255,0.12)') : 'none', border: 'none', cursor: 'pointer', padding: '8px 14px', borderRadius: 8, transition: 'all 0.2s' }}
+              onClick={() => navigateToSection('solucoes')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 600, color: menuOpen ? '#1a56db' : textColor, background: menuOpen ? (solid ? 'rgba(26,86,219,0.07)' : 'rgba(255,255,255,0.12)') : 'none', border: 'none', cursor: 'pointer', padding: '8px 14px', borderRadius: 8, transition: 'all 0.2s' }}
             >
               Recursos
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transition: 'transform 0.2s', transform: menuOpen ? 'rotate(180deg)' : 'rotate(0deg)', opacity: 0.65 }}><path d="M6 9l6 6 6-6"/></svg>
@@ -225,7 +258,7 @@ const Navbar: React.FC = () => {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 2 }}>
                   {MENU_GESTAO.map((item, i) => (
-                    <button key={i} onClick={() => { scrollToSection('solucoes'); setMenuOpen(false); }}
+                    <button key={i} onClick={() => navigateToSection('solucoes')}
                       style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 12px', borderRadius: 12, background: 'none', border: 'none', cursor: 'pointer', transition: 'background 0.15s', width: '100%', textAlign: 'left' as const }}
                       onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#f0f7ff'}
                       onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
@@ -251,7 +284,7 @@ const Navbar: React.FC = () => {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 2 }}>
                   {MENU_FUNC.map((item, i) => (
-                    <button key={i} onClick={() => { scrollToSection('solucoes'); setMenuOpen(false); }}
+                    <button key={i} onClick={() => navigateToSection('solucoes')}
                       style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 12px', borderRadius: 12, background: 'none', border: 'none', cursor: 'pointer', transition: 'background 0.15s', width: '100%', textAlign: 'left' as const }}
                       onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#f0f7ff'}
                       onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
@@ -299,7 +332,7 @@ const Navbar: React.FC = () => {
                   <div style={{ position: 'absolute', top: -20, right: -20, width: 80, height: 80, borderRadius: '50%', background: 'rgba(14,165,233,0.18)', pointerEvents: 'none' }} />
                   <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 4, position: 'relative', lineHeight: 1.3 }}>Escolha o plano ideal para crescer</div>
                   <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 12, lineHeight: 1.45, position: 'relative' }}>Compare recursos e encontre a solução perfeita para sua imobiliária.</div>
-                  <button onClick={() => { scrollToSection('planos'); setMenuOpen(false); }}
+                  <button onClick={() => navigateToSection('planos')}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 700, background: 'linear-gradient(135deg, #0ea5e9, #38bdf8)', color: '#fff', padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', position: 'relative', transition: 'opacity 0.2s' }}
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.85'}
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
@@ -313,14 +346,14 @@ const Navbar: React.FC = () => {
           </div>
 
           {[['Planos','planos'],['Comparar','comparar'],['FAQ','faq']].map(([l,id]) => (
-            <button key={l} onClick={() => scrollToSection(id)} className="ev-nav-link ev-nav-btn" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', color: textColor, transition: 'color 0.2s', padding: '8px 14px', borderRadius: 8 }}>{l}</button>
+            <button key={l} onClick={() => navigateToSection(id)} className="ev-nav-link ev-nav-btn" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 15, fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', color: textColor, transition: 'color 0.2s', padding: '8px 14px', borderRadius: 8 }}>{l}</button>
           ))}
         </nav>
 
         {/* CTAs direita */}
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
-          <a href="/admin/login" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 600, textDecoration: 'none', color: scrolled ? '#374151' : '#ffffff', padding: '8px 16px', transition: 'opacity 0.2s' }}>Entrar</a>
-          <button onClick={() => scrollToSection('planos')} className="ev-btn-primary" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 700, border: 'none', cursor: 'pointer', padding: '10px 22px', borderRadius: 10 }}>Teste grátis</button>
+          <a href="/admin/login" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 600, textDecoration: 'none', color: solid ? '#374151' : '#ffffff', padding: '8px 16px', transition: 'opacity 0.2s' }}>Entrar</a>
+          <button onClick={() => navigateToSection('planos')} className="ev-btn-primary" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 700, border: 'none', cursor: 'pointer', padding: '10px 22px', borderRadius: 10 }}>Teste grátis</button>
         </div>
       </div>
     </header>
@@ -1180,7 +1213,18 @@ const Footer: React.FC = () => (
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' as const, gap: 12 }}>
         <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.3)' }}>© {new Date().getFullYear()} Elevatio Vendas. Todos os direitos reservados.</p>
         <div style={{ display: 'flex', gap: 24 }}>
-          {['Privacidade','Termos'].map(item => <a key={item} href="#" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.3)', textDecoration: 'none' }}>{item}</a>)}
+          {[
+            { label: 'Privacidade', to: '/privacidade' },
+            { label: 'Termos', to: '/termos' },
+          ].map(item => (
+            <Link
+              key={item.to}
+              to={item.to}
+              style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.3)', textDecoration: 'none' }}
+            >
+              {item.label}
+            </Link>
+          ))}
         </div>
       </div>
     </div>
@@ -1354,6 +1398,8 @@ export default function LandingPage() {
           <Footer />
         </div>
       </div>
+
+      <CookieBanner />
     </>
   );
 }

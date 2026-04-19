@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import gsap from 'gsap';
 import { createClient } from '@supabase/supabase-js';
 import { ArrowRight, CheckCircle, Loader2, LogIn, Mail, UserCircle } from 'lucide-react';
@@ -16,6 +16,9 @@ export default function SiteSignup() {
   const [errorMsg, setErrorMsg] = useState('');
   const [signupSuccess, setSignupSuccess] = useState(false);
   const [isEmailSent, setIsEmailSent] = useState(false);
+  const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(false);
+  const [signupTrap, setSignupTrap] = useState('');
+  const signupStartedAtRef = useRef(Date.now());
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -33,6 +36,14 @@ export default function SiteSignup() {
     }, containerRef);
 
     return () => ctx.revert();
+  }, [isLoginMode, signupSuccess]);
+
+  useEffect(() => {
+    if (!isLoginMode && !signupSuccess) {
+      signupStartedAtRef.current = Date.now();
+      setAcceptedLegalTerms(false);
+      setSignupTrap('');
+    }
   }, [isLoginMode, signupSuccess]);
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -77,6 +88,16 @@ export default function SiteSignup() {
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
       if (!supabaseUrl || !anonKey) throw new Error('Chaves do servidor em falta.');
+
+      // Captcha MVP: honeypot + tempo mínimo de interação.
+      // Futuro: substituir por Cloudflare Turnstile com validação do token no backend.
+      if (signupTrap.trim()) throw new Error('Não foi possível concluir o cadastro.');
+      if (Date.now() - signupStartedAtRef.current < 2000) {
+        throw new Error('Aguarde alguns segundos antes de enviar o cadastro.');
+      }
+      if (!acceptedLegalTerms) {
+        throw new Error('Você precisa aceitar os Termos de Uso e a Política de Privacidade.');
+      }
 
       // Salvar o plano no localStorage antes do signup
       if (selectedPlan) {
@@ -316,14 +337,62 @@ export default function SiteSignup() {
                   />
                 </div>
 
+                <div
+                  aria-hidden="true"
+                  className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden"
+                >
+                  <label htmlFor="site-signup-company-site">Site da empresa</label>
+                  <input
+                    id="site-signup-company-site"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={signupTrap}
+                    onChange={(e) => setSignupTrap(e.target.value)}
+                  />
+                </div>
+
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-relaxed text-gray-300">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={acceptedLegalTerms}
+                    onChange={(e) => setAcceptedLegalTerms(e.target.checked)}
+                    className="mt-1 h-4 w-4 shrink-0 accent-brand-500"
+                  />
+                  <span>
+                    Li e concordo com os{' '}
+                    <Link
+                      to="/termos"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-semibold text-brand-300 underline underline-offset-4 hover:text-brand-200"
+                    >
+                      Termos de Uso
+                    </Link>{' '}
+                    e a{' '}
+                    <Link
+                      to="/privacidade"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-semibold text-brand-300 underline underline-offset-4 hover:text-brand-200"
+                    >
+                      Política de Privacidade
+                    </Link>
+                    .
+                  </span>
+                </label>
+
                 {errorMsg && (
                   <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{errorMsg}</div>
                 )}
 
                 <button
                   type="submit"
-                  disabled={isLoading}
-                  className="w-full bg-brand-600 hover:bg-brand-500 disabled:opacity-70 text-white rounded-xl px-6 py-4 mt-6 font-bold transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(139,92,246,0.3)]"
+                  disabled={isLoading || !acceptedLegalTerms}
+                  className="w-full bg-brand-600 hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-70 text-white rounded-xl px-6 py-4 mt-6 font-bold transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(139,92,246,0.3)]"
                 >
                   {isLoading ? (
                     <>

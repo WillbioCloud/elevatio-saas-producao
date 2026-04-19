@@ -31,6 +31,8 @@ import SignDocument from './pages/SignDocument';
 
 // Website Landing Pages (Master Domain Only)
 import LandingPage from './pages/website/LandingPage';
+import PrivacyPolicy from './pages/website/PrivacyPolicy';
+import TermsOfUse from './pages/website/TermsOfUse';
 
 // Template Router
 import TenantRouter from './templates/TenantRouter';
@@ -138,6 +140,8 @@ const AppRoutes: React.FC<{ env: { type: string; subdomain?: string; customDomai
           {isMasterDomain && (
             <>
               <Route path="/" element={<AnimatedPage><LandingPage /></AnimatedPage>} />
+              <Route path="/privacidade" element={<AnimatedPage><PrivacyPolicy /></AnimatedPage>} />
+              <Route path="/termos" element={<AnimatedPage><TermsOfUse /></AnimatedPage>} />
               <Route path="/registro" element={<Navigate to="/admin/login?mode=signup" replace />} />
               <Route path="/cadastro" element={<Navigate to="/admin/login?mode=signup" replace />} />
             </>
