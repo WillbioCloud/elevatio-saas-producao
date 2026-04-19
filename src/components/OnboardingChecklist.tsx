@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Icons } from './Icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useProperties } from '../hooks/useProperties';
+import type { FinanceConfig, SiteData } from '../types';
 
 type OnboardingTask = {
   id: string;
@@ -12,7 +14,19 @@ type OnboardingTask = {
   locked?: boolean;
 };
 
-const DEFAULT_COMPLETED_TASK_IDS = ['create-company', 'custom-domain'];
+type OnboardingCompanyData = {
+  subdomain?: string | null;
+  domain?: string | null;
+  domain_secondary?: string | null;
+  logo_url?: string | null;
+  admin_signature_url?: string | null;
+  site_data?: SiteData | string | null;
+  finance_config?: FinanceConfig | string | null;
+  use_asaas?: boolean | null;
+  payment_api_key?: string | null;
+};
+
+const DEFAULT_COMPLETED_TASK_IDS = ['create-company'];
 
 const ONBOARDING_TASKS: OnboardingTask[] = [
   {
@@ -91,8 +105,81 @@ const readCompletedTaskIds = (storageKey: string) => {
   return DEFAULT_COMPLETED_TASK_IDS;
 };
 
+const hasTextValue = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
+
+const parseObjectValue = <T extends object>(value: unknown): Partial<T> | null => {
+  if (!value) return null;
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Partial<T>) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return typeof value === 'object' && !Array.isArray(value) ? (value as Partial<T>) : null;
+};
+
+const areTaskIdsEqual = (left: string[], right: string[]) =>
+  left.length === right.length && left.every((id, index) => id === right[index]);
+
+const mergeCompletedTaskIds = (currentIds: string[], idsToAdd: string[]) => {
+  const normalizedCurrentIds = normalizeCompletedTaskIds(currentIds);
+  const nextIds = normalizeCompletedTaskIds([...normalizedCurrentIds, ...idsToAdd]);
+
+  return areTaskIdsEqual(normalizedCurrentIds, nextIds) ? currentIds : nextIds;
+};
+
+const getAutoDetectedTaskIds = (propertiesCount: number, company?: OnboardingCompanyData | null) => {
+  const detectedIds = new Set<string>();
+
+  if (propertiesCount > 0) {
+    detectedIds.add('first-property');
+  }
+
+  if (!company) return Array.from(detectedIds);
+
+  const siteData = parseObjectValue<SiteData>(company.site_data);
+  const siteContact = parseObjectValue<NonNullable<SiteData['contact']>>(siteData?.contact);
+  const financeConfig = parseObjectValue<FinanceConfig>(company.finance_config);
+
+  if ([company.domain, company.domain_secondary, company.subdomain].some(hasTextValue)) {
+    detectedIds.add('custom-domain');
+  }
+
+  if (
+    [
+      siteData?.hero_title,
+      siteData?.hero_subtitle,
+      siteData?.hero_image_url,
+      siteData?.about_image_url,
+      siteData?.about_text,
+      siteData?.contact_email,
+      siteData?.contact_phone,
+      siteContact?.email,
+      siteContact?.phone,
+    ].some(hasTextValue)
+  ) {
+    detectedIds.add('site-showcase');
+  }
+
+  if ((hasTextValue(company.logo_url) || hasTextValue(siteData?.logo_url)) && hasTextValue(company.admin_signature_url)) {
+    detectedIds.add('company-branding');
+  }
+
+  if (hasTextValue(financeConfig?.pix_key) || (company.use_asaas === true && hasTextValue(company.payment_api_key))) {
+    detectedIds.add('pix-receivables');
+  }
+
+  return Array.from(detectedIds);
+};
+
 const OnboardingChecklist: React.FC = () => {
   const { user } = useAuth();
+  const { properties } = useProperties();
+  const company = user?.company;
   const storageKey = useMemo(
     () => `elevatio_onboarding_checklist_${user?.company_id || user?.id || 'guest'}`,
     [user?.company_id, user?.id],
@@ -121,6 +208,18 @@ const OnboardingChecklist: React.FC = () => {
     window.localStorage.setItem(storageKey, JSON.stringify(completedIds));
   }, [completedIds, hydratedKey, storageKey]);
 
+  const autoDetectedTaskIds = useMemo(
+    () => getAutoDetectedTaskIds(properties.length, company),
+    [company, properties.length],
+  );
+
+  useEffect(() => {
+    if (hydratedKey !== storageKey || autoDetectedTaskIds.length === 0) return;
+    if (autoDetectedTaskIds.every((id) => completedIds.includes(id))) return;
+
+    setCompletedIds((currentIds) => mergeCompletedTaskIds(currentIds, autoDetectedTaskIds));
+  }, [autoDetectedTaskIds, completedIds, hydratedKey, storageKey]);
+
   useEffect(() => {
     if (hydratedKey !== storageKey || typeof window === 'undefined') return;
     window.localStorage.setItem(expandedStorageKey, String(isExpanded));
@@ -132,18 +231,16 @@ const OnboardingChecklist: React.FC = () => {
   const isExpert = completedCount === ONBOARDING_TASKS.length;
 
   const toggleTask = (task: OnboardingTask) => {
-    if (task.locked) return;
+    if (task.locked || autoDetectedTaskIds.includes(task.id)) return;
 
     setCompletedIds((currentIds) => {
-      const nextIds = new Set(normalizeCompletedTaskIds(currentIds));
+      const normalizedCurrentIds = normalizeCompletedTaskIds(currentIds);
+      const isAlreadyCompleted = normalizedCurrentIds.includes(task.id);
+      const nextIds = isAlreadyCompleted
+        ? normalizedCurrentIds.filter((id) => id !== task.id)
+        : [...normalizedCurrentIds, task.id];
 
-      if (nextIds.has(task.id)) {
-        nextIds.delete(task.id);
-      } else {
-        nextIds.add(task.id);
-      }
-
-      return normalizeCompletedTaskIds(Array.from(nextIds));
+      return normalizeCompletedTaskIds(nextIds);
     });
   };
 
@@ -203,6 +300,8 @@ const OnboardingChecklist: React.FC = () => {
               <ul className="divide-y divide-slate-100 dark:divide-white/10">
                 {ONBOARDING_TASKS.map((task) => {
                   const isCompleted = completedSet.has(task.id);
+                  const isAutoDetected = autoDetectedTaskIds.includes(task.id);
+                  const isCheckboxDisabled = task.locked || isAutoDetected;
                   const inputId = `onboarding-task-${task.id}`;
 
                   return (
@@ -210,14 +309,14 @@ const OnboardingChecklist: React.FC = () => {
                       <label
                         htmlFor={inputId}
                         className={`flex min-w-0 flex-1 items-center gap-3 ${
-                          task.locked ? 'cursor-default' : 'cursor-pointer'
+                          isCheckboxDisabled ? 'cursor-default' : 'cursor-pointer'
                         }`}
                       >
                         <input
                           id={inputId}
                           type="checkbox"
                           checked={isCompleted}
-                          disabled={task.locked}
+                          disabled={isCheckboxDisabled}
                           onChange={() => toggleTask(task)}
                           className="sr-only"
                         />
@@ -239,7 +338,12 @@ const OnboardingChecklist: React.FC = () => {
                         </span>
                       </label>
 
-                      {task.href ? (
+                      {isCompleted ? (
+                        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                          <Icons.CheckCircle2 size={13} />
+                          Concluído
+                        </span>
+                      ) : task.href ? (
                         <Link
                           to={task.href}
                           className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-brand-400/30 dark:hover:bg-brand-500/10 dark:hover:text-brand-200"
@@ -248,9 +352,9 @@ const OnboardingChecklist: React.FC = () => {
                           <Icons.ArrowRight size={13} />
                         </Link>
                       ) : (
-                        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
-                          <Icons.CheckCircle2 size={13} />
-                          Concluído
+                        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                          <Icons.Lock size={13} />
+                          Automático
                         </span>
                       )}
                     </li>

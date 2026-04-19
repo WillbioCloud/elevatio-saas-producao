@@ -13,19 +13,29 @@ import type {
   AppUserRole,
   CompanyPermissions,
   CompanySettings,
+  FinanceConfig,
+  SiteData,
 } from '../types';
 import { DEFAULT_COMPANY_PERMISSIONS } from '../types';
 
 type CompanyProfile = {
   name: string;
   plan: string;
+  subdomain?: string | null;
+  domain?: string | null;
+  domain_secondary?: string | null;
+  domain_status?: string | null;
+  domain_secondary_status?: string | null;
+  template?: string | null;
   document?: string | null;
   logo_url?: string | null;
   admin_signature_url?: string | null;
-  use_asaas?: boolean;
+  site_data?: SiteData | string | null;
+  finance_config?: FinanceConfig | string | null;
+  use_asaas?: boolean | null;
   default_commission?: number;
   broker_commission?: number;
-  payment_api_key?: string;
+  payment_api_key?: string | null;
   manual_discount_value?: number | null;
   manual_discount_type?: 'fixed' | 'percentage' | null;
   plan_status?: string | null;
@@ -118,7 +128,7 @@ const normalizeCompanyPermissions = (permissions: unknown): CompanyPermissions =
 };
 
 const COMPANY_PROFILE_SELECT =
-  'name, plan, document, logo_url, admin_signature_url, use_asaas, default_commission, broker_commission, payment_api_key, manual_discount_value, manual_discount_type, plan_status, trial_ends_at';
+  'name, plan, subdomain, domain, domain_secondary, domain_status, domain_secondary_status, template, document, logo_url, admin_signature_url, site_data, finance_config, use_asaas, default_commission, broker_commission, payment_api_key, manual_discount_value, manual_discount_type, plan_status, trial_ends_at';
 
 const buildFallbackUser = (supabaseUser: User): UserWithRole => {
   const metadata = (supabaseUser.user_metadata as Record<string, unknown> | undefined) ?? {};

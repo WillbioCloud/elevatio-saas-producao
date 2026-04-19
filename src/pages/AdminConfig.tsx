@@ -506,6 +506,18 @@ const getDomainOwnership = (domainType: unknown): 'elevatio' | 'custom' | null =
   return null;
 };
 
+const formatTrialCountdown = (trialEndsAt?: string | null) => {
+  const endTime = trialEndsAt ? new Date(trialEndsAt).getTime() : Number.NaN;
+  const remainingMs = Number.isFinite(endTime) ? Math.max(endTime - new Date().getTime(), 0) : 0;
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${days} dias, ${hours} horas, ${minutes} min e ${seconds} seg`;
+};
+
 const compressAvatar = (file: File | Blob, maxSize = 512): Promise<Blob> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -873,6 +885,7 @@ const AdminConfig: React.FC = () => {
   const [savingFinance, setSavingFinance] = useState(false);
   const [showAsaasModal, setShowAsaasModal] = useState(false);
   const [tempApiKey, setTempApiKey] = useState('');
+  const [trialTimeRemaining, setTrialTimeRemaining] = useState(() => formatTrialCountdown(null));
   const { plans, loading: loadingPlans } = useSaasPlans();
   const [isUsageExpanded, setIsUsageExpanded] = useState(false);
   const [usageStats, setUsageStats] = useState({ users: 1, properties: 0, activeContracts: 0 });
@@ -940,6 +953,7 @@ const AdminConfig: React.FC = () => {
       domain_secondary_status: tenant?.domain_secondary_status ?? null,
       template: tenant?.template || null,
       admin_signature_url: tenant?.admin_signature_url || null,
+      trial_ends_at: tenant?.trial_ends_at ?? null,
     }),
     [
       tenant?.id,
@@ -956,6 +970,7 @@ const AdminConfig: React.FC = () => {
       tenant?.domain_secondary_status,
       tenant?.template,
       tenant?.admin_signature_url,
+      tenant?.trial_ends_at,
     ]
   );
 
@@ -963,6 +978,29 @@ const AdminConfig: React.FC = () => {
     () => sanitizeExistingDomain(company.domain || '') || 'seudominio.com.br',
     [company.domain]
   );
+
+  useEffect(() => {
+    const updateTrialCountdown = () => {
+      setTrialTimeRemaining(formatTrialCountdown(company.trial_ends_at));
+    };
+
+    updateTrialCountdown();
+
+    if (!company.trial_ends_at) return;
+
+    const intervalId = window.setInterval(() => {
+      updateTrialCountdown();
+
+      const endTime = new Date(company.trial_ends_at || '').getTime();
+      if (!Number.isFinite(endTime) || endTime <= new Date().getTime()) {
+        window.clearInterval(intervalId);
+      }
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [company.trial_ends_at]);
 
   const adIntegrations = useMemo(
     () => [
@@ -3685,7 +3723,7 @@ const AdminConfig: React.FC = () => {
       )}
 
       {activeTab === 'subscription' && user?.role === 'owner' && (
-        <div className="space-y-8 animate-fade-in">
+        <div className="space-y-8 animate-fade-in bg-slate-300/50 p-6 rounded-2xl">
           {tenant?.subscription_status === 'trialing' && tenant?.trial_ends_at && (
             <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-3xl p-6 text-white shadow-xl shadow-orange-500/20 flex flex-col sm:flex-row items-center justify-between gap-6 border border-orange-400/50 mb-8">
               <div className="flex items-center gap-4">
@@ -3694,7 +3732,7 @@ const AdminConfig: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-xl font-black tracking-tight">
-                    Seu período de teste acaba em {Math.ceil((new Date(tenant.trial_ends_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))} dias!
+                    Seu período de teste acaba em {trialTimeRemaining}
                   </h3>
                   <p className="text-orange-50 font-medium mt-1">
                     Assine um plano abaixo para evitar a suspensão da sua imobiliária.
@@ -3838,6 +3876,14 @@ const AdminConfig: React.FC = () => {
                         : 'R$ 0,00'}
                       <span className="text-sm font-normal text-brand-200 ml-1">{contract?.billing_cycle === 'yearly' ? '/ano' : '/mês'}</span>
                     </div>
+                    {isPrimaryElevatioDomain && (
+                      <div className="mt-3 inline-flex max-w-2xl items-start gap-2 rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-medium text-white/85">
+                        <Icons.Info size={15} className="mt-0.5 shrink-0 text-brand-100" />
+                        <span>
+                          Importante: A sua primeira fatura incluirá também a taxa anual de registro do domínio personalizado.
+                        </span>
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-center gap-6 mt-6 text-sm text-white/85">
                       <div>
                         <p className="text-brand-300 text-xs uppercase mb-0.5">Renovação em</p>
