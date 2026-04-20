@@ -217,11 +217,13 @@ serve(async (req) => {
     let fidelityEndDate = contract?.fidelity_end_date || null
 
     if (billingCycle === 'yearly') {
+      // 20% de desconto se for anual
       basePrice = Number.isFinite(yearlyPlanPrice) && yearlyPlanPrice > 0
         ? yearlyPlanPrice
-        : monthlyPlanPrice * 12 * 0.85
-      finalHasFidelity = false
+        : monthlyPlanPrice * 12 * 0.80
+      finalHasFidelity = false // Anual ja tem fidelidade implicita
     } else if (has_fidelity) {
+      // 10% de desconto se for mensal com fidelidade
       basePrice = basePrice * 0.90
       if (!fidelityEndDate || new Date(fidelityEndDate) < new Date()) {
         const futureDate = new Date()
@@ -378,7 +380,11 @@ serve(async (req) => {
         await fetch(`${ASAAS_URL}/payments/${currentPayment.id}`, {
           method: 'POST',
           headers: asaasHeaders,
-          body: JSON.stringify({ value: finalPaymentValue, description: finalPaymentDesc })
+          body: JSON.stringify({
+            value: finalPaymentValue,
+            description: finalPaymentDesc,
+            discount: { value: 0, dueDateLimitDays: 0, type: 'FIXED' }
+          })
         })
       }
     }
