@@ -186,32 +186,13 @@ serve(async (req) => {
     }
 
     if (ACTIVE_PAYMENT_EVENTS.has(event) && company) {
-      const { data: contractInfo } = await supabaseAdmin
-        .from('saas_contracts')
-        .select('billing_cycle')
-        .eq('company_id', company.id)
-        .single()
-
-      const today = new Date()
-      const nextRenewal = new Date(today)
-
-      if (contractInfo?.billing_cycle === 'yearly') {
-        nextRenewal.setFullYear(nextRenewal.getFullYear() + 1)
-      } else {
-        nextRenewal.setMonth(nextRenewal.getMonth() + 1)
-      }
-
       await supabaseAdmin
         .from('saas_contracts')
-        .update({
-          status: 'active',
-          start_date: today.toISOString(),
-          end_date: nextRenewal.toISOString()
-        })
+        .update({ status: 'active' })
         .eq('company_id', company.id)
 
       if (event === 'PAYMENT_CONFIRMED' && company.applied_coupon_id && !company.coupon_start_date) {
-        const confirmedAt = today.toISOString()
+        const confirmedAt = new Date().toISOString()
         await incrementCouponUsage(supabaseAdmin, company.applied_coupon_id)
 
         const { error: couponStartError } = await supabaseAdmin

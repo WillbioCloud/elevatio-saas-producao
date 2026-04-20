@@ -168,24 +168,6 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
     setDomainStatus('idle');
   }, [formData.domain, formData.hasDomain, domainExtension]);
 
-  const syncVercelDomain = (domain: string) => {
-    const normalizedDomain = sanitizeExistingDomain(domain);
-    if (!normalizedDomain) return;
-
-    void supabase.functions
-      .invoke('manage-vercel-domain', {
-        body: { domain: normalizedDomain },
-      })
-      .then(({ data, error }) => {
-        if (error || data?.success === false) {
-          console.warn('Dominio salvo, mas a Vercel nao confirmou a automacao:', error || data);
-        }
-      })
-      .catch((vercelError) => {
-        console.warn('Dominio salvo, mas nao foi possivel acionar a Vercel:', vercelError);
-      });
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -227,30 +209,37 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
         .toLowerCase()
         .replace(/[^a-z0-9]/g, '-')
         .replace(/-+/g, '-');
+      const domainType = formData.hasDomain === 'sim' ? 'custom' : 'new';
+      const payload = {
+        name: formData.companyName,
+        subdomain: slug,
+        document: formData.document,
+        phone: formData.phone,
+        template: formData.template,
+        plan_status: 'trial',
+        plan: formData.plan,
+        trial_ends_at: trialEnds.toISOString(),
+        // SALVANDO O DOMINIO DIRETAMENTE NA CRIACAO (Fim das falhas parciais!)
+        domain: selectedProductionDomain,
+        domain_type: domainType === 'custom' ? 'existing' : 'new',
+        domain_status: 'pending',
+        updated_at: new Date().toISOString(),
+      };
 
       const { data: newCompany, error: companyError } = await supabase
         .from('companies')
-        .insert([
-          {
-            name: formData.companyName,
-            subdomain: slug,
-            document: formData.document,
-            phone: formData.phone,
-            template: formData.template,
-            plan_status: 'trial',
-            plan: formData.plan,
-            trial_ends_at: trialEnds.toISOString(),
-            // SALVANDO O DOMINIO DIRETAMENTE NA CRIACAO (Fim das falhas parciais!)
-            domain: selectedProductionDomain,
-            domain_type: formData.hasDomain === 'novo' ? 'new' : 'existing',
-            domain_status: 'pending',
-            updated_at: new Date().toISOString(),
-          },
-        ])
+        .insert([payload])
         .select()
         .single();
 
       if (companyError) throw new Error('Erro ao criar imobiliaria: ' + companyError.message);
+
+      if (domainType === 'custom' && payload.domain) {
+        // Chamada silenciosa para a Vercel
+        void supabase.functions
+          .invoke('manage-vercel-domain', { body: { domain: payload.domain } })
+          .catch(console.error);
+      }
 
       if (newCompany) {
         // Vincula o perfil do usuario logado (Owner) a nova imobiliaria
@@ -292,8 +281,6 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
         if (contractError) {
           throw new Error('Erro ao criar contrato inicial: ' + contractError.message);
         }
-
-        syncVercelDomain(selectedProductionDomain);
 
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -774,7 +761,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
                 </>
               ) : (
                 <>
-                  <CheckCircle className="h-5 w-5" /> Concluir e Acessar CRM
+                  <CheckCircle className="h-5 w-5" /> Concluir configuracao
                 </>
               )}
             </button>
