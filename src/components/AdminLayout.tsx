@@ -13,6 +13,7 @@ import ProductTour from './ProductTour';
 import SetupWizardModal from './SetupWizardModal';
 import AuraChatWidget from './AuraChatWidget';
 import SystemReviewModal from './SystemReviewModal';
+import SystemChangelogModal from './SystemChangelogModal';
 
 const getSmartNavigationBasePath = (pathname: string) => {
   const segments = pathname.split('/').filter(Boolean);
@@ -109,6 +110,7 @@ const AdminLayout: React.FC = () => {
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
   const [isOpeningPaymentLink, setIsOpeningPaymentLink] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isChangelogModalOpen, setIsChangelogModalOpen] = useState(false);
   const [hasContextualAura, setHasContextualAura] = useState(false);
   const [trialInfo, setTrialInfo] = useState<TrialSidebarInfo>({
     trialEndsAt: user?.company?.trial_ends_at ?? null,
@@ -628,6 +630,10 @@ const AdminLayout: React.FC = () => {
     <BillingGuard>
       <div className="flex h-screen bg-[#070d1f] overflow-hidden font-sans selection:bg-brand-500/30 text-slate-800 dark:text-slate-200">
       {shouldShowWizard && <SetupWizardModal onComplete={handleRefresh} />}
+      <SystemChangelogModal
+        isOpen={isChangelogModalOpen}
+        onClose={() => setIsChangelogModalOpen(false)}
+      />
       <ProductTour isSidebarCollapsed={isSidebarCollapsed} />
       <aside
         onMouseEnter={() => setIsSidebarCollapsed(false)}
@@ -982,6 +988,20 @@ const AdminLayout: React.FC = () => {
           </div>
 
           <button
+            type="button"
+            onClick={() => setIsChangelogModalOpen(true)}
+            title={isSidebarCollapsed ? 'Novidades v1.0.0' : undefined}
+            className={`mb-3 flex w-full items-center justify-center rounded-lg border border-slate-700 bg-slate-900/70 py-2 text-xs font-black text-slate-400 transition-all hover:border-sky-400/30 hover:bg-sky-400/10 hover:text-sky-200 ${
+              isSidebarCollapsed ? 'flex-col gap-0.5 px-0' : 'gap-2 px-3'
+            }`}
+          >
+            <Icons.Sparkles size={14} className="shrink-0" />
+            <span className={isSidebarCollapsed ? 'text-[10px] leading-none' : 'whitespace-nowrap'}>
+              v1.0.0
+            </span>
+          </button>
+
+          <button
             onClick={handleLogout}
             title={isSidebarCollapsed ? 'Sair do Sistema' : undefined}
             className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-slate-800 hover:bg-red-500/10 hover:text-red-400 text-slate-400 text-xs font-bold transition-all border border-slate-700 hover:border-red-500/20 ${
@@ -1283,6 +1303,17 @@ const AdminLayout: React.FC = () => {
                   title="Abrir site da imobiliária"
                 >
                   <Icons.Globe size={20} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsChangelogModalOpen(true);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black text-slate-500 transition-colors hover:bg-sky-50 hover:text-sky-600"
+                >
+                  <Icons.Sparkles size={15} />
+                  v1.0.0
                 </button>
                 <button onClick={handleLogout} className="text-red-500 hover:bg-red-50 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
                   <Icons.LogOut size={16} /> Sair
