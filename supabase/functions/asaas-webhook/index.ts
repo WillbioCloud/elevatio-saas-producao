@@ -166,7 +166,7 @@ serve(async (req) => {
 
     const { data: company } = await supabaseAdmin
       .from('companies')
-      .select('id, applied_coupon_id, coupon_start_date, asaas_subscription_id')
+      .select('id, applied_coupon_id, coupon_start_date, asaas_subscription_id, trial_ends_at')
       .eq('asaas_customer_id', payment.customer)
       .single()
 
@@ -190,6 +190,44 @@ serve(async (req) => {
         .from('saas_contracts')
         .update({ status: 'active' })
         .eq('company_id', company.id)
+
+      // ==========================================
+      // ANCORA DE CICLO (PRIMEIRO PAGAMENTO)
+      // Se o cliente pagou e ainda tinha trial_ends_at,
+      // a proxima cobranca no Asaas tem que ser 1 mes/ano a partir de hoje.
+      // ==========================================
+      if (company.trial_ends_at && company.asaas_subscription_id) {
+        try {
+          const subRes = await fetch(`${ASAAS_URL}/subscriptions/${company.asaas_subscription_id}`, {
+            headers: { 'access_token': ASAAS_API_KEY! }
+          })
+          const subData = await subRes.json()
+
+          if (subData && !subData.errors && subData.status === 'ACTIVE') {
+            const nextDate = new Date()
+            if (subData.cycle === 'YEARLY') {
+              nextDate.setFullYear(nextDate.getFullYear() + 1)
+            } else {
+              nextDate.setMonth(nextDate.getMonth() + 1)
+            }
+
+            await fetch(`${ASAAS_URL}/subscriptions/${company.asaas_subscription_id}`, {
+              method: 'PUT',
+              headers: {
+                'access_token': ASAAS_API_KEY!,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                nextDueDate: nextDate.toISOString().split('T')[0],
+                updatePendingCharge: true
+              })
+            })
+            console.log(`[WEBHOOK] Ciclo da assinatura ${company.asaas_subscription_id} ancorado a partir de hoje.`)
+          }
+        } catch (err) {
+          console.error('[WEBHOOK] Erro ao ancorar o ciclo da assinatura:', err)
+        }
+      }
 
       if (event === 'PAYMENT_CONFIRMED' && company.applied_coupon_id && !company.coupon_start_date) {
         const confirmedAt = new Date().toISOString()

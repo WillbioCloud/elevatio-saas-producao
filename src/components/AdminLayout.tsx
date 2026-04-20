@@ -995,7 +995,7 @@ const AdminLayout: React.FC = () => {
               isSidebarCollapsed ? 'flex-col gap-0.5 px-0' : 'gap-2 px-3'
             }`}
           >
-            <Icons.Sparkles size={14} className="shrink-0" />
+            <Icons.Bug size={14} className="shrink-0" />
             <span className={isSidebarCollapsed ? 'text-[10px] leading-none' : 'whitespace-nowrap'}>
               v1.0.0
             </span>
@@ -1312,7 +1312,7 @@ const AdminLayout: React.FC = () => {
                   }}
                   className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black text-slate-500 transition-colors hover:bg-sky-50 hover:text-sky-600"
                 >
-                  <Icons.Sparkles size={15} />
+                  <Icons.Bug size={14} />
                   v1.0.0
                 </button>
                 <button onClick={handleLogout} className="text-red-500 hover:bg-red-50 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">

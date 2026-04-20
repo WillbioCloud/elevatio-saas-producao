@@ -150,6 +150,7 @@ import {
   UploadCloud,
   QrCode,
   Smartphone,
+  Bug,
 } from 'lucide-react';
 
 const Google = (props: ComponentPropsWithoutRef<'svg'>) => (
@@ -333,4 +334,5 @@ export const Icons = {
   SortAsc: ArrowUpAZ,
   QrCode,
   Smartphone,
+  Bug,
 };

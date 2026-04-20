@@ -352,6 +352,36 @@ const Login: React.FC = () => {
         .ev-link:hover { color: #1a56db !important; }
         @keyframes ev-slide-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
         .ev-animate { animation: ev-slide-in 0.3s ease forwards; }
+
+        /* ── Responsividade ─────────────────────────── */
+        .ev-shell {
+          width: 100%; max-width: 960px;
+          background: #fff; border-radius: 24px;
+          box-shadow: 0 32px 80px rgba(15,23,42,0.12), 0 4px 16px rgba(15,23,42,0.06);
+          display: flex; overflow: hidden; min-height: 600px;
+        }
+        .ev-form-side {
+          width: 50%; padding: 48px 44px;
+          display: flex; flex-direction: column; justify-content: space-between;
+          background: linear-gradient(170deg, #ffffff 0%, #fafbff 100%);
+        }
+        .ev-visual-side { flex: 1; display: flex; }
+        .ev-heading {
+          font-family: 'Sora', sans-serif; font-size: 26px; font-weight: 800;
+          letter-spacing: -0.8px; color: #0f172a; margin-bottom: 6px; line-height: 1.2;
+        }
+
+        @media (max-width: 640px) {
+          .ev-shell { border-radius: 20px; min-height: unset; flex-direction: column; }
+          .ev-form-side { width: 100%; padding: 28px 20px 24px; }
+          .ev-visual-side { display: none; }
+          .ev-heading { font-size: 22px; }
+          .ev-footer-row { flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; }
+        }
+        @media (min-width: 641px) and (max-width: 900px) {
+          .ev-form-side { padding: 36px 32px; }
+          .ev-heading { font-size: 23px; }
+        }
       `}</style>
 
       <div style={{
@@ -360,21 +390,10 @@ const Login: React.FC = () => {
         padding: '24px 16px',
         fontFamily: "'DM Sans', sans-serif",
       }}>
-        <div style={{
-          width: '100%', maxWidth: 960,
-          background: '#fff', borderRadius: 24,
-          boxShadow: '0 32px 80px rgba(15,23,42,0.12), 0 4px 16px rgba(15,23,42,0.06)',
-          display: 'flex', overflow: 'hidden',
-          minHeight: 600,
-        }}>
+        <div className="ev-shell">
           
           {/* ── LADO ESQUERDO: Formulário ── */}
-          <div style={{
-            width: '50%', padding: '48px 44px',
-            display: 'flex', flexDirection: 'column',
-            justifyContent: 'space-between',
-            background: 'linear-gradient(170deg, #ffffff 0%, #fafbff 100%)',
-          }}>
+          <div className="ev-form-side">
             
             {/* Logo */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -393,11 +412,7 @@ const Login: React.FC = () => {
             {/* Heading */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <div style={{ marginBottom: 28 }}>
-                <h1 style={{
-                  fontFamily: "'Sora', sans-serif",
-                  fontSize: 26, fontWeight: 800, letterSpacing: '-0.8px',
-                  color: '#0f172a', marginBottom: 6, lineHeight: 1.2,
-                }}>
+                <h1 className="ev-heading">
                   {isLogin ? 'Bem-vindo de volta' : 'Criar uma conta'}
                 </h1>
                 <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.5 }}>
@@ -587,7 +602,7 @@ const Login: React.FC = () => {
             </div>
 
             {/* Footer da esquerda */}
-            <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="ev-footer-row" style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <p style={{ fontSize: 13, color: '#94a3b8' }}>
                 {isLogin ? 'Não tem conta? ' : 'Já tem conta? '}
                 <button onClick={switchMode} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1a56db', fontFamily: "'DM Sans', sans-serif", textDecoration: 'underline', textDecorationColor: 'rgba(26,86,219,0.3)', textUnderlineOffset: 3, padding: 0 }}>
@@ -600,8 +615,8 @@ const Login: React.FC = () => {
             </div>
           </div>
 
-          {/* ── LADO DIREITO: Visual ── */}
-          <div style={{ flex: 1, display: 'flex' }}>
+          {/* ── LADO DIREITO: Visual (oculto em mobile) ── */}
+          <div className="ev-visual-side">
             <RightPanel isSignup={!isLogin} />
           </div>
         </div>
