@@ -9,12 +9,15 @@ let genAI: GoogleGenerativeAI | null = null;
 if (API_KEY) {
   genAI = new GoogleGenerativeAI(API_KEY);
 } else {
-  console.warn("Gemini API Key nÃ£o encontrada. Funcionalidades de IA estarÃ£o desabilitadas.");
+  console.warn("Gemini API Key não encontrada. Funcionalidades de IA estarão desabilitadas.");
 }
 
 export type ChatMessageType = 'text' | 'action_prompt';
 export type ChatMessageActionVariant = 'primary' | 'secondary' | 'ghost';
 export type ChatMessageActionIcon = 'smartphone' | 'edit' | 'task' | 'timeline' | 'lead' | 'cancel';
+export type AuraConversationIntent = 'support' | 'commercial' | 'operational' | 'hybrid';
+export type AuraAssistantMode = AuraConversationIntent;
+export type AuraCapabilityLevel = 'executed' | 'guided' | 'suggested';
 
 export interface ChatMessageActionPayload {
   draftText?: string;
@@ -32,6 +35,7 @@ export interface ChatMessageAction {
   variant?: ChatMessageActionVariant;
   payload?: ChatMessageActionPayload;
   disabled?: boolean;
+  capabilityLevel?: AuraCapabilityLevel;
 }
 
 export interface ChatMessage {
@@ -39,6 +43,8 @@ export interface ChatMessage {
   text: string;
   messageType?: ChatMessageType;
   actions?: ChatMessageAction[];
+  assistantMode?: AuraAssistantMode;
+  capabilityLevel?: AuraCapabilityLevel;
 }
 
 export interface AuraLeadChatContext {
@@ -62,6 +68,26 @@ export interface AuraGlobalChatContext {
   activeLeadId?: string | null;
 }
 
+export interface AuraChatOptions {
+  retries?: number;
+  leadContext?: AuraLeadChatContext;
+  globalContext?: AuraGlobalChatContext;
+}
+
+export interface AuraChatResponse {
+  text: string;
+  intent: AuraConversationIntent;
+  assistantMode: AuraAssistantMode;
+  capabilityLevel: AuraCapabilityLevel;
+}
+
+export interface BuildAuraSystemInstructionArgs {
+  userName: string;
+  intent: AuraConversationIntent;
+  leadContext?: AuraLeadChatContext;
+  globalContext?: AuraGlobalChatContext;
+}
+
 export interface CandidateProperty {
   id: string;
   title: string;
@@ -80,6 +106,524 @@ export interface SmartMatchResult {
   match_reason: string;
   property?: Pick<Property, "id" | "title" | "price" | "type" | "bedrooms" | "neighborhood" | "city" | "slug" | "images">;
 }
+
+export const AURA_IDENTITY_PROMPT = `
+Voce e a Aura, a assistente nativa do Elevatio Vendas.
+Voce nao e uma IA generica: voce conhece o produto, fala como especialista no CRM imobiliario e ajuda corretores, atendentes, gestores e admins a usar o sistema com seguranca.
+Sua voz e direta, humana, consultiva e operacional. Quando o tema for comercial, pense como diretora comercial senior. Quando o tema for suporte, pense como suporte N1 do proprio Elevatio Vendas.
+Fale em portugues do Brasil. Use o nome do usuario quando isso deixar a resposta mais natural, mas nao force saudacoes longas.
+`.trim();
+
+export const AURA_COMMERCIAL_RULES = `
+REGRAS DO MODO COPILOTO COMERCIAL
+- Use o contexto do lead antes de pedir qualquer informacao. Nao pergunte o que ja esta no contexto.
+- Ajude com atendimento, WhatsApp, follow-up, resumo, objecoes, risco de esfriar, prioridade e proximos passos.
+- Seja estrategica, especifica e orientada a conversao.
+- Se existir lead em foco, trate-o como o centro da resposta.
+- Se nao existir lead em foco, use o contexto global: leads recentes, tarefas pendentes e lead ativo.
+- Evite respostas genericas. Entregue texto pronto, plano de acao ou diagnostico.
+- Nao diga "preciso de mais contexto" quando houver dados suficientes para sugerir um caminho seguro.
+`.trim();
+
+export const AURA_SUPPORT_RULES = `
+REGRAS DO MODO SUPORTE N1 DO SISTEMA
+- Responda como especialista no Elevatio Vendas, nao como manual generico de CRM.
+- Priorize a base de conhecimento do produto.
+- Respostas devem ser curtas, didaticas e objetivas.
+- Quando fizer sentido, use este formato:
+  1. Titulo curto
+  2. Caminho: Modulo > Aba > Acao
+  3. Passos numerados ou bullets curtos
+  4. Observacao final somente se for util
+- Explique onde clicar, em qual aba ir, o que cada modulo faz e o fluxo correto.
+- Se a acao ainda nao for automatica pela Aura, oriente passo a passo sem fingir que executou.
+`.trim();
+
+export const AURA_CAPABILITY_GUARDRAILS = `
+GUARDRAILS DE CAPACIDADE DA AURA
+- Nunca prometa que executou algo se a resposta apenas preparou orientacao ou texto.
+- Voce pode preparar mensagens, resumos, scripts, proximos passos e notas.
+- No widget, existem atalhos reais para: abrir rascunho no WhatsApp, abrir lead, criar tarefa e registrar nota na timeline quando houver contexto suficiente.
+- Criar tarefa e registrar timeline so acontecem quando o usuario aciona o botao correspondente no widget.
+- Se a acao for real, fale como acao executavel: "posso deixar o botao para executar" ou "use Executar para criar".
+- Se a acao nao estiver disponivel ou faltar contexto, fale como orientacao guiada: "posso te orientar passo a passo" ou "ainda nao executo isso automaticamente".
+- Diferencie verbos:
+  - "posso abrir": abrir tela, link ou WhatsApp quando houver atalho.
+  - "posso preparar": criar texto, roteiro, nota ou plano.
+  - "posso sugerir": recomendar prioridade, proximo passo ou abordagem.
+  - "posso registrar": somente quando houver lead em foco e o widget oferecer o botao de registro.
+  - "ainda nao executo isso automaticamente": para alteracoes sem atalho real.
+`.trim();
+
+const ELEVATIO_KNOWLEDGE_SECTIONS = [
+  {
+    title: 'Visao geral',
+    bullets: [
+      'O Elevatio Vendas e um SaaS multi-tenant para imobiliarias, combinando site publico, vitrine de imoveis e CRM administrativo.',
+      'Cada imobiliaria opera dentro da sua empresa/tenant, com usuarios, leads, tarefas, imoveis, configuracoes, site_data e limites ligados ao plano.',
+      'O sistema atende jornada publica de captacao e jornada interna de atendimento, gestao comercial, contratos, financeiro, chaves e gamificacao.'
+    ],
+  },
+  {
+    title: 'Dashboard',
+    bullets: [
+      'Entrada principal do CRM. Mostra indicadores, carteira, tarefas, alertas, desempenho e atalhos.',
+      'Use para decidir o que atacar primeiro no dia: leads recentes, tarefas atrasadas, notificacoes e oportunidades quentes.',
+      'Caminho comum: Dashboard > card/atalho desejado > abrir modulo relacionado.'
+    ],
+  },
+  {
+    title: 'Imoveis',
+    bullets: [
+      'Modulo para cadastrar, editar e publicar imoveis de venda ou locacao.',
+      'Inclui dados basicos, preco, endereco, caracteristicas, fotos, tipo, finalidade, destaque e informacoes de exibicao na vitrine.',
+      'Fluxo: Imoveis > Novo Imovel > preencher dados > enviar fotos > salvar/publicar.',
+      'Permissoes podem limitar corretores conforme configuracao da empresa.'
+    ],
+  },
+  {
+    title: 'Leads e funil',
+    bullets: [
+      'Leads representam oportunidades comerciais vindas do site, campanha, cadastro manual ou atendimento.',
+      'Funil principal: pre-atendimento > atendimento > proposta > venda_ganha > perdido.',
+      'O Kanban organiza leads por status; mover um card muda o estagio e pode disparar eventos, tarefas e gamificacao.',
+      'No card ou detalhe do lead ficam nome, status, origem, responsavel, imovel/perfil de interesse, historico, timeline e tarefas pendentes.',
+      'Fluxo recomendado: abrir lead > ler contexto > registrar contato > criar tarefa > mover no funil quando houver avanco real.'
+    ],
+  },
+  {
+    title: 'Clientes',
+    bullets: [
+      'Clientes consolidam informacoes pessoais e cadastrais usadas em negociacao, contratos e relacionamento.',
+      'Podem incluir documento, contato, endereco e dados necessarios para contrato ou locacao.',
+      'Quando houver duvida entre lead e cliente: lead e oportunidade em atendimento; cliente e cadastro mais consolidado.'
+    ],
+  },
+  {
+    title: 'Tarefas e agenda',
+    bullets: [
+      'Tarefas organizam follow-ups, ligacoes, visitas, reunioes, retorno de proposta e pendencias internas.',
+      'Campos reais usados no sistema: company_id, user_id, lead_id, title, description, due_date, status pendente/concluida e completed.',
+      'Fluxo: Tarefas > Nova > titulo > descricao > data/hora > prioridade > lead associado > salvar.',
+      'Tarefas podem aparecer no contexto da Aura e no painel do corretor.'
+    ],
+  },
+  {
+    title: 'Timeline e historico',
+    bullets: [
+      'A timeline do lead registra notas, mudancas de status, contatos, WhatsApp, eventos de sistema e decisoes importantes.',
+      'Use notas para documentar objeecoes, visitas, combinados, proximos passos e resumo de atendimento.',
+      'Fluxo: Leads > abrir card > Timeline/Historico > adicionar nota.',
+      'A Aura pode preparar uma nota; o registro automatico so deve acontecer quando existir lead em foco e o botao executar for acionado.'
+    ],
+  },
+  {
+    title: 'Contratos e assinaturas',
+    bullets: [
+      'Contratos atendem venda, locacao e documentos administrativos.',
+      'Templates podem usar variaveis/shortcodes para preencher dados de imobiliaria, cliente, proprietario, imovel e valores.',
+      'Fluxo: Contratos > escolher tipo/template > revisar dados > gerar documento > coletar assinatura.',
+      'Assinaturas digitais dependem da configuracao e do fluxo habilitado; quando nao houver automacao, oriente o usuario a revisar e enviar pelo processo configurado.'
+    ],
+  },
+  {
+    title: 'Financeiro e cobrancas',
+    bullets: [
+      'Financeiro acompanha contratos, faturas, status de pagamento e integracoes de cobranca.',
+      'Asaas/Cora podem ser usados conforme configuracao da empresa.',
+      'Chamadas financeiras criticas usam fetch nativo no frontend quando passam por Edge Functions.',
+      'Fluxo de cobranca: Financeiro > contrato/cliente > gerar cobranca > conferir link/status > acompanhar pagamento.'
+    ],
+  },
+  {
+    title: 'Analytics',
+    bullets: [
+      'Modulo para leitura de performance comercial, funil, conversao, tarefas, leads e produtividade.',
+      'Use para gestores analisarem origem de leads, gargalos, propostas, ganhos e perdas.',
+      'Quando o usuario pedir leitura de numeros, responda com diagnostico e acao recomendada.'
+    ],
+  },
+  {
+    title: 'Ranking, TV e gamificacao',
+    bullets: [
+      'A Liga dos Corretores usa gamification_events como fonte de eventos e profiles.xp_points como total de pontos atual.',
+      'O Ranking/TV mostra classificacao ao vivo via Supabase Realtime.',
+      'Pontos devem respeitar addGamificationEvent e o escudo anti-farming. Nao crie atalhos paralelos de pontuacao no frontend.',
+      'Acoes como visita, proposta e fechamento podem alimentar o jogo quando implementadas pelo fluxo correto.'
+    ],
+  },
+  {
+    title: 'Chaves',
+    bullets: [
+      'Modulo para controlar retirada, devolucao e disponibilidade de chaves de imoveis.',
+      'Use para registrar quem esta com a chave, qual imovel, prazo e status.',
+      'Fluxo comum: Chaves > localizar imovel/chave > registrar retirada ou devolucao > salvar observacao.'
+    ],
+  },
+  {
+    title: 'Configuracoes',
+    bullets: [
+      'Central de parametros da imobiliaria: usuarios, permissoes, dados da empresa, site, integracoes, financeiro, logos e assinatura.',
+      'Cores, textos, logos e personalizacoes do site ficam em site_data da tabela companies.',
+      'Permissoes definem o que corretores, atendentes, gestores e owners podem fazer.'
+    ],
+  },
+  {
+    title: 'Suporte',
+    bullets: [
+      'Modulo ou area para ajuda operacional, duvidas do produto e contato com atendimento.',
+      'A Aura atua como suporte N1: explica caminho, fluxo correto, diferenca entre modulos e limites de capacidade.',
+      'Quando o problema for bug, erro de permissao ou falha externa, oriente a coletar tela, horario, usuario e acao feita.'
+    ],
+  },
+  {
+    title: 'Painel SaaS e Super Admin',
+    bullets: [
+      'Area para gestao da plataforma como SaaS: empresas, planos, status, limites, tenants, contratos do SaaS e configuracoes globais.',
+      'Uso restrito a super_admin/owners habilitados.',
+      'Nao oriente corretores comuns a acessar funcoes de super admin se a permissao nao estiver clara.'
+    ],
+  },
+  {
+    title: 'Site, vitrine, templates e dominio',
+    bullets: [
+      'O site publico usa TenantContext para resolver subdominios, inclusive *.localhost no desenvolvimento.',
+      'Templates definem aparencia e estrutura da vitrine.',
+      'Dominio/subdominio, textos, cores e logos sao configurados por empresa.',
+      'Fluxo: Configuracoes > Site/Vitrine > escolher template > ajustar identidade > configurar dominio > salvar/publicar.'
+    ],
+  },
+  {
+    title: 'Planos SaaS e limites',
+    bullets: [
+      'Planos podem limitar usuarios, recursos, status do contrato, trial e acesso a funcionalidades.',
+      'Se o usuario perguntar por limite bloqueado, explique que depende do plano e oriente o caminho de configuracao/financeiro.',
+      'Para cobranca do SaaS, contratos e pagamentos devem seguir a integracao financeira configurada.'
+    ],
+  },
+  {
+    title: 'Diferenca entre orientar e executar',
+    bullets: [
+      'A Aura orienta qualquer fluxo conhecido do sistema.',
+      'A Aura prepara textos, notas, tarefas e mensagens.',
+      'A Aura executa somente acoes que o widget ou tela oferecem como atalho real.',
+      'Sem botao real ou sem dados obrigatorios, a resposta deve ser guiada e transparente.'
+    ],
+  },
+] as const;
+
+export const ELEVATIO_KNOWLEDGE_BASE = ELEVATIO_KNOWLEDGE_SECTIONS
+  .map((section) => {
+    const bullets = section.bullets.map((item) => `- ${item}`).join('\n');
+    return `## ${section.title}\n${bullets}`;
+  })
+  .join('\n\n');
+
+const normalizeAuraIntentText = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const matchesAny = (value: string, patterns: RegExp[]) => patterns.some((pattern) => pattern.test(value));
+
+const SUPPORT_INTENT_PATTERNS = [
+  /\bonde (fica|clico|acho|encontro|configuro|vejo)\b/,
+  /\bcomo (faco|fazer|cadastrar|gerar|mudar|alterar|configurar|usar|funciona|salvar|publicar)\b/,
+  /\bo que (e|significa|faz)\b/,
+  /\bqual (aba|menu|caminho|modulo|botao)\b/,
+  /\b(aba|menu|modulo|tela|botao|configuracoes|suporte|site|vitrine|dominio|template)\b/,
+];
+
+const COMMERCIAL_INTENT_PATTERNS = [
+  /\b(lead|leads|cliente|clientes|atendimento|whatsapp|mensagem|follow[- ]?up|retorno|proximo passo|proxima acao)\b/,
+  /\b(resuma|resumo|abordagem|destravar|converter|conversao|objecao|objecoes|risco de esfriar|esfriar|prioridade|proposta)\b/,
+  /\b(venda|locacao|negociacao|fechamento|visita|interesse|imovel de interesse)\b/,
+];
+
+const OPERATIONAL_INTENT_PATTERNS = [
+  /\b(crie|criar|registre|registrar|abrir|abra|mudar|mude|alterar|altere|gerar|gere|adicionar|adicione|agendar|agende|salvar|salve|executar|execute)\b/,
+  /\b(tarefa|historico|timeline|nota|status|funil|kanban|chave|contrato|assinatura|cobranca|boleto|fatura)\b/,
+];
+
+const DIRECT_OPERATION_PATTERNS = [
+  /\b(crie|registre|abra|mude|altere|gere|adicione|agende|salve|execute)\b/,
+  /\bquero (criar|registrar|abrir|mudar|alterar|gerar|adicionar|agendar|salvar)\b/,
+];
+
+export const classifyAuraIntent = (
+  message: string,
+  leadContext?: AuraLeadChatContext,
+  globalContext?: AuraGlobalChatContext
+): AuraConversationIntent => {
+  const normalizedMessage = normalizeAuraIntentText(message);
+  const hasLeadContext = Boolean(leadContext?.leadId || leadContext?.leadName || globalContext?.activeLeadId);
+  const hasSupportSignal = matchesAny(normalizedMessage, SUPPORT_INTENT_PATTERNS);
+  const hasCommercialSignal = matchesAny(normalizedMessage, COMMERCIAL_INTENT_PATTERNS) || hasLeadContext;
+  const hasOperationalSignal = matchesAny(normalizedMessage, OPERATIONAL_INTENT_PATTERNS);
+  const hasDirectOperation = matchesAny(normalizedMessage, DIRECT_OPERATION_PATTERNS);
+
+  if ((hasSupportSignal || hasOperationalSignal) && hasCommercialSignal && /(\be depois\b|\bapos\b|\btambem\b|whatsapp|mensagem|follow[- ]?up|proximo passo|lead|cliente)/.test(normalizedMessage)) {
+    return 'hybrid';
+  }
+
+  if (hasOperationalSignal && (hasDirectOperation || /\b(tarefa|historico|timeline|status|contrato|assinatura|chave)\b/.test(normalizedMessage))) {
+    return 'operational';
+  }
+
+  if (hasSupportSignal) return 'support';
+  if (hasCommercialSignal) return 'commercial';
+
+  return hasLeadContext ? 'commercial' : 'support';
+};
+
+export const chatWithAura = async (
+  message: string,
+  history: ChatMessage[],
+  userName: string = "Corretor",
+  options?: AuraChatOptions
+): Promise<AuraChatResponse> => {
+  const retries = options?.retries ?? 3;
+  const leadContext = options?.leadContext;
+  const globalContext = options?.globalContext;
+  const intent = classifyAuraIntent(message, leadContext, globalContext);
+  const capabilityLevel = resolveAuraCapabilityLevel(message, intent, leadContext);
+  const assistantMode: AuraAssistantMode = intent;
+
+  const fallbackResponse = (): AuraChatResponse => ({
+    text: getLocalAuraFallback(message, intent, leadContext, globalContext),
+    intent,
+    assistantMode,
+    capabilityLevel,
+  });
+
+  if (!genAI) return fallbackResponse();
+
+  try {
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      systemInstruction: buildAuraSystemInstruction({
+        userName,
+        intent,
+        leadContext,
+        globalContext,
+      }),
+    });
+
+    const formattedHistory = history.slice(-12).map((msg) => ({
+      role: msg.role,
+      parts: [{ text: msg.text }],
+    }));
+
+    const chat = model.startChat({ history: formattedHistory });
+    const result = await chat.sendMessage(`Mensagem do usuario (${intent}): ${message}`);
+    const text = result.response.text().trim();
+
+    if (!text) return fallbackResponse();
+
+    return {
+      text,
+      intent,
+      assistantMode,
+      capabilityLevel,
+    };
+  } catch (error: any) {
+    if (error?.message?.includes('503') && retries > 0) {
+      console.warn(`Aura Chat: Servidor ocupado (503). Tentando novamente... (${retries} restantes)`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return chatWithAura(message, history, userName, { ...options, retries: retries - 1 });
+    }
+
+    console.error("Aura Chat: Erro ao gerar resposta", error);
+    return fallbackResponse();
+  }
+};
+
+const resolveAuraCapabilityLevel = (
+  message: string,
+  intent: AuraConversationIntent,
+  leadContext?: AuraLeadChatContext
+): AuraCapabilityLevel => {
+  const normalizedMessage = normalizeAuraIntentText(message);
+
+  if (intent === 'support') return 'guided';
+
+  const asksExecutableAction = matchesAny(normalizedMessage, DIRECT_OPERATION_PATTERNS);
+  const canPersistTask = /\btarefa\b/.test(normalizedMessage);
+  const canPersistTimeline = /\b(historico|timeline|nota)\b/.test(normalizedMessage) && Boolean(leadContext?.leadId);
+
+  if (intent === 'operational' && asksExecutableAction && (canPersistTask || canPersistTimeline)) {
+    return 'suggested';
+  }
+
+  if (intent === 'operational') return 'guided';
+  return 'suggested';
+};
+
+const formatAuraGlobalContext = (globalContext?: AuraGlobalChatContext) => {
+  if (
+    !globalContext ||
+    (!globalContext.recentLeads?.length && !globalContext.pendingTasks?.length && !globalContext.activeLeadId)
+  ) {
+    return '';
+  }
+
+  const lines = ['--- CONTEXTO GLOBAL DO CORRETOR ---'];
+
+  if (globalContext.recentLeads?.length) {
+    lines.push('- Leads recentes (o corretor pode escolher por numero ou nome):');
+    globalContext.recentLeads.slice(0, 10).forEach((lead, index) => {
+      lines.push(`  ${index + 1}. ${lead.name}${lead.status ? ` - ${lead.status}` : ''}`);
+    });
+  }
+
+  if (globalContext.pendingTasks?.length) {
+    lines.push('- Tarefas pendentes do dia:');
+    globalContext.pendingTasks.slice(0, 10).forEach((task) => lines.push(`  * ${task}`));
+  }
+
+  if (globalContext.activeLeadId) {
+    lines.push(`- Lead ativo no chat: ${globalContext.activeLeadId}`);
+  }
+
+  lines.push('----------------------------------');
+  return lines.join('\n');
+};
+
+const formatAuraLeadContext = (leadContext?: AuraLeadChatContext) => {
+  if (
+    !leadContext ||
+    (!leadContext.leadName &&
+      !leadContext.leadStatus &&
+      !leadContext.propertyTitle &&
+      !leadContext.timelineContext?.length &&
+      !leadContext.pendingTasks?.length)
+  ) {
+    return '';
+  }
+
+  const lines = ['--- CONTEXTO ATUAL DO LEAD (USE ISTO, NAO PERGUNTE O QUE JA ESTA AQUI) ---'];
+  if (leadContext.leadId) lines.push(`- ID do Lead: ${leadContext.leadId}`);
+  if (leadContext.leadName) lines.push(`- Nome do Lead: ${leadContext.leadName}`);
+  if (leadContext.leadStatus) lines.push(`- Status no Funil: ${leadContext.leadStatus}`);
+  if (leadContext.propertyTitle) lines.push(`- Imovel/Perfil de Interesse: ${leadContext.propertyTitle}`);
+
+  if (leadContext.timelineContext?.length) {
+    lines.push('- Historico recente:');
+    leadContext.timelineContext.forEach((item) => lines.push(`  * ${item}`));
+  }
+
+  if (leadContext.pendingTasks?.length) {
+    lines.push('- Tarefas pendentes ligadas ao lead:');
+    leadContext.pendingTasks.forEach((item) => lines.push(`  * ${item}`));
+  }
+
+  lines.push('------------------------------------------------------------------------');
+  return lines.join('\n');
+};
+
+const getAuraRulesForIntent = (intent: AuraConversationIntent) => {
+  if (intent === 'support') return AURA_SUPPORT_RULES;
+  if (intent === 'commercial') return AURA_COMMERCIAL_RULES;
+  if (intent === 'operational') {
+    return [
+      AURA_SUPPORT_RULES,
+      'REGRAS DO MODO OPERACIONAL\n- Identifique se a solicitacao e executavel pelo widget ou se exige orientacao manual.\n- Para criar tarefa ou registrar timeline, prepare titulo/descricao/nota com clareza e explique que o botao Executar fara a persistencia real.\n- Para contrato, chave, assinatura, cobranca ou mudanca de status sem atalho real, entregue caminho operacional e diga que ainda nao executa automaticamente.'
+    ].join('\n\n');
+  }
+
+  return [
+    AURA_SUPPORT_RULES,
+    AURA_COMMERCIAL_RULES,
+    'REGRAS DO MODO HIBRIDO\n- Responda primeiro a duvida operacional ou de suporte.\n- Depois, se fizer sentido, sugira uma acao comercial curta e concreta.\n- Nao misture tudo em um texto longo; separe em blocos curtos.'
+  ].join('\n\n');
+};
+
+export const buildAuraSystemInstruction = ({
+  userName,
+  intent,
+  leadContext,
+  globalContext,
+}: BuildAuraSystemInstructionArgs): string => {
+  const contextPriority =
+    intent === 'support'
+      ? 'Prioridade: responda pela base de conhecimento do Elevatio. Use contexto comercial apenas se a pergunta mencionar lead/atendimento.'
+      : intent === 'commercial'
+        ? 'Prioridade: use o contexto do lead e o contexto global antes da base de conhecimento.'
+        : intent === 'hybrid'
+          ? 'Prioridade: resolva o caminho operacional primeiro e conecte ao proximo passo comercial.'
+          : 'Prioridade: diferencie acao executavel, orientacao guiada e conteudo preparado.';
+
+  const responseStyle =
+    intent === 'support'
+      ? 'Estilo de resposta: curta, didatica, com "Caminho:" quando houver navegacao. Evite excesso de texto.'
+      : intent === 'commercial'
+        ? 'Estilo de resposta: estrategica, direta, com plano comercial ou mensagem pronta quando pedido.'
+        : intent === 'hybrid'
+          ? 'Estilo de resposta: dois blocos curtos: "Como fazer" e "Proximo movimento".'
+          : 'Estilo de resposta: objetivo, deixando claro o que esta pronto e o que exige botao/acao do usuario.';
+
+  return [
+    AURA_IDENTITY_PROMPT,
+    `Usuario atual: ${userName || 'Corretor'}`,
+    `Intencao detectada: ${intent}`,
+    contextPriority,
+    responseStyle,
+    getAuraRulesForIntent(intent),
+    AURA_CAPABILITY_GUARDRAILS,
+    `BASE DE CONHECIMENTO DO ELEVATIO VENDAS\n${ELEVATIO_KNOWLEDGE_BASE}`,
+    formatAuraGlobalContext(globalContext),
+    formatAuraLeadContext(leadContext),
+    'REGRAS FINAIS\n- Nao invente dados que nao constam no contexto.\n- Se faltar dado obrigatorio para executar, explique o dado faltante e ofereca orientacao.\n- Nao responda em JSON.\n- Use Markdown leve apenas quando ajudar a leitura.'
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+};
+
+const getLocalAuraFallback = (
+  message: string,
+  intent: AuraConversationIntent,
+  leadContext?: AuraLeadChatContext,
+  globalContext?: AuraGlobalChatContext
+) => {
+  const normalizedMessage = normalizeAuraIntentText(message);
+  const leadName = leadContext?.leadName || 'este lead';
+
+  if (intent === 'support' || intent === 'operational') {
+    if (normalizedMessage.includes('imovel')) {
+      return 'Cadastro de imovel\n\nCaminho: Imoveis > Novo Imovel\n\n- Preencha tipo, finalidade, preco e endereco.\n- Adicione caracteristicas e fotos.\n- Revise se deve aparecer na vitrine.\n- Salve ou publique conforme a permissao da sua empresa.';
+    }
+
+    if (normalizedMessage.includes('contrato')) {
+      return 'Gerar contrato\n\nCaminho: Contratos > Novo contrato\n\n- Escolha venda, locacao ou administrativo.\n- Selecione o template.\n- Confira cliente, proprietario, imovel e valores.\n- Gere o documento e siga o fluxo de assinatura configurado.';
+    }
+
+    if (normalizedMessage.includes('chave')) {
+      return 'Gestao de chaves\n\nCaminho: Chaves > localizar imovel/chave\n\n- Confira disponibilidade.\n- Registre retirada ou devolucao.\n- Informe responsavel, prazo e observacao.\n- Salve para manter o controle da imobiliaria.';
+    }
+
+    if (normalizedMessage.includes('site') || normalizedMessage.includes('dominio') || normalizedMessage.includes('template')) {
+      return 'Configurar site\n\nCaminho: Configuracoes > Site/Vitrine\n\n- Ajuste template, cores, textos e logo.\n- Confira subdominio ou dominio.\n- Salve as alteracoes para atualizar a vitrine da imobiliaria.';
+    }
+
+    if (normalizedMessage.includes('tarefa')) {
+      return `Tarefa pronta para organizar o atendimento\n\nCaminho: Tarefas > Nova\n\n- Titulo: Follow-up com ${leadName}\n- Descricao: revisar contexto, fazer contato e registrar retorno.\n- Vencimento sugerido: hoje ou proximo horario util.\n\nSe aparecer o botao Executar tarefa, ele cria a tarefa de verdade.`;
+    }
+
+    return 'Caminho rapido\n\nUse o menu lateral do CRM e abra o modulo relacionado: Dashboard, Imoveis, Leads, Tarefas, Contratos, Financeiro, Chaves ou Configuracoes. Se a acao nao tiver botao da Aura, eu posso te orientar passo a passo sem fingir que executei.';
+  }
+
+  if (leadContext?.leadName) {
+    return `Resumo comercial de ${leadContext.leadName}\n\n- Status atual: ${leadContext.leadStatus || 'nao informado'}.\n- Interesse: ${leadContext.propertyTitle || 'nao definido'}.\n- Proximo passo: enviar contato curto, confirmar interesse e criar uma tarefa de retorno.\n\nSugestao: trabalhe uma pergunta simples para gerar resposta e registre a interacao na timeline.`;
+  }
+
+  const recentLeads = globalContext?.recentLeads?.slice(0, 3).map((lead, index) => `${index + 1}. ${lead.name}${lead.status ? ` - ${lead.status}` : ''}`).join('\n');
+  return recentLeads
+    ? `Leads para priorizar agora:\n${recentLeads}\n\nEscolha um deles pelo nome ou numero para eu aprofundar o atendimento.`
+    : 'Posso te ajudar a resumir leads, preparar WhatsApp, definir follow-up ou explicar qualquer modulo do Elevatio Vendas.';
+};
 
 const safeJsonParse = <T>(rawText: string): T | null => {
   try {
@@ -119,64 +663,64 @@ export const generatePropertyDescription = async (
   condoName?: string | null,
   condoFeatures?: string[]
 ): Promise<string | null> => {
-  const condoFeaturesText = condoFeatures && condoFeatures.length > 0 ? `\nComodidades do CondomÃ­nio: ${condoFeatures.join(', ')}` : '';
+  const condoFeaturesText = condoFeatures && condoFeatures.length > 0 ? `\nComodidades do Condomínio: ${condoFeatures.join(', ')}` : '';
   const condominiumContext = condoName
-    ? `InformaÃ§Ã£o Adicional: O imÃ³vel fica no condomÃ­nio ${condoName}.
-Se houver um nome de condomÃ­nio, destaque a seguranÃ§a, infraestrutura e o estilo de vida exclusivo de residir nesta localidade.`
+    ? `Informação Adicional: O imóvel fica no condomínio ${condoName}.
+Se houver um nome de condomínio, destaque a segurança, infraestrutura e o estilo de vida exclusivo de residir nesta localidade.`
     : '';
 
   const condominiumContextWithFeatures = condoName
-    ? `InformaÃ§Ã£o Adicional: O imÃ³vel fica no condomÃ­nio ${condoName}. ${condoFeaturesText}
-Se houver um nome de condomÃ­nio, destaque a seguranÃ§a, infraestrutura e o estilo de vida exclusivo de residir nesta localidade, incluindo as comodidades citadas.`
+    ? `Informação Adicional: O imóvel fica no condomínio ${condoName}. ${condoFeaturesText}
+Se houver um nome de condomínio, destaque a segurança, infraestrutura e o estilo de vida exclusivo de residir nesta localidade, incluindo as comodidades citadas.`
     : condominiumContext;
 
   const prompt = `
-Atue como um redator imobiliÃ¡rio profissional. Sua tarefa Ã© criar um anÃºncio padronizado SUBSTITUINDO os colchetes [...] do template abaixo pelos DADOS REAIS DO IMÃ“VEL, respeitando regras estritas de seguranÃ§a jurÃ­dica.
+Atue como um redator imobiliário profissional. Sua tarefa é criar um anúncio padronizado SUBSTITUINDO os colchetes [...] do template abaixo pelos DADOS REAIS DO IMÓVEL, respeitando regras estritas de segurança jurídica.
 
-DADOS DO IMÃ“VEL A SEREM UTILIZADOS:
+DADOS DO IMÓVEL A SEREM UTILIZADOS:
 ${propertyFeatures}
 ${condominiumContextWithFeatures ? `\n${condominiumContextWithFeatures}\n` : ''}
 
-âš ï¸ REGRAS DE SEGURANÃ‡A JURÃDICA (CRÃTICO):
-1. NÃƒO invente informaÃ§Ãµes. Use APENAS os dados fornecidos. Se algo nÃ£o foi informado, omita.
-2. Nunca mencione metragem, vagas ou quartos se nÃ£o estiverem nos dados.
-3. Nunca cite aceitaÃ§Ã£o de financiamento, permuta ou valor de condomÃ­nio se nÃ£o estiver nos dados.
-4. NÃ£o use adjetivos exagerados como "imperdÃ­vel", "maravilhoso", "dos sonhos".
+⚠️ REGRAS DE SEGURANÇA JURÍDICA (CRÍTICO):
+1. NÃO invente informações. Use APENAS os dados fornecidos. Se algo não foi informado, omita.
+2. Nunca mencione metragem, vagas ou quartos se não estiverem nos dados.
+3. Nunca cite aceitação de financiamento, permuta ou valor de condomínio se não estiver nos dados.
+4. Não use adjetivos exagerados como "imperdível", "maravilhoso", "dos sonhos".
 5. Mantenha um tom profissional, limpo e direto.
 
-=== TEMPLATE OBRIGATÃ“RIO (Preencha os dados reais no lugar dos colchetes) ===
-[Emoji correspondente] [Tipo do ImÃ³vel] com [1 Diferencial Principal] - [Bairro]
-ðŸ“ [Bairro] - [Cidade]/[UF]
+=== TEMPLATE OBRIGATÓRIO (Preencha os dados reais no lugar dos colchetes) ===
+[Emoji correspondente] [Tipo do Imóvel] com [1 Diferencial Principal] - [Bairro]
+📍 [Bairro] - [Cidade]/[UF]
 
-ðŸ“ CaracterÃ­sticas principais:
+✨ Características principais:
 (Crie os bullets preenchidos com os dados reais. Exemplo de como deve ficar:
-- 150mÂ² de Ã¡rea construÃ­da
-- 3 quartos (1 suÃ­te)
+- 150m² de área construída
+- 3 quartos (1 suíte)
 - 2 vagas de garagem
 - Piscina aquecida)
 
-ðŸ“ DescriÃ§Ã£o:
-(Escreva 1 ou 2 parÃ¡grafos curtos descrevendo o imÃ³vel real. Aplique a diretriz correspondente:
-- CASA: Destaque conforto, praticidade, integraÃ§Ã£o e Ã¡rea externa (se houver).
-- APARTAMENTO: Destaque praticidade, elevador/lazer (se houver) e localizaÃ§Ã£o.
-- LOTE/TERRENO: Destaque potencial construtivo e valorizaÃ§Ã£o da regiÃ£o.
-- SOBRADO: Destaque a divisÃ£o entre Ã¡rea Ã­ntima e social, espaÃ§o e privacidade.
-- COBERTURA: Destaque exclusividade, vista, terraÃ§o (se houver) e amplitude.)
+📝 Descrição:
+(Escreva 1 ou 2 parágrafos curtos descrevendo o imóvel real. Aplique a diretriz correspondente:
+- CASA: Destaque conforto, praticidade, integração e área externa (se houver).
+- APARTAMENTO: Destaque praticidade, elevador/lazer (se houver) e localização.
+- LOTE/TERRENO: Destaque potencial construtivo e valorização da região.
+- SOBRADO: Destaque a divisão entre área íntima e social, espaço e privacidade.
+- COBERTURA: Destaque exclusividade, vista, terraço (se houver) e amplitude.)
 
-ðŸ’° Valor: [PreÃ§o real do imÃ³vel formatado]
+💰 Valor: [Preço real do imóvel formatado]
 
-(Adicione esta Ãºltima linha APENAS se os dados informarem financiamento, permuta ou condomÃ­nio:)
-âœ” [InformaÃ§Ã£o financeira adicional real]
+(Adicione esta última linha APENAS se os dados informarem financiamento, permuta ou condomínio:)
+✔ [Informação financeira adicional real]
 ========================================
 
-GUIA DE EMOJIS PARA O TÃTULO (Use apenas 1):
-- Casa: ðŸ¡
-- Apartamento: ðŸ¢
-- Terreno/Lote: ðŸŒ³
-- Sobrado: ðŸ˜
-- Cobertura: ðŸŒ‡
+GUIA DE EMOJIS PARA O TÍTULO (Use apenas 1):
+- Casa: 🏠
+- Apartamento: 🏢
+- Terreno/Lote: 🌳
+- Sobrado: 🏡
+- Cobertura: 🌇
 
-IMPORTANTE: Retorne APENAS o texto do anÃºncio final preenchido. NÃƒO imprima os colchetes literais e nÃ£o inclua saudaÃ§Ãµes.
+IMPORTANTE: Retorne APENAS o texto do anúncio final preenchido. NÃO imprima os colchetes literais e não inclua saudações.
   `;
 
   return generateText(prompt);
@@ -192,11 +736,11 @@ export const findSmartMatches = async (
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const prompt = `
-Atue como um corretor sÃªnior.
-Analise este Lead (OrÃ§amento: ${lead.budget ?? "nÃ£o informado"}, Busca: ${lead.desired_type ?? "tipo livre"}, Quartos: ${lead.desired_bedrooms ?? "nÃ£o informado"}, LocalizaÃ§Ã£o: ${lead.desired_location ?? "nÃ£o informada"}) e estes ImÃ³veis Candidatos.
-Retorne um JSON com os 3 melhores imÃ³veis, dando uma nota de 0-100 (match_score) e um "match_reason" (uma frase curta de venda explicando por que serve).
+Atue como um corretor sênior.
+Analise este Lead (Orçamento: ${lead.budget ?? "não informado"}, Busca: ${lead.desired_type ?? "tipo livre"}, Quartos: ${lead.desired_bedrooms ?? "não informado"}, Localização: ${lead.desired_location ?? "não informada"}) e estes Imóveis Candidatos.
+Retorne um JSON com os 3 melhores imóveis, dando uma nota de 0-100 (match_score) e um "match_reason" (uma frase curta de venda explicando por que serve).
 
-Formato obrigatÃ³rio da resposta:
+Formato obrigatório da resposta:
 {
   "matches": [
     {
@@ -208,11 +752,11 @@ Formato obrigatÃ³rio da resposta:
 }
 
 Regras:
-- Use APENAS os imÃ³veis recebidos.
-- Traga no mÃ¡ximo 3 itens.
-- match_score deve ser nÃºmero inteiro entre 0 e 100.
-- match_reason deve ter no mÃ¡ximo 160 caracteres.
-- NÃ£o adicione texto fora do JSON.
+- Use APENAS os imóveis recebidos.
+- Traga no máximo 3 itens.
+- match_score deve ser número inteiro entre 0 e 100.
+- match_reason deve ter no máximo 160 caracteres.
+- Não adicione texto fora do JSON.
 
 Lead:
 ${JSON.stringify(
@@ -229,11 +773,11 @@ ${JSON.stringify(
     2
   )}
 
-ImÃ³veis Candidatos:
+Imóveis Candidatos:
 ${JSON.stringify(candidateProperties, null, 2)}
 
-HISTÃ“RICO DE NAVEGAÃ‡ÃƒO RECENTE: ${JSON.stringify(navigationHistory || [])}.
-InstruÃ§Ã£o: Se o cliente visitou imÃ³veis diferentes do perfil declarado, considere isso como um forte sinal de interesse latente.
+HISTÓRICO DE NAVEGAÇÃO RECENTE: ${JSON.stringify(navigationHistory || [])}.
+Instrução: Se o cliente visitou imóveis diferentes do perfil declarado, considere isso como um forte sinal de interesse latente.
   `;
 
   try {
@@ -250,7 +794,7 @@ InstruÃ§Ã£o: Se o cliente visitou imÃ³veis diferentes do perfil declarado,
       .map((item) => ({
         property_id: item.property_id,
         match_score: Math.max(0, Math.min(100, Math.round(item.match_score))),
-        match_reason: item.match_reason || "Boa opÃ§Ã£o para o perfil informado."
+        match_reason: item.match_reason || "Boa opção para o perfil informado."
       }))
       .slice(0, 3);
 
@@ -299,8 +843,8 @@ const getLocalLeadNextStepSuggestion = (lead: Lead): LeadNextStepSuggestion => {
   return {
     title: hasInitialMessage ? "Revisar interesse e fazer primeiro contato" : "Fazer primeiro contato com o lead",
     description: hasInitialMessage
-      ? `Revise a observacao inicial de ${lead.name} e envie a primeira mensagem de qualificacao.`
-      : `Entre em contato com ${lead.name} para entender o perfil de busca e registrar as preferencias iniciais.`,
+      ? `Revise a observação inicial de ${lead.name} e envie a primeira mensagem de qualificação.`
+      : `Entre em contato com ${lead.name} para entender o perfil de busca e registrar as preferências iniciais.`,
     priority: "alta",
     due_in_hours: 2
   };
@@ -322,24 +866,24 @@ export const suggestLeadNextSteps = async (
     });
 
     const prompt = `
-Voce e a Aura, uma IA especialista em rotina comercial imobiliaria.
-Analise o lead recem-criado e sugira a proxima acao inicial para o corretor.
+Você é a Aura, uma IA especialista em rotina comercial imobiliária.
+Analise o lead recém-criado e sugira a próxima ação inicial para o corretor.
 
-Retorne APENAS um JSON valido neste formato:
+Retorne APENAS um JSON válido neste formato:
 {
-  "title": "Titulo curto da tarefa",
-  "description": "Descricao objetiva para orientar o corretor",
+  "title": "Título curto da tarefa",
+  "description": "Descrição objetiva para orientar o corretor",
   "priority": "alta",
   "due_in_hours": 24
 }
 
 Regras:
-- Nao invente informacoes.
-- O titulo deve ter no maximo 80 caracteres.
-- A descricao deve ter no maximo 220 caracteres.
+- Não invente informações.
+- O título deve ter no máximo 80 caracteres.
+- A descrição deve ter no máximo 220 caracteres.
 - priority deve ser "alta", "media" ou "baixa".
-- due_in_hours deve ser um numero entre 1 e 72.
-- Se houver observacao/mensagem inicial, use isso para orientar a primeira abordagem.
+- due_in_hours deve ser um número entre 1 e 72.
+- Se houver observação/mensagem inicial, use isso para orientar a primeira abordagem.
 
 Lead:
 ${JSON.stringify({
@@ -375,7 +919,7 @@ ${JSON.stringify(timelineEvents || [], null, 2)}
       due_in_hours: Number.isFinite(dueInHours) ? Math.max(1, Math.min(72, Math.round(dueInHours))) : fallback.due_in_hours
     };
   } catch (error) {
-    console.error("Erro ao sugerir proximos passos do lead com IA:", error);
+    console.error("Erro ao sugerir próximos passos do lead com IA:", error);
     return fallback;
   }
 };
@@ -389,11 +933,11 @@ export async function generateCRMInsights(
   userLevelInfo: { title: string; level: number }
 ): Promise<string> {
   const apiKey = await getApiKey();
-  if (!apiKey) return 'A inteligÃªncia artificial estÃ¡ desativada no momento. Configure sua chave da API nas opÃ§Ãµes da empresa.';
+  if (!apiKey) return 'A inteligência artificial está desativada no momento. Configure sua chave da API nas opções da empresa.';
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Usaremos a versÃ£o mais recente da API para testes iniciais
+    // Usaremos a versão mais recente da API para testes iniciais
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const activeLeads = leads.filter(l => l.status !== 'ganho' && l.status !== 'perdido');
@@ -406,25 +950,25 @@ export async function generateCRMInsights(
       return isThisWeek ? sum + (e.points_awarded || 0) : sum;
     }, 0);
 
-    const prompt = `VocÃª Ã© a "Aura", a inteligÃªncia artificial especialista em vendas imobiliÃ¡rias do Elevatio.
-    Analise os nÃºmeros do corretor ${userName} e dÃª 3 dicas prÃ¡ticas em formato de bullet points.
+    const prompt = `Você é a "Aura", a inteligência artificial especialista em vendas imobiliárias do Elevatio.
+    Analise os números do corretor ${userName} e dê 3 dicas práticas em formato de bullet points.
     Fale diretamente com o corretor, de forma direta e motivacional.
 
     Contexto Atual:
-    - Patente/Liga: ${userLevelInfo.title} (NÃ­vel ${userLevelInfo.level})
-    - Pontos ganhos nos Ãºltimos 7 dias: ${totalPointsWeek}
-    - NegÃ³cios fechados na semana: ${recentWins}
+    - Patente/Liga: ${userLevelInfo.title} (Nível ${userLevelInfo.level})
+    - Pontos ganhos nos últimos 7 dias: ${totalPointsWeek}
+    - Negócios fechados na semana: ${recentWins}
     - Leads Ativos: ${activeLeads.length}
     - Tarefas Atrasadas: ${delayedTasks.length}
-    - NotificaÃ§Ãµes NÃ£o Lidas no Sininho: ${unreadNotifications}
+    - Notificações Não Lidas no Sininho: ${unreadNotifications}
 
     Regras:
-    - Se houver notificaÃ§Ãµes nÃ£o lidas, alerte sobre o "Sininho".
-    - Se houver tarefas atrasadas, sugira focar na "OperaÃ§Ã£o Limpa" (concluir todas).
-    - Sugira focar no avanÃ§o de leads para somar pontos na gamificaÃ§Ã£o.`;
+    - Se houver notificações não lidas, alerte sobre o "Sininho".
+    - Se houver tarefas atrasadas, sugira focar na "Operação Limpa" (concluir todas).
+    - Sugira focar no avanço de leads para somar pontos na gamificação.`;
 
     const result = await model.generateContent(prompt);
-    const response = result.response; // Removido o await desnecessÃ¡rio aqui
+    const response = result.response; // Removido o await desnecessário aqui
 
     if (!response.text()) {
       throw new Error("A API retornou uma resposta vazia.");
@@ -433,9 +977,9 @@ export async function generateCRMInsights(
     return response.text();
   } catch (error: any) {
     // Tratamento de erro aprimorado para capturar o motivo real
-    console.error('ðŸš¨ Erro detalhado no Gemini API (generateCRMInsights):', error);
+    console.error('🚨 Erro detalhado no Gemini API (generateCRMInsights):', error);
 
-    let errMsg = 'Falha ao conectar com a Aura. Verifique sua conexÃ£o.';
+    let errMsg = 'Falha ao conectar com a Aura. Verifique sua conexão.';
 
     if (error instanceof Error) {
       errMsg = error.message;
@@ -445,9 +989,9 @@ export async function generateCRMInsights(
       errMsg = error;
     }
 
-    // Evita lanÃ§ar um erro com string vazia
+    // Evita lançar um erro com string vazia
     if (!errMsg || errMsg.trim() === '') {
-      errMsg = 'Falha silenciosa na API do Google (PossÃ­vel erro de CORS, cota excedida, ou modelo nÃ£o suportado).';
+      errMsg = 'Falha silenciosa na API do Google (Possível erro de CORS, cota excedida, ou modelo não suportado).';
       console.warn("Objeto de erro recebido:", JSON.stringify(error)); // Ajuda a debugar
     }
 
@@ -456,54 +1000,54 @@ export async function generateCRMInsights(
 }
 
 export async function autoTagContractTemplate(rawContent: string): Promise<string> {
-  if (!genAI) throw new Error("Gemini API Key nÃ£o configurada.");
+  if (!genAI) throw new Error("Gemini API Key não configurada.");
 
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-  const prompt = `VocÃª Ã© um Assistente JurÃ­dico ImobiliÃ¡rio. Sua tarefa Ã© ler o contrato bruto fornecido e substituir os dados reais, nomes e valores por nossas TAGS (Shortcodes) padronizadas.
+  const prompt = `Você é um Assistente Jurídico Imobiliário. Sua tarefa é ler o contrato bruto fornecido e substituir os dados reais, nomes e valores por nossas TAGS (Shortcodes) padronizadas.
 
-MANTENHA toda a formataÃ§Ã£o HTML, negritos e estrutura do texto original. APENAS substitua os dados especÃ­ficos pelas tags abaixo.
+MANTENHA toda a formatação HTML, negritos e estrutura do texto original. APENAS substitua os dados específicos pelas tags abaixo.
 
-DicionÃ¡rio de VariÃ¡veis DisponÃ­veis:
+Dicionário de Variáveis Disponíveis:
 
-[DADOS DA IMOBILIÃRIA / CORRETOR]
+[DADOS DA IMOBILIÁRIA / CORRETOR]
 {{IMOBILIARIA_NOME}} - Nome da sua empresa
-{{IMOBILIARIA_CNPJ}} - CNPJ da imobiliÃ¡ria
-{{IMOBILIARIA_ENDERECO}} - EndereÃ§o da imobiliÃ¡ria
-{{CORRETOR_NOME}} - Nome do corretor responsÃ¡vel
+{{IMOBILIARIA_CNPJ}} - CNPJ da imobiliária
+{{IMOBILIARIA_ENDERECO}} - Endereço da imobiliária
+{{CORRETOR_NOME}} - Nome do corretor responsável
 {{CORRETOR_CRECI}} - CRECI do corretor
-{{IMOBILIARIA_ASSINATURA}} - A imagem da assinatura salva nas configuraÃ§Ãµes
+{{IMOBILIARIA_ASSINATURA}} - A imagem da assinatura salva nas configurações
 
-[DADOS DO CLIENTE / LOCATÃRIO / COMPRADOR]
+[DADOS DO CLIENTE / LOCATÁRIO / COMPRADOR]
 {{CLIENTE_NOME}} - Nome completo
 {{CLIENTE_CPF}} - CPF ou CNPJ
 {{CLIENTE_RG}} - RG
 {{CLIENTE_NACIONALIDADE}} - Ex: Brasileiro
 {{CLIENTE_PROFISSAO}} - Ex: Engenheiro
 {{CLIENTE_ESTADO_CIVIL}} - Ex: Casado, Solteiro
-{{CLIENTE_ENDERECO}} - EndereÃ§o de residÃªncia atual
+{{CLIENTE_ENDERECO}} - Endereço de residência atual
 
-[DADOS DO PROPRIETÃRIO / LOCADOR / VENDEDOR]
+[DADOS DO PROPRIETÁRIO / LOCADOR / VENDEDOR]
 {{PROPRIETARIO_NOME}}
 {{PROPRIETARIO_CPF}}
 {{PROPRIETARIO_RG}}
 {{PROPRIETARIO_ESTADO_CIVIL}}
 {{PROPRIETARIO_ENDERECO}}
 
-[DADOS DO IMÃ“VEL E FINANCEIRO]
-{{IMOVEL_ENDERECO}} - EndereÃ§o completo do imÃ³vel negociado
-{{IMOVEL_MATRICULA}} - NÃºmero da matrÃ­cula no cartÃ³rio
-{{VALOR_TOTAL}} - Valor total do aluguel ou venda (em nÃºmeros)
+[DADOS DO IMÓVEL E FINANCEIRO]
+{{IMOVEL_ENDERECO}} - Endereço completo do imóvel negociado
+{{IMOVEL_MATRICULA}} - Número da matrícula no cartório
+{{VALOR_TOTAL}} - Valor total do aluguel ou venda (em números)
 {{VALOR_TOTAL_EXTENSO}} - Valor escrito por extenso
 {{DATA_VENCIMENTO}} - Dia do vencimento (ex: dia 10)
-{{PRAZO_MESES}} - Prazo de vigÃªncia do contrato (ex: 30 meses)
-{{DATA_ATUAL}} - Data de geraÃ§Ã£o do contrato (ex: 15 de MarÃ§o de 2026)
+{{PRAZO_MESES}} - Prazo de vigência do contrato (ex: 30 meses)
+{{DATA_ATUAL}} - Data de geração do contrato (ex: 15 de Março de 2026)
 
 Regras rigorosas:
-1. Preserve RIGOROSAMENTE todo o texto jurÃ­dico, pontuaÃ§Ã£o, quebras de linha e clÃ¡usulas originais.
-2. Quando o contrato mencionar cliente, locatÃ¡rio ou comprador, normalize para a famÃ­lia CLIENTE.
-3. Quando o contrato mencionar proprietÃ¡rio, locador ou vendedor, normalize para a famÃ­lia PROPRIETARIO.
-4. Retorne APENAS o texto do contrato com as tags aplicadas. NÃ£o adicione saudaÃ§Ãµes, explicaÃ§Ãµes ou formataÃ§Ã£o Markdown extra.
+1. Preserve RIGOROSAMENTE todo o texto jurídico, pontuação, quebras de linha e cláusulas originais.
+2. Quando o contrato mencionar cliente, locatário ou comprador, normalize para a família CLIENTE.
+3. Quando o contrato mencionar proprietário, locador ou vendedor, normalize para a família PROPRIETARIO.
+4. Retorne APENAS o texto do contrato com as tags aplicadas. Não adicione saudações, explicações ou formatação Markdown extra.
 
 CONTRATO ORIGINAL PARA ANALISAR:
 ${rawContent}`;
@@ -517,23 +1061,23 @@ ${rawContent}`;
       .trim();
   } catch (error) {
     console.error("Erro ao analisar contrato com IA:", error);
-    throw new Error("NÃ£o foi possÃ­vel analisar o contrato no momento.");
+    throw new Error("Não foi possível analisar o contrato no momento.");
   }
 }
 
 /**
- * Copiloto de ComunicaÃ§Ã£o: Gera rascunho de WhatsApp baseado no histÃ³rico do Lead.
- * Inclui sistema de Retry para lidar com picos temporÃ¡rios de uso na API do Google (Erro 503).
+ * Copiloto de Comunicação: Gera rascunho de WhatsApp baseado no histórico do Lead.
+ * Inclui sistema de Retry para lidar com picos temporários de uso na API do Google (Erro 503).
  */
 export const generateAuraWhatsAppDraft = async (leadName: string, context: string, retries = 3): Promise<string> => {
-  if (!genAI) throw new Error("Gemini API Key nÃ£o configurada.");
+  if (!genAI) throw new Error("Gemini API Key não configurada.");
 
   try {
     // Usando o modelo que a sua API Key reconheceu (pode usar gemini-2.0-flash se preferir)
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const prompt = `
-      Atue como um corretor de imÃ³veis de elite, mestre em persuasÃ£o e atendimento humanizado.
+      Atue como um corretor de imóveis de elite, mestre em persuasão e atendimento humanizado.
       Escreva uma mensagem de WhatsApp para o cliente: ${leadName}.
       
       CONTEXTO RECENTE DA TIMELINE DO CLIENTE:
@@ -542,10 +1086,10 @@ export const generateAuraWhatsAppDraft = async (leadName: string, context: strin
       DIRETRIZES:
       1. Tom de voz: Profissional, acolhedor e focado em gerar resposta.
       2. Gatilho de contexto: Use a timeline para personalizar a mensagem.
-      3. Estrutura: Direta ao ponto (2 ou 3 parÃ¡grafos curtos).
+      3. Estrutura: Direta ao ponto (2 ou 3 parágrafos curtos).
       4. Fechamento: Termine sempre com uma pergunta simples e aberta (Call to Action).
-      5. FormataÃ§Ã£o: Use negrito do WhatsApp (*texto*) nos pontos altos e emojis com muita moderaÃ§Ã£o.
-      6. IMPORTANTE: Retorne APENAS o texto da mensagem. Sem introduÃ§Ãµes, aspas ou comentÃ¡rios extras.
+      5. Formatação: Use negrito do WhatsApp (*texto*) nos pontos altos e emojis com muita moderação.
+      6. IMPORTANTE: Retorne APENAS o texto da mensagem. Sem introduções, aspas ou comentários extras.
     `;
 
     const result = await model.generateContent(prompt);
@@ -559,7 +1103,7 @@ export const generateAuraWhatsAppDraft = async (leadName: string, context: strin
     }
     
     console.error("Aura: Erro final ao gerar draft de WhatsApp", error);
-    throw new Error("NÃ£o foi possÃ­vel gerar a mensagem com a IA neste momento. Tente novamente em alguns minutos.");
+    throw new Error("Não foi possível gerar a mensagem com a IA neste momento. Tente novamente em alguns minutos.");
   }
 };
 
@@ -581,7 +1125,7 @@ const getLocalVisitFeedbackFallback = (
     normalized.includes("desist") ||
     normalized.includes("parou de procurar") ||
     normalized.includes("nao quer mais comprar") ||
-    normalized.includes("nÃ£o quer mais comprar") ||
+    normalized.includes("não quer mais comprar") ||
     normalized.includes("sem interesse") ||
     normalized.includes("vai pausar");
 
@@ -597,9 +1141,9 @@ const getLocalVisitFeedbackFallback = (
   if (isFrozen) {
     return {
       status_suggestion: "Congelado",
-      timeline_note: `${leadName} sinalizou pausa na busca apos a visita, exigindo acompanhamento futuro mais leve.`,
-      next_task_title: "ðŸ¤– Aura: Registrar motivo da pausa do lead",
-      next_task_desc: "Documente o motivo da pausa, confirme quando retomar o contato e mantenha o lead aquecido sem pressao comercial.",
+      timeline_note: `${leadName} sinalizou pausa na busca após a visita, exigindo acompanhamento futuro mais leve.`,
+      next_task_title: "🤖 Aura: Registrar motivo da pausa do lead",
+      next_task_desc: "Documente o motivo da pausa, confirme quando retomar o contato e mantenha o lead aquecido sem pressão comercial.",
       next_task_hours: 72,
     };
   }
@@ -607,18 +1151,18 @@ const getLocalVisitFeedbackFallback = (
   if (isProposal) {
     return {
       status_suggestion: "Proposta",
-      timeline_note: `${leadName} demonstrou interesse concreto no imovel visitado e avancou para tratativas comerciais.`,
-      next_task_title: `ðŸ¤– Aura: Preparar proposta para ${leadName}`,
-      next_task_desc: "Organize a proposta comercial, alinhe margem de negociacao e confirme os proximos documentos necessarios.",
+      timeline_note: `${leadName} demonstrou interesse concreto no imóvel visitado e avançou para tratativas comerciais.`,
+      next_task_title: `🤖 Aura: Preparar proposta para ${leadName}`,
+      next_task_desc: "Organize a proposta comercial, alinhe margem de negociação e confirme os próximos documentos necessários.",
       next_task_hours: 24,
     };
   }
 
   return {
     status_suggestion: "Atendimento",
-    timeline_note: `${leadName} concluiu a visita, mas ainda precisa de novas opcoes aderentes ao perfil informado.`,
-    next_task_title: `ðŸ¤– Aura: Selecionar novos imoveis para ${leadName}`,
-    next_task_desc: "Revise os pontos levantados na visita e envie novas sugestoes com melhor encaixe de perfil, valor ou localizacao.",
+    timeline_note: `${leadName} concluiu a visita, mas ainda precisa de novas opções aderentes ao perfil informado.`,
+    next_task_title: `🤖 Aura: Selecionar novos imóveis para ${leadName}`,
+    next_task_desc: "Revise os pontos levantados na visita e envie novas sugestões com melhor encaixe de perfil, valor ou localização.",
     next_task_hours: 24,
   };
 };
@@ -652,7 +1196,7 @@ const sanitizeVisitFeedbackAnalysis = (
 };
 
 /**
- * Loop de PÃ³s-Visita: Analisa o feedback do corretor e decide o destino do Lead.
+ * Loop de Pós-Visita: Analisa o feedback do corretor e decide o destino do Lead.
  */
 export const processVisitFeedback = async (
   leadName: string,
@@ -670,30 +1214,30 @@ export const processVisitFeedback = async (
     });
 
     const prompt = `
-Voce e a inteligencia por tras de um CRM imobiliario.
-O corretor acabou de realizar uma visita com o cliente e precisa decidir o proximo passo do funil.
+Você é a inteligência por trás de um CRM imobiliário.
+O corretor acabou de realizar uma visita com o cliente e precisa decidir o próximo passo do funil.
 
 Contexto:
 ${JSON.stringify({ leadName, feedback }, null, 2)}
 
-Sua tarefa e analisar o relato e devolver APENAS um objeto JSON valido com esta estrutura:
+Sua tarefa é analisar o relato e devolver APENAS um objeto JSON válido com esta estrutura:
 {
   "status_suggestion": "Proposta" | "Atendimento" | "Congelado",
-  "timeline_note": "Um resumo profissional de 1 frase para o historico",
-  "next_task_title": "Titulo da proxima tarefa",
-  "next_task_desc": "Descricao objetiva da tarefa",
+  "timeline_note": "Um resumo profissional de 1 frase para o histórico",
+  "next_task_title": "Título da próxima tarefa",
+  "next_task_desc": "Descrição objetiva da tarefa",
   "next_task_hours": 24
 }
 
 Regras:
 - Se o cliente gostou e quer negociar/comprar, status_suggestion deve ser "Proposta".
-- Se o cliente nao gostou, mas quer ver outros imoveis, status_suggestion deve ser "Atendimento".
+- Se o cliente não gostou, mas quer ver outros imóveis, status_suggestion deve ser "Atendimento".
 - Se o cliente desistiu de comprar ou pausou a busca, status_suggestion deve ser "Congelado".
-- timeline_note deve ter no maximo 180 caracteres.
-- next_task_title deve ter no maximo 80 caracteres.
-- next_task_desc deve ter no maximo 220 caracteres.
-- next_task_hours deve ser um numero inteiro entre 1 e 168.
-- Nao use markdown, comentarios ou texto fora do JSON.
+- timeline_note deve ter no máximo 180 caracteres.
+- next_task_title deve ter no máximo 80 caracteres.
+- next_task_desc deve ter no máximo 220 caracteres.
+- next_task_hours deve ser um número inteiro entre 1 e 168.
+- Não use markdown, comentários ou texto fora do JSON.
 `;
 
     const result = await model.generateContent(prompt);
@@ -704,109 +1248,5 @@ Regras:
   } catch (error) {
     console.error("Aura: Erro ao processar feedback da visita", error);
     return fallback;
-  }
-};
-
-/**
- * Oráculo (Chat Global): Permite conversação livre com a Aura baseada num histórico e contexto atual.
- */
-export const chatWithAura = async (
-  message: string,
-  history: ChatMessage[],
-  userName: string = "Corretor",
-  options?: { retries?: number; leadContext?: AuraLeadChatContext; globalContext?: AuraGlobalChatContext }
-): Promise<string> => {
-  if (!genAI) throw new Error("Gemini API Key não configurada.");
-  const retries = options?.retries ?? 3;
-  const context = options?.leadContext;
-  const globalContext = options?.globalContext;
-
-  // INJEÇÃO INVISÍVEL DE CONTEXTO
-  // Fornecemos as respostas antes mesmo da Aura perguntar.
-  let globalContextPrompt = '';
-  if (
-    globalContext &&
-    (globalContext.recentLeads?.length ||
-      globalContext.pendingTasks?.length ||
-      globalContext.activeLeadId)
-  ) {
-    globalContextPrompt = `\n\n--- CONTEXTO GLOBAL DO CORRETOR ---\n`;
-    if (globalContext.recentLeads && globalContext.recentLeads.length > 0) {
-      globalContextPrompt += '- Recent Leads (o corretor pode escolher por numero ou nome):\n';
-      globalContext.recentLeads.slice(0, 10).forEach((lead, index) => {
-        globalContextPrompt += `  ${index + 1}. ${lead.name}${lead.status ? ` - ${lead.status}` : ''}\n`;
-      });
-    }
-    if (globalContext.pendingTasks && globalContext.pendingTasks.length > 0) {
-      globalContextPrompt += `- Tarefas do Dia:\n  * ${globalContext.pendingTasks.join('\n  * ')}\n`;
-    }
-    if (globalContext.activeLeadId) {
-      globalContextPrompt += `- Lead ativo no chat: ${globalContext.activeLeadId}\n`;
-    }
-    globalContextPrompt += `---------------------------------\n`;
-  }
-
-  let contextPrompt = '';
-  if (
-    context &&
-    (context.leadName ||
-      context.leadStatus ||
-      context.propertyTitle ||
-      context.timelineContext?.length ||
-      context.pendingTasks?.length)
-  ) {
-    contextPrompt = `\n\n--- INFORMAÇÕES ATUAIS DO LEAD (USE ISTO, NÃO PERGUNTE O QUE JÁ ESTÁ AQUI) ---\n`;
-    if (context.leadName) contextPrompt += `- Nome do Lead: ${context.leadName}\n`;
-    if (context.leadStatus) contextPrompt += `- Status no Funil: ${context.leadStatus}\n`;
-    if (context.propertyTitle) contextPrompt += `- Imóvel de Interesse: ${context.propertyTitle}\n`;
-    if (context.timelineContext && context.timelineContext.length > 0) {
-      contextPrompt += `- Histórico Recente (Timeline):\n  * ${context.timelineContext.join('\n  * ')}\n`;
-    }
-    if (context.pendingTasks && context.pendingTasks.length > 0) {
-      contextPrompt += `- Tarefas Pendentes na Agenda:\n  * ${context.pendingTasks.join('\n  * ')}\n`;
-    }
-    contextPrompt += `--------------------------------------------------------------------------\n`;
-  }
-
-  try {
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.5-flash",
-      systemInstruction: `Você é a Aura, a Inteligência Artificial de elite integrada a este CRM Imobiliário. 
-      Sua missão é ajudar o corretor ${userName} a fechar negócios.
-      
-      REGRAS DE SOBREVIVÊNCIA (OBRIGAÇÃO ESTREITA):
-      1. NUNCA faça perguntas ao corretor pedindo mais contexto, linha do tempo, orçamentos, ou motivos de silêncio. O corretor odeia preencher dados. A única exceção permitida é uma pergunta objetiva de navegação entre leads já listados no contexto global.
-      2. USE EXCLUSIVAMENTE os dados fornecidos no bloco "INFORMAÇÕES ATUAIS DO LEAD".
-      3. Se uma informação não constar no bloco (ex: sem motivo de objeção explícito), assuma que não há objeção mapeada e crie o seu resumo ou mensagem APENAS com as informações que você tem.
-      4. É expressamente PROIBIDO responder com frases como "Preciso de mais contexto", "Por favor, forneça" ou "Faltam detalhes".
-      5. Vá direto ao ponto. Entregue a resposta pronta, aja como um diretor de vendas sênior ajudando sua equipe.
-      6. Quando não houver um lead focado, use primeiro o CONTEXTO GLOBAL DO CORRETOR antes de responder qualquer coisa específica sobre atendimento.
-      7. FLUXO DE DESCOBERTA:
-         - Se o corretor perguntar sobre "meus leads" ou "quem eu tenho", use a lista de "Recent Leads" fornecida no contexto global e pergunte: "Sobre qual desses leads você gostaria de falar?".
-         - Se o corretor mencionar um nome que NÃO está no contexto atual, peça para ele confirmar o nome ou use a ferramenta de busca (simulada pelo contexto).
-         - Assim que um lead for identificado pelo nome, sua resposta deve ser focada em confirmar: "Entendido, carregando dados do [Nome]. O que você precisa saber sobre ele?".`
-    });
-
-    const formattedHistory = history.map((msg) => ({
-      role: msg.role,
-      parts: [{ text: msg.text }]
-    }));
-
-    const chat = model.startChat({ history: formattedHistory });
-
-    // Envia o prompt do usuário + os dados frescos do lead por trás dos panos
-    const injectedContext = `${globalContextPrompt}${contextPrompt}`.trim();
-    const finalMessage = injectedContext ? `${injectedContext}\n\nPergunta do Corretor: ${message}` : message;
-
-    const result = await chat.sendMessage(finalMessage);
-    return result.response.text().trim();
-  } catch (error: any) {
-    if (error?.message?.includes('503') && retries > 0) {
-      console.warn(`Aura Chat: Servidor ocupado (503). Tentando novamente... (${retries} restantes)`);
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      return chatWithAura(message, history, userName, { ...options, retries: retries - 1 });
-    }
-    console.error("Aura Chat: Erro ao gerar resposta", error);
-    throw new Error("Desculpe, a minha linha de raciocínio falhou por um momento. Pode repetir?");
   }
 };

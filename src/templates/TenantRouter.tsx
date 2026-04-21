@@ -31,6 +31,11 @@ const LuxuryAbout = React.lazy(() => import('./luxury/pages/About'));
 // Minimalist
 const MinimalistLayout = React.lazy(() => import('./minimalist/MinimalistLayout'));
 const MinimalistHome = React.lazy(() => import('./minimalist/pages/Home'));
+const MinimalistProperties = React.lazy(() => import('./minimalist/pages/Properties'));
+const MinimalistPropertyDetail = React.lazy(() => import('./minimalist/pages/PropertyDetail'));
+const MinimalistAbout = React.lazy(() => import('./minimalist/pages/About'));
+const MinimalistServices = React.lazy(() => import('./minimalist/pages/Services'));
+const MinimalistFinanciamentos = React.lazy(() => import('./minimalist/pages/Financiamentos'));
 
 // Modern
 const ModernLayout = React.lazy(() => import('./modern/ModernLayout'));
@@ -123,6 +128,7 @@ export default function TenantRouter(_props: TenantRouterProps) {
     safeTemplateId === 'luxury' ? LuxuryProperties :
     safeTemplateId === 'basico' ? BasicoProperties :
     safeTemplateId === 'classic' ? ClassicProperties :
+    safeTemplateId === 'minimalist' ? MinimalistProperties :
     safeTemplateId === 'draft_modern' ? DraftModernProperties :
     ModernProperties;
 
@@ -130,20 +136,26 @@ export default function TenantRouter(_props: TenantRouterProps) {
     safeTemplateId === 'luxury' ? LuxuryPropertyDetail :
     safeTemplateId === 'basico' ? BasicoPropertyDetail :
     safeTemplateId === 'classic' ? ClassicPropertyDetail :
+    safeTemplateId === 'minimalist' ? MinimalistPropertyDetail :
     safeTemplateId === 'draft_modern' ? DraftModernPropertyDetail :
     ModernPropertyDetail;
 
   const AboutPage =
     safeTemplateId === 'luxury' ? LuxuryAbout :
     safeTemplateId === 'classic' ? ClassicAbout :
+    safeTemplateId === 'minimalist' ? MinimalistAbout :
     ModernAbout;
 
   const ServicesPage =
     safeTemplateId === 'luxury' ? LuxuryServices :
     safeTemplateId === 'classic' ? ClassicServices :
+    safeTemplateId === 'minimalist' ? MinimalistServices :
     ModernServices;
 
-  const FinancingPage = safeTemplateId === 'classic' ? ClassicFinanciamentos : ModernFinanciamentos;
+  const FinancingPage =
+    safeTemplateId === 'classic' ? ClassicFinanciamentos :
+    safeTemplateId === 'minimalist' ? MinimalistFinanciamentos :
+    ModernFinanciamentos;
 
   return (
     <Suspense fallback={<TemplateLoader />}>

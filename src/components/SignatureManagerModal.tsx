@@ -212,7 +212,7 @@ export default function SignatureManagerModal({
         suggestions.push({ contract_id: contractId, signer_name: 'Testemunha 2', signer_email: '', signer_role: 'Testemunha', status: 'pending' });
       }
 
-      // 4. INSERIR NO BANCO
+      // 4. ATUALIZAR ESTADO (AGUARDAR APROVAÇÃO DO USUÁRIO)
       if (suggestions.length > 0) {
         // Busca as assinaturas que já existem no banco para este contrato
         const { data: existing } = await supabase
@@ -223,17 +223,11 @@ export default function SignatureManagerModal({
         // Cria uma chave única combinando Role + Nome para evitar duplicatas de Testemunhas
         const existingKeys = existing?.map(e => `${e.signer_role}:${e.signer_name}`) || [];
         
-        const toInsert = suggestions
-          .filter(s => !existingKeys.includes(`${s.signer_role}:${s.signer_name}`))
-          .map(s => ({
-            ...s,
-            company_id: companyId,
-            token: crypto.randomUUID()
-          }));
+        const toSuggest = suggestions
+          .filter(s => !existingKeys.includes(`${s.signer_role}:${s.signer_name}`));
         
-        if (toInsert.length > 0) {
-          await supabase.from('contract_signatures').insert(toInsert);
-          loadSignatures();
+        if (toSuggest.length > 0) {
+          setSuggestedSigners(toSuggest);
         }
       }
     } catch (err) {
@@ -398,7 +392,7 @@ export default function SignatureManagerModal({
               {/* Secção 2: Links Gerados */}
               <section className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">
+                  <h3 className="text-sm font-bold tracking-wider text-slate-500">
                     Links Ativos ({signatures.length})
                   </h3>
                   {!showManualAdd && (

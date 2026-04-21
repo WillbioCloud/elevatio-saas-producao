@@ -22,6 +22,7 @@ interface ContractRecord {
 interface SignatureDocumentData {
   id: string;
   contract_id: string | null;
+  company_id?: string;
   status: 'pending' | 'signed' | 'rejected';
   signer_name: string;
   signer_document?: string | null;
@@ -508,6 +509,21 @@ export default function SignDocument() {
         throw error;
       }
 
+      // 1. Disparar notificação em tempo real para o CRM
+      if (data.company_id) {
+        const { error: notifError } = await supabase.from('notifications').insert({
+          company_id: data.company_id,
+          title: 'Assinatura Concluída! ✍️',
+          message: `${data.signer_name} (${data.signer_role || 'Signatário'}) assinou um documento.`,
+          type: 'system',
+          link: '/admin/contratos'
+        });
+        
+        if (notifError) {
+          console.error('Erro ao gerar notificação no CRM:', notifError);
+        }
+      }
+
       if (['intermediacao', 'intermed_rent'].includes(contractData?.contract_data?.document_type as string) && contractData?.property_id) {
         const { error: propertyUpdateError } = await supabase
           .from('properties')
@@ -972,4 +988,3 @@ export default function SignDocument() {
     </div>
   );
 }
-

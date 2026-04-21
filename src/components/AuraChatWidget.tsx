@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import {
+  AuraAssistantMode,
+  AuraCapabilityLevel,
   AuraGlobalChatContext,
   AuraLeadChatContext,
   AuraRecentLeadOption,
@@ -17,10 +19,18 @@ import {
 } from '../services/ai';
 
 const DEFAULT_QUICK_PROMPTS = [
-  'Resuma o atendimento e destaque oportunidades',
-  'Qual abordagem pode destravar essa conversa?',
-  'Monte uma mensagem curta para WhatsApp',
-  'O que merece prioridade agora?',
+  'Como cadastrar um imovel?',
+  'Como gerar um contrato?',
+  'Como funciona a aba Chaves?',
+  'Onde configuro meu site?',
+  'Resuma meus leads do dia',
+] as const;
+
+const LEAD_QUICK_PROMPTS = [
+  'Resuma o momento de {lead}',
+  'Como registrar historico desse lead?',
+  'Crie uma mensagem para {lead}',
+  'Qual o melhor proximo passo?',
 ] as const;
 
 type LegacyChatMessage = Partial<ChatMessage> & {
@@ -28,6 +38,8 @@ type LegacyChatMessage = Partial<ChatMessage> & {
   text?: unknown;
   messageType?: unknown;
   actions?: unknown;
+  assistantMode?: unknown;
+  capabilityLevel?: unknown;
 };
 
 type InlineToken =
@@ -47,6 +59,8 @@ const MAX_AURA_LEAD_RESULTS = 10;
 const CHAT_MESSAGE_TYPES = new Set<ChatMessageType>(['text', 'action_prompt']);
 const CHAT_ACTION_VARIANTS = new Set<ChatMessageActionVariant>(['primary', 'secondary', 'ghost']);
 const CHAT_ACTION_ICONS = new Set<ChatMessageActionIcon>(['smartphone', 'edit', 'task', 'timeline', 'lead', 'cancel']);
+const AURA_ASSISTANT_MODES = new Set<AuraAssistantMode>(['support', 'commercial', 'operational', 'hybrid']);
+const AURA_CAPABILITY_LEVELS = new Set<AuraCapabilityLevel>(['executed', 'guided', 'suggested']);
 const ACTION_PAYLOAD_KEYS: Array<keyof ChatMessageActionPayload> = [
   'draftText',
   'leadName',
@@ -63,6 +77,51 @@ const ACTION_ICON_MAP: Record<ChatMessageActionIcon, typeof Icons.Smartphone> = 
   timeline: Icons.Clock,
   lead: Icons.User,
   cancel: Icons.X,
+};
+
+const AURA_MODE_CONFIG: Record<
+  AuraAssistantMode,
+  {
+    label: string;
+    bubbleClassName: string;
+    badgeClassName: string;
+    avatarClassName: string;
+    iconClassName: string;
+    tone: 'default' | 'inverse';
+  }
+> = {
+  support: {
+    label: 'Suporte',
+    bubbleClassName: 'rounded-bl-sm border border-slate-200 bg-white text-slate-800',
+    badgeClassName: 'border-sky-200 bg-sky-50 text-sky-700',
+    avatarClassName: 'border-sky-200 bg-sky-50',
+    iconClassName: 'text-sky-600',
+    tone: 'default',
+  },
+  commercial: {
+    label: 'Comercial',
+    bubbleClassName: 'rounded-bl-sm border border-slate-700 bg-slate-800 text-slate-100',
+    badgeClassName: 'border-brand-500/30 bg-brand-500/10 text-brand-300',
+    avatarClassName: 'border-slate-700 bg-slate-800',
+    iconClassName: 'text-brand-400',
+    tone: 'inverse',
+  },
+  operational: {
+    label: 'Operacional',
+    bubbleClassName: 'rounded-bl-sm border border-emerald-800 bg-emerald-950 text-emerald-50',
+    badgeClassName: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200',
+    avatarClassName: 'border-emerald-800 bg-emerald-950',
+    iconClassName: 'text-emerald-300',
+    tone: 'inverse',
+  },
+  hybrid: {
+    label: 'Hibrido',
+    bubbleClassName: 'rounded-bl-sm border border-indigo-800 bg-indigo-950 text-indigo-50',
+    badgeClassName: 'border-indigo-400/25 bg-indigo-400/10 text-indigo-200',
+    avatarClassName: 'border-indigo-800 bg-indigo-950',
+    iconClassName: 'text-indigo-300',
+    tone: 'inverse',
+  },
 };
 
 const truncateText = (value: string, maxLength = MAX_TIMELINE_CONTEXT_LENGTH) => {
@@ -82,12 +141,7 @@ const buildQuickPrompts = (leadContext?: AuraLeadChatContext): string[] => {
     return [...DEFAULT_QUICK_PROMPTS];
   }
 
-  return [
-    `Resuma o momento de ${leadFirstName}`,
-    `Qual o melhor prÃ³ximo passo com ${leadFirstName}?`,
-    `Escreva um WhatsApp para ${leadFirstName}`,
-    `Existe risco de ${leadFirstName} esfriar?`,
-  ];
+  return LEAD_QUICK_PROMPTS.map((prompt) => prompt.replace('{lead}', leadFirstName));
 };
 
 const buildLeadContext = (leadContext: AuraLeadChatContext): AuraLeadChatContext | undefined => {
@@ -245,6 +299,12 @@ const isChatMessageActionVariant = (value: unknown): value is ChatMessageActionV
 const isChatMessageActionIcon = (value: unknown): value is ChatMessageActionIcon =>
   typeof value === 'string' && CHAT_ACTION_ICONS.has(value as ChatMessageActionIcon);
 
+const isAuraAssistantMode = (value: unknown): value is AuraAssistantMode =>
+  typeof value === 'string' && AURA_ASSISTANT_MODES.has(value as AuraAssistantMode);
+
+const isAuraCapabilityLevel = (value: unknown): value is AuraCapabilityLevel =>
+  typeof value === 'string' && AURA_CAPABILITY_LEVELS.has(value as AuraCapabilityLevel);
+
 const normalizeActionPayload = (payload: unknown): ChatMessageActionPayload | undefined => {
   if (!payload || typeof payload !== 'object') return undefined;
 
@@ -275,6 +335,7 @@ const normalizeMessageActions = (actions: unknown): ChatMessageAction[] | undefi
         variant?: unknown;
         payload?: unknown;
         disabled?: unknown;
+        capabilityLevel?: unknown;
       };
 
       const label = normalizeMessageText(rawAction.label);
@@ -287,6 +348,7 @@ const normalizeMessageActions = (actions: unknown): ChatMessageAction[] | undefi
         variant: isChatMessageActionVariant(rawAction.variant) ? rawAction.variant : 'ghost',
         payload: normalizeActionPayload(rawAction.payload),
         disabled: Boolean(rawAction.disabled),
+        capabilityLevel: isAuraCapabilityLevel(rawAction.capabilityLevel) ? rawAction.capabilityLevel : undefined,
       });
 
       return acc;
@@ -306,6 +368,8 @@ const normalizeChatMessage = (message: LegacyChatMessage): ChatMessage => {
     text: normalizeMessageText(message.text, fallbackText),
     messageType: hasActions ? 'action_prompt' : isChatMessageType(message.messageType) ? message.messageType : 'text',
     actions: hasActions ? actions : undefined,
+    assistantMode: isAuraAssistantMode(message.assistantMode) ? message.assistantMode : undefined,
+    capabilityLevel: isAuraCapabilityLevel(message.capabilityLevel) ? message.capabilityLevel : undefined,
   };
 };
 
@@ -336,31 +400,34 @@ const createAction = (
   label: string,
   icon: ChatMessageAction['icon'],
   variant: ChatMessageAction['variant'],
-  payload?: ChatMessageAction['payload']
+  payload?: ChatMessageAction['payload'],
+  capabilityLevel?: AuraCapabilityLevel
 ): ChatMessageAction => ({
   id,
   label,
   icon,
   variant,
   payload,
+  capabilityLevel,
 });
 
 const buildWhatsAppActionMessage = (text: string, leadContext?: AuraLeadChatContext): ChatMessage => {
   const taskTitle = buildFollowUpTaskTitle(leadContext);
   const taskDescription = buildFollowUpTaskDescription(text, leadContext);
   const actions: ChatMessageAction[] = [
-    createAction('send_whatsapp', 'Abrir no WhatsApp', 'smartphone', 'primary', {
+    createAction('send_whatsapp', 'Abrir WhatsApp', 'smartphone', 'primary', {
       draftText: text,
-    }),
-    createAction('edit_whatsapp', 'Ajustar texto', 'edit', 'secondary', {
+    }, 'executed'),
+    createAction('edit_whatsapp', 'Preparar ajuste', 'edit', 'secondary', {
       draftText: text,
       leadName: leadContext?.leadName || '',
-    }),
-    createAction('create_task', 'Criar tarefa', 'task', 'ghost', {
+    }, 'guided'),
+    createAction('create_task', 'Executar tarefa', 'task', 'ghost', {
       taskTitle,
       taskDescription,
-    }),
-    createAction('cancel_actions', 'Agora nÃ£o', 'cancel', 'ghost'),
+      leadId: leadContext?.leadId || '',
+    }, 'executed'),
+    createAction('cancel_actions', 'Fechar atalhos', 'cancel', 'ghost'),
   ];
 
   return {
@@ -368,6 +435,8 @@ const buildWhatsAppActionMessage = (text: string, leadContext?: AuraLeadChatCont
     text,
     messageType: 'action_prompt',
     actions,
+    assistantMode: 'commercial',
+    capabilityLevel: 'suggested',
   };
 };
 
@@ -376,21 +445,23 @@ const buildFollowUpActionMessage = (text: string, leadContext?: AuraLeadChatCont
   const taskDescription = buildFollowUpTaskDescription(text, leadContext);
   const timelineNote = buildTimelineDraft(text, leadContext);
   const actions: ChatMessageAction[] = [
-    createAction('create_task', 'Criar tarefa', 'task', 'primary', {
+    createAction('create_task', 'Executar tarefa', 'task', 'primary', {
       taskTitle,
       taskDescription,
-    }),
-    createAction('register_timeline', 'Preparar histÃ³rico', 'timeline', 'secondary', {
+      leadId: leadContext?.leadId || '',
+    }, 'executed'),
+    createAction('register_timeline', leadContext?.leadId ? 'Executar registro' : 'Preparar historico', 'timeline', 'secondary', {
       timelineNote,
-    }),
+      leadId: leadContext?.leadId || '',
+    }, leadContext?.leadId ? 'executed' : 'guided'),
     ...(leadContext?.leadId
       ? [
           createAction('open_lead', 'Abrir lead', 'lead', 'ghost', {
             leadId: leadContext.leadId,
-          }),
+          }, 'executed'),
         ]
       : []),
-    createAction('cancel_actions', 'Agora nÃ£o', 'cancel', 'ghost'),
+    createAction('cancel_actions', 'Fechar atalhos', 'cancel', 'ghost'),
   ];
 
   return {
@@ -398,28 +469,50 @@ const buildFollowUpActionMessage = (text: string, leadContext?: AuraLeadChatCont
     text,
     messageType: 'action_prompt',
     actions,
+    assistantMode: 'commercial',
+    capabilityLevel: 'suggested',
   };
 };
 
-const buildAuraReply = (text: string, prompt: string, leadContext?: AuraLeadChatContext): ChatMessage => {
+const attachAuraMeta = (
+  message: ChatMessage,
+  assistantMode: AuraAssistantMode,
+  capabilityLevel: AuraCapabilityLevel
+): ChatMessage => ({
+  ...message,
+  assistantMode,
+  capabilityLevel,
+});
+
+const buildAuraReply = (
+  text: string,
+  prompt: string,
+  leadContext?: AuraLeadChatContext,
+  assistantMode: AuraAssistantMode = 'commercial',
+  capabilityLevel: AuraCapabilityLevel = 'suggested'
+): ChatMessage => {
   const normalizedPrompt = normalizeSearchText(prompt);
   const normalizedReply = normalizeSearchText(text);
+
+  if (assistantMode === 'support') {
+    return { role: 'model', text, assistantMode, capabilityLevel: 'guided' };
+  }
 
   if (
     /whatsapp|mensagem|resposta/.test(normalizedPrompt) ||
     (normalizedReply.includes('whatsapp') && normalizedReply.length <= 900)
   ) {
-    return buildWhatsAppActionMessage(text, leadContext);
+    return attachAuraMeta(buildWhatsAppActionMessage(text, leadContext), assistantMode, capabilityLevel);
   }
 
   if (
-    /proximo passo|proximo movimento|follow-up|follow up|retorno|tarefa|ligar|recontato/.test(normalizedPrompt) ||
-    /follow-up|follow up|proximo passo|retorno/.test(normalizedReply)
+    /proximo passo|proximo movimento|follow-up|follow up|retorno|tarefa|ligar|recontato|historico|timeline|nota/.test(normalizedPrompt) ||
+    /follow-up|follow up|proximo passo|retorno|historico|timeline/.test(normalizedReply)
   ) {
-    return buildFollowUpActionMessage(text, leadContext);
+    return attachAuraMeta(buildFollowUpActionMessage(text, leadContext), assistantMode, capabilityLevel);
   }
 
-  return { role: 'model', text };
+  return { role: 'model', text, assistantMode, capabilityLevel };
 };
 
 const parseInlineTokens = (text: string): InlineToken[] => {
@@ -646,6 +739,12 @@ function AuraMessageActions({
       {actions.map((action) => {
         const IconComponent = action.icon ? ACTION_ICON_MAP[action.icon] : Icons.Zap;
         const variant = action.variant || 'ghost';
+        const capabilityHint =
+          action.capabilityLevel === 'executed'
+            ? 'Acao real'
+            : action.capabilityLevel === 'guided'
+              ? 'Orientacao guiada'
+              : 'Sugestao preparada';
         const variantClassName =
           variant === 'primary'
             ? 'border-brand-500/30 bg-brand-500/12 text-brand-200 hover:border-brand-400/40 hover:bg-brand-500/18 hover:text-white'
@@ -659,6 +758,7 @@ function AuraMessageActions({
             type="button"
             onClick={() => onActionClick(action)}
             disabled={isBusy || action.disabled}
+            title={capabilityHint}
             className={cn(
               'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
               variantClassName
@@ -687,11 +787,11 @@ function EmptyState({
   quickPrompts: string[];
 }) {
   const intro = contextLeadName
-    ? `Vamos destravar ${contextLeadName}?`
-    : 'Sua copiloto comercial para destravar conversas e acelerar negociações.';
+    ? `Vamos olhar ${contextLeadName} e o sistema juntos?`
+    : 'Assistente do sistema e copiloto comercial do Elevatio Vendas.';
   const description = contextLeadName
-    ? 'Já estou olhando o contexto desse atendimento. Se quiser, eu resumo o momento do lead, sugiro a abordagem e preparo a próxima mensagem.'
-    : 'Peça ajuda para entender o momento do lead, montar abordagens para WhatsApp e decidir o próximo movimento sem esfriar a oportunidade.';
+    ? 'Ja estou olhando o contexto desse atendimento. Posso explicar uma funcao do sistema, registrar proximos passos, preparar mensagem e organizar follow-up.'
+    : 'Posso te ajudar a usar o Elevatio Vendas, encontrar funcoes do sistema, organizar tarefas e tambem destravar atendimentos com leads.';
 
   return (
     <div className="flex h-full flex-col justify-center">
@@ -810,11 +910,11 @@ export default function AuraChatWidget() {
   const leadFirstName = getLeadFirstName(leadContext?.leadName);
   const quickPrompts = buildQuickPrompts(leadContext);
   const inputPlaceholder = leadFirstName
-    ? `Ex.: qual abordagem pode destravar ${leadFirstName} agora?`
-    : 'Escreva aqui sua pergunta ou solicitação para a Aura';
+    ? 'Peca ajuda sobre este lead ou sobre como usar uma funcao do sistema'
+    : 'Pergunte sobre o sistema ou peca ajuda em um atendimento';
   const loadingMessage = leadFirstName
-    ? `Lendo o momento de ${leadFirstName} e montando uma resposta com direcao comercial.`
-    : 'Organizando proximos passos, argumentos e mensagem comercial.';
+    ? `Lendo o momento de ${leadFirstName} e consultando o fluxo certo do Elevatio.`
+    : 'Consultando sistema, tarefas e contexto comercial.';
   const userAvatarUrl = user?.avatar_url || user?.user_metadata?.avatar_url;
   const userInitial = (
     user?.name ||
@@ -955,8 +1055,12 @@ export default function AuraChatWidget() {
     }
   }, [animStage, isContentVisible, isLoading]);
 
-  const appendAuraMessage = (text: string) => {
-    setMessages((prev) => [...prev, normalizeChatMessage({ role: 'model', text })]);
+  const appendAuraMessage = (
+    text: string,
+    assistantMode: AuraAssistantMode = 'commercial',
+    capabilityLevel: AuraCapabilityLevel = 'suggested'
+  ) => {
+    setMessages((prev) => [...prev, normalizeChatMessage({ role: 'model', text, assistantMode, capabilityLevel })]);
   };
 
   const updateMessageAction = (messageIndex: number, actionId: string, updates: Partial<ChatMessageAction>) => {
@@ -989,6 +1093,71 @@ export default function AuraChatWidget() {
     );
   };
 
+  const createTaskFromAuraAction = async (action: ChatMessageAction, targetMessage: ChatMessage) => {
+    if (!user?.id || !user.company_id) {
+      throw new Error('Nao foi possivel identificar usuario e empresa para criar a tarefa.');
+    }
+
+    const dueDate = new Date();
+    dueDate.setHours(dueDate.getHours() + 24);
+
+    const taskTitle = action.payload?.taskTitle || buildFollowUpTaskTitle(context);
+    const taskDescription =
+      action.payload?.taskDescription || buildFollowUpTaskDescription(targetMessage.text, context);
+    const targetLeadId = action.payload?.leadId || context.leadId || null;
+
+    const { error } = await supabase.from('tasks').insert([
+      {
+        company_id: user.company_id,
+        user_id: user.id,
+        lead_id: targetLeadId,
+        title: taskTitle.trim(),
+        description: taskDescription.trim() || null,
+        priority: 'media',
+        due_date: dueDate.toISOString(),
+        status: 'pendente',
+        completed: false,
+      },
+    ]);
+
+    if (error) throw error;
+
+    return taskTitle;
+  };
+
+  const registerTimelineFromAuraAction = async (action: ChatMessageAction, targetMessage: ChatMessage) => {
+    if (!user?.id || !user.company_id) {
+      throw new Error('Nao foi possivel identificar usuario e empresa para registrar a timeline.');
+    }
+
+    const targetLeadId = action.payload?.leadId || context.leadId;
+    const timelineNote = action.payload?.timelineNote || buildTimelineDraft(targetMessage.text, context);
+
+    if (!targetLeadId) {
+      return { persisted: false, note: timelineNote };
+    }
+
+    const { error } = await supabase.from('timeline_events').insert([
+      {
+        lead_id: targetLeadId,
+        type: 'note',
+        description: timelineNote,
+        company_id: user.company_id,
+        created_by: user.id,
+      },
+    ]);
+
+    if (error) throw error;
+
+    await supabase
+      .from('leads')
+      .update({ last_interaction: new Date().toISOString() })
+      .eq('id', targetLeadId)
+      .eq('company_id', user.company_id);
+
+    return { persisted: true, note: timelineNote };
+  };
+
   const handleActionClick = async (messageIndex: number, action: ChatMessageAction) => {
     const actionKey = `${messageIndex}:${action.id}`;
     if (activeActionKey) return;
@@ -1017,23 +1186,40 @@ export default function AuraChatWidget() {
           `Refine a ultima mensagem de WhatsApp para ${targetLeadName} com tom de corretor, mais curta, natural e facil de responder.`
         );
         inputRef.current?.focus();
-        updateMessageAction(messageIndex, action.id, { disabled: true, label: 'Texto em ajuste' });
-        addToast('Deixei um pedido de ajuste pronto na caixa de mensagem.', 'info');
+        updateMessageAction(messageIndex, action.id, { disabled: true, label: 'Ajuste preparado' });
+        addToast('Preparei o pedido de ajuste na caixa de mensagem.', 'info');
         return;
       }
 
       if (action.id === 'create_task') {
-        const taskTitle = action.payload?.taskTitle || buildFollowUpTaskTitle(context);
-        appendAuraMessage(`Tarefa gerada: "${taskTitle}". Pode fecha-la na aba de tarefas do lead.`);
-        updateMessageAction(messageIndex, action.id, { disabled: true, label: 'Tarefa pronta' });
-        addToast('Deixei uma tarefa de follow-up rascunhada no chat.', 'success');
+        const taskTitle = await createTaskFromAuraAction(action, targetMessage);
+        appendAuraMessage(
+          `Tarefa criada de verdade: "${taskTitle}".\n\nCaminho para conferir: Tarefas > Minhas tarefas.`,
+          'operational',
+          'executed'
+        );
+        updateMessageAction(messageIndex, action.id, { disabled: true, label: 'Tarefa criada' });
+        addToast('Tarefa criada na sua agenda.', 'success');
         return;
       }
 
       if (action.id === 'register_timeline') {
-        appendAuraMessage('Nota adicionada com sucesso ao historico.');
-        updateMessageAction(messageIndex, action.id, { disabled: true, label: 'Nota pronta' });
-        addToast('Deixei uma nota pronta para o historico do lead.', 'success');
+        const result = await registerTimelineFromAuraAction(action, targetMessage);
+
+        if (!result.persisted) {
+          appendAuraMessage(
+            `Preparei a nota, mas ainda nao registrei porque nao ha lead em foco.\n\nNota pronta:\n- ${result.note}\n\nAbra um lead e use o atalho novamente para registrar de verdade.`,
+            'operational',
+            'guided'
+          );
+          updateMessageAction(messageIndex, action.id, { disabled: true, label: 'Nota preparada' });
+          addToast('Nota preparada. Abra um lead para registrar.', 'info');
+          return;
+        }
+
+        appendAuraMessage('Nota registrada de verdade na timeline do lead.', 'operational', 'executed');
+        updateMessageAction(messageIndex, action.id, { disabled: true, label: 'Historico registrado' });
+        addToast('Historico registrado na timeline do lead.', 'success');
         return;
       }
 
@@ -1087,7 +1273,18 @@ export default function AuraChatWidget() {
         }
       );
 
-      setMessages((prev) => [...prev, normalizeChatMessage(buildAuraReply(response, trimmedMessage, effectiveLeadContext))]);
+      setMessages((prev) => [
+        ...prev,
+        normalizeChatMessage(
+          buildAuraReply(
+            response.text,
+            trimmedMessage,
+            effectiveLeadContext,
+            response.assistantMode,
+            response.capabilityLevel
+          )
+        ),
+      ]);
     } catch (error: unknown) {
       const fallbackMessage =
         error instanceof Error && error.message.trim()
@@ -1304,7 +1501,7 @@ export default function AuraChatWidget() {
                 <div>
                   <h3 className="text-sm font-bold">Aura</h3>
                   <p className="text-[10px] text-slate-300">
-                    {context.leadName ? `Em contexto com ${context.leadName}` : 'Seu Assistente Comercial do Plantao'}
+                    {context.leadName ? `Sistema e lead: ${context.leadName}` : 'Suporte do sistema + copiloto comercial'}
                   </p>
                 </div>
               </div>
@@ -1372,6 +1569,8 @@ export default function AuraChatWidget() {
                 <div className="flex flex-col gap-4">
                   {normalizedMessages.map((msg, idx) => {
                     const userLines = msg.text.split(/\r?\n/);
+                    const messageMode = msg.assistantMode || 'commercial';
+                    const modeConfig = AURA_MODE_CONFIG[messageMode];
 
                     return (
                       <div
@@ -1379,8 +1578,8 @@ export default function AuraChatWidget() {
                         className={cn('flex w-full gap-2.5', msg.role === 'user' ? 'justify-end' : 'justify-start')}
                       >
                         {msg.role === 'model' && (
-                          <div className="mt-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-800 shadow-sm">
-                            <Icons.Sparkles size={12} className="text-brand-400" />
+                          <div className={cn('mt-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full border shadow-sm', modeConfig.avatarClassName)}>
+                            <Icons.Sparkles size={12} className={modeConfig.iconClassName} />
                           </div>
                         )}
 
@@ -1395,7 +1594,7 @@ export default function AuraChatWidget() {
                               'overflow-hidden rounded-[20px] px-4 py-3 text-[13px] leading-relaxed shadow-sm',
                               msg.role === 'user'
                                 ? 'rounded-br-sm bg-brand-600 text-white'
-                                : 'rounded-bl-sm border border-slate-700 bg-slate-800 text-slate-100'
+                                : modeConfig.bubbleClassName
                             )}
                           >
                             {msg.role === 'user' ? (
@@ -1406,7 +1605,12 @@ export default function AuraChatWidget() {
                                 </React.Fragment>
                               ))
                             ) : (
-                              <AuraMessageBody text={msg.text} tone="inverse" />
+                              <>
+                                <div className={cn('mb-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold', modeConfig.badgeClassName)}>
+                                  {modeConfig.label}
+                                </div>
+                                <AuraMessageBody text={msg.text} tone={modeConfig.tone} />
+                              </>
                             )}
                           </div>
 
@@ -1441,7 +1645,7 @@ export default function AuraChatWidget() {
                       <div className="max-w-[82%] rounded-[20px] rounded-bl-sm border border-slate-700 bg-slate-800 px-4 py-3 text-slate-100 shadow-sm">
                         <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-brand-300">
                           <Icons.Loader2 size={14} className="animate-spin" />
-                          Aura montando a melhor abordagem
+                          Aura analisando sistema e atendimento
                         </div>
                         <p className="mt-2 text-[13px] leading-5 text-slate-300">{loadingMessage}</p>
                       </div>
