@@ -52,7 +52,7 @@ const STATS = [
 ];
 
 const FEATURES_LIST = [
-  { step: '01', title: 'Escolha seu template', desc: '4 templates premium: Classic, Minimalist, Luxury e Modern. Personalize cores, logo e conteúdo pelo painel.' },
+  { step: '01', title: 'Escolha seu template', desc: 'Templates premium como Clássico, Minimalista, Luxuoso e Moderno. Personalize cores, logo e conteúdo pelo painel.' },
   { step: '02', title: 'Gerencie com CRM Kanban', desc: 'Pipeline visual de leads, automação de tarefas e distribuição inteligente para sua equipe de corretores.' },
   { step: '03', title: 'Publique e acompanhe ao vivo', desc: 'Site no ar em minutos. Edite, publique e acompanhe visitas, leads e conversões em tempo real.' },
 ];
@@ -94,6 +94,7 @@ function useFadeIn(ref: React.RefObject<HTMLElement>, opts?: { y?: number; stagg
         opacity: 0, y: opts?.y ?? 30, duration: 0.7, ease: 'power2.out',
         stagger: opts?.stagger ?? 0,
         scrollTrigger: { trigger: ref.current!, start: 'top 92%', once: true },
+        
       });
     });
     return () => ctx.revert();
@@ -746,7 +747,7 @@ const Features: React.FC = () => {
         <div style={{ textAlign: 'center', marginBottom: 72 }}>
           <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.12em', color: '#1a56db', textTransform: 'uppercase' as const, display: 'block', marginBottom: 16 }}>Como funciona</span>
           <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 'clamp(32px,4vw,48px)', fontWeight: 800, letterSpacing: '-1.5px', color: '#0f172a', marginBottom: 16 }}>Seu site e CRM em minutos</h2>
-          <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 18, color: '#64748b', maxWidth: 500, margin: '0 auto' }}>4 templates: Minimalista, Luxuoso, Classic ou sob demanda.</p>
+          <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 18, color: '#64748b', maxWidth: 500, margin: '0 auto' }}>Templates: Minimalista, Luxuoso, Clássico ou entre outros.</p>
         </div>
         <div className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3" style={{ display: 'grid', gap: 24 }}>
           {FEATURES_LIST.map((f, i) => (
@@ -894,9 +895,11 @@ const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeat
   const navigate = useNavigate();
   const ref = useRef<HTMLElement>(null);
   const [annual, setAnnual] = useState(false);
+
   const annualDiscount = plans.length > 0
     ? Math.round(plans.reduce((sum, plan) => sum + getPlanAnnualDiscountPercent(plan), 0) / plans.length)
     : 0;
+
   useFadeIn(ref, { y: 30 });
 
   useIsomorphicLayoutEffect(() => {
@@ -912,6 +915,7 @@ const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeat
       if (card && orb) {
         const onMove = (e: MouseEvent) => {
           const rect = card.getBoundingClientRect();
+
           gsap.to(orb, {
             x: e.clientX - rect.left,
             y: e.clientY - rect.top,
@@ -949,7 +953,6 @@ const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeat
     support_level: <Headset className="w-4 h-4 text-sky-400" />,
   };
 
-  // Helper: renderiza célula de valor
   const renderCell = (val: any, type?: PlanComparisonFeature['type'], featureKey?: string) => {
     if (type === 'boolean') {
       return val ? (
@@ -964,40 +967,177 @@ const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeat
     }
 
     if (val === null || val === undefined || val === '') {
-      return <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>Não</span>;
-    }
-    if (typeof val === 'string' && val.length > 0) {
-      const isIlimitado = val.toLowerCase().includes('ilimitado') || val.toLowerCase().includes('prioridade');
-      const isSpecial   = val.toLowerCase().includes('vip') || val.toLowerCase().includes('liberada');
       return (
-        <span style={{
-          fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 600,
-          color: isIlimitado ? '#38bdf8' : isSpecial ? '#c084fc' : 'rgba(255,255,255,0.85)',
-        }}>{val}</span>
+        <span
+          style={{
+            fontFamily: "'DM Sans',sans-serif",
+            fontSize: 13,
+            color: 'rgba(255,255,255,0.7)',
+          }}
+        >
+          Não
+        </span>
       );
     }
-    return <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>{String(val)}</span>;
+
+    if (typeof val === 'string' && val.length > 0) {
+      const isIlimitado =
+        val.toLowerCase().includes('ilimitado') ||
+        val.toLowerCase().includes('prioridade');
+
+      const isSpecial =
+        val.toLowerCase().includes('vip') ||
+        val.toLowerCase().includes('liberada');
+
+      return (
+        <span
+          style={{
+            fontFamily: "'DM Sans',sans-serif",
+            fontSize: 13,
+            fontWeight: 600,
+            color: isIlimitado
+              ? '#38bdf8'
+              : isSpecial
+                ? '#c084fc'
+                : 'rgba(255,255,255,0.85)',
+          }}
+        >
+          {val}
+        </span>
+      );
+    }
+
+    return (
+      <span
+        style={{
+          fontFamily: "'DM Sans',sans-serif",
+          fontSize: 13,
+          color: 'rgba(255,255,255,0.7)',
+        }}
+      >
+        {String(val)}
+      </span>
+    );
   };
 
   return (
-    <section id="comparar" ref={ref} style={{ background: '#070d1f', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '96px 0' }}>
+    <section
+      id="comparar"
+      ref={ref}
+      style={{
+        background: '#070d1f',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+        padding: '96px 0',
+      }}
+    >
       <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 24px' }}>
-
         {/* Cabeçalho */}
         <div style={{ textAlign: 'center', marginBottom: 56 }}>
-          <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.12em', color: '#0ea5e9', textTransform: 'uppercase' as const, display: 'block', marginBottom: 16 }}>Detalhes Completos</span>
-          <h2 style={{ fontFamily: "'Sora',sans-serif", fontSize: 'clamp(28px,4vw,48px)', fontWeight: 800, letterSpacing: '-1.5px', color: '#fff', marginBottom: 12 }}>Compare os Planos</h2>
-          <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 17, color: '#94a3b8', maxWidth: 560, margin: '0 auto 28px' }}>
+          <span
+            style={{
+              fontFamily: "'DM Sans',sans-serif",
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              color: '#0ea5e9',
+              textTransform: 'uppercase' as const,
+              display: 'block',
+              marginBottom: 16,
+            }}
+          >
+            Detalhes Completos
+          </span>
+
+          <h2
+            style={{
+              fontFamily: "'Sora',sans-serif",
+              fontSize: 'clamp(28px,4vw,48px)',
+              fontWeight: 800,
+              letterSpacing: '-1.5px',
+              color: '#fff',
+              marginBottom: 12,
+            }}
+          >
+            Compare os Planos
+          </h2>
+
+          <p
+            style={{
+              fontFamily: "'DM Sans',sans-serif",
+              fontSize: 17,
+              color: '#94a3b8',
+              maxWidth: 560,
+              margin: '0 auto 28px',
+            }}
+          >
             Visão detalhada de todos os recursos para ajudar você a tomar a melhor decisão para o seu negócio.
           </p>
-          {/* Toggle mensal/anual (sincronizado com os cards) */}
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 100, padding: '4px 4px 4px 16px' }}>
-            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 600, color: annual ? '#475569' : '#e2e8f0' }}>Mensal</span>
-            <button onClick={() => setAnnual(!annual)} style={{ width: 40, height: 22, borderRadius: 100, border: 'none', cursor: 'pointer', background: annual ? '#1a56db' : 'rgba(255,255,255,0.2)', position: 'relative', transition: 'background 0.25s' }}>
-              <div style={{ position: 'absolute', top: 1, left: annual ? 19 : 1, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.25s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />
+
+          {/* Toggle mensal/anual */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 12,
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 100,
+              padding: '4px 4px 4px 16px',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "'DM Sans',sans-serif",
+                fontSize: 13,
+                fontWeight: 600,
+                color: annual ? '#475569' : '#e2e8f0',
+              }}
+            >
+              Mensal
+            </span>
+
+            <button
+              onClick={() => setAnnual(!annual)}
+              style={{
+                width: 40,
+                height: 22,
+                borderRadius: 100,
+                border: 'none',
+                cursor: 'pointer',
+                background: annual ? '#1a56db' : 'rgba(255,255,255,0.2)',
+                position: 'relative',
+                transition: 'background 0.25s',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 1,
+                  left: annual ? 19 : 1,
+                  width: 20,
+                  height: 20,
+                  borderRadius: '50%',
+                  background: '#fff',
+                  transition: 'left 0.25s',
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+                }}
+              />
             </button>
-            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 600, color: annual ? '#e2e8f0' : '#475569' }}>
-              Anual {annualDiscount > 0 && <span style={{ color: '#4ade80', fontSize: 11 }}>-{annualDiscount}%</span>}
+
+            <span
+              style={{
+                fontFamily: "'DM Sans',sans-serif",
+                fontSize: 13,
+                fontWeight: 600,
+                color: annual ? '#e2e8f0' : '#475569',
+              }}
+            >
+              Anual{' '}
+              {annualDiscount > 0 && (
+                <span style={{ color: '#4ade80', fontSize: 11 }}>
+                  -{annualDiscount}%
+                </span>
+              )}
             </span>
           </div>
         </div>
@@ -1006,12 +1146,16 @@ const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeat
           id="domain-alert-card"
           className="relative max-w-4xl mx-auto mb-12 p-6 rounded-2xl bg-slate-900/60 border border-slate-800/80 overflow-hidden group cursor-default"
         >
-          <div id="orb-follow" className="absolute w-96 h-96 bg-brand-500/25 rounded-full blur-[80px] opacity-0 pointer-events-none -translate-x-1/2 -translate-y-1/2" />
+          <div
+            id="orb-follow"
+            className="absolute w-96 h-96 bg-brand-500/25 rounded-full blur-[80px] opacity-0 pointer-events-none -translate-x-1/2 -translate-y-1/2"
+          />
 
           <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center gap-4">
             <div className="w-10 h-10 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-400 border border-brand-500/30">
               <Globe size={20} />
             </div>
+
             <p className="text-sm text-slate-400 leading-relaxed">
               <strong className="text-slate-200">Nota:</strong> O valor do domínio não está incluso (.com.br ~R$53 | .com ~R$89). A configuração técnica e o apontamento são por nossa conta.
             </p>
@@ -1021,88 +1165,282 @@ const PlanComparison: React.FC<{ plans: SaasPlan[]; features: PlanComparisonFeat
         {/* Tabela */}
         <div className="w-full overflow-x-auto custom-scrollbar pb-4">
           {loadingPlans && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 220, color: '#94a3b8', fontFamily: "'DM Sans',sans-serif" }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                minHeight: 220,
+                color: '#94a3b8',
+                fontFamily: "'DM Sans',sans-serif",
+              }}
+            >
               Carregando planos...
             </div>
           )}
-          {!loadingPlans && (
-          <table className="w-full min-w-[800px] lg:min-w-full" style={{ textAlign: 'left', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                {/* Coluna fixa: recurso */}
-                <th className="sticky left-0 z-20 border-r border-slate-200" style={{ padding: '16px 20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 20, minWidth: 230, fontFamily: "'Sora',sans-serif", color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' as const }}>
-                  Recurso
-                </th>
-                {plans.map((plan, i) => {
-                  const price = annual ? getPlanYearlyMonthlyPrice(plan) : getPlanMonthlyPrice(plan);
-                  const isPro = plan.is_popular;
-                  return (
-                    <th key={i} style={{ padding: '12px 16px', textAlign: 'center', minWidth: 130, background: isPro ? 'rgba(14,165,233,0.08)' : '#070d1f', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
-                      {isPro && <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 9, fontWeight: 800, color: '#38bdf8', letterSpacing: '0.1em', textTransform: 'uppercase' as const, marginBottom: 4 }}>⭐ Popular</div>}
-                      <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 14, fontWeight: 800, color: isPro ? '#7dd3fc' : '#fff', marginBottom: 2 }}>{plan.name}</div>
-                      <div style={{ fontFamily: "'Sora',sans-serif", fontSize: 13, fontWeight: 700, color: isPro ? '#93c5fd' : '#0ea5e9' }}>
-                        R${price.toFixed(2).replace('.',',')}
-                      </div>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
 
-            <tbody style={{ fontSize: 14, color: '#cbd5e1' }}>
-              {features.map((feature) => (
-                <tr key={feature.key} className="ev-row-hover" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                  <td className="sticky left-0 z-20 border-r border-slate-200" style={{ padding: '14px 20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '4px 0 20px -8px rgba(0,0,0,0.6)' }}>
-                    {featureIcons[feature.key] && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{featureIcons[feature.key]}</span>}
-                    <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 500, color: '#cbd5e1' }}>{feature.name}</span>
-                  </td>
-                  {plans.map((plan, pi) => {
-                    const value = plan[feature.key];
+          {!loadingPlans && (
+            <table
+              className="w-full min-w-[800px] lg:min-w-full"
+              style={{
+                textAlign: 'left',
+                borderCollapse: 'collapse',
+              }}
+            >
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                  {/* Coluna fixa: recurso */}
+                  <th
+                    className="sticky left-0 z-20"
+                    style={{
+                      padding: '16px 20px',
+                      background: '#070d1f',
+                      position: 'sticky',
+                      left: 0,
+                      zIndex: 20,
+                      minWidth: 230,
+                      borderRight: '1px solid rgba(255,255,255,0.08)',
+                      boxShadow: '6px 0 18px -10px rgba(0,0,0,0.55)',
+                      fontFamily: "'Sora',sans-serif",
+                      color: 'rgba(255,255,255,0.5)',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase' as const,
+                    }}
+                  >
+                    Recurso
+                  </th>
+
+                  {plans.map((plan, i) => {
+                    const price = annual ? getPlanYearlyMonthlyPrice(plan) : getPlanMonthlyPrice(plan);
                     const isPro = plan.is_popular;
+
                     return (
-                      <td key={pi} style={{ padding: '14px 16px', textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.04)', background: isPro ? 'rgba(14,165,233,0.03)' : 'transparent' }}>
-                        {renderCell(value, feature.type, feature.key)}
-                      </td>
+                      <th
+                        key={i}
+                        style={{
+                          padding: '12px 16px',
+                          textAlign: 'center',
+                          minWidth: 130,
+                          background: isPro ? 'rgba(14,165,233,0.08)' : '#070d1f',
+                          borderLeft: '1px solid rgba(255,255,255,0.05)',
+                        }}
+                      >
+                        {isPro && (
+                          <div
+                            style={{
+                              fontFamily: "'DM Sans',sans-serif",
+                              fontSize: 9,
+                              fontWeight: 800,
+                              color: '#38bdf8',
+                              letterSpacing: '0.1em',
+                              textTransform: 'uppercase' as const,
+                              marginBottom: 4,
+                            }}
+                          >
+                            ⭐ Popular
+                          </div>
+                        )}
+
+                        <div
+                          style={{
+                            fontFamily: "'Sora',sans-serif",
+                            fontSize: 14,
+                            fontWeight: 800,
+                            color: isPro ? '#7dd3fc' : '#fff',
+                            marginBottom: 2,
+                          }}
+                        >
+                          {plan.name}
+                        </div>
+
+                        <div
+                          style={{
+                            fontFamily: "'Sora',sans-serif",
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: isPro ? '#93c5fd' : '#0ea5e9',
+                          }}
+                        >
+                          R${price.toFixed(2).replace('.', ',')}
+                        </div>
+                      </th>
                     );
                   })}
                 </tr>
-              ))}
+              </thead>
 
-              {/* Linha de botões CTA */}
-              <tr style={{ borderTop: '2px solid rgba(255,255,255,0.1)' }}>
-                <td className="sticky left-0 z-20 border-r border-slate-200" style={{ padding: '20px', background: '#070d1f', position: 'sticky', left: 0, zIndex: 20 }}>
-                  <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase' as const, letterSpacing: '0.06em' }}>Começar</span>
-                </td>
-                {plans.map((plan, i) => (
-                  <td key={i} style={{ padding: '20px 12px', textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.04)', background: plan.is_popular ? 'rgba(14,165,233,0.04)' : 'transparent' }}>
-                    <button
-                      onClick={() => navigate(`/admin/login?mode=signup&plan=${plan.name.toLowerCase()}`)}
+              <tbody style={{ fontSize: 14, color: '#cbd5e1' }}>
+                {features.map((feature) => (
+                  <tr
+                    key={feature.key}
+                    className="ev-row-hover"
+                    style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                  >
+                    <td
+                      className="sticky left-0 z-20"
                       style={{
-                        fontFamily: "'DM Sans',sans-serif", fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                        padding: '9px 18px', borderRadius: 10, border: 'none', width: '100%', transition: 'all 0.2s',
-                        background: plan.is_popular ? 'linear-gradient(135deg, #1a56db, #0ea5e9)' : 'rgba(255,255,255,0.07)',
-                        color: plan.is_popular ? '#fff' : 'rgba(255,255,255,0.7)',
-                        boxShadow: plan.is_popular ? '0 4px 14px rgba(14,165,233,0.35)' : 'none',
+                        padding: '14px 20px',
+                        background: '#070d1f',
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 20,
+                        minWidth: 230,
+                        verticalAlign: 'middle',
+                        borderRight: '1px solid rgba(255,255,255,0.08)',
+                        boxShadow: '6px 0 18px -10px rgba(0,0,0,0.55)',
                       }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.04)'; (e.currentTarget as HTMLElement).style.opacity = '0.9'; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; (e.currentTarget as HTMLElement).style.opacity = '1'; }}
                     >
-                      Assinar
-                    </button>
-                  </td>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          minWidth: 0,
+                        }}
+                      >
+                        {featureIcons[feature.key] && (
+                          <span style={{ display: 'inline-flex', flexShrink: 0 }}>
+                            {featureIcons[feature.key]}
+                          </span>
+                        )}
+
+                        <span
+                          style={{
+                            fontFamily: "'DM Sans',sans-serif",
+                            fontSize: 14,
+                            fontWeight: 500,
+                            color: '#cbd5e1',
+                            lineHeight: 1.35,
+                          }}
+                        >
+                          {feature.name}
+                        </span>
+                      </div>
+                    </td>
+
+                    {plans.map((plan, pi) => {
+                      const value = plan[feature.key];
+                      const isPro = plan.is_popular;
+
+                      return (
+                        <td
+                          key={pi}
+                          style={{
+                            padding: '14px 16px',
+                            textAlign: 'center',
+                            verticalAlign: 'middle',
+                            borderLeft: '1px solid rgba(255,255,255,0.04)',
+                            background: isPro ? 'rgba(14,165,233,0.03)' : 'transparent',
+                          }}
+                        >
+                          {renderCell(value, feature.type, feature.key)}
+                        </td>
+                      );
+                    })}
+                  </tr>
                 ))}
-              </tr>
-            </tbody>
-          </table>
+
+                {/* Linha de botões CTA */}
+                <tr style={{ borderTop: '2px solid rgba(255,255,255,0.1)' }}>
+                  <td
+                    className="sticky left-0 z-20"
+                    style={{
+                      padding: '20px',
+                      background: '#070d1f',
+                      position: 'sticky',
+                      left: 0,
+                      zIndex: 20,
+                      borderRight: '1px solid rgba(255,255,255,0.08)',
+                      boxShadow: '6px 0 18px -10px rgba(0,0,0,0.55)',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: "'DM Sans',sans-serif",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: '#475569',
+                        textTransform: 'uppercase' as const,
+                        letterSpacing: '0.06em',
+                      }}
+                    >
+                      Começar
+                    </span>
+                  </td>
+
+                  {plans.map((plan, i) => (
+                    <td
+                      key={i}
+                      style={{
+                        padding: '20px 12px',
+                        textAlign: 'center',
+                        borderLeft: '1px solid rgba(255,255,255,0.04)',
+                        background: plan.is_popular ? 'rgba(14,165,233,0.04)' : 'transparent',
+                      }}
+                    >
+                      <button
+                        onClick={() => navigate(`/admin/login?mode=signup&plan=${plan.name.toLowerCase()}`)}
+                        style={{
+                          fontFamily: "'DM Sans',sans-serif",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          padding: '9px 18px',
+                          borderRadius: 10,
+                          border: 'none',
+                          width: '100%',
+                          transition: 'all 0.2s',
+                          background: plan.is_popular
+                            ? 'linear-gradient(135deg, #1a56db, #0ea5e9)'
+                            : 'rgba(255,255,255,0.07)',
+                          color: plan.is_popular ? '#fff' : 'rgba(255,255,255,0.7)',
+                          boxShadow: plan.is_popular
+                            ? '0 4px 14px rgba(14,165,233,0.35)'
+                            : 'none',
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.currentTarget as HTMLElement).style.transform = 'scale(1.04)';
+                          (e.currentTarget as HTMLElement).style.opacity = '0.9';
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLElement).style.transform = 'scale(1)';
+                          (e.currentTarget as HTMLElement).style.opacity = '1';
+                        }}
+                      >
+                        Assinar
+                      </button>
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
           )}
+
           {!loadingPlans && plans.length === 0 && (
-            <div style={{ fontFamily: "'DM Sans',sans-serif", color: '#94a3b8', textAlign: 'center', padding: '24px 0' }}>
+            <div
+              style={{
+                fontFamily: "'DM Sans',sans-serif",
+                color: '#94a3b8',
+                textAlign: 'center',
+                padding: '24px 0',
+              }}
+            >
               Nenhum plano disponível no momento.
             </div>
           )}
         </div>
 
-        <p style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: '#334155', textAlign: 'center', marginTop: 16 }}>
+        <p
+          style={{
+            fontFamily: "'DM Sans',sans-serif",
+            fontSize: 12,
+            color: '#334155',
+            textAlign: 'center',
+            marginTop: 16,
+          }}
+        >
           Role horizontalmente para ver todos os planos em telas menores.
         </p>
       </div>
