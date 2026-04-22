@@ -3,6 +3,7 @@ import { Outlet, Link } from 'react-router-dom';
 import { useTenant } from '../../contexts/TenantContext';
 import { Icons } from '../../components/Icons';
 import ContactModal from '../../components/ContactModal';
+import { getTenantAddress, getTenantCreci, getTenantMapLink } from '../../utils/tenantUtils';
 
 type ContactAction =
   | { type: 'link'; href: string; label: string }
@@ -18,7 +19,9 @@ export default function LuxuryLayout() {
   const companyName = tenant?.name || 'Imobiliária';
   const contactPhone = siteData.contact?.phone || tenant?.phone || '';
   const contactEmail = siteData.contact?.email || tenant?.email || '';
-  const contactAddress = siteData.contact?.address || tenant?.address || '';
+  const contactAddress = getTenantAddress(tenant);
+  const contactMapLink = getTenantMapLink(tenant);
+  const tenantCreci = getTenantCreci(tenant);
   const whatsapp = siteData.social?.whatsapp || contactPhone || '';
   const whatsappLink = whatsapp
     ? `https://wa.me/${String(whatsapp).replace(/\D/g, '')}?text=${encodeURIComponent(
@@ -199,6 +202,7 @@ export default function LuxuryLayout() {
                 {siteData.about_text?.slice(0, 160) ||
                   'Curadoria de propriedades residenciais e comerciais de alto padrão.'}
               </p>
+              {tenantCreci && <p className="text-sm mt-1 opacity-70 font-semibold">{tenantCreci}</p>}
             </div>
 
             <div className="md:col-span-2 space-y-4">
@@ -235,9 +239,14 @@ export default function LuxuryLayout() {
               {contactPhone && <span className="text-neutral-500 text-sm block">{contactPhone}</span>}
               {contactEmail && <span className="text-neutral-500 text-sm block">{contactEmail}</span>}
               {contactAddress && (
-                <span className="text-neutral-500 text-sm block whitespace-pre-line">
+                <a
+                  href={contactMapLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-neutral-500 text-sm block whitespace-pre-line hover:text-brand-500 transition-colors cursor-pointer"
+                >
                   {contactAddress}
-                </span>
+                </a>
               )}
             </div>
           </div>

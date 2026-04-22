@@ -45,7 +45,7 @@ export default function PropertyDetail() {
       try {
         let { data, error } = await supabase
           .from('properties')
-          .select('*, profiles(name, phone, email), condominium:condominiums(name)')
+          .select('*, profiles(name, phone, email)')
           .eq('company_id', tenant.id)
           .eq('slug', routeKey)
           .maybeSingle();
@@ -55,7 +55,7 @@ export default function PropertyDetail() {
         if (!data) {
           const fallbackRes = await supabase
             .from('properties')
-            .select('*, profiles(name, phone, email), condominium:condominiums(name)')
+            .select('*, profiles(name, phone, email)')
             .eq('company_id', tenant.id)
             .eq('id', routeKey)
             .maybeSingle();

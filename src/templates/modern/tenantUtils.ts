@@ -42,11 +42,23 @@ export const getTenantPhone = (tenant: Company | null | undefined): string =>
   getSiteData(tenant).social_links?.whatsapp ||
   '';
 
-export const getTenantAddress = (tenant: Company | null | undefined): string =>
-  getSiteData(tenant).address ||
-  tenant?.address ||
-  getSiteData(tenant).contact?.address ||
-  'Endereço não informado';
+export const getTenantAddress = (tenant: Company | null | undefined): string => {
+  const siteData = getSiteData(tenant);
+  const addressData = siteData.address || siteData.contact?.address || tenant?.address;
+
+  if (!addressData) return '';
+
+  if (typeof addressData === 'string') return addressData;
+
+  const parts: string[] = [];
+  if (addressData.street) parts.push(addressData.street);
+  if (addressData.number) parts.push(addressData.number);
+  if (addressData.neighborhood) parts.push(addressData.neighborhood);
+  if (addressData.city) parts.push(`${addressData.city}${addressData.state ? ` - ${addressData.state}` : ''}`);
+  if (addressData.zip) parts.push(`CEP: ${addressData.zip}`);
+
+  return parts.join(', ');
+};
 
 export const getHeroTitle = (tenant: Company | null | undefined): string =>
   getSiteData(tenant).hero_title || 'Imóveis para viver e investir';
@@ -95,4 +107,25 @@ export const getWhatsappLink = (tenant: Company | null | undefined, text?: strin
   return text
     ? `https://wa.me/${digits}?text=${encodeURIComponent(text)}`
     : `https://wa.me/${digits}`;
+};
+
+export const getTenantMapLink = (tenant: Company | null | undefined): string => {
+  const siteData = getSiteData(tenant);
+  const addr = siteData.address || siteData.contact?.address;
+
+  if (addr && typeof addr !== 'string' && addr.lat && addr.lng) {
+    return `https://www.google.com/maps?q=${addr.lat},${addr.lng}`;
+  }
+
+  const addressString = getTenantAddress(tenant);
+  if (addressString) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressString)}`;
+  }
+
+  return '#';
+};
+
+export const getTenantCreci = (tenant: Company | null | undefined): string => {
+  const creci = getSiteData(tenant).creci;
+  return creci ? `CRECI: ${creci}` : '';
 };

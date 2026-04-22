@@ -9,9 +9,11 @@ import {
   getPrimaryColor,
   getSocialLink,
   getTenantAddress,
+  getTenantCreci,
   getTenantEmail,
   getTenantLogo,
   getTenantLogoWhite,
+  getTenantMapLink,
   getTenantName,
   getTenantPhone,
   getWhatsappLink,
@@ -46,6 +48,8 @@ const ClassicLayout: React.FC = () => {
   const contactEmail = getTenantEmail(tenant);
   const contactPhone = getTenantPhone(tenant);
   const contactAddress = getTenantAddress(tenant);
+  const contactMapLink = getTenantMapLink(tenant);
+  const tenantCreci = getTenantCreci(tenant);
   const aboutText = getAboutText(tenant);
   const instagram = getSocialLink(tenant, 'instagram');
   const facebook = getSocialLink(tenant, 'facebook');
@@ -242,6 +246,7 @@ const ClassicLayout: React.FC = () => {
                   </span>
                 )}
               </Link>
+              {tenantCreci && <p className="text-sm mt-1 opacity-70 font-semibold">{tenantCreci}</p>}
               <p className="mb-6 text-sm leading-relaxed text-gray-600">{aboutText}</p>
 
               <div>
@@ -367,7 +372,18 @@ const ClassicLayout: React.FC = () => {
               </ul>
               <div>
                 <h4 className="mb-4 text-sm font-bold text-gray-900">Informações</h4>
-                <p className="mb-2 text-sm text-gray-600">{contactAddress}</p>
+                {contactAddress && (
+                  <p className="mb-2 text-sm text-gray-600">
+                    <a
+                      href={contactMapLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-brand-500 transition-colors cursor-pointer"
+                    >
+                      {contactAddress}
+                    </a>
+                  </p>
+                )}
                 {contactPhone && (
                   <p className="mb-2 text-sm text-gray-600">
                     <a href={`tel:${contactPhone.replace(/\D/g, '')}`} className="hover:text-gray-900">

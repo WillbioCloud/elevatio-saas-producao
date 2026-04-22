@@ -9,6 +9,7 @@ export default function About() {
   const siteData = typeof tenant?.site_data === 'string' 
     ? JSON.parse(tenant.site_data) 
     : tenant?.site_data || {};
+  const companyDocument = siteData?.cnpj || tenant?.document || '';
 
   return (
     <div className="pt-24 min-h-screen bg-white">
@@ -65,10 +66,10 @@ export default function About() {
                   </li>
                 )}
                 
-                {siteData?.cnpj && (
+                {companyDocument && (
                   <li>
                     <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">CNPJ</p>
-                    <p className="text-slate-800 font-medium">{siteData.cnpj}</p>
+                    <p className="text-slate-800 font-medium">{companyDocument}</p>
                   </li>
                 )}
 

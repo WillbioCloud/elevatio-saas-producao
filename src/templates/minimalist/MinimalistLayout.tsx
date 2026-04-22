@@ -9,8 +9,10 @@ import {
   getPrimaryColor,
   getSocialLink,
   getTenantAddress,
+  getTenantCreci,
   getTenantEmail,
   getTenantLogo,
+  getTenantMapLink,
   getTenantName,
   getTenantPhone,
   getWhatsappLink,
@@ -30,6 +32,8 @@ export default function MinimalistLayout() {
   const contactPhone = getTenantPhone(tenant);
   const contactEmail = getTenantEmail(tenant);
   const contactAddress = getTenantAddress(tenant);
+  const contactMapLink = getTenantMapLink(tenant);
+  const tenantCreci = getTenantCreci(tenant);
   const aboutText = getAboutText(tenant);
 
   const siteData = React.useMemo(() => {
@@ -37,6 +41,7 @@ export default function MinimalistLayout() {
       ? JSON.parse(tenant.site_data)
       : tenant?.site_data || {};
   }, [tenant?.site_data]);
+  const tenantCnpj = siteData.cnpj || tenant?.document || '';
 
   const socialLinks = useMemo(
     () => [
@@ -195,7 +200,7 @@ export default function MinimalistLayout() {
           </div>
 
           <div className="md:col-span-3 pt-2">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 block">Organization</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 block">Navegação</span>
             <ul className="space-y-3 text-sm font-medium text-slate-400">
               <li><Link to="/imoveis?listingType=sale" className="hover:text-white transition-colors">Comprar Imóvel</Link></li>
               <li><Link to="/imoveis?listingType=rent" className="hover:text-white transition-colors">Alugar Imóvel</Link></li>
@@ -206,11 +211,18 @@ export default function MinimalistLayout() {
           </div>
 
           <div className="md:col-span-4 pt-2">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 block">Quick Access</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 block">Atendimento</span>
             <ul className="space-y-4 text-sm font-medium text-slate-400">
               <li className="flex items-start gap-3">
                 <MapPin size={16} className="mt-0.5 shrink-0" /> 
-                <span className="leading-relaxed">{contactAddress}</span>
+                <a
+                  href={contactMapLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="leading-relaxed hover:text-brand-500 transition-colors cursor-pointer"
+                >
+                  {contactAddress}
+                </a>
               </li>
               {contactPhone && (
                 <li className="flex items-center gap-3">
@@ -230,10 +242,10 @@ export default function MinimalistLayout() {
               )}
             </ul>
             
-            {(siteData.creci || siteData.cnpj) && (
+            {(tenantCreci || tenantCnpj) && (
               <div className="mt-6 pt-6 border-t border-white/10 space-y-1 text-xs font-light tracking-wide text-slate-500">
-                {siteData.creci && <p>CRECI: {siteData.creci}</p>}
-                {siteData.cnpj && <p>CNPJ: {siteData.cnpj}</p>}
+                {tenantCreci && <p className="text-sm mt-1 opacity-70 font-semibold">{tenantCreci}</p>}
+                {tenantCnpj && <p>CNPJ: {tenantCnpj}</p>}
               </div>
             )}
           </div>

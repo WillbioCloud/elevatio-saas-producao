@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import SignaturePad from 'react-signature-canvas';
 import heic2any from 'heic2any';
+import imageCompression from 'browser-image-compression';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
 import { autoTagContractTemplate } from '../services/ai';
@@ -35,6 +38,13 @@ import {
 import { generateZapXML } from '../utils/zapXmlGenerator';
 import { useSearchParams } from 'react-router-dom';
 import { getLevelInfo } from '../services/gamification';
+
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
 interface Profile {
   id: string;
@@ -655,6 +665,7 @@ interface ImageUploaderProps {
   assetType: 'logo' | 'logo_alt' | 'hero' | 'favicon' | 'about';
   companyId: string;
   aspectRatio?: string;
+  onFileSelect?: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 const ImageUploader: React.FC<ImageUploaderProps> = ({ 
@@ -663,7 +674,8 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   onUpload, 
   assetType, 
   companyId,
-  aspectRatio = 'aspect-video'
+  aspectRatio = 'aspect-video',
+  onFileSelect,
 }) => {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(currentUrl);
@@ -673,6 +685,11 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   }, [currentUrl]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (onFileSelect) {
+      onFileSelect(e);
+      return;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -758,6 +775,164 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   );
 };
 
+type LocationAddress = Partial<NonNullable<SiteData['address']>> & {
+  lat?: number;
+  lng?: number;
+};
+
+const LocationPicker = ({
+  address,
+  onChange,
+}: {
+  address?: LocationAddress | null;
+  onChange: (lat: number, lng: number) => void;
+}) => {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<L.Map | null>(null);
+  const markerInstance = useRef<L.Marker | null>(null);
+  const onChangeRef = useRef(onChange);
+  const initialZipRef = useRef((address?.zip || '').replace(/\D/g, ''));
+  const resolvedZipRef = useRef('');
+  const [isResolvingZip, setIsResolvingZip] = useState(false);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const hasCoordinates = typeof address?.lat === 'number' && typeof address?.lng === 'number';
+    const initialLat = hasCoordinates ? address.lat! : -15.7801;
+    const initialLng = hasCoordinates ? address.lng! : -47.9292;
+    const zoom = hasCoordinates ? 15 : 4;
+
+    const map = L.map(mapRef.current).setView([initialLat, initialLng], zoom);
+    mapInstance.current = map;
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+    }).addTo(map);
+
+    const marker = L.marker([initialLat, initialLng], { draggable: true }).addTo(map);
+    markerInstance.current = marker;
+
+    marker.on('dragend', (event) => {
+      const position = (event.target as L.Marker).getLatLng();
+      onChangeRef.current(position.lat, position.lng);
+    });
+
+    map.on('click', (event: L.LeafletMouseEvent) => {
+      marker.setLatLng(event.latlng);
+      onChangeRef.current(event.latlng.lat, event.latlng.lng);
+    });
+
+    window.setTimeout(() => map.invalidateSize(), 0);
+
+    return () => {
+      map.remove();
+      mapInstance.current = null;
+      markerInstance.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      !mapInstance.current ||
+      !markerInstance.current ||
+      typeof address?.lat !== 'number' ||
+      typeof address?.lng !== 'number'
+    ) {
+      return;
+    }
+
+    const nextPosition = L.latLng(address.lat, address.lng);
+    markerInstance.current.setLatLng(nextPosition);
+    mapInstance.current.setView(nextPosition, Math.max(mapInstance.current.getZoom(), 15));
+  }, [address?.lat, address?.lng]);
+
+  useEffect(() => {
+    const zip = (address?.zip || '').replace(/\D/g, '');
+    if (zip.length !== 8 || !mapInstance.current || !markerInstance.current) return;
+
+    const hasCoordinates = Number.isFinite(address?.lat) && Number.isFinite(address?.lng);
+    const zipChanged = zip !== initialZipRef.current;
+    if ((hasCoordinates && !zipChanged) || resolvedZipRef.current === zip) return;
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        setIsResolvingZip(true);
+        const query = [
+          address?.street,
+          address?.neighborhood,
+          address?.city,
+          address?.state,
+          zip,
+          'Brasil',
+        ].filter(Boolean).join(', ');
+
+        let response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(query)}`,
+          { signal: controller.signal }
+        );
+        let results = await response.json();
+
+        if (!Array.isArray(results) || !results[0]) {
+          response = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&postalcode=${zip}`,
+            { signal: controller.signal }
+          );
+          results = await response.json();
+        }
+
+        const result = Array.isArray(results) ? results[0] : null;
+        const lat = Number(result?.lat);
+        const lng = Number(result?.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+        const nextPosition = L.latLng(lat, lng);
+        markerInstance.current?.setLatLng(nextPosition);
+        mapInstance.current?.setView(nextPosition, 15);
+        resolvedZipRef.current = zip;
+        onChangeRef.current(lat, lng);
+      } catch (error) {
+        const isAbort = error instanceof DOMException && error.name === 'AbortError';
+        if (!isAbort) console.warn('Nao foi possivel aproximar a localizacao pelo CEP:', error);
+      } finally {
+        setIsResolvingZip(false);
+      }
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [address?.zip, address?.street, address?.neighborhood, address?.city, address?.state, address?.lat, address?.lng]);
+
+  return (
+    <div className="mt-6">
+      <label className="mb-2 block text-sm font-bold text-slate-700 dark:text-slate-300">
+        Localização Exata no Mapa (Arraste o pino ou clique)
+      </label>
+      <div ref={mapRef} className="relative z-0 h-64 w-full rounded-xl border border-slate-200 shadow-sm dark:border-slate-700" />
+      <p className="mt-1 text-xs text-slate-500">
+        Isso permitirá que seus clientes cliquem no seu endereço e abram o GPS diretamente para sua imobiliária.
+      </p>
+      {isResolvingZip && (
+        <p className="mt-1 text-xs font-medium text-brand-600 dark:text-brand-300">
+          Aproximando localizacao pelo CEP...
+        </p>
+      )}
+      {typeof address?.lat === 'number' && typeof address?.lng === 'number' && (
+        <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+          Coordenadas: {address.lat.toFixed(6)}, {address.lng.toFixed(6)}
+        </p>
+      )}
+    </div>
+  );
+};
+
 const AdminConfig: React.FC = () => {
   const { user, refreshUser, isOwner } = useAuth();
   const { addToast } = useToast();
@@ -821,8 +996,14 @@ const AdminConfig: React.FC = () => {
   const [typedName, setTypedName] = useState('');
   const [selectedFont, setSelectedFont] = useState<(typeof OFFICIAL_SIGNATURE_FONT_OPTIONS)[number]['id']>('font-dancing');
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
-  const [crop, setCrop] = useState<Crop>();
+  const [signatureCrop, setSignatureCrop] = useState<Crop>();
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [cropType, setCropType] = useState<'logo' | 'hero' | 'favicon'>('logo');
+  const [crop, setCrop] = useState<Crop>();
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
+  const [isCropping, setIsCropping] = useState(false);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState(user?.avatar_url || '');
   const [avatarImageToCrop, setAvatarImageToCrop] = useState<string | null>(null);
   const [avatarCrop, setAvatarCrop] = useState<Crop>();
@@ -902,6 +1083,7 @@ const AdminConfig: React.FC = () => {
   const setIsLoading = setIsGeneratingCheckout;
   const signaturePadRef = useRef<SignaturePad | null>(null);
   const cropImageRef = useRef<HTMLImageElement | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const avatarCropImageRef = useRef<HTMLImageElement | null>(null);
   const signatureUploadInputRef = useRef<HTMLInputElement | null>(null);
   const signatureVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -2008,6 +2190,7 @@ const AdminConfig: React.FC = () => {
         document: companyForm.cnpj.trim() || null,
         logo_url: companyForm.contract_logo || null,
         admin_signature_url: companyForm.signature_image || null,
+        site_data: siteData,
       };
 
       const { error } = await supabase
@@ -2076,7 +2259,7 @@ const AdminConfig: React.FC = () => {
     setTypedName('');
     setSelectedFont('font-dancing');
     setUploadPreview(null);
-    setCrop(undefined);
+    setSignatureCrop(undefined);
     setImageToCrop(null);
     setShowSignatureQrCode(false);
     setIsSignatureCameraOpen(false);
@@ -2106,7 +2289,7 @@ const AdminConfig: React.FC = () => {
 
   const clearUploadPreview = () => {
     setUploadPreview(null);
-    setCrop(undefined);
+    setSignatureCrop(undefined);
     setImageToCrop(null);
 
     if (signatureUploadInputRef.current) {
@@ -2119,7 +2302,7 @@ const AdminConfig: React.FC = () => {
     setSignatureModalError('');
     setSignTab('upload');
     setUploadPreview(null);
-    setCrop(undefined);
+    setSignatureCrop(undefined);
     setImageToCrop(null);
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -2129,28 +2312,28 @@ const AdminConfig: React.FC = () => {
   };
 
   const getCroppedImage = () => {
-    if (!cropImageRef.current || !crop?.width || !crop?.height) return;
+    if (!cropImageRef.current || !signatureCrop?.width || !signatureCrop?.height) return;
     const canvas = document.createElement('canvas');
     const scaleX = cropImageRef.current.naturalWidth / cropImageRef.current.width;
     const scaleY = cropImageRef.current.naturalHeight / cropImageRef.current.height;
-    canvas.width = crop.width;
-    canvas.height = crop.height;
+    canvas.width = signatureCrop.width;
+    canvas.height = signatureCrop.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(
       cropImageRef.current,
-      crop.x * scaleX,
-      crop.y * scaleY,
-      crop.width * scaleX,
-      crop.height * scaleY,
+      signatureCrop.x * scaleX,
+      signatureCrop.y * scaleY,
+      signatureCrop.width * scaleX,
+      signatureCrop.height * scaleY,
       0,
       0,
-      crop.width,
-      crop.height
+      signatureCrop.width,
+      signatureCrop.height
     );
     setUploadPreview(canvas.toDataURL('image/png'));
     setImageToCrop(null);
-    setCrop(undefined);
+    setSignatureCrop(undefined);
     setSignatureModalError('');
   };
 
@@ -2162,7 +2345,7 @@ const AdminConfig: React.FC = () => {
     canvas.height = signatureVideoRef.current.videoHeight;
     canvas.getContext('2d')?.drawImage(signatureVideoRef.current, 0, 0);
     setUploadPreview(null);
-    setCrop(undefined);
+    setSignatureCrop(undefined);
     setImageToCrop(canvas.toDataURL('image/png'));
     setSignatureModalError('');
     setSignTab('upload');
@@ -2924,6 +3107,141 @@ const AdminConfig: React.FC = () => {
       (signTab === 'type' && typedName.trim().length >= 3) ||
       (signTab === 'upload' && Boolean(uploadPreview)));
 
+  const getInitialSiteCrop = (
+    imageWidth: number,
+    imageHeight: number,
+    type: 'logo' | 'hero' | 'favicon'
+  ): PixelCrop => {
+    const maxWidth = imageWidth * 0.9;
+    const maxHeight = imageHeight * 0.9;
+    const aspect = type === 'hero' ? 16 / 9 : type === 'favicon' ? 1 : null;
+
+    let width = maxWidth;
+    let height = maxHeight;
+
+    if (aspect) {
+      height = width / aspect;
+
+      if (height > maxHeight) {
+        height = maxHeight;
+        width = height * aspect;
+      }
+    }
+
+    return {
+      unit: 'px',
+      x: Math.max((imageWidth - width) / 2, 0),
+      y: Math.max((imageHeight - height) / 2, 0),
+      width,
+      height,
+    };
+  };
+
+  const resetCropModal = () => {
+    setCropModalOpen(false);
+    setCropImageSrc(null);
+    setCrop(undefined);
+    setCompletedCrop(undefined);
+    setIsCropping(false);
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'hero' | 'favicon') => {
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      addToast('Selecione um arquivo de imagem valido.', 'error');
+      e.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.addEventListener('load', () => setCropImageSrc(reader.result?.toString() || null));
+    reader.addEventListener('error', () => addToast('Nao foi possivel carregar a imagem.', 'error'));
+    reader.readAsDataURL(file);
+
+    setCropType(type);
+    setCrop(undefined);
+    setCompletedCrop(undefined);
+    setCropModalOpen(true);
+
+    e.target.value = '';
+  };
+
+  const handleSaveCrop = async () => {
+    if (!completedCrop || !imgRef.current || !cropImageSrc) return;
+
+    if (!user?.company_id) {
+      addToast('Empresa nao encontrada para enviar a imagem.', 'error');
+      return;
+    }
+
+    setIsCropping(true);
+
+    try {
+      const image = imgRef.current;
+      const canvas = document.createElement('canvas');
+      const scaleX = image.naturalWidth / image.width;
+      const scaleY = image.naturalHeight / image.height;
+      const outputWidth = Math.round(completedCrop.width);
+      const outputHeight = Math.round(completedCrop.height);
+
+      if (outputWidth < 1 || outputHeight < 1) {
+        throw new Error('Area de recorte invalida.');
+      }
+
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) throw new Error('No 2d context');
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(
+        image,
+        completedCrop.x * scaleX,
+        completedCrop.y * scaleY,
+        completedCrop.width * scaleX,
+        completedCrop.height * scaleY,
+        0,
+        0,
+        outputWidth,
+        outputHeight
+      );
+
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 1));
+      if (!blob) throw new Error('Canvas error');
+
+      const fileToCompress = new File([blob], `cropped_${cropType}_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const compressedFile = await imageCompression(fileToCompress, {
+        maxSizeMB: 0.3,
+        maxWidthOrHeight: cropType === 'hero' ? 1920 : 800,
+        useWebWorker: true,
+      });
+
+      const publicUrl = await uploadCompanyAsset(compressedFile, user.company_id, cropType);
+      const siteDataKey = cropType === 'hero' ? 'hero_image_url' : `${cropType}_url`;
+      const updatedSiteData = { ...siteData, [siteDataKey]: publicUrl };
+      const { error } = await supabase
+        .from('companies')
+        .update({ site_data: updatedSiteData })
+        .eq('id', user.company_id);
+
+      if (error) throw error;
+
+      setSiteData(updatedSiteData);
+      addToast('Imagem recortada e enviada com sucesso!', 'success');
+      resetCropModal();
+    } catch (err) {
+      console.error(err);
+      addToast('Erro ao processar a imagem.', 'error');
+    } finally {
+      setIsCropping(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -2979,32 +3297,27 @@ const AdminConfig: React.FC = () => {
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-300">
-                  Nome da Imobiliária
+                  Nome Fantasia (Imobiliária)
                 </label>
-                <input
-                  type="text"
-                  value={companyForm.name}
-                  onChange={(e) => setCompanyForm((prev) => ({ ...prev, name: e.target.value }))}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                  placeholder="Sua Imobiliária"
-                />
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Este nome será usado como identificação oficial da empresa.
-                </p>
+                <input type="text" value={companyForm.name} onChange={(e) => setCompanyForm((prev) => ({ ...prev, name: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white" placeholder="Sua Imobiliária" />
               </div>
-
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Razão Social
+                </label>
+                <input type="text" value={siteData.razao_social || siteData.corporate_name || ''} onChange={(e) => setSiteData({ ...siteData, razao_social: e.target.value, corporate_name: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white" placeholder="Razão Social LTDA" />
+              </div>
               <div>
                 <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-300">
                   CPF / CNPJ
                 </label>
-                <input
-                  type="text"
-                  value={companyForm.cnpj}
-                  onChange={(e) => setCompanyForm((prev) => ({ ...prev, cnpj: formatCpfCnpj(e.target.value) }))}
-                  maxLength={18}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                  placeholder="000.000.000-00 ou 00.000.000/0001-00"
-                />
+                <input type="text" value={companyForm.cnpj} onChange={(e) => setCompanyForm((prev) => ({ ...prev, cnpj: formatCpfCnpj(e.target.value) }))} maxLength={18} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white" placeholder="00.000.000/0001-00" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-700 dark:text-slate-300">
+                  CRECI
+                </label>
+                <input type="text" value={siteData.creci || ''} onChange={(e) => setSiteData({ ...siteData, creci: e.target.value })} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-brand-500 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white" placeholder="Ex: 12345-J" />
               </div>
             </div>
 
@@ -3078,6 +3391,121 @@ const AdminConfig: React.FC = () => {
                     {companyForm.signature_image ? 'Alterar Assinatura' : 'Cadastrar Assinatura'}
                   </button>
                 </div>
+              </div>
+            </div>
+
+            <div className="space-y-6 mt-10 pt-8 border-t border-slate-200 dark:border-slate-800">
+              <div className="border-b border-slate-200 pb-5 dark:border-slate-800">
+                <h2 className="flex items-center gap-2 text-xl font-black text-slate-800 dark:text-white">
+                  <Icons.Contact className="text-brand-600" /> Contatos Públicos do Site
+                </h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Estes dados serão exibidos no rodapé do seu site e nas páginas de contato.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* E-mail Principal */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">E-mail Principal</label>
+                  <input
+                    type="email"
+                    value={siteData.contact_email || ''}
+                    onChange={(e) => setSiteData({ ...siteData, contact_email: e.target.value })}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                    placeholder="contato@suaimobiliaria.com.br"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Telefone/WhatsApp Central</label>
+                  <input
+                    type="text"
+                    value={siteData.contact_phone || ''}
+                    onChange={(e) => setSiteData({ ...siteData, contact_phone: e.target.value })}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                    placeholder="(00) 00000-0000"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Endereço da Sede</h4>
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  {/* CEP */}
+                  <div className="col-span-1 md:col-span-3">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">CEP</label>
+                    <input
+                      type="text"
+                      value={siteData.address?.zip || ''}
+                      onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, zip: e.target.value } as any })}
+                      onBlur={handleCepBlur}
+                      maxLength={9}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-brand-500 outline-none transition-colors"
+                      placeholder="00000-000"
+                    />
+                  </div>
+
+                  {/* Logradouro */}
+                  <div className="col-span-1 md:col-span-7">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Logradouro (Rua, Av)</label>
+                    <input
+                      type="text"
+                      value={siteData.address?.street || ''}
+                      onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, street: e.target.value } as any })}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                    />
+                  </div>
+                  {/* Número */}
+                  <div className="col-span-1 md:col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Número</label>
+                    <input
+                      type="text"
+                      value={siteData.address?.number || ''}
+                      onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, number: e.target.value } as any })}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                    />
+                  </div>
+                  {/* Bairro */}
+                  <div className="col-span-1 md:col-span-5">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bairro</label>
+                    <input
+                      type="text"
+                      value={siteData.address?.neighborhood || ''}
+                      onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, neighborhood: e.target.value } as any })}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                    />
+                  </div>
+                  {/* Cidade */}
+                  <div className="col-span-1 md:col-span-5">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Cidade</label>
+                    <input
+                      type="text"
+                      value={siteData.address?.city || ''}
+                      onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, city: e.target.value } as any })}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
+                    />
+                  </div>
+                  {/* Estado */}
+                  <div className="col-span-1 md:col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">UF</label>
+                    <input
+                      type="text"
+                      value={siteData.address?.state || ''}
+                      onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, state: e.target.value } as any })}
+                      maxLength={2}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm uppercase"
+                    />
+                  </div>
+                </div>
+                <LocationPicker
+                  address={siteData.address}
+                  onChange={(lat, lng) =>
+                    setSiteData((prev) => ({
+                      ...prev,
+                      address: { ...prev.address, lat, lng } as any,
+                    }))
+                  }
+                />
               </div>
             </div>
 
@@ -4957,12 +5385,13 @@ const AdminConfig: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <ImageUploader
-                  label="Logo Principal"
+                  label="Logo Principal Horizontal"
                   currentUrl={siteData.logo_url}
                   onUpload={(url) => setSiteData({...siteData, logo_url: url})}
                   assetType="logo"
                   companyId={user?.company_id || ''}
                   aspectRatio="aspect-[3/1]"
+                  onFileSelect={(e) => handleImageSelect(e, 'logo')}
                 />
 
                 <ImageUploader
@@ -4981,6 +5410,7 @@ const AdminConfig: React.FC = () => {
                   assetType="favicon"
                   companyId={user?.company_id || ''}
                   aspectRatio="aspect-square"
+                  onFileSelect={(e) => handleImageSelect(e, 'favicon')}
                 />
               </div>
 
@@ -5249,6 +5679,7 @@ const AdminConfig: React.FC = () => {
                       assetType="hero"
                       companyId={user?.company_id || ''}
                       aspectRatio="aspect-video"
+                      onFileSelect={(e) => handleImageSelect(e, 'hero')}
                     />
                   </div>
 
@@ -5350,138 +5781,6 @@ const AdminConfig: React.FC = () => {
                     />
                   </div>
 
-                  {/* Dados Jurídicos e Qualificação */}
-                  <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Dados Jurídicos e Contato</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      {/* Razão Social */}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Razão Social</label>
-                        <input
-                          type="text"
-                          value={siteData.corporate_name || ''}
-                          onChange={(e) => setSiteData({ ...siteData, corporate_name: e.target.value })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
-                          placeholder="Ex: TR Imóveis Ltda"
-                        />
-                      </div>
-                      {/* CNPJ */}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">CNPJ</label>
-                        <input
-                          type="text"
-                          value={siteData.cnpj || ''}
-                          onChange={(e) => setSiteData({ ...siteData, cnpj: e.target.value })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
-                          placeholder="00.000.000/0001-00"
-                        />
-                      </div>
-                      {/* CRECI */}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">CRECI</label>
-                        <input
-                          type="text"
-                          value={siteData.creci || ''}
-                          onChange={(e) => setSiteData({ ...siteData, creci: e.target.value })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
-                          placeholder="Ex: 12345-J"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                      {/* E-mail Principal */}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">E-mail Principal</label>
-                        <input
-                          type="email"
-                          value={siteData.contact_email || ''}
-                          onChange={(e) => setSiteData({ ...siteData, contact_email: e.target.value })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
-                          placeholder="contato@suaimobiliaria.com.br"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Telefone/WhatsApp Central</label>
-                        <input
-                          type="text"
-                          value={siteData.contact_phone || ''}
-                          onChange={(e) => setSiteData({ ...siteData, contact_phone: e.target.value })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
-                          placeholder="(00) 00000-0000"
-                        />
-                      </div>
-                    </div>
-
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-6 mb-3">Endereço da Sede</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                      {/* CEP */}
-                      <div className="col-span-1 md:col-span-3">
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">CEP</label>
-                        <input
-                          type="text"
-                          value={siteData.address?.zip || ''}
-                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, zip: e.target.value } as any })}
-                          onBlur={handleCepBlur}
-                          maxLength={9}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm focus:border-brand-500 outline-none transition-colors"
-                          placeholder="00000-000"
-                        />
-                      </div>
-
-                      {/* Logradouro */}
-                      <div className="col-span-1 md:col-span-7">
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Logradouro (Rua, Av)</label>
-                        <input
-                          type="text"
-                          value={siteData.address?.street || ''}
-                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, street: e.target.value } as any })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
-                        />
-                      </div>
-                      {/* Número */}
-                      <div className="col-span-1 md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Número</label>
-                        <input
-                          type="text"
-                          value={siteData.address?.number || ''}
-                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, number: e.target.value } as any })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
-                        />
-                      </div>
-                      {/* Bairro */}
-                      <div className="col-span-1 md:col-span-5">
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bairro</label>
-                        <input
-                          type="text"
-                          value={siteData.address?.neighborhood || ''}
-                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, neighborhood: e.target.value } as any })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
-                        />
-                      </div>
-                      {/* Cidade */}
-                      <div className="col-span-1 md:col-span-5">
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Cidade</label>
-                        <input
-                          type="text"
-                          value={siteData.address?.city || ''}
-                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, city: e.target.value } as any })}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm"
-                        />
-                      </div>
-                      {/* Estado */}
-                      <div className="col-span-1 md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">UF</label>
-                        <input
-                          type="text"
-                          value={siteData.address?.state || ''}
-                          onChange={(e) => setSiteData({ ...siteData, address: { ...siteData.address, state: e.target.value } as any })}
-                          maxLength={2}
-                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-sm uppercase"
-                        />
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
                 <div>
@@ -6171,10 +6470,10 @@ const AdminConfig: React.FC = () => {
                           <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
                             <p className="text-sm font-semibold text-slate-900 mb-4 text-center">Recorte a sua assinatura</p>
                             <div className="flex justify-center bg-slate-100 border border-dashed border-slate-300 p-2 rounded-xl overflow-hidden">
-                              <ReactCrop crop={crop} onChange={(nextCrop) => setCrop(nextCrop)} className="max-h-[300px]">
+                              <ReactCrop crop={signatureCrop} onChange={(nextCrop) => setSignatureCrop(nextCrop)} className="max-h-[300px]">
                                 <img ref={cropImageRef} src={imageToCrop} alt="Recortar" className="max-h-[300px] w-auto object-contain" onLoad={(event) => {
                                   const { width, height } = event.currentTarget;
-                                  setCrop({ unit: 'px', x: width * 0.1, y: height * 0.1, width: width * 0.8, height: height * 0.8 });
+                                  setSignatureCrop({ unit: 'px', x: width * 0.1, y: height * 0.1, width: width * 0.8, height: height * 0.8 });
                                 }} />
                               </ReactCrop>
                             </div>
@@ -6832,6 +7131,71 @@ const AdminConfig: React.FC = () => {
                 className="px-6 py-2.5 bg-slate-200 hover:bg-slate-300 dark:bg-white/10 dark:hover:bg-white/20 text-slate-800 dark:text-white rounded-xl font-bold transition-colors"
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cropModalOpen && cropImageSrc && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-slate-800">
+              <h3 className="font-bold text-slate-900 dark:text-white">
+                Ajustar Imagem ({cropType === 'hero' ? 'Capa' : cropType === 'favicon' ? 'Favicon' : 'Logo'})
+              </h3>
+              <button
+                type="button"
+                onClick={resetCropModal}
+                disabled={isCropping}
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"
+                aria-label="Fechar recorte"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex flex-1 items-center justify-center overflow-auto bg-slate-50 p-4 dark:bg-slate-950">
+              <ReactCrop
+                crop={crop}
+                onChange={(_, percentCrop) => setCrop(percentCrop)}
+                onComplete={(nextCrop) => setCompletedCrop(nextCrop)}
+                aspect={cropType === 'hero' ? 16 / 9 : cropType === 'favicon' ? 1 : undefined}
+                keepSelection
+                className="max-h-[60vh]"
+              >
+                <img
+                  ref={imgRef}
+                  src={cropImageSrc}
+                  alt="Cortar"
+                  className="max-h-[60vh] w-auto object-contain"
+                  onLoad={(event) => {
+                    const { width, height } = event.currentTarget;
+                    const nextCrop = getInitialSiteCrop(width, height, cropType);
+                    setCrop(nextCrop);
+                    setCompletedCrop(nextCrop);
+                  }}
+                />
+              </ReactCrop>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-slate-100 p-4 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={resetCropModal}
+                disabled={isCropping}
+                className="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCrop}
+                disabled={isCropping || !completedCrop?.width || !completedCrop?.height}
+                className="flex items-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700 disabled:opacity-50"
+              >
+                {isCropping ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                {isCropping ? 'Processando e Comprimindo...' : 'Salvar Recorte'}
               </button>
             </div>
           </div>

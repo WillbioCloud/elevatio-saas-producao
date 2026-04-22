@@ -22,6 +22,7 @@ export interface SiteData {
   // Dados Jurídicos e Contato
   creci?: string;
   cnpj?: string;
+  razao_social?: string;
   corporate_name?: string; // Razão Social
   contact_email?: string;
   contact_phone?: string;
@@ -32,6 +33,8 @@ export interface SiteData {
     city: string;
     state: string;
     zip: string;
+    lat?: number;
+    lng?: number;
   };
 
   // Seções Opcionais

@@ -7,8 +7,10 @@ import {
   getPrimaryColor,
   getSocialLink,
   getTenantAddress,
+  getTenantCreci,
   getTenantEmail,
   getTenantLogo,
+  getTenantMapLink,
   getTenantName,
   getTenantPhone,
   getWhatsappLink,
@@ -42,6 +44,8 @@ const BasicoLayout: React.FC = () => {
   const contactPhone = getTenantPhone(tenant);
   const contactEmail = getTenantEmail(tenant);
   const contactAddress = getTenantAddress(tenant);
+  const contactMapLink = getTenantMapLink(tenant);
+  const tenantCreci = getTenantCreci(tenant);
   const aboutText = getAboutText(tenant);
   const whatsappLink = getWhatsappLink(tenant, 'Olá');
   const instagramLink = getSocialLink(tenant, 'instagram');
@@ -201,6 +205,7 @@ const BasicoLayout: React.FC = () => {
                 {aboutText.slice(0, 120)}
                 {aboutText.length > 120 ? '...' : ''}
               </p>
+              {tenantCreci && <p className="text-sm mt-1 opacity-70 font-semibold">{tenantCreci}</p>}
               <div className="flex items-center gap-3">
                 {instagramLink && (
                   <a href={instagramLink} target="_blank" rel="noopener noreferrer" className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 text-white/40 transition-all duration-300 hover:border-white/40 hover:text-white">
@@ -263,7 +268,18 @@ const BasicoLayout: React.FC = () => {
                 <div className="absolute -bottom-2 left-0 h-0.5 w-8" style={{ backgroundColor: `${primaryColor}66` }} />
               </h4>
               <div className="space-y-4 text-sm leading-relaxed text-white/40">
-                <p>{contactAddress}</p>
+                {contactAddress && (
+                  <p>
+                    <a
+                      href={contactMapLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-brand-500 transition-colors cursor-pointer"
+                    >
+                      {contactAddress}
+                    </a>
+                  </p>
+                )}
                 {contactPhone && (
                   <p style={{ color: `${primaryColor}bb` }}>
                     <a href={`tel:${contactPhone.replace(/\D/g, '')}`}>{contactPhone}</a>

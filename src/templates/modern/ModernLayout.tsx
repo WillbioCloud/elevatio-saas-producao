@@ -9,9 +9,11 @@ import {
   getPrimaryColor,
   getSocialLink,
   getTenantAddress,
+  getTenantCreci,
   getTenantEmail,
   getTenantLogo,
   getTenantLogoWhite,
+  getTenantMapLink,
   getTenantName,
   getTenantPhone,
   getWhatsappLink,
@@ -77,6 +79,8 @@ const ModernLayout: React.FC = () => {
   const contactPhone = getTenantPhone(tenant);
   const contactEmail = getTenantEmail(tenant);
   const contactAddress = getTenantAddress(tenant);
+  const contactMapLink = getTenantMapLink(tenant);
+  const tenantCreci = getTenantCreci(tenant);
   const aboutText = getAboutText(tenant);
   const saleWhatsappLink = getWhatsappLink(
     tenant,
@@ -206,14 +210,17 @@ const ModernLayout: React.FC = () => {
             <div className="lg:col-span-4">
               <h4 className="text-white font-semibold mb-6 tracking-wide">Atendimento</h4>
               <ul className="space-y-4 text-sm font-light text-slate-400">
-                {(siteData?.address || tenant?.address) && (
+                {contactAddress && (
                   <li className="flex items-start gap-3 group">
                     <MapPin size={18} className="shrink-0 text-slate-500 mt-0.5 group-hover:text-white transition-colors" />
-                    <span className="leading-relaxed">
-                      {typeof siteData?.address === 'object'
-                        ? `${siteData.address.street || ''}, ${siteData.address.number || 's/n'}${siteData.address.city ? ' - ' + siteData.address.city : ''}`
-                        : siteData?.address || tenant?.address}
-                    </span>
+                    <a
+                      href={contactMapLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="leading-relaxed hover:text-brand-500 transition-colors cursor-pointer"
+                    >
+                      {contactAddress}
+                    </a>
                   </li>
                 )}
                 {(siteData?.contact_phone || tenant?.phone) && (
@@ -235,10 +242,9 @@ const ModernLayout: React.FC = () => {
             <div className="lg:col-span-2">
               <h4 className="text-white font-semibold mb-6 tracking-wide">Legal</h4>
               <ul className="space-y-4 text-sm font-light text-slate-400">
-                {siteData?.creci && (
+                {tenantCreci && (
                   <li>
-                    <span className="block text-xs uppercase tracking-wider text-slate-600 mb-1 font-bold">CRECI</span>
-                    <span className="text-white font-medium">{siteData.creci}</span>
+                    <p className="text-sm mt-1 opacity-70 font-semibold">{tenantCreci}</p>
                   </li>
                 )}
                 {siteData?.cnpj && (

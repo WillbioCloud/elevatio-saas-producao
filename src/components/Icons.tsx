@@ -1,6 +1,7 @@
 import type { ComponentPropsWithoutRef } from 'react';
 import {
   MapPin,
+  Contact,
   Phone,
   Mail,
   Menu,
@@ -180,6 +181,7 @@ const Google = (props: ComponentPropsWithoutRef<'svg'>) => (
 
 export const Icons = {
   MapPin,
+  Contact,
   Phone,
   Mail,
   Menu,
