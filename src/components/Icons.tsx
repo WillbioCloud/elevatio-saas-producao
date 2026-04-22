@@ -152,6 +152,7 @@ import {
   QrCode,
   Smartphone,
   Bug,
+  Rss,
 } from 'lucide-react';
 
 const Google = (props: ComponentPropsWithoutRef<'svg'>) => (
@@ -337,4 +338,5 @@ export const Icons = {
   QrCode,
   Smartphone,
   Bug,
+  Rss,
 };

@@ -1,0 +1,764 @@
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
+}
+
+type Provider = 'meta' | 'google' | 'tiktok'
+type JsonRecord = Record<string, any>
+type SupabaseAdmin = ReturnType<typeof createClient>
+
+type NormalizedExternalLead = {
+  name: string | null
+  email: string | null
+  phone: string | null
+  form_id: string | null
+  campaign_id: string | null
+  external_lead_id: string | null
+  message: string | null
+}
+
+type LeadSourceMapping = {
+  id?: string | null
+  company_id?: string | null
+  property_id?: string | null
+  assigned_user_id?: string | null
+  lead_mode?: string | null
+  form_id?: string | null
+  campaign_id?: string | null
+}
+
+type CompanySettings = {
+  route_to_central?: boolean | null
+  central_user_id?: string | null
+  include_admins_in_roulette?: boolean | null
+  kanban_config?: Record<string, string[]> | null
+}
+
+type ExternalLeadEventInput = {
+  companyId?: string | null
+  integrationId?: string | null
+  provider?: Provider | null
+  formId?: string | null
+  campaignId?: string | null
+  leadId?: string | null
+  status: 'processed' | 'error'
+  rawPayload: unknown
+  normalizedPayload?: unknown
+  errorMessage?: string | null
+}
+
+const providerLabels: Record<Provider, string> = {
+  meta: 'Meta Ads',
+  google: 'Google Ads',
+  tiktok: 'TikTok Ads',
+}
+
+const jsonResponse = (body: JsonRecord, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+
+const isRecord = (value: unknown): value is JsonRecord =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+const asRecord = (value: unknown): JsonRecord => (isRecord(value) ? value : {})
+
+const firstRecord = (...values: unknown[]): JsonRecord => {
+  for (const value of values) {
+    if (isRecord(value)) return value
+  }
+
+  return {}
+}
+
+const firstString = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const normalized = value.trim()
+      if (normalized && normalized !== 'null' && normalized !== 'undefined') return normalized
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value)
+    }
+  }
+
+  return null
+}
+
+const valueToString = (value: unknown): string | null => {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const normalized = valueToString(item)
+      if (normalized) return normalized
+    }
+
+    return null
+  }
+
+  if (isRecord(value)) {
+    return firstString(value.value, value.string_value, value.stringValue, value.text, value.answer)
+  }
+
+  return firstString(value)
+}
+
+const canonicalFieldName = (value: unknown) =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+const pickFromRecord = (record: JsonRecord, keys: string[]) => {
+  for (const key of keys) {
+    const directValue = valueToString(record[key])
+    if (directValue) return directValue
+
+    const canonicalKey = canonicalFieldName(key)
+    const matchedKey = Object.keys(record).find((candidate) => canonicalFieldName(candidate) === canonicalKey)
+    if (matchedKey) {
+      const matchedValue = valueToString(record[matchedKey])
+      if (matchedValue) return matchedValue
+    }
+  }
+
+  return null
+}
+
+const fieldMatches = (fieldName: unknown, aliases: string[]) => {
+  const normalizedField = canonicalFieldName(fieldName)
+  if (!normalizedField) return false
+
+  return aliases.some((alias) => {
+    const normalizedAlias = canonicalFieldName(alias)
+    if (normalizedAlias.length <= 4) return normalizedField === normalizedAlias
+
+    return normalizedField === normalizedAlias ||
+      normalizedField.includes(normalizedAlias) ||
+      normalizedAlias.includes(normalizedField)
+  })
+}
+
+const pickFromFieldArray = (fields: unknown, aliases: string[]) => {
+  if (!Array.isArray(fields)) return null
+
+  for (const item of fields) {
+    if (!isRecord(item)) continue
+
+    const fieldName = item.name ??
+      item.key ??
+      item.field_name ??
+      item.fieldName ??
+      item.column_name ??
+      item.columnName ??
+      item.label ??
+      item.question ??
+      item.id
+
+    if (!fieldMatches(fieldName, aliases)) continue
+
+    const value = valueToString(
+      item.value ??
+        item.values ??
+        item.string_value ??
+        item.stringValue ??
+        item.answer ??
+        item.answers ??
+        item.text
+    )
+
+    if (value) return value
+  }
+
+  return null
+}
+
+const pickLeadName = (lead: JsonRecord, fields: unknown) => {
+  const directName = pickFromRecord(lead, [
+    'name',
+    'full_name',
+    'fullName',
+    'nome',
+    'nome_completo',
+    'contact_name',
+  ])
+
+  if (directName) return directName
+
+  const fieldName = pickFromFieldArray(fields, [
+    'full_name',
+    'full name',
+    'nome completo',
+    'nome',
+    'name',
+    'contact name',
+  ])
+
+  if (fieldName) return fieldName
+
+  const firstName = pickFromRecord(lead, ['first_name', 'firstName']) ??
+    pickFromFieldArray(fields, ['first_name', 'first name', 'primeiro nome'])
+  const lastName = pickFromRecord(lead, ['last_name', 'lastName']) ??
+    pickFromFieldArray(fields, ['last_name', 'last name', 'sobrenome'])
+
+  return [firstName, lastName].filter(Boolean).join(' ').trim() || null
+}
+
+const pickLeadEmail = (lead: JsonRecord, fields: unknown) =>
+  pickFromRecord(lead, ['email', 'e-mail', 'email_address', 'emailAddress']) ??
+  pickFromFieldArray(fields, ['email', 'e-mail', 'email_address', 'user email'])
+
+const pickLeadPhone = (lead: JsonRecord, fields: unknown) =>
+  pickFromRecord(lead, ['phone', 'phone_number', 'phoneNumber', 'telefone', 'whatsapp', 'mobile']) ??
+  pickFromFieldArray(fields, ['phone', 'phone_number', 'phone number', 'telefone', 'whatsapp', 'mobile', 'user phone'])
+
+const normalizeProvider = (value: unknown): Provider | null => {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (['meta', 'facebook', 'fb', 'instagram'].includes(normalized)) return 'meta'
+  if (['google', 'google_ads', 'googleads', 'adwords'].includes(normalized)) return 'google'
+  if (['tiktok', 'tik_tok', 'tik-tok'].includes(normalized)) return 'tiktok'
+  return null
+}
+
+const readRequestBody = async (req: Request): Promise<JsonRecord> => {
+  const contentType = req.headers.get('content-type')?.toLowerCase() ?? ''
+
+  if (contentType.includes('application/json')) {
+    return asRecord(await req.json().catch(() => ({})))
+  }
+
+  const text = await req.text()
+  if (!text.trim()) return {}
+
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    return Object.fromEntries(new URLSearchParams(text))
+  }
+
+  try {
+    return asRecord(JSON.parse(text))
+  } catch {
+    return { raw_body: text }
+  }
+}
+
+const normalizeMetaLead = (body: JsonRecord): NormalizedExternalLead => {
+  const entry = Array.isArray(body.entry) ? asRecord(body.entry[0]) : {}
+  const change = Array.isArray(entry.changes) ? asRecord(entry.changes[0]) : {}
+  const value = firstRecord(change.value, body.value, body.lead, body)
+  const lead = firstRecord(value.lead, value.leadgen, body.lead, body)
+  const fields = value.field_data ?? value.fieldData ?? lead.field_data ?? lead.fieldData ?? body.field_data ?? body.fieldData
+
+  return {
+    name: pickLeadName(lead, fields),
+    email: pickLeadEmail(lead, fields),
+    phone: pickLeadPhone(lead, fields),
+    form_id: firstString(value.form_id, value.formId, lead.form_id, lead.formId, body.form_id, body.formId),
+    campaign_id: firstString(
+      value.campaign_id,
+      value.campaignId,
+      asRecord(value.campaign).id,
+      lead.campaign_id,
+      lead.campaignId,
+      body.campaign_id,
+      body.campaignId,
+      value.ad_id,
+      value.adId,
+      value.adgroup_id
+    ),
+    external_lead_id: firstString(value.leadgen_id, value.lead_id, value.leadId, lead.leadgen_id, lead.lead_id, body.leadgen_id, body.lead_id),
+    message: pickFromRecord(lead, ['message', 'mensagem', 'comments', 'observacoes']) ??
+      pickFromFieldArray(fields, ['message', 'mensagem', 'comments', 'observacoes']) ??
+      null,
+  }
+}
+
+const normalizeGoogleLead = (body: JsonRecord): NormalizedExternalLead => {
+  const lead = firstRecord(
+    body.googleAdsLeadFormSubmissionData,
+    body.leadFormSubmissionData,
+    body.lead_form_submission_data,
+    body.lead,
+    body
+  )
+  const fields = lead.user_column_data ??
+    lead.userColumnData ??
+    lead.customLeadFormFields ??
+    lead.field_data ??
+    lead.fieldData ??
+    lead.fields ??
+    body.user_column_data ??
+    body.userColumnData
+
+  return {
+    name: pickLeadName(lead, fields),
+    email: pickLeadEmail(lead, fields),
+    phone: pickLeadPhone(lead, fields),
+    form_id: firstString(lead.form_id, lead.formId, lead.lead_form_id, lead.leadFormId, body.form_id, body.formId),
+    campaign_id: firstString(lead.campaign_id, lead.campaignId, asRecord(lead.campaign).id, body.campaign_id, body.campaignId),
+    external_lead_id: firstString(lead.lead_id, lead.leadId, lead.gcl_id, lead.gclId, body.lead_id, body.leadId),
+    message: pickFromRecord(lead, ['message', 'mensagem', 'comments', 'observacoes']) ??
+      pickFromFieldArray(fields, ['message', 'mensagem', 'comments', 'observacoes']) ??
+      null,
+  }
+}
+
+const normalizeTikTokLead = (body: JsonRecord): NormalizedExternalLead => {
+  const data = firstRecord(body.data, body.object, body.lead, asRecord(body.event).data, body)
+  const fields = data.field_data ??
+    data.fieldData ??
+    data.fields ??
+    data.answers ??
+    data.questions ??
+    body.field_data ??
+    body.fieldData
+
+  return {
+    name: pickLeadName(data, fields),
+    email: pickLeadEmail(data, fields),
+    phone: pickLeadPhone(data, fields),
+    form_id: firstString(data.form_id, data.formId, asRecord(data.form).id, body.form_id, body.formId),
+    campaign_id: firstString(data.campaign_id, data.campaignId, asRecord(data.campaign).id, body.campaign_id, body.campaignId),
+    external_lead_id: firstString(data.lead_id, data.leadId, data.id, body.lead_id, body.leadId),
+    message: pickFromRecord(data, ['message', 'mensagem', 'comments', 'observacoes']) ??
+      pickFromFieldArray(fields, ['message', 'mensagem', 'comments', 'observacoes']) ??
+      null,
+  }
+}
+
+const normalizeExternalLead = (provider: Provider, body: JsonRecord) => {
+  switch (provider) {
+    case 'meta':
+      return normalizeMetaLead(body)
+    case 'google':
+      return normalizeGoogleLead(body)
+    case 'tiktok':
+      return normalizeTikTokLead(body)
+  }
+}
+
+const getSupabaseAdmin = () => {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY ausente.')
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey)
+}
+
+const fetchMappingByColumn = async (
+  supabaseAdmin: SupabaseAdmin,
+  provider: Provider,
+  integrationId: string,
+  column: 'form_id' | 'campaign_id',
+  value: string | null
+) => {
+  if (!value) return null
+
+  const { data, error } = await supabaseAdmin
+    .from('lead_source_mappings')
+    .select('id, company_id, property_id, assigned_user_id, lead_mode, form_id, campaign_id')
+    .eq('provider', provider)
+    .eq('integration_id', integrationId)
+    .eq(column, value)
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  return (data as LeadSourceMapping | null) ?? null
+}
+
+const fetchLeadSourceMapping = async (
+  supabaseAdmin: SupabaseAdmin,
+  provider: Provider,
+  integrationId: string,
+  formId: string | null,
+  campaignId: string | null
+) => {
+  const formMapping = await fetchMappingByColumn(supabaseAdmin, provider, integrationId, 'form_id', formId)
+  if (formMapping) return formMapping
+
+  const campaignMapping = await fetchMappingByColumn(supabaseAdmin, provider, integrationId, 'campaign_id', campaignId)
+  if (campaignMapping) return campaignMapping
+
+  return null
+}
+
+const fetchCompanyIdFromIntegration = async (
+  supabaseAdmin: SupabaseAdmin,
+  provider: Provider,
+  integrationId: string
+) => {
+  const { data, error } = await supabaseAdmin
+    .from('lead_source_mappings')
+    .select('company_id')
+    .eq('provider', provider)
+    .eq('integration_id', integrationId)
+    .not('company_id', 'is', null)
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  return firstString((data as LeadSourceMapping | null)?.company_id)
+}
+
+const fetchCompanySettings = async (
+  supabaseAdmin: SupabaseAdmin,
+  companyId: string
+): Promise<CompanySettings> => {
+  const { data, error } = await supabaseAdmin
+    .from('settings')
+    .select('*')
+    .eq('company_id', companyId)
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  if (data) return data as CompanySettings
+
+  const fallback = await supabaseAdmin
+    .from('settings')
+    .select('*')
+    .eq('id', 1)
+    .limit(1)
+    .maybeSingle()
+
+  if (fallback.error) throw fallback.error
+  return (fallback.data as CompanySettings | null) ?? {}
+}
+
+const getFirstStatusForFunnel = (settings: CompanySettings, funnel: 'pre_atendimento' | 'atendimento') => {
+  const configured = settings.kanban_config?.[funnel]?.[0]
+  if (configured) return configured
+
+  return funnel === 'pre_atendimento' ? 'Aguardando Atendimento' : 'Aguardando atendimento'
+}
+
+const pickRoundRobinUser = async (
+  supabaseAdmin: SupabaseAdmin,
+  companyId: string,
+  includeAdmins: boolean
+) => {
+  const roles = includeAdmins ? ['corretor', 'admin', 'owner', 'manager'] : ['corretor']
+
+  const { data: profiles, error: profilesError } = await supabaseAdmin
+    .from('profiles')
+    .select('id, name')
+    .eq('company_id', companyId)
+    .eq('active', true)
+    .in('role', roles)
+
+  if (profilesError) throw profilesError
+  if (!profiles?.length) return null
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const { data: leadsToday, error: leadsError } = await supabaseAdmin
+    .from('leads')
+    .select('assigned_to, stage_updated_at, created_at')
+    .eq('company_id', companyId)
+    .gte('stage_updated_at', today.toISOString())
+    .not('assigned_to', 'is', null)
+
+  if (leadsError) throw leadsError
+
+  const stats = profiles.map((profile: JsonRecord) => {
+    const assignedLeads = (leadsToday ?? []).filter((lead: JsonRecord) => lead.assigned_to === profile.id)
+    const lastLead = assignedLeads
+      .slice()
+      .sort((a: JsonRecord, b: JsonRecord) => {
+        const dateA = new Date(a.stage_updated_at ?? a.created_at ?? 0).getTime()
+        const dateB = new Date(b.stage_updated_at ?? b.created_at ?? 0).getTime()
+        return dateB - dateA
+      })[0]
+
+    return {
+      id: profile.id as string,
+      count: assignedLeads.length,
+      lastTime: lastLead ? new Date(lastLead.stage_updated_at ?? lastLead.created_at).getTime() : 0,
+    }
+  })
+
+  stats.sort((a, b) => {
+    if (a.count !== b.count) return a.count - b.count
+    return a.lastTime - b.lastTime
+  })
+
+  return stats[0]?.id ?? null
+}
+
+const resolveLeadRouting = async (
+  supabaseAdmin: SupabaseAdmin,
+  companyId: string,
+  mapping: LeadSourceMapping | null,
+  settings: CompanySettings
+) => {
+  if (mapping?.assigned_user_id) {
+    return {
+      assignedTo: mapping.assigned_user_id,
+      funnelStep: 'atendimento',
+      status: getFirstStatusForFunnel(settings, 'atendimento'),
+    }
+  }
+
+  const routeToCentral = settings.route_to_central ?? true
+  if (routeToCentral) {
+    return {
+      assignedTo: settings.central_user_id ?? null,
+      funnelStep: 'pre_atendimento',
+      status: getFirstStatusForFunnel(settings, 'pre_atendimento'),
+    }
+  }
+
+  const rouletteUserId = await pickRoundRobinUser(
+    supabaseAdmin,
+    companyId,
+    settings.include_admins_in_roulette === true
+  )
+
+  return {
+    assignedTo: rouletteUserId,
+    funnelStep: 'atendimento',
+    status: getFirstStatusForFunnel(settings, 'atendimento'),
+  }
+}
+
+const isMissingColumnError = (error: any) => {
+  const message = String(error?.message ?? '')
+  const code = String(error?.code ?? '')
+  return code === 'PGRST204' || code === '42703' || /column/i.test(message)
+}
+
+const insertLead = async (
+  supabaseAdmin: SupabaseAdmin,
+  payload: JsonRecord
+) => {
+  const firstAttempt = await supabaseAdmin
+    .from('leads')
+    .insert(payload)
+    .select('id')
+    .single()
+
+  if (!firstAttempt.error) return firstAttempt
+
+  if (!isMissingColumnError(firstAttempt.error)) return firstAttempt
+
+  const fallbackPayload = { ...payload }
+  const externalColumns = {
+    external_source: fallbackPayload.external_source,
+    form_id: fallbackPayload.form_id,
+    campaign_id: fallbackPayload.campaign_id,
+  }
+
+  delete fallbackPayload.external_source
+  delete fallbackPayload.form_id
+  delete fallbackPayload.campaign_id
+
+  fallbackPayload.metadata = {
+    ...(asRecord(payload.metadata)),
+    ...externalColumns,
+  }
+
+  return await supabaseAdmin
+    .from('leads')
+    .insert(fallbackPayload)
+    .select('id')
+    .single()
+}
+
+const insertExternalLeadEvent = async (
+  supabaseAdmin: SupabaseAdmin,
+  input: ExternalLeadEventInput
+) => {
+  const fullPayload = {
+    company_id: input.companyId ?? null,
+    integration_id: input.integrationId ?? null,
+    provider: input.provider ?? null,
+    form_id: input.formId ?? null,
+    campaign_id: input.campaignId ?? null,
+    lead_id: input.leadId ?? null,
+    status: input.status,
+    raw_payload: input.rawPayload ?? {},
+    normalized_payload: input.normalizedPayload ?? null,
+    error_message: input.errorMessage ?? null,
+    processed_at: new Date().toISOString(),
+  }
+
+  const { error } = await supabaseAdmin.from('external_lead_events').insert(fullPayload)
+
+  if (!error) return
+
+  if (!isMissingColumnError(error)) {
+    console.error('[ingest-external-lead] Falha ao registrar external_lead_events:', error)
+    return
+  }
+
+  const minimalPayload = {
+    company_id: input.companyId ?? null,
+    status: input.status,
+    raw_payload: input.rawPayload ?? {},
+    error_message: input.errorMessage ?? null,
+  }
+
+  const fallback = await supabaseAdmin.from('external_lead_events').insert(minimalPayload)
+  if (fallback.error) {
+    console.error('[ingest-external-lead] Falha ao registrar external_lead_events fallback:', fallback.error)
+  }
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  const url = new URL(req.url)
+
+  if (req.method === 'GET' && url.searchParams.get('hub.challenge')) {
+    return new Response(url.searchParams.get('hub.challenge') ?? '', {
+      headers: { ...corsHeaders, 'Content-Type': 'text/plain' },
+      status: 200,
+    })
+  }
+
+  if (req.method !== 'POST') {
+    return jsonResponse({ success: false, error: 'Metodo nao permitido.' }, 405)
+  }
+
+  let supabaseAdmin: SupabaseAdmin | null = null
+  let rawPayload: JsonRecord = {}
+  let provider: Provider | null = null
+  let integrationId: string | null = null
+  let companyId: string | null = null
+  let normalizedLead: NormalizedExternalLead | null = null
+
+  try {
+    supabaseAdmin = getSupabaseAdmin()
+    rawPayload = await readRequestBody(req)
+
+    provider = normalizeProvider(
+      url.searchParams.get('provider') ??
+        rawPayload.provider ??
+        rawPayload.source_provider ??
+        rawPayload.platform
+    )
+    integrationId = firstString(
+      url.searchParams.get('integration_id'),
+      url.searchParams.get('integrationId'),
+      rawPayload.integration_id,
+      rawPayload.integrationId,
+      asRecord(rawPayload.integration).id
+    )
+
+    if (!provider) throw new Error('Provider invalido ou ausente. Use meta, google ou tiktok.')
+    if (!integrationId) throw new Error('integration_id ausente na URL ou no body.')
+
+    normalizedLead = normalizeExternalLead(provider, rawPayload)
+
+    const mapping = await fetchLeadSourceMapping(
+      supabaseAdmin,
+      provider,
+      integrationId,
+      normalizedLead.form_id,
+      normalizedLead.campaign_id
+    )
+
+    companyId = firstString(
+      url.searchParams.get('company_id'),
+      url.searchParams.get('companyId'),
+      rawPayload.company_id,
+      rawPayload.companyId,
+      asRecord(rawPayload.company).id,
+      mapping?.company_id,
+      await fetchCompanyIdFromIntegration(supabaseAdmin, provider, integrationId)
+    )
+
+    if (!companyId) {
+      throw new Error('Nao foi possivel resolver company_id para esta integracao.')
+    }
+
+    const settings = await fetchCompanySettings(supabaseAdmin, companyId)
+    const routing = await resolveLeadRouting(supabaseAdmin, companyId, mapping, settings)
+    const now = new Date().toISOString()
+    const leadMode = mapping?.lead_mode ?? 'generic'
+
+    const leadPayload = {
+      company_id: companyId,
+      property_id: mapping?.property_id ?? null,
+      assigned_to: routing.assignedTo,
+      name: normalizedLead.name || `${providerLabels[provider]} - Lead sem nome`,
+      email: normalizedLead.email,
+      phone: normalizedLead.phone || '',
+      message: normalizedLead.message || `Lead recebido via ${providerLabels[provider]}.`,
+      source: providerLabels[provider],
+      external_source: provider,
+      form_id: normalizedLead.form_id,
+      campaign_id: normalizedLead.campaign_id,
+      funnel_step: routing.funnelStep,
+      status: routing.status,
+      stage_updated_at: now,
+      last_interaction: now,
+      metadata: {
+        provider,
+        integration_id: integrationId,
+        external_lead_id: normalizedLead.external_lead_id,
+        form_id: normalizedLead.form_id,
+        campaign_id: normalizedLead.campaign_id,
+        lead_mode: leadMode,
+        mapping_id: mapping?.id ?? null,
+        raw_payload: rawPayload,
+      },
+    }
+
+    const { data: createdLead, error: leadError } = await insertLead(supabaseAdmin, leadPayload)
+    if (leadError || !createdLead?.id) throw leadError ?? new Error('Lead nao foi criado.')
+
+    await insertExternalLeadEvent(supabaseAdmin, {
+      companyId,
+      integrationId,
+      provider,
+      formId: normalizedLead.form_id,
+      campaignId: normalizedLead.campaign_id,
+      leadId: createdLead.id,
+      status: 'processed',
+      rawPayload,
+      normalizedPayload: normalizedLead,
+    })
+
+    return jsonResponse({
+      success: true,
+      lead_id: createdLead.id,
+      company_id: companyId,
+      property_id: mapping?.property_id ?? null,
+      assigned_to: routing.assignedTo,
+      lead_mode: leadMode,
+    })
+  } catch (error: any) {
+    const message = error?.message || 'Erro desconhecido ao ingerir lead externo.'
+    console.error('[ingest-external-lead] erro:', message, error)
+
+    if (supabaseAdmin) {
+      await insertExternalLeadEvent(supabaseAdmin, {
+        companyId,
+        integrationId,
+        provider,
+        formId: normalizedLead?.form_id ?? null,
+        campaignId: normalizedLead?.campaign_id ?? null,
+        status: 'error',
+        rawPayload,
+        normalizedPayload: normalizedLead,
+        errorMessage: message,
+      })
+    }
+
+    return jsonResponse({ success: false, error: message }, 400)
+  }
+})

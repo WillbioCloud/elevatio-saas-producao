@@ -14,6 +14,7 @@ import { useToast } from '../contexts/ToastContext';
 import GamificationModal from '../components/GamificationModal';
 import FidelityTermsModal from '../components/FidelityTermsModal';
 import BillingPortalModal from '../components/BillingPortalModal';
+import IntegrationsManager from '../components/IntegrationsManager';
 import { uploadCompanyAsset } from '../lib/storage';
 import { GlassCard } from '../components/ui/GlassCard';
 import {
@@ -24,7 +25,7 @@ import {
   type FinanceConfig,
   type SiteData,
 } from '../types';
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, ImageOff, Loader2, Upload, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronUp, ImageOff, Loader2, Upload, X, XCircle } from 'lucide-react';
 import { useProperties } from '../hooks/useProperties';
 import { usePlanLimits } from '../hooks/usePlanLimits';
 import {
@@ -1156,11 +1157,6 @@ const AdminConfig: React.FC = () => {
     ]
   );
 
-  const adWebhookDomain = useMemo(
-    () => sanitizeExistingDomain(company.domain || '') || 'seudominio.com.br',
-    [company.domain]
-  );
-
   useEffect(() => {
     const updateTrialCountdown = () => {
       setTrialTimeRemaining(formatTrialCountdown(company.trial_ends_at));
@@ -1183,70 +1179,6 @@ const AdminConfig: React.FC = () => {
       window.clearInterval(intervalId);
     };
   }, [company.trial_ends_at]);
-
-  const adIntegrations = useMemo(
-    () => [
-      {
-        id: 'meta',
-        name: 'Meta Ads',
-        subtitle: 'Facebook e Instagram Lead Ads',
-        description: 'Receba leads de formularios nativos diretamente no CRM.',
-        icon: <Icons.Share2 size={20} />,
-        accent: 'text-blue-600 dark:text-blue-400',
-        iconBox: 'bg-blue-50 text-blue-600 ring-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900/50',
-        action: 'Salvar Credenciais',
-        actionClassName: 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20',
-        fields: [
-          { label: 'Access Token / Token de Verificacao', placeholder: 'Cole o token da Meta aqui' },
-          { label: 'Pixel ID (Opcional)', placeholder: 'Ex: 1234567890' },
-        ],
-      },
-      {
-        id: 'google',
-        name: 'Google Ads',
-        subtitle: 'Conversoes e formularios',
-        description: 'Centralize sinais de conversao e leads vindos das campanhas Google.',
-        icon: <Icons.Google className="h-5 w-5" />,
-        accent: 'text-rose-600 dark:text-rose-400',
-        iconBox: 'bg-rose-50 text-rose-600 ring-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-900/50',
-        action: 'Salvar Google Ads',
-        actionClassName: 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/20',
-        fields: [
-          { label: 'ID de Acompanhamento', placeholder: 'AW-123456789' },
-          { label: 'Rotulo de Conversao (Opcional)', placeholder: 'Ex: abcD-efGh123' },
-        ],
-      },
-      {
-        id: 'tiktok',
-        name: 'TikTok Ads',
-        subtitle: 'Lead Generation e Pixel',
-        description: 'Conecte formularios de lead e eventos de conversao das campanhas TikTok.',
-        icon: <Icons.Target size={20} />,
-        accent: 'text-slate-900 dark:text-slate-100',
-        iconBox: 'bg-slate-100 text-slate-900 ring-slate-200 dark:bg-slate-800 dark:text-white dark:ring-slate-700',
-        action: 'Salvar TikTok Ads',
-        actionClassName: 'bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100 shadow-slate-900/20',
-        fields: [
-          { label: 'Access Token', placeholder: 'Cole o token do TikTok aqui' },
-          { label: 'Pixel ID (Opcional)', placeholder: 'Ex: CABC1234567890' },
-        ],
-      },
-    ].map((integration) => ({
-      ...integration,
-      webhookUrl: `https://${adWebhookDomain}/api/webhooks/${integration.id}`,
-    })),
-    [adWebhookDomain]
-  );
-
-  const copyAdWebhookUrl = async (url: string, platformName: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      addToast(`URL do webhook ${platformName} copiada.`, 'success');
-    } catch (error) {
-      console.error('Erro ao copiar webhook:', error);
-      addToast('Nao foi possivel copiar a URL do webhook.', 'error');
-    }
-  };
 
   useEffect(() => {
     if (!company?.id) return;
@@ -5985,142 +5917,56 @@ const AdminConfig: React.FC = () => {
         </div>
       )}
 
-      {/* ABA DE INTEGRAÇÕES */}
       {activeTab === 'integrations' && (
         <div className="space-y-6 animate-fade-in">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
-            <div>
-              <h2 className="text-2xl font-serif font-bold text-slate-800 dark:text-white">Integrações</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Conecte anúncios, webhooks e portais imobiliários ao CRM.</p>
-            </div>
+          <div className="mb-6">
+            <h2 className="text-xl font-black text-slate-800 dark:text-white">Integrações de Captação</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Conecte suas campanhas de tráfego pago (Meta, Google, TikTok) diretamente ao funil do Elevatio.
+            </p>
           </div>
-          <section className="space-y-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-800 dark:text-white">Anúncios e Webhooks</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  URLs prontas para copiar usando o domínio principal da imobiliária.
-                </p>
-              </div>
-              <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-                <Icons.Globe size={14} />
-                {adWebhookDomain}
-              </span>
+
+          <IntegrationsManager />
+
+          <div className="mt-10 border-t border-slate-200 pt-8 dark:border-slate-800">
+            <div className="mb-6">
+              <h2 className="text-xl font-black text-slate-800 dark:text-white">Integração com Portais (XML)</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Utilize o link abaixo para enviar automaticamente seus imóveis para o Zap Imóveis, Viva Real e outros portais compatíveis.
+              </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              {adIntegrations.map((integration) => (
-                <GlassCard key={integration.id} variant="elevated" padding="none" hoverable className="overflow-hidden">
-                  <div className="flex h-full flex-col">
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 p-5 dark:border-slate-800">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ${integration.iconBox}`}>
-                          {integration.icon}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h4 className="font-bold text-slate-900 dark:text-white">{integration.name}</h4>
-                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900/60">
-                              Webhook
-                            </span>
-                          </div>
-                          <p className={`mt-1 text-xs font-bold ${integration.accent}`}>{integration.subtitle}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-1 flex-col gap-4 p-5">
-                      <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">{integration.description}</p>
-
-                      <div>
-                        <label className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                          URL do Webhook
-                        </label>
-                        <div className="flex min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 shadow-inner dark:border-slate-800 dark:bg-slate-950/60">
-                          <input
-                            type="text"
-                            readOnly
-                            value={integration.webhookUrl}
-                            className="min-w-0 flex-1 bg-transparent px-3 py-2.5 font-mono text-xs text-slate-600 outline-none dark:text-slate-300"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void copyAdWebhookUrl(integration.webhookUrl, integration.name)}
-                            className="flex w-11 shrink-0 items-center justify-center border-l border-slate-200 text-slate-500 transition-colors hover:bg-white hover:text-brand-600 dark:border-slate-800 dark:hover:bg-slate-900 dark:hover:text-brand-400"
-                            aria-label={`Copiar URL do webhook ${integration.name}`}
-                            title="Copiar URL"
-                          >
-                            <Icons.Copy size={16} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-3">
-                        {integration.fields.map((field) => (
-                          <div key={field.label}>
-                            <label className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                              {field.label}
-                            </label>
-                            <input
-                              type="text"
-                              placeholder={field.placeholder}
-                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-                            />
-                          </div>
-                        ))}
-                      </div>
-
-                      <button
-                        type="button"
-                        className={`mt-auto inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold shadow-lg transition ${integration.actionClassName}`}
-                      >
-                        {integration.action}
-                      </button>
-                    </div>
+            <GlassCard className="p-6">
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400">
+                    <Icons.Rss size={24} />
                   </div>
-                </GlassCard>
-              ))}
-            </div>
-          </section>
-
-          <div className="bg-white dark:bg-dark-card rounded-3xl border border-slate-200 dark:border-dark-border p-6 md:p-8 shadow-sm">
-            <div className="flex items-start gap-6">
-              <div className="w-16 h-16 bg-brand-500/10 rounded-2xl flex items-center justify-center shrink-0">
-                <Icons.Code size={32} className="text-brand-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Carga XML (Padrão Zap / Viva Real)</h3>
-                <p className="text-slate-600 dark:text-slate-400 text-sm mb-6 max-w-2xl leading-relaxed">
-                  Gere o arquivo XML contendo todos os seus imóveis ativos. O formato utilizado é o padrão universal aceito por 99% dos portais brasileiros. Você pode enviar este arquivo diretamente para o portal ou utilizar a URL de integração nativa.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <button
-                    onClick={handleDownloadXML}
-                    disabled={isGeneratingXML || properties.length === 0}
-                    className="flex items-center justify-center gap-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-3 rounded-xl font-bold hover:bg-slate-800 dark:hover:bg-slate-100 transition-all disabled:opacity-50"
-                  >
-                    {isGeneratingXML ? <Icons.Loader2 size={20} className="animate-spin" /> : <Icons.Download size={20} />}
-                    {properties.length === 0 ? 'Nenhum imóvel ativo' : 'Baixar Arquivo XML'}
-                  </button>
-                  <div className="flex-1 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 flex items-center justify-between">
-                    <span className="text-sm font-mono text-slate-500 truncate mr-4">
-                      {companySubdomain ? `https://udqychpxnbdaxlorbhyw.supabase.co/functions/v1/zap-feed?subdomain=${companySubdomain}` : 'Configure seu subdomínio primeiro'}
-                    </span>
-                    <button
-                      onClick={() => {
-                        if (companySubdomain) {
-                          navigator.clipboard.writeText(`https://udqychpxnbdaxlorbhyw.supabase.co/functions/v1/zap-feed?subdomain=${companySubdomain}`);
-                        }
-                      }}
-                      className="text-brand-600 hover:text-brand-700 font-bold text-sm shrink-0 flex items-center gap-1"
-                    >
-                      <Copy size={16} /> Copiar URL
-                    </button>
+                  <div>
+                    <h3 className="font-bold text-slate-800 dark:text-white">Feed XML (Padrão VivaReal)</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Contém todos os seus imóveis com status "Disponível".</p>
                   </div>
                 </div>
-                
+
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zap-feed?tenant_id=${tenant?.id}`}
+                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300"
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zap-feed?tenant_id=${tenant?.id}`);
+                      addToast('Link XML copiado com sucesso!', 'success');
+                    }}
+                    className="flex h-10 items-center gap-2 rounded-xl bg-slate-900 px-5 text-sm font-bold text-white transition-all hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                  >
+                    <Icons.Copy size={16} /> Copiar Link
+                  </button>
+                </div>
               </div>
-            </div>
+            </GlassCard>
           </div>
         </div>
       )}
