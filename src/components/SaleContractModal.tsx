@@ -98,6 +98,69 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     spouse_details: '',
   });
 
+  // Busca a comissão do contrato de intermediação quando um imóvel é selecionado
+  useEffect(() => {
+    async function fetchCommission() {
+      if (!formData.property_id || !user?.company_id || contractData) return;
+      try {
+        // Busca contratos anteriores deste imóvel
+        const { data, error } = await supabase
+          .from('contracts')
+          .select('metadata, commission_percentage, contract_data')
+          .eq('company_id', user.company_id)
+          .eq('property_id', formData.property_id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          const hasCommission = (contract: any) => {
+            const metadata = contract.metadata || {};
+            const contractDataObj = contract.contract_data || {};
+            return (
+              metadata.commission_percent !== undefined ||
+              metadata.commission !== undefined ||
+              metadata.comissao !== undefined ||
+              contract.commission_percentage !== undefined ||
+              contractDataObj.commission_percentage !== undefined
+            );
+          };
+
+          // Procura nas metadatas algum valor de comissão salvo anteriormente
+          const interContract =
+            data.find((contract: any) => contract.contract_data?.document_type === 'intermediacao' && hasCommission(contract)) ||
+            data.find(hasCommission);
+          const metadata = interContract?.metadata || {};
+          const contractDataObj = interContract?.contract_data || {};
+          const commissionVal =
+            metadata.commission_percent ??
+            metadata.commission ??
+            metadata.comissao ??
+            interContract?.commission_percentage ??
+            contractDataObj.commission_percentage;
+
+          if (commissionVal !== undefined && commissionVal !== null && commissionVal !== '') {
+            setFormData(prev => {
+              const commissionPercentage = String(commissionVal);
+              const total = Number(prev.sale_total_value) || 0;
+              const pct = Number(commissionPercentage) || 0;
+              const calcVal = (total * pct) / 100;
+
+              return {
+                ...prev,
+                commission_percentage: commissionPercentage,
+                commission_value: calcVal ? String(calcVal) : prev.commission_value,
+              };
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao buscar comissão prévia:', err);
+      }
+    }
+    fetchCommission();
+  }, [formData.property_id, user?.company_id, contractData]);
+
   const selectedLeadRecord = leads.find((lead) => lead.id === formData.lead_id);
   const contractClientRecord = selectedLeadRecord;
 
