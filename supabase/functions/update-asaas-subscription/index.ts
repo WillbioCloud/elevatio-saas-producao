@@ -285,6 +285,7 @@ serve(async (req) => {
     const targetCycle = billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY'
     const baseDescription = `Plano ${planName.toUpperCase()} - Elevatio Vendas (${targetCycle === 'YEARLY' ? 'Anual' : 'Mensal'})`
     let newSubscriptionId = subscriptionId
+    let proRataChargeId = null
 
     if (subscriptionId) {
       const subGet = await fetch(`${ASAAS_URL}/subscriptions/${subscriptionId}`, {
@@ -293,6 +294,44 @@ serve(async (req) => {
       const subData = await subGet.json()
 
       if (subData && !subData.errors) {
+        const currentSubscriptionValue = Number(subData.value ?? 0)
+
+        // Cobra a diferenca proporcional imediatamente quando o cliente faz upgrade no mesmo ciclo.
+        if (
+          subData.status === 'ACTIVE'
+          && recurringPrice > currentSubscriptionValue
+          && subData.cycle === targetCycle
+        ) {
+          const nextDueDate = new Date(subData.nextDueDate)
+          const today = new Date()
+          const timeDiff = nextDueDate.getTime() - today.getTime()
+          const daysRemaining = Math.max(0, Math.ceil(timeDiff / (1000 * 3600 * 24)))
+
+          const cycleDays = targetCycle === 'YEARLY' ? 365 : 30
+          const oldDailyRate = currentSubscriptionValue / cycleDays
+          const newDailyRate = recurringPrice / cycleDays
+          const dailyDiff = newDailyRate - oldDailyRate
+          const proRataValue = Math.floor(dailyDiff * daysRemaining * 100) / 100
+
+          if (proRataValue >= 5.00) {
+            const proRataPayload = {
+              customer: customerId,
+              billingType: subData.billingType || 'UNDEFINED',
+              dueDate: today.toISOString().split('T')[0],
+              value: proRataValue,
+              description: `Diferença proporcional (Upgrade) para o Plano ${planName.toUpperCase()} (${daysRemaining} dias restantes)`,
+            }
+
+            const prRes = await fetch(`${ASAAS_URL}/payments`, {
+              method: 'POST',
+              headers: asaasHeaders,
+              body: JSON.stringify(proRataPayload)
+            })
+            const prData = await prRes.json()
+            if (!prData.errors) proRataChargeId = prData.id
+          }
+        }
+
         if (subData.cycle !== targetCycle || subData.status === 'INACTIVE') {
           await fetch(`${ASAAS_URL}/subscriptions/${subscriptionId}`, {
             method: 'DELETE',
@@ -396,7 +435,7 @@ serve(async (req) => {
       const allPaymentsData = await allPaymentsRes.json()
       if (allPaymentsData?.data) {
         for (const payment of allPaymentsData.data) {
-          if (payment.id !== keptPaymentId) {
+          if (payment.id !== keptPaymentId && payment.id !== proRataChargeId) {
             await fetch(`${ASAAS_URL}/payments/${payment.id}`, {
               method: 'DELETE',
               headers: asaasHeaders

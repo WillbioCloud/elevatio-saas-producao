@@ -2703,6 +2703,19 @@ const AdminConfig: React.FC = () => {
               hasFidelity: !isYearly && acceptFidelity,
             });
 
+      // Confirmação de Pro-Rata para Upgrades (quando o cliente já tem contrato ativo)
+      if (contract?.status === 'active') {
+        const confirmUpgrade = window.confirm(
+          `Atenção: A mudança para o plano ${planId.toUpperCase()} entra em vigor imediatamente.\n\n` +
+          `O sistema irá gerar uma fatura avulsa com o valor proporcional (pró-rata) referente aos dias restantes até o seu próximo vencimento.\n\n` +
+          `Deseja prosseguir com o upgrade?`
+        );
+        if (!confirmUpgrade) {
+          setIsUpgrading(null);
+          return;
+        }
+      }
+
       // Update otimista para feedback imediato na UI
       setContract((prev) => {
         if (!prev) return prev;
@@ -4238,13 +4251,11 @@ const AdminConfig: React.FC = () => {
                         : 'R$ 0,00'}
                       <span className="text-sm font-normal text-brand-200 ml-1">{contract?.billing_cycle === 'yearly' ? '/ano' : '/mês'}</span>
                     </div>
-                    {isPrimaryElevatioDomain && (
-                      <div className="mt-3 inline-flex max-w-2xl items-start gap-2 rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-medium text-white/85">
-                        <Icons.Info size={15} className="mt-0.5 shrink-0 text-brand-100" />
-                        <span>
-                          Importante: A sua primeira fatura incluirá também a taxa anual de registro do domínio personalizado.
-                        </span>
-                      </div>
+                    {/* FEEDBACK DINÂMICO DE DOMÍNIO PENDENTE */}
+                    {contract?.domain_status === 'pending' && isPrimaryElevatioDomain && (
+                      <p className="mt-1.5 text-sm font-medium text-brand-200">
+                        + R$ 89,00 (Taxa única anual de domínio) na próxima fatura.
+                      </p>
                     )}
                     <div className="flex flex-wrap items-center gap-6 mt-6 text-sm text-white/85">
                       <div>
