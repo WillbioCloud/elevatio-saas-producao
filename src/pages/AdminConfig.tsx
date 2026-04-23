@@ -15,6 +15,7 @@ import GamificationModal from '../components/GamificationModal';
 import FidelityTermsModal from '../components/FidelityTermsModal';
 import BillingPortalModal from '../components/BillingPortalModal';
 import IntegrationsManager from '../components/IntegrationsManager';
+import WhatsAppManager from '../components/WhatsAppManager';
 import { uploadCompanyAsset } from '../lib/storage';
 import { GlassCard } from '../components/ui/GlassCard';
 import {
@@ -109,7 +110,7 @@ interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_sec
 
 type SitePartner = NonNullable<SiteData['partners']>[number];
 type OfficialSignatureTab = 'draw' | 'type' | 'upload';
-type ConfigTab = 'profile' | 'company' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'finance' | 'permissions';
+type ConfigTab = 'profile' | 'company' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'whatsapp' | 'finance' | 'permissions';
 type LeadRoutingMode = 'round_robin' | 'centralized';
 type SiteSubTab = 'templates' | 'identity' | 'hero' | 'about' | 'social';
 type PermissionRole = 'manager' | 'agent' | 'attendant' | 'admin';
@@ -140,7 +141,7 @@ type TenantFinanceRecord = Pick<
   trial_ends_at?: string | null;
 };
 
-const CONFIG_TABS: ConfigTab[] = ['profile', 'company', 'team', 'traffic', 'subscription', 'site', 'contracts', 'integrations', 'finance', 'permissions'];
+const CONFIG_TABS: ConfigTab[] = ['profile', 'company', 'team', 'traffic', 'subscription', 'site', 'contracts', 'integrations', 'whatsapp', 'finance', 'permissions'];
 const OWNER_ONLY_CONFIG_TABS: ConfigTab[] = ['company', 'subscription', 'finance'];
 const SITE_SUBTABS: SiteSubTab[] = ['templates', 'identity', 'hero', 'about', 'social'];
 const LEGACY_CONFIG_TAB_ALIASES: Partial<Record<string, ConfigTab>> = {
@@ -3192,6 +3193,7 @@ const AdminConfig: React.FC = () => {
           { id: 'site', label: 'Meu Site', icon: Icons.Layout, adminOnly: true },
           { id: 'contracts', label: 'Modelos de Contrato', icon: Icons.FileSignature, adminOnly: true },
           { id: 'integrations', label: 'Integrações', icon: Icons.Share2, adminOnly: true },
+          { id: 'whatsapp', label: 'WhatsApp', icon: Icons.Smartphone },
           { id: 'finance', label: 'Financeiro / API', icon: Icons.DollarSign, ownerOnly: true },
           { id: 'permissions', label: 'Permissões', icon: Icons.Shield },
         ].filter(tab => {
@@ -5968,6 +5970,19 @@ const AdminConfig: React.FC = () => {
               </div>
             </GlassCard>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'whatsapp' && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="mb-6">
+            <h2 className="text-xl font-black text-slate-800 dark:text-white">Conexão do WhatsApp</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Conecte os números de WhatsApp para habilitar notificações, cobranças e avisos automáticos pelo sistema.
+            </p>
+          </div>
+
+          <WhatsAppManager />
         </div>
       )}
 
