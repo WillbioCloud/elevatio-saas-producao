@@ -108,6 +108,7 @@ interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_sec
   domain_status: CompanyDomainStatus;
   domain_secondary_status: CompanyDomainStatus;
   asaas_customer_id?: string | null;
+  applied_coupon_id: string | null;
 }
 
 type SitePartner = NonNullable<SiteData['partners']>[number];
@@ -138,7 +139,7 @@ type ConfigPermissionState = CompanyPermissions &
   };
 type TenantFinanceRecord = Pick<
   Company,
-  'id' | 'name' | 'document' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template' | 'logo_url' | 'admin_signature_url' | 'asaas_customer_id'
+  'id' | 'name' | 'document' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'applied_coupon_id' | 'template' | 'logo_url' | 'admin_signature_url' | 'asaas_customer_id'
 > & {
   finance_config?: FinanceConfig | null;
   subscription_status?: string | null;
@@ -1531,6 +1532,7 @@ const AdminConfig: React.FC = () => {
         broker_commission,
         manual_discount_value,
         manual_discount_type,
+        applied_coupon_id,
         plan_status,
         trial_ends_at
       `)
@@ -1577,6 +1579,7 @@ const AdminConfig: React.FC = () => {
         broker_commission: data.broker_commission ?? parsedFinanceConfig?.broker_commission ?? undefined,
         manual_discount_value: data.manual_discount_value ?? null,
         manual_discount_type: data.manual_discount_type ?? null,
+        applied_coupon_id: data.applied_coupon_id ?? null,
         plan_status: data.plan_status ?? null,
         subscription_status: data.plan_status === 'trial' ? 'trialing' : (data.plan_status ?? null),
         trial_ends_at: data.trial_ends_at ?? null,
@@ -4354,6 +4357,14 @@ const AdminConfig: React.FC = () => {
                             Desconto de {user?.company?.manual_discount_type === 'percentage'
                               ? `${Number(user.company.manual_discount_value)}%`
                               : `R$ ${Number(user.company.manual_discount_value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} Ativo
+                          </span>
+                        </div>
+                      )}
+                      {tenant?.applied_coupon_id && (
+                        <div className="mt-2 flex items-center gap-2 px-3 py-1 bg-brand-500/20 backdrop-blur-sm rounded-full border border-brand-300/30 w-fit">
+                          <Icons.Tag size={14} className="text-brand-300" />
+                          <span className="text-[10px] font-bold text-white uppercase tracking-wider">
+                            Cupom de Desconto Ativo
                           </span>
                         </div>
                       )}

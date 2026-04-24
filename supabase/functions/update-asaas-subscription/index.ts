@@ -75,7 +75,7 @@ serve(async (req) => {
     const normalizedSecondaryDomain = normalizeString(domain_secondary).toLowerCase()
 
     if (!companyId || !planName || !billingCycle) {
-      throw new Error('Dados obrigatórios da assinatura não foram informados.')
+      throw new Error('Dados obrigatorios da assinatura nao foram informados.')
     }
 
     const { user, profile: authProfile, isSuperAdmin } = await requireBillingCompanyAccess(req, companyId)
@@ -118,7 +118,7 @@ serve(async (req) => {
       .eq('id', companyId)
       .single()
 
-    if (!company) throw new Error('Empresa não encontrada.')
+    if (!company) throw new Error('Empresa nao encontrada.')
 
     let customerId = company.asaas_customer_id
     let subscriptionId = contract?.subscription_id || company.asaas_subscription_id
@@ -144,7 +144,7 @@ serve(async (req) => {
         .eq('active', true)
         .maybeSingle()
 
-      if (!data) throw new Error('Cupom inválido ou expirado.')
+      if (!data) throw new Error('Cupom invalido ou expirado.')
 
       const maxUses = Number(data.max_uses ?? data.usage_limit ?? 0)
       if (maxUses > 0 && Number(data.used_count ?? data.current_uses ?? data.current_usages ?? 0) >= maxUses) {
@@ -207,7 +207,7 @@ serve(async (req) => {
     const monthlyPlanPrice = Number(planRecord?.price_monthly ?? planRecord?.price ?? 0)
     const yearlyPlanPrice = Number(planRecord?.price_yearly ?? 0)
     if (!planRecord || !Number.isFinite(monthlyPlanPrice) || monthlyPlanPrice < 0) {
-      throw new Error('Plano inválido ou sem preço configurado.')
+      throw new Error('Plano invalido ou sem preco configurado.')
     }
 
     let basePrice = monthlyPlanPrice
@@ -215,14 +215,11 @@ serve(async (req) => {
     let fidelityEndDate = contract?.fidelity_end_date || null
 
     if (billingCycle === 'yearly') {
-      // 20% de desconto se for anual
       basePrice = Number.isFinite(yearlyPlanPrice) && yearlyPlanPrice > 0
         ? yearlyPlanPrice
-        : monthlyPlanPrice * 12 * 0.80
-      finalHasFidelity = false // Anual ja tem fidelidade implicita
+        : monthlyPlanPrice * 12
+      finalHasFidelity = false
     } else if (has_fidelity) {
-      // 10% de desconto se for mensal com fidelidade
-      basePrice = basePrice * 0.90
       if (!fidelityEndDate || new Date(fidelityEndDate) < new Date()) {
         const futureDate = new Date()
         futureDate.setFullYear(futureDate.getFullYear() + 1)
@@ -243,7 +240,7 @@ serve(async (req) => {
 
     const recurringPrice = Math.max(0, basePrice - manualDiscountAmount)
     const subscriptionDiscount = buildSubscriptionDiscount(couponRecord, recurringPrice)
-    if (couponRecord && !subscriptionDiscount) throw new Error('Tipo de cupom inválido.')
+    if (couponRecord && !subscriptionDiscount) throw new Error('Tipo de cupom invalido.')
 
     let domainPriceToCharge = 0
     let extraDescription = ""
@@ -257,7 +254,7 @@ serve(async (req) => {
 
     if (addons?.buyDomainBr && !(billingCycle === 'yearly' && has_free_domain)) {
       domainPriceToCharge += primaryPrice
-      extraDescription += ` + Registro de Domínio Principal`
+      extraDescription += ` + Registro de Dominio Principal`
       domainStatusToSave = 'pending'
     } else if (billingCycle === 'yearly' && has_free_domain) {
       domainStatusToSave = 'pending'
@@ -265,7 +262,7 @@ serve(async (req) => {
 
     if (addons?.buyDomainCom) {
       domainPriceToCharge += secondaryPrice
-      extraDescription += ` + Domínio Alternativo (${normalizedSecondaryDomain || '.com'})`
+      extraDescription += ` + Dominio Alternativo (${normalizedSecondaryDomain || '.com'})`
       domainStatusToSave = 'pending'
     }
 
@@ -306,7 +303,7 @@ serve(async (req) => {
               billingType: subData.billingType || 'UNDEFINED',
               dueDate: today.toISOString().split('T')[0],
               value: proRataValue,
-              description: `Diferença proporcional (Upgrade) para o Plano ${planName.toUpperCase()} (${daysRemaining} dias restantes)`,
+              description: `Diferenca proporcional (Upgrade) para o Plano ${planName.toUpperCase()} (${daysRemaining} dias restantes)`,
             }
 
             const prRes = await fetch(`${ASAAS_URL}/payments`, {
@@ -389,33 +386,45 @@ serve(async (req) => {
       if (!createData.errors) newSubscriptionId = createData.id
     }
 
-    if (domainPriceToCharge > 0) {
-      const domainPayload = {
-        customer: customerId,
-        billingType: 'UNDEFINED',
-        dueDate: new Date().toISOString().split('T')[0],
-        value: domainPriceToCharge,
-        description: `Serviço Adicional: ${extraDescription.replace(' + ', '')}`,
+    let keptPaymentId = null
+    if (newSubscriptionId) {
+      const paymentsRes = await fetch(`${ASAAS_URL}/payments?subscription=${newSubscriptionId}&status=PENDING`, { headers: asaasHeaders })
+      const paymentsData = await paymentsRes.json()
+      if (paymentsData.data && paymentsData.data.length > 0) {
+        keptPaymentId = paymentsData.data.sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0].id
       }
-      await fetch(`${ASAAS_URL}/payments`, {
-        method: 'POST',
+    }
+
+    if (keptPaymentId) {
+      const updatePaymentPayload: any = {
+        value: recurringPrice + domainPriceToCharge,
+        description: extraDescription ? `${baseDescription}${extraDescription}` : baseDescription
+      }
+      
+      if (subscriptionDiscount) {
+        updatePaymentPayload.discount = subscriptionDiscount
+      } else {
+        updatePaymentPayload.discount = { value: 0, type: 'PERCENTAGE' }
+      }
+
+      await fetch(`${ASAAS_URL}/payments/${keptPaymentId}`, {
+        method: 'PUT',
         headers: asaasHeaders,
-        body: JSON.stringify(domainPayload)
+        body: JSON.stringify(updatePaymentPayload)
       })
     }
 
     if (customerId) {
-      const allPaymentsRes = await fetch(`${ASAAS_URL}/payments?customer=${customerId}&status=PENDING`, {
-        headers: asaasHeaders
-      })
+      // Pequeno delay para o Asaas gerar a fatura da sub
+      await new Promise(resolve => setTimeout(resolve, 800))
+
+      const allPaymentsRes = await fetch(`${ASAAS_URL}/payments?customer=${customerId}&status=PENDING&limit=100`, { headers: asaasHeaders })
       const allPaymentsData = await allPaymentsRes.json()
+
       if (allPaymentsData?.data) {
         for (const payment of allPaymentsData.data) {
-          if (payment.subscription !== newSubscriptionId && payment.id !== proRataChargeId && !payment.description?.includes('Serviço Adicional')) {
-            await fetch(`${ASAAS_URL}/payments/${payment.id}`, {
-              method: 'DELETE',
-              headers: asaasHeaders
-            })
+          if (payment.id !== keptPaymentId && payment.id !== proRataChargeId) {
+            await fetch(`${ASAAS_URL}/payments/${payment.id}`, { method: 'DELETE', headers: asaasHeaders })
           }
         }
       }

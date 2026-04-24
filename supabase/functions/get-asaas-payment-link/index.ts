@@ -66,15 +66,17 @@ serve(async (req) => {
 
     const openInvoices = Array.isArray(payData.data)
       ? payData.data
-        .filter((payment: any) => hasOpenInvoiceStatus(payment?.status))
+        .filter((p: any) => hasOpenInvoiceStatus(p?.status))
         .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
       : []
 
     if (openInvoices.length === 0) {
-      throw new Error('Nenhuma fatura pendente ou vencida encontrada. O plano pode ja estar pago.')
+      throw new Error('Nenhuma fatura encontrada.')
     }
 
-    const invoiceUrl = openInvoices[0].invoiceUrl
+    // Prioridade: Faturas vinculadas a uma assinatura
+    const subInvoice = openInvoices.find((p: any) => p.subscription)
+    const invoiceUrl = subInvoice ? subInvoice.invoiceUrl : openInvoices[0].invoiceUrl
 
     return new Response(
       JSON.stringify({ success: true, checkoutUrl: invoiceUrl }),

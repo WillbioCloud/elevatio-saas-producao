@@ -52,6 +52,12 @@ serve(async (req) => {
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
     const ASAAS_URL = getAsaasApiUrl()
+    const asaasHeaders = {
+      'access_token': ASAAS_API_KEY!,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'Elevatio-SaaS/1.0 (Supabase Edge Functions)'
+    }
     const planSelect = 'id, name, price_monthly, price_yearly, monthly_price, yearly_price, price'
 
     let planRecord: Record<string, any> | null = null
@@ -95,7 +101,7 @@ serve(async (req) => {
 
     const cycleAsaas = normalizedBillingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY'
     const calculatedPrice = cycleAsaas === 'YEARLY'
-      ? (Number.isFinite(yearlyPrice) && yearlyPrice > 0 ? yearlyPrice : monthlyPrice * 12 * 0.80)
+      ? (Number.isFinite(yearlyPrice) && yearlyPrice > 0 ? yearlyPrice : monthlyPrice * 12)
       : monthlyPrice
     const planName = String(planRecord.name ?? planIdentifier)
     const manualDiscountValue = Number(company.manual_discount_value ?? 0)
@@ -110,12 +116,28 @@ serve(async (req) => {
       : 0
     const finalPrice = Math.max(0, calculatedPrice - manualDiscountAmount)
 
+    const pendingPaymentsRes = await fetch(`${ASAAS_URL}/payments?customer=${company.asaas_customer_id}&status=PENDING&limit=100`, {
+      method: 'GET',
+      headers: asaasHeaders
+    })
+    const pendingPaymentsData = await pendingPaymentsRes.json()
+
+    if (!pendingPaymentsRes.ok) {
+      throw new Error(`Erro ao buscar faturas pendentes no Asaas: ${pendingPaymentsData.errors?.[0]?.description || 'Falha ao listar pagamentos'}`)
+    }
+
+    if (Array.isArray(pendingPaymentsData.data)) {
+      for (const payment of pendingPaymentsData.data) {
+        await fetch(`${ASAAS_URL}/payments/${payment.id}`, {
+          method: 'DELETE',
+          headers: asaasHeaders
+        })
+      }
+    }
+
     const newSubRes = await fetch(`${ASAAS_URL}/subscriptions`, {
       method: 'POST',
-      headers: {
-        'access_token': ASAAS_API_KEY!,
-        'Content-Type': 'application/json'
-      },
+      headers: asaasHeaders,
       body: JSON.stringify({
         customer: company.asaas_customer_id,
         billingType: 'CREDIT_CARD',
@@ -152,7 +174,7 @@ serve(async (req) => {
 
     const payRes = await fetch(`${ASAAS_URL}/payments?subscription=${newSubData.id}`, {
       method: 'GET',
-      headers: { 'access_token': ASAAS_API_KEY! }
+      headers: asaasHeaders
     })
 
     const payData = await payRes.json()

@@ -110,8 +110,19 @@ serve(async (req) => {
     const planValue = isYearly
       ? Number.isFinite(yearlyPlanPrice) && yearlyPlanPrice > 0
         ? yearlyPlanPrice
-        : monthlyPlanPrice * 12 * 0.85
+        : monthlyPlanPrice * 12
       : monthlyPlanPrice
+    const manualDiscountValue = Number(company.manual_discount_value ?? 0)
+    const manualDiscountType = company.manual_discount_type
+    const manualDiscountAmount = manualDiscountValue > 0
+      ? Math.min(
+          planValue,
+          manualDiscountType === 'percentage'
+            ? planValue * (manualDiscountValue / 100)
+            : manualDiscountValue
+        )
+      : 0
+    const finalPlanValue = Math.max(0, planValue - manualDiscountAmount)
     const asaasCycle = isYearly ? 'YEARLY' : 'MONTHLY'
     const planKey = String(planRecord.name ?? planName).toLowerCase()
 
@@ -181,7 +192,7 @@ serve(async (req) => {
     const subscriptionPayload: Record<string, unknown> = {
       customer: customerData.id,
       billingType: 'UNDEFINED',
-      value: planValue,
+      value: finalPlanValue,
       nextDueDate: nextDueDate.toISOString().split('T')[0],
       cycle: asaasCycle,
       description: `Assinatura Elevatio CRM - Plano ${planKey.toUpperCase()} (${isYearly ? 'Anual' : 'Mensal'})`
