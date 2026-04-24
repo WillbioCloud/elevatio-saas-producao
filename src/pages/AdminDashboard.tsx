@@ -228,9 +228,9 @@ const AdminDashboard: React.FC = () => {
       // --- BUSCA DE INDICADORES DE ALTA GESTÃO (APENAS ADMIN) ---
       if (isAdmin && isMounted) {
         const [instRes, profilesRes, allLeadsRes] = await Promise.all([
-          supabase.from('installments').select('*'),
-          supabase.from('profiles').select('id, name'),
-          supabase.from('leads').select('assigned_to, deal_value, created_at, funnel_step, status')
+          supabase.from('installments').select('*').eq('company_id', user.company_id),
+          supabase.from('profiles').select('id, name').eq('company_id', user.company_id),
+          supabase.from('leads').select('assigned_to, deal_value, created_at, funnel_step, status').eq('company_id', user.company_id)
         ]);
 
         let rec = 0, arec = 0, inad = 0, leadsM = 0;
@@ -403,21 +403,49 @@ const AdminDashboard: React.FC = () => {
     const myLeads = isAdmin ? leads : leads.filter((l: any) => l.assigned_to === user?.id);
     const myProperties = isAdmin ? properties : properties.filter((p) => p.agent_id === user?.id);
 
-    const closedLeads = myLeads.filter((l) => l.funnel_step === 'venda_ganha' || l.status === 'Fechado');
-    const vgvTotal = closedLeads.reduce((acc, lead) => acc + (lead.deal_value || 0), 0);
+    // Normaliza status e converte valores numéricos com segurança
+    const closedLeads = myLeads.filter((l) => {
+      const step = (l.funnel_step || '').toLowerCase();
+      const status = (l.status || '').toLowerCase();
+      return step === 'venda_ganha' || step === 'ganho' || status === 'fechado' || status === 'ganho';
+    });
 
-    const annualLeads = closedLeads.filter((l) => new Date(l.updated_at || new Date()).getFullYear() === currentYear);
-    const vgvAnnual = annualLeads.reduce((acc, lead) => acc + (lead.deal_value || 0), 0);
+    const vgvTotal = closedLeads.reduce((acc, lead) => acc + (Number(lead.deal_value) || 0), 0);
 
-    const salePortfolioCount = myProperties.filter((p) => p.listing_type === 'sale' && p.status === 'active').length;
-    const rentPortfolioCount = myProperties.filter((p) => p.listing_type === 'rent' && p.status === 'active').length;
+    const annualLeads = closedLeads.filter((l) => {
+      const dateStr = l.updated_at || l.created_at || new Date().toISOString();
+      return new Date(dateStr).getFullYear() === currentYear;
+    });
+    const vgvAnnual = annualLeads.reduce((acc, lead) => acc + (Number(lead.deal_value) || 0), 0);
+
+    // Normaliza os tipos de listagem (venda/locação) e status do imóvel
+    const salePortfolioCount = myProperties.filter((p) => {
+      const type = (p.listing_type || p.transaction_type || '').toLowerCase();
+      const status = (p.status || '').toLowerCase();
+      const isActive = status === 'active' || status === 'ativo' || status === 'disponível' || status === 'disponivel';
+      return (type === 'sale' || type === 'venda') && isActive;
+    }).length;
+
+    const rentPortfolioCount = myProperties.filter((p) => {
+      const type = (p.listing_type || p.transaction_type || '').toLowerCase();
+      const status = (p.status || '').toLowerCase();
+      const isActive = status === 'active' || status === 'ativo' || status === 'disponível' || status === 'disponivel';
+      return (type === 'rent' || type === 'locação' || type === 'locacao' || type === 'aluguel') && isActive;
+    }).length;
 
     const funnel = {
-      pre_atendimento: myLeads.filter((l) => l.funnel_step === 'pre_atendimento').length,
-      atendimento: myLeads.filter((l) => l.funnel_step === 'atendimento' || !l.funnel_step).length,
-      proposta: myLeads.filter((l) => l.funnel_step === 'proposta').length,
+      pre_atendimento: myLeads.filter((l) => (l.funnel_step || '').toLowerCase().includes('pre')).length,
+      atendimento: myLeads.filter((l) => {
+        const step = (l.funnel_step || '').toLowerCase();
+        return step === 'atendimento' || step === 'novo' || !step;
+      }).length,
+      proposta: myLeads.filter((l) => (l.funnel_step || '').toLowerCase().includes('proposta')).length,
       venda_ganha: closedLeads.length,
-      perdido: myLeads.filter((l) => l.funnel_step === 'perdido').length,
+      perdido: myLeads.filter((l) => {
+        const step = (l.funnel_step || '').toLowerCase();
+        const status = (l.status || '').toLowerCase();
+        return step === 'perdido' || status === 'perdido';
+      }).length,
     };
 
     return { vgvTotal, vgvAnnual, salePortfolioCount, rentPortfolioCount, funnel };
