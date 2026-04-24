@@ -210,6 +210,20 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
         .replace(/[^a-z0-9]/g, '-')
         .replace(/-+/g, '-');
       const domainType = formData.hasDomain === 'sim' ? 'custom' : 'new';
+
+      if (selectedProductionDomain) {
+        // Registrar o dominio na Vercel antes de criar a empresa evita corrida com desmontagem do modal
+        const { data: vercelData, error: vercelError } = await supabase.functions
+          .invoke('manage-vercel-domain', { body: { domain: selectedProductionDomain, action: 'add' } });
+
+        if (vercelError) {
+          throw new Error(`A Vercel rejeitou o domínio: ${vercelError.message}`);
+        }
+        if (vercelData && vercelData.error) {
+          throw new Error(`Erro na API da Vercel: ${vercelData.error}`);
+        }
+      }
+
       const payload = {
         name: formData.companyName,
         subdomain: slug,
@@ -233,13 +247,6 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
         .single();
 
       if (companyError) throw new Error('Erro ao criar imobiliaria: ' + companyError.message);
-
-      if (domainType === 'custom' && payload.domain) {
-        // Chamada silenciosa para a Vercel
-        void supabase.functions
-          .invoke('manage-vercel-domain', { body: { domain: payload.domain } })
-          .catch(console.error);
-      }
 
       if (newCompany) {
         // Vincula o perfil do usuario logado (Owner) a nova imobiliaria
