@@ -245,17 +245,6 @@ serve(async (req) => {
     const subscriptionDiscount = buildSubscriptionDiscount(couponRecord, recurringPrice)
     if (couponRecord && !subscriptionDiscount) throw new Error('Tipo de cupom inválido.')
 
-    const couponDiscountAmount = couponRecord
-      ? Math.min(
-          recurringPrice,
-          (couponRecord.discount_type ?? couponRecord.type) === 'percentage'
-            ? recurringPrice * (Number(couponRecord.discount_value ?? couponRecord.value ?? 0) / 100)
-            : (couponRecord.discount_type ?? couponRecord.type) === 'free'
-              ? recurringPrice
-              : Number(couponRecord.discount_value ?? couponRecord.value ?? 0)
-        )
-      : 0
-
     let domainPriceToCharge = 0
     let extraDescription = ""
     let domainStatusToSave = contract?.domain_status || 'pending'
@@ -400,30 +389,19 @@ serve(async (req) => {
       if (!createData.errors) newSubscriptionId = createData.id
     }
 
-    let keptPaymentId = null
-    if (newSubscriptionId) {
-      const paymentsRes = await fetch(`${ASAAS_URL}/payments?subscription=${newSubscriptionId}&status=PENDING`, {
-        headers: asaasHeaders
-      })
-      const paymentsData = await paymentsRes.json()
-
-      if (paymentsData.data && paymentsData.data.length > 0) {
-        const currentPayment = paymentsData.data.sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0]
-        keptPaymentId = currentPayment.id
-
-        const finalPaymentValue = Math.max(0, recurringPrice + domainPriceToCharge - couponDiscountAmount)
-        const finalPaymentDesc = baseDescription + extraDescription
-
-        await fetch(`${ASAAS_URL}/payments/${currentPayment.id}`, {
-          method: 'POST',
-          headers: asaasHeaders,
-          body: JSON.stringify({
-            value: finalPaymentValue,
-            description: finalPaymentDesc,
-            discount: { value: 0, dueDateLimitDays: 0, type: 'FIXED' }
-          })
-        })
+    if (domainPriceToCharge > 0) {
+      const domainPayload = {
+        customer: customerId,
+        billingType: 'UNDEFINED',
+        dueDate: new Date().toISOString().split('T')[0],
+        value: domainPriceToCharge,
+        description: `Serviço Adicional: ${extraDescription.replace(' + ', '')}`,
       }
+      await fetch(`${ASAAS_URL}/payments`, {
+        method: 'POST',
+        headers: asaasHeaders,
+        body: JSON.stringify(domainPayload)
+      })
     }
 
     if (customerId) {
@@ -433,7 +411,7 @@ serve(async (req) => {
       const allPaymentsData = await allPaymentsRes.json()
       if (allPaymentsData?.data) {
         for (const payment of allPaymentsData.data) {
-          if (payment.id !== keptPaymentId && payment.id !== proRataChargeId) {
+          if (payment.subscription !== newSubscriptionId && payment.id !== proRataChargeId && !payment.description?.includes('Serviço Adicional')) {
             await fetch(`${ASAAS_URL}/payments/${payment.id}`, {
               method: 'DELETE',
               headers: asaasHeaders

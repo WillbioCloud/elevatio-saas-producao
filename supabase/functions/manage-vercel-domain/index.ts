@@ -1,13 +1,14 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-// Headers de CORS obrigatorios para requisicoes do navegador
+// Headers de CORS OBRIGATÓRIOS (Atualizados para não dar erro no Safari/iPhone)
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
 }
 
 serve(async (req) => {
-  // 1. Responde ao preflight do navegador
+  // 1. Responde ao preflight do navegador (Aqui o iPhone fica feliz)
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }

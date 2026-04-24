@@ -44,7 +44,7 @@ serve(async (req) => {
 
     const { data: company, error: compError } = await supabaseAdmin
       .from('companies')
-      .select('asaas_customer_id')
+      .select('asaas_customer_id, manual_discount_value, manual_discount_type')
       .eq('id', companyId)
       .single()
 
@@ -98,6 +98,17 @@ serve(async (req) => {
       ? (Number.isFinite(yearlyPrice) && yearlyPrice > 0 ? yearlyPrice : monthlyPrice * 12 * 0.80)
       : monthlyPrice
     const planName = String(planRecord.name ?? planIdentifier)
+    const manualDiscountValue = Number(company.manual_discount_value ?? 0)
+    const manualDiscountType = company.manual_discount_type
+    const manualDiscountAmount = manualDiscountValue > 0
+      ? Math.min(
+          calculatedPrice,
+          manualDiscountType === 'percentage'
+            ? calculatedPrice * (manualDiscountValue / 100)
+            : manualDiscountValue
+        )
+      : 0
+    const finalPrice = Math.max(0, calculatedPrice - manualDiscountAmount)
 
     const newSubRes = await fetch(`${ASAAS_URL}/subscriptions`, {
       method: 'POST',
@@ -108,7 +119,7 @@ serve(async (req) => {
       body: JSON.stringify({
         customer: company.asaas_customer_id,
         billingType: 'CREDIT_CARD',
-        value: calculatedPrice,
+        value: finalPrice,
         nextDueDate: new Date().toISOString().split('T')[0],
         cycle: cycleAsaas,
         description: `Reativacao: Assinatura Elevatio Vendas - Plano ${planName.toUpperCase()}`
@@ -134,7 +145,7 @@ serve(async (req) => {
         cancel_reason: null,
         fidelity_end_date: null,
         has_fidelity: false,
-        price: calculatedPrice,
+        price: finalPrice,
         subscription_id: newSubData.id
       })
       .eq('company_id', companyId)
