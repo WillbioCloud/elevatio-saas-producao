@@ -4378,7 +4378,7 @@ const AdminConfig: React.FC = () => {
                     {/* FEEDBACK DINÂMICO DE DOMÍNIO PENDENTE */}
                     {contract?.domain_status === 'pending' && isPrimaryElevatioDomain && (
                       <p className="mt-1.5 text-sm font-medium text-brand-200">
-                        + R$ 89,00 (Taxa única anual de domínio) na próxima fatura.
+                        + R$ 53,00 (Taxa única anual de domínio) nessa fatura.
                       </p>
                     )}
                     <div className="flex flex-wrap items-center gap-6 mt-6 text-sm text-white/85">
