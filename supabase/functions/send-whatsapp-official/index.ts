@@ -61,42 +61,7 @@ const requireEnv = (name: string) => {
   if (!value) {
     throw new HttpError(`Variavel de ambiente ${name} nao configurada.`, 500)
   }
-
   return value
-}
-
-const parsePayload = async (req: Request) => {
-  const body = await req.json().catch(() => ({})) as RequestPayload
-
-  const companyId = normalizeString(body.companyId ?? body.company_id)
-  const to = normalizePhone(body.to)
-  const templateName = normalizeString(body.templateName ?? body.template_name)
-  const languageCode = normalizeString(body.languageCode ?? body.language_code) || 'pt_BR'
-  const components = body.components
-
-  if (!companyId) {
-    throw new HttpError('companyId e obrigatorio.', 400)
-  }
-
-  if (!to) {
-    throw new HttpError('Numero de destino invalido.', 400)
-  }
-
-  if (!templateName) {
-    throw new HttpError('templateName e obrigatorio.', 400)
-  }
-
-  if (components !== undefined && !Array.isArray(components)) {
-    throw new HttpError('components deve ser um array quando informado.', 400)
-  }
-
-  return {
-    companyId,
-    to,
-    templateName,
-    languageCode,
-    components: Array.isArray(components) ? components : [],
-  }
 }
 
 const parseMetaResponse = async (response: Response): Promise<MetaMessageResponse | JsonRecord> => {
@@ -140,16 +105,33 @@ serve(async (req) => {
     const metaAccessToken = requireEnv('META_ACCESS_TOKEN')
     const metaPhoneNumberId = requireEnv('META_PHONE_NUMBER_ID')
 
-    const {
-      companyId,
-      to,
-      templateName,
-      languageCode,
-      components,
-    } = await parsePayload(req)
+    // 1. Extracao do Payload (antes da validacao para podermos pegar a companyId)
+    const reqData = await req.json().catch(() => ({})) as RequestPayload
+    const companyId = String(reqData.companyId || reqData.company_id || '').trim()
+    const to = normalizePhone(reqData.to)
+    const templateName = normalizeString(reqData.templateName || reqData.template_name)
+    const languageCode = normalizeString(reqData.languageCode || reqData.language_code || 'pt_BR')
+    const components = Array.isArray(reqData.components) ? reqData.components : []
 
-    await requireBillingCompanyAccess(req, companyId)
+    if (!companyId || !to || !templateName) {
+      throw new HttpError('Par\u00e2metros obrigat\u00f3rios ausentes: companyId, to, templateName', 400)
+    }
 
+    // 2. Bypass inteligente de seguranca para chamadas server-to-server
+    const authHeader = req.headers.get('Authorization') || req.headers.get('authorization') || ''
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+
+    let bypassAuth = false
+
+    if (token && token === serviceRoleKey) {
+      bypassAuth = true
+      console.log('[send-whatsapp-official] Execucao permitida via SERVICE_ROLE_KEY (Bypass)')
+    } else {
+      await requireBillingCompanyAccess(req, companyId)
+    }
+
+    // 3. Fluxo normal da funcao
     const supabaseAdmin = createSupabaseAdmin()
 
     const { data: company, error: companyError } = await supabaseAdmin
@@ -169,12 +151,21 @@ serve(async (req) => {
 
     if (currentCredits <= 0) {
       throw new HttpError(
-        'Saldo insuficiente de cr\u00e9ditos de WhatsApp. Fa\u00e7a um upgrade ou recarregue seu pacote.',
+        'Saldo insuficiente de creditos de WhatsApp. Faca um upgrade ou recarregue seu pacote.',
         403
       )
     }
 
-    const metaResponse = await fetch(`https://graph.facebook.com/v19.0/${metaPhoneNumberId}/messages`, {
+    const templatePayload: Record<string, unknown> = {
+      name: templateName,
+      language: { code: languageCode || 'pt_BR' },
+    }
+
+    if (components.length > 0) {
+      templatePayload.components = components
+    }
+
+    const metaResponse = await fetch(`https://graph.facebook.com/v25.0/${metaPhoneNumberId}/messages`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${metaAccessToken}`,
@@ -184,18 +175,17 @@ serve(async (req) => {
         messaging_product: 'whatsapp',
         to,
         type: 'template',
-        template: {
-          name: templateName,
-          language: { code: languageCode || 'pt_BR' },
-          components: components || [],
-        },
+        template: templatePayload,
       }),
     })
 
     const metaPayload = await parseMetaResponse(metaResponse)
+    console.log('[send-whatsapp-official] metaPayload:', JSON.stringify(metaPayload))
+
     const messages = Array.isArray((metaPayload as MetaMessageResponse).messages)
       ? (metaPayload as MetaMessageResponse).messages
       : []
+
     const messageId = normalizeString(messages[0]?.id)
 
     if (!metaResponse.ok || !messageId) {
@@ -204,7 +194,10 @@ serve(async (req) => {
         'Falha ao enviar mensagem pela Meta Cloud API.'
       )
 
-      throw new HttpError(friendlyMessage, metaResponse.status >= 400 ? metaResponse.status : 502)
+      throw new HttpError(
+        friendlyMessage,
+        metaResponse.status >= 400 ? metaResponse.status : 502
+      )
     }
 
     const nextCredits = currentCredits - 1
@@ -215,13 +208,35 @@ serve(async (req) => {
       .eq('id', companyId)
 
     if (updateError) {
-      throw new HttpError(`Mensagem enviada, mas falhou ao debitar o credito: ${updateError.message}`, 500)
+      throw new HttpError(
+        `Mensagem enviada, mas falhou ao debitar o credito: ${updateError.message}`,
+        500
+      )
+    }
+
+    // --- NOVO: Gravar Log de Mensagem ---
+    const { error: logError } = await supabaseAdmin
+      .from('whatsapp_message_logs')
+      .insert({
+        company_id: companyId,
+        to_phone: to,
+        template_name: templateName,
+        message_id: messageId,
+        status: 'sent',
+        payload: { components },
+      })
+
+    if (logError) {
+      console.error('[send-whatsapp-official] Erro ao gravar log de mensagem:', logError)
+      // Nao lancamos throw aqui para nao cancelar a resposta de sucesso,
+      // ja que a mensagem foi enviada e o credito descontado.
     }
 
     return jsonResponse({
       success: true,
       messageId,
       credits_remaining: nextCredits,
+      bypass_auth: bypassAuth,
     })
   } catch (error) {
     console.error('[send-whatsapp-official] erro:', error)

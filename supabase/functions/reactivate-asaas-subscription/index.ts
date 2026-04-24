@@ -16,15 +16,27 @@ const normalizeString = (value: unknown) => {
   return value.trim()
 }
 
+const toPlanPrice = (value: unknown, fallback = 0) => {
+  const numericValue = Number(value)
+  return Number.isFinite(numericValue) ? numericValue : fallback
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { company_id, plan_name, billing_cycle, price } = await req.json()
+    const { company_id, plan_name, billing_cycle } = await req.json()
     const companyId = normalizeString(company_id)
-    const planName = normalizeString(plan_name)
+    const planIdentifier = normalizeString(plan_name)
+    const normalizedBillingCycle = normalizeString(billing_cycle).toLowerCase()
 
-    if (!companyId || !planName || !price) throw new Error("Dados incompletos para reativacao.")
+    if (!companyId || !planIdentifier || !normalizedBillingCycle) {
+      throw new Error("Dados incompletos para reativacao.")
+    }
+
+    if (normalizedBillingCycle !== 'monthly' && normalizedBillingCycle !== 'yearly') {
+      throw new Error("Ciclo de cobranca invalido.")
+    }
 
     await requireBillingCompanyAccess(req, companyId)
 
@@ -40,8 +52,53 @@ serve(async (req) => {
 
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
     const ASAAS_URL = getAsaasApiUrl()
+    const planSelect = 'id, name, price_monthly, price_yearly, monthly_price, yearly_price, price'
 
-    const cycleAsaas = billing_cycle === 'yearly' ? 'YEARLY' : 'MONTHLY'
+    let planRecord: Record<string, any> | null = null
+
+    const { data: planById, error: planByIdError } = await supabaseAdmin
+      .from('saas_plans')
+      .select(planSelect)
+      .eq('id', planIdentifier)
+      .eq('active', true)
+      .maybeSingle()
+
+    if (planByIdError) throw planByIdError
+    if (planById) {
+      planRecord = planById
+    } else {
+      const { data: planByName, error: planByNameError } = await supabaseAdmin
+        .from('saas_plans')
+        .select(planSelect)
+        .ilike('name', planIdentifier)
+        .eq('active', true)
+        .maybeSingle()
+
+      if (planByNameError) throw planByNameError
+      planRecord = planByName
+    }
+
+    if (!planRecord) throw new Error("Plano invalido ou inativo.")
+
+    const monthlyPrice = toPlanPrice(
+      planRecord.price_monthly ?? planRecord.monthly_price ?? planRecord.price,
+      NaN
+    )
+    const yearlyPrice = toPlanPrice(
+      planRecord.price_yearly ?? planRecord.yearly_price,
+      NaN
+    )
+
+    if (!Number.isFinite(monthlyPrice) || monthlyPrice < 0) {
+      throw new Error("Plano invalido ou sem preco configurado.")
+    }
+
+    const cycleAsaas = normalizedBillingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY'
+    const calculatedPrice = cycleAsaas === 'YEARLY'
+      ? (Number.isFinite(yearlyPrice) && yearlyPrice > 0 ? yearlyPrice : monthlyPrice * 12 * 0.80)
+      : monthlyPrice
+    const planName = String(planRecord.name ?? planIdentifier)
+
     const newSubRes = await fetch(`${ASAAS_URL}/subscriptions`, {
       method: 'POST',
       headers: {
@@ -51,7 +108,7 @@ serve(async (req) => {
       body: JSON.stringify({
         customer: company.asaas_customer_id,
         billingType: 'CREDIT_CARD',
-        value: price,
+        value: calculatedPrice,
         nextDueDate: new Date().toISOString().split('T')[0],
         cycle: cycleAsaas,
         description: `Reativacao: Assinatura Elevatio Vendas - Plano ${planName.toUpperCase()}`
@@ -71,11 +128,14 @@ serve(async (req) => {
       .update({
         status: 'pending',
         plan_name: planName,
-        billing_cycle,
+        plan_id: planRecord.id ?? null,
+        billing_cycle: normalizedBillingCycle,
         canceled_at: null,
         cancel_reason: null,
         fidelity_end_date: null,
-        has_fidelity: false
+        has_fidelity: false,
+        price: calculatedPrice,
+        subscription_id: newSubData.id
       })
       .eq('company_id', companyId)
 

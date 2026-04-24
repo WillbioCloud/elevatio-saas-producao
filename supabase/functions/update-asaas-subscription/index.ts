@@ -66,7 +66,6 @@ serve(async (req) => {
       addons,
       coupon_code,
       domain_secondary,
-      total_price,
     } = await req.json()
 
     const companyId = normalizeString(company_id)
@@ -74,7 +73,6 @@ serve(async (req) => {
     const billingCycle = normalizeString(billing_cycle)
     const couponCode = normalizeString(coupon_code).toUpperCase()
     const normalizedSecondaryDomain = normalizeString(domain_secondary).toLowerCase()
-    const normalizedTotalPrice = Number.isFinite(Number(total_price)) ? Math.max(0, Number(total_price)) : null
 
     if (!companyId || !planName || !billingCycle) {
       throw new Error('Dados obrigatórios da assinatura não foram informados.')
@@ -413,7 +411,7 @@ serve(async (req) => {
         const currentPayment = paymentsData.data.sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0]
         keptPaymentId = currentPayment.id
 
-        const finalPaymentValue = normalizedTotalPrice ?? Math.max(0, recurringPrice + domainPriceToCharge - couponDiscountAmount)
+        const finalPaymentValue = Math.max(0, recurringPrice + domainPriceToCharge - couponDiscountAmount)
         const finalPaymentDesc = baseDescription + extraDescription
 
         await fetch(`${ASAAS_URL}/payments/${currentPayment.id}`, {
