@@ -46,6 +46,23 @@ serve(async (req) => {
       throw new Error('Empresa nao possui um cadastro financeiro no Asaas.')
     }
 
+    // ===========================================================
+    // PATCH C: Verificar se a fatura já foi finalizada pelo backend
+    // Previne race condition entre update-subscription e get-payment-link.
+    // ===========================================================
+    const { data: contract } = await supabaseAdmin
+      .from('saas_contracts')
+      .select('invoice_ready, kept_payment_id')
+      .eq('company_id', companyId)
+      .maybeSingle()
+
+    if (contract && contract.invoice_ready === false) {
+      return new Response(
+        JSON.stringify({ retry: true, message: 'Fatura ainda está sendo processada. Tente novamente em instantes.' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 202 }
+      )
+    }
+
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
     const ASAAS_URL = getAsaasApiUrl()
     const asaasHeaders = {
@@ -55,7 +72,7 @@ serve(async (req) => {
       'User-Agent': 'Elevatio-SaaS/1.0 (Supabase Edge Functions)'
     }
 
-    const payRes = await fetch(`${ASAAS_URL}/payments?customer=${company.asaas_customer_id}`, {
+    const payRes = await fetch(`${ASAAS_URL}/payments?customer=${company.asaas_customer_id}&status=PENDING&limit=100`, {
       method: 'GET',
       headers: asaasHeaders
     })
@@ -74,7 +91,24 @@ serve(async (req) => {
       throw new Error('Nenhuma fatura encontrada.')
     }
 
-    // Prioridade: Faturas vinculadas a uma assinatura
+    // Prioridade 1: link direto pelo kept_payment_id gravado pelo update-subscription
+    if (contract?.kept_payment_id) {
+      const directPayRes = await fetch(`${ASAAS_URL}/payments/${contract.kept_payment_id}`, {
+        method: 'GET',
+        headers: asaasHeaders
+      })
+      if (directPayRes.ok) {
+        const directPayData = await directPayRes.json()
+        if (directPayData?.invoiceUrl && hasOpenInvoiceStatus(directPayData.status)) {
+          return new Response(
+            JSON.stringify({ success: true, checkoutUrl: directPayData.invoiceUrl }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+          )
+        }
+      }
+    }
+
+    // Prioridade 2: Busca geral por faturas abertas vinculadas a assinatura
     const subInvoice = openInvoices.find((p: any) => p.subscription)
     const invoiceUrl = subInvoice ? subInvoice.invoiceUrl : openInvoices[0].invoiceUrl
 

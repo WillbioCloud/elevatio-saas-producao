@@ -407,11 +407,22 @@ serve(async (req) => {
         updatePaymentPayload.discount = { value: 0, type: 'PERCENTAGE' }
       }
 
-      await fetch(`${ASAAS_URL}/payments/${keptPaymentId}`, {
+      const updatePayRes = await fetch(`${ASAAS_URL}/payments/${keptPaymentId}`, {
         method: 'PUT',
         headers: asaasHeaders,
         body: JSON.stringify(updatePaymentPayload)
       })
+
+      if (!updatePayRes.ok) {
+        const errBody = await updatePayRes.text()
+        console.error(`[UPDATE-SUB] ATENÇÃO: Falha ao atualizar fatura ${keptPaymentId} com valor do domínio. Erro Asaas: ${errBody}`)
+        // Sinaliza que a fatura ainda não está pronta para exibição
+        await supabase.from('saas_contracts').update({ invoice_ready: false, kept_payment_id: keptPaymentId }).eq('company_id', companyId)
+      } else {
+        // Sinaliza que a fatura já foi finalizada com todos os itens (plano + domínio)
+        await supabase.from('saas_contracts').update({ invoice_ready: true, kept_payment_id: keptPaymentId }).eq('company_id', companyId)
+        console.log(`[UPDATE-SUB] Fatura ${keptPaymentId} finalizada com sucesso. Valor: ${recurringPrice + domainPriceToCharge}`)
+      }
     }
 
     if (customerId) {

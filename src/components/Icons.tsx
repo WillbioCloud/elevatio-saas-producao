@@ -153,6 +153,7 @@ import {
   Smartphone,
   Bug,
   Rss,
+  Tag,
 } from 'lucide-react';
 
 const Google = (props: ComponentPropsWithoutRef<'svg'>) => (
@@ -339,4 +340,5 @@ export const Icons = {
   Smartphone,
   Bug,
   Rss,
+  Tag,
 };

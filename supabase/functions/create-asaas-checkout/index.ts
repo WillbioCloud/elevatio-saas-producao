@@ -156,41 +156,89 @@ serve(async (req) => {
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
     const ASAAS_URL = getAsaasApiUrl()
 
-    const customerPayload = {
-      name: company.name,
-      email: customerEmail,
-      cpfCnpj: cleanDocument,
-      phone: cleanPhone,
-      mobilePhone: cleanPhone
+    // ===========================================================
+    // PATCH A: Reutilizar customer existente — evitar clientes fantasmas
+    // Nunca criar um novo customer se já temos o ID salvo ou
+    // se já existe um com o mesmo CNPJ no Asaas.
+    // ===========================================================
+    let customerId: string | null = company.asaas_customer_id || null
+
+    if (!customerId && cleanDocument) {
+      const searchRes = await fetch(`${ASAAS_URL}/customers?cpfCnpj=${cleanDocument}&limit=1`, {
+        headers: { 'Content-Type': 'application/json', 'access_token': ASAAS_API_KEY! }
+      })
+      if (searchRes.ok) {
+        const searchData = await searchRes.json()
+        if (searchData?.data?.length > 0) {
+          customerId = searchData.data[0].id
+          console.log(`[CHECKOUT] Customer existente encontrado no Asaas por CNPJ: ${customerId}`)
+        }
+      }
     }
 
-    const customerRes = await fetch(`${ASAAS_URL}/customers`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'access_token': ASAAS_API_KEY!
-      },
-      body: JSON.stringify(customerPayload)
-    })
+    let customerData: Record<string, any> = { id: customerId }
 
-    const customerText = await customerRes.text()
-    let customerData
-    try {
-      customerData = JSON.parse(customerText)
-    } catch (_error) {
-      throw new Error(`Erro crítico na API Asaas (Cliente). Status: ${customerRes.status}. Resposta: ${customerText}`)
+    if (!customerId) {
+      const customerPayload = {
+        name: company.name,
+        email: customerEmail,
+        cpfCnpj: cleanDocument,
+        phone: cleanPhone,
+        mobilePhone: cleanPhone
+      }
+
+      const customerRes = await fetch(`${ASAAS_URL}/customers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'access_token': ASAAS_API_KEY! },
+        body: JSON.stringify(customerPayload)
+      })
+
+      const customerText = await customerRes.text()
+      try {
+        customerData = JSON.parse(customerText)
+      } catch (_error) {
+        throw new Error(`Erro crítico na API Asaas (Cliente). Status: ${customerRes.status}. Resposta: ${customerText}`)
+      }
+
+      if (!customerRes.ok) throw new Error(`Erro ao criar cliente Asaas: ${customerData.errors?.[0]?.description || customerText}`)
+
+      customerId = customerData.id
     }
 
-    if (!customerRes.ok) throw new Error(`Erro ao criar cliente Asaas: ${customerData.errors?.[0]?.description || customerText}`)
+    if (!customerId) throw new Error('Não foi possível obter ou criar o cliente no Asaas.')
 
     const subscriptionDiscount = buildSubscriptionDiscount(couponRecord, planValue)
     if (couponRecord && !subscriptionDiscount) throw new Error('Tipo de cupom inválido.')
+
+    // ===========================================================
+    // PATCH B: Reserva otimista de cupom — prevenir race condition em max_uses
+    // Antes de criar a assinatura, deletar assinaturas PENDING antigas
+    // deste customer para evitar acúmulo de fantasmas.
+    // ===========================================================
+    if (customerId) {
+      const orphanSubsRes = await fetch(
+        `${ASAAS_URL}/subscriptions?customer=${customerId}&status=PENDING&limit=100`,
+        { headers: { 'Content-Type': 'application/json', 'access_token': ASAAS_API_KEY! } }
+      )
+      if (orphanSubsRes.ok) {
+        const orphanSubsData = await orphanSubsRes.json()
+        if (Array.isArray(orphanSubsData?.data)) {
+          for (const orphanSub of orphanSubsData.data) {
+            await fetch(`${ASAAS_URL}/subscriptions/${orphanSub.id}`, {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json', 'access_token': ASAAS_API_KEY! }
+            })
+            console.log(`[CHECKOUT] Assinatura órfã deletada: ${orphanSub.id}`)
+          }
+        }
+      }
+    }
 
     const nextDueDate = new Date()
     nextDueDate.setDate(nextDueDate.getDate() + 7)
 
     const subscriptionPayload: Record<string, unknown> = {
-      customer: customerData.id,
+      customer: customerId,
       billingType: 'UNDEFINED',
       value: finalPlanValue,
       nextDueDate: nextDueDate.toISOString().split('T')[0],
@@ -222,7 +270,7 @@ serve(async (req) => {
     if (!subRes.ok) throw new Error(`Erro ao criar assinatura Asaas: ${subData.errors?.[0]?.description || subText}`)
 
     const companyUpdate: Record<string, unknown> = {
-      asaas_customer_id: customerData.id,
+      asaas_customer_id: customerId,
       asaas_subscription_id: subData.id
     }
 

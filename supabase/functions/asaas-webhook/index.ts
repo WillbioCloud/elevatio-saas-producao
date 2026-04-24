@@ -161,6 +161,23 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    if (payment?.id) {
+      const incomingStatus = normalizePaymentStatus(event, payment)
+      const { data: existingPayment } = await supabaseAdmin
+        .from('saas_payments')
+        .select('status')
+        .eq('asaas_payment_id', payment.id)
+        .maybeSingle()
+
+      if (existingPayment && existingPayment.status === incomingStatus) {
+        console.log(`[WEBHOOK] Evento duplicado ignorado: ${event} para pagamento ${payment.id}`)
+        return new Response(JSON.stringify({ success: true, skipped: true }), {
+          headers: jsonHeaders,
+          status: 200
+        })
+      }
+    }
+
     const ASAAS_API_KEY = Deno.env.get('ASAAS_API_KEY')
     const ASAAS_URL = getAsaasApiUrl()
 
@@ -175,22 +192,41 @@ serve(async (req) => {
 
       const nextPlanStatus = PLAN_STATUS_BY_EVENT[event]
       if (nextPlanStatus) {
-        await supabaseAdmin
-          .from('companies')
-          .update({
-            plan_status: nextPlanStatus,
-            ...(ACTIVE_PAYMENT_EVENTS.has(event) ? { trial_ends_at: null } : {})
-          })
-          .eq('id', company.id)
+        const companyStatusUpdate: Record<string, unknown> = { plan_status: nextPlanStatus }
+        if (ACTIVE_PAYMENT_EVENTS.has(event)) {
+          companyStatusUpdate.trial_ends_at = null
+        }
+        await supabaseAdmin.from('companies').update(companyStatusUpdate).eq('id', company.id)
+
+        const contractStatusMap: Record<string, string> = {
+          active: 'active',
+          past_due: 'past_due',
+          canceled: 'canceled',
+        }
+        const contractStatus = contractStatusMap[nextPlanStatus]
+
+        if (contractStatus) {
+          const contractUpdate: Record<string, unknown> = { status: contractStatus }
+
+          if (contractStatus === 'active') {
+            contractUpdate.canceled_at = null
+            contractUpdate.cancel_reason = null
+          } else if (contractStatus === 'canceled') {
+            contractUpdate.canceled_at = new Date().toISOString()
+            contractUpdate.cancel_reason = `Webhook Asaas: ${event}`
+          }
+
+          await supabaseAdmin
+            .from('saas_contracts')
+            .update(contractUpdate)
+            .eq('company_id', company.id)
+
+          console.log(`[WEBHOOK] Contrato da empresa ${company.id} -> ${contractStatus} (evento: ${event})`)
+        }
       }
     }
 
     if (ACTIVE_PAYMENT_EVENTS.has(event) && company) {
-      await supabaseAdmin
-        .from('saas_contracts')
-        .update({ status: 'active' })
-        .eq('company_id', company.id)
-
       // ==========================================
       // ANCORA DE CICLO (PRIMEIRO PAGAMENTO)
       // Se o cliente pagou e ainda tinha trial_ends_at,
@@ -229,78 +265,57 @@ serve(async (req) => {
         }
       }
 
-      if (event === 'PAYMENT_CONFIRMED' && company.applied_coupon_id && !company.coupon_start_date) {
-        const confirmedAt = new Date().toISOString()
-        await incrementCouponUsage(supabaseAdmin, company.applied_coupon_id)
-
-        const { error: couponStartError } = await supabaseAdmin
-          .from('companies')
-          .update({ coupon_start_date: confirmedAt })
-          .eq('id', company.id)
-
-        if (couponStartError) throw couponStartError
-
-        company.coupon_start_date = confirmedAt
-
-        console.log(`Cupom ${company.applied_coupon_id} iniciado para a empresa ${company.id}.`)
-      }
-
-      if (event === 'PAYMENT_RECEIVED' && company.applied_coupon_id && company.coupon_start_date) {
+      if (company.applied_coupon_id) {
         const { data: coupon } = await supabaseAdmin
           .from('saas_coupons')
-          .select('duration_months')
+          .select('*')
           .eq('id', company.applied_coupon_id)
           .maybeSingle()
 
-        if (coupon && hasCouponExpired(company.coupon_start_date, coupon.duration_months)) {
-          if (company.asaas_subscription_id) {
-            const asaasRes = await fetch(`${ASAAS_URL}/subscriptions/${company.asaas_subscription_id}`, {
-              method: 'PUT',
-              headers: {
-                'access_token': ASAAS_API_KEY!,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                discount: { value: 0, type: 'FIXED' },
-                updatePendingCharge: true,
-                updatePendingPayments: true
-              })
-            })
+        if (coupon) {
+          if (!company.coupon_start_date) {
+            const confirmedAt = payment.paymentDate ?? payment.confirmedDate ?? new Date().toISOString()
+            await incrementCouponUsage(supabaseAdmin, company.applied_coupon_id)
+            await supabaseAdmin
+              .from('companies')
+              .update({ coupon_start_date: confirmedAt })
+              .eq('id', company.id)
+            company.coupon_start_date = confirmedAt
+            console.log(`[WEBHOOK] Cupom ${company.applied_coupon_id} iniciado para empresa ${company.id}.`)
+          }
 
-            const asaasText = await asaasRes.text()
-            let asaasData: Record<string, any> | null = null
-            if (asaasText) {
-              try {
-                asaasData = JSON.parse(asaasText)
-              } catch (_error) {
-                asaasData = null
+          if (company.coupon_start_date && hasCouponExpired(company.coupon_start_date, coupon.duration_months)) {
+            if (company.asaas_subscription_id && ASAAS_API_KEY) {
+              const asaasRes = await fetch(`${ASAAS_URL}/subscriptions/${company.asaas_subscription_id}`, {
+                method: 'PUT',
+                headers: {
+                  'access_token': ASAAS_API_KEY,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  discount: { value: 0, type: 'FIXED' },
+                  updatePendingCharge: true,
+                  updatePendingPayments: true
+                })
+              })
+
+              if (!asaasRes.ok) {
+                const errText = await asaasRes.text()
+                console.error(`Erro ao remover desconto da assinatura Asaas: ${errText}`)
               }
             }
 
-            if (!asaasRes.ok) {
-              throw new Error(`Erro ao remover desconto da assinatura Asaas: ${asaasData?.errors?.[0]?.description || asaasText}`)
-            }
+            await supabaseAdmin
+              .from('companies')
+              .update({ applied_coupon_id: null, coupon_start_date: null })
+              .eq('id', company.id)
+
+            console.log(`[WEBHOOK] Cupom recorrente expirado e removido da empresa ${company.id}.`)
           }
-
-          await supabaseAdmin
-            .from('companies')
-            .update({ applied_coupon_id: null, coupon_start_date: null })
-            .eq('id', company.id)
-
-          console.log(`Cupom recorrente removido da empresa ${company.id}.`)
         }
       }
 
       console.log(`Empresa ${company.id} ativada com sucesso!`)
-    }
-
-    if (event === 'PAYMENT_OVERDUE' && company) {
-      await supabaseAdmin
-        .from('saas_contracts')
-        .update({ status: 'past_due' })
-        .eq('company_id', company.id)
-
-      console.log(`Empresa ${company.id} bloqueada por inadimplencia.`)
     }
 
     return new Response(JSON.stringify({ success: true }), {
