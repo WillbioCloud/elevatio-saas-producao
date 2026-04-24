@@ -67,6 +67,7 @@ interface Profile {
 interface Contract {
   id: string;
   company_id?: string;
+  asaas_customer_id?: string | null;
   plan_name?: string;
   plan?: string;
   plan_id?: string;
@@ -106,6 +107,7 @@ interface Company extends Omit<BaseCompany, 'subdomain' | 'domain' | 'domain_sec
   domain_secondary: string | null;
   domain_status: CompanyDomainStatus;
   domain_secondary_status: CompanyDomainStatus;
+  asaas_customer_id?: string | null;
 }
 
 type SitePartner = NonNullable<SiteData['partners']>[number];
@@ -113,6 +115,9 @@ type OfficialSignatureTab = 'draw' | 'type' | 'upload';
 type ConfigTab = 'profile' | 'company' | 'team' | 'traffic' | 'subscription' | 'site' | 'contracts' | 'integrations' | 'whatsapp' | 'finance' | 'permissions';
 type LeadRoutingMode = 'round_robin' | 'centralized';
 type SiteSubTab = 'templates' | 'identity' | 'hero' | 'about' | 'social';
+type BillingSubTab = 'plans' | 'addons';
+type AddonPaymentTiming = 'now' | 'next_invoice';
+type WhatsAppCreditPackId = '10' | '25' | '50' | '100';
 type PermissionRole = 'manager' | 'agent' | 'attendant' | 'admin';
 type RolePermissionKey =
   | 'view_all_leads'
@@ -133,7 +138,7 @@ type ConfigPermissionState = CompanyPermissions &
   };
 type TenantFinanceRecord = Pick<
   Company,
-  'id' | 'name' | 'document' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template' | 'logo_url' | 'admin_signature_url'
+  'id' | 'name' | 'document' | 'subdomain' | 'site_data' | 'finance_config' | 'use_asaas' | 'default_commission' | 'broker_commission' | 'payment_api_key' | 'domain' | 'domain_secondary' | 'domain_type' | 'domain_status' | 'domain_secondary_status' | 'manual_discount_value' | 'manual_discount_type' | 'template' | 'logo_url' | 'admin_signature_url' | 'asaas_customer_id'
 > & {
   finance_config?: FinanceConfig | null;
   subscription_status?: string | null;
@@ -144,6 +149,21 @@ type TenantFinanceRecord = Pick<
 const CONFIG_TABS: ConfigTab[] = ['profile', 'company', 'team', 'traffic', 'subscription', 'site', 'contracts', 'integrations', 'whatsapp', 'finance', 'permissions'];
 const OWNER_ONLY_CONFIG_TABS: ConfigTab[] = ['company', 'subscription', 'finance'];
 const SITE_SUBTABS: SiteSubTab[] = ['templates', 'identity', 'hero', 'about', 'social'];
+const WHATSAPP_CREDIT_PACKS: Array<{ id: WhatsAppCreditPackId; label: string; price: string; highlight?: string }> = [
+  { id: '10', label: 'Pack 10 Créditos', price: 'R$ 14,90/mês' },
+  { id: '25', label: 'Pack 25 Créditos', price: 'R$ 29,90/mês', highlight: 'Mais flexível' },
+  { id: '50', label: 'Pack 50 Créditos', price: 'R$ 54,90/mês' },
+  { id: '100', label: 'Pack 100 Créditos', price: 'R$ 99,90/mês', highlight: 'Escala' },
+];
+const WHATSAPP_CREDIT_PURCHASE_MAP: Record<
+  WhatsAppCreditPackId,
+  { priceValue: number; credits: number; description: string }
+> = {
+  '10': { priceValue: 14.9, credits: 10, description: 'Pack 10 Creditos WhatsApp' },
+  '25': { priceValue: 29.9, credits: 25, description: 'Pack 25 Creditos WhatsApp' },
+  '50': { priceValue: 54.9, credits: 50, description: 'Pack 50 Creditos WhatsApp' },
+  '100': { priceValue: 99.9, credits: 100, description: 'Pack 100 Creditos WhatsApp' },
+};
 const LEGACY_CONFIG_TAB_ALIASES: Partial<Record<string, ConfigTab>> = {
   assinatura: 'subscription',
   empresa: 'company',
@@ -1032,6 +1052,11 @@ const AdminConfig: React.FC = () => {
   const [isReactivating, setIsReactivating] = useState(false);
   const [checkoutMode, setCheckoutMode] = useState<'upgrade' | 'pay'>('pay');
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [activeBillingTab, setActiveBillingTab] = useState<BillingSubTab>('plans');
+  const [domainAddonPayment, setDomainAddonPayment] = useState<AddonPaymentTiming>('now');
+  const [whatsappAddonPayment, setWhatsappAddonPayment] = useState<AddonPaymentTiming>('now');
+  const [selectedWhatsappCreditPack, setSelectedWhatsappCreditPack] = useState<WhatsAppCreditPackId>('25');
+  const [isBuyingAddon, setIsBuyingAddon] = useState<string | null>(null);
   const isYearly = billingCycle === 'yearly';
   const [acceptFidelity, setAcceptFidelity] = useState(false);
   const [acceptedFidelityTerms, setAcceptedFidelityTerms] = useState(false);
@@ -1488,6 +1513,7 @@ const AdminConfig: React.FC = () => {
         id,
         name,
         document,
+        asaas_customer_id,
         logo_url,
         admin_signature_url,
         subdomain,
@@ -1533,6 +1559,7 @@ const AdminConfig: React.FC = () => {
         id: data.id,
         name: data.name || '',
         document: data.document || null,
+        asaas_customer_id: data.asaas_customer_id || null,
         logo_url: data.logo_url || null,
         admin_signature_url: data.admin_signature_url ?? null,
         subdomain: data.subdomain || null,
@@ -2679,6 +2706,68 @@ const AdminConfig: React.FC = () => {
     }
   };
 
+  const handleBuyAddon = async (
+    addonType: 'domain' | 'whatsapp',
+    price: number,
+    description: string,
+    creditsToAdd = 0
+  ) => {
+    const customerId = contract?.asaas_customer_id ?? tenant?.asaas_customer_id ?? null;
+    const companyId = tenant?.id ?? user?.company_id ?? null;
+
+    if (!customerId) {
+      addToast('Erro: Cliente nao possui cadastro financeiro.', 'error');
+      return;
+    }
+
+    if (!companyId) {
+      addToast('Erro: Empresa nao encontrada para gerar a cobranca.', 'error');
+      return;
+    }
+
+    const confirmMsg = `Deseja confirmar a compra de "${description}" por R$ ${price.toFixed(2).replace('.', ',')}?\n\nUma nova cobranca sera gerada imediatamente.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsBuyingAddon(addonType);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-asaas-addon`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          companyId,
+          customerId,
+          addonType,
+          price,
+          cycle: addonType === 'domain' ? 'YEARLY' : 'MONTHLY',
+          description,
+          credits: creditsToAdd,
+        }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || 'Erro ao processar a compra do modulo.');
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      addToast('Modulo adicionado com sucesso! A fatura ja esta disponivel.', 'success');
+      await fetchContract();
+    } catch (err: any) {
+      console.error(err);
+      addToast(err?.message || 'Erro ao processar a compra do modulo.', 'error');
+    } finally {
+      setIsBuyingAddon(null);
+    }
+  };
+
   const handleUpgrade = async (planParam: any) => {
     const upgradeKey = typeof planParam === 'string'
       ? planParam
@@ -3005,6 +3094,19 @@ const AdminConfig: React.FC = () => {
     (p) => String(p.id || '').toLowerCase() === activePlanId || String(p.name || '').toLowerCase() === activePlanId,
   );
   const currentPlanDetails = currentPlanIndex !== -1 ? plans[currentPlanIndex] : null;
+  const getPlanLimitValue = (plan: any, limitKey: string, fallbackKey: string) => {
+    const limits = plan?.limits as Record<string, unknown> | undefined;
+    const rawLimit = limits?.[limitKey] ?? plan?.[fallbackKey];
+    const numericLimit = Number(rawLimit);
+
+    return Number.isFinite(numericLimit) ? numericLimit : 0;
+  };
+  const getPlanLimitLabel = (value: number, suffix: string, unavailableLabel: string) => {
+    if (value === -1) return `Até Ilimitado ${suffix}`;
+    if (value > 0) return `Até ${value} ${suffix}`;
+
+    return unavailableLabel;
+  };
   const getPlanHighlights = (plan: any) => [
     ...(billingCycle === 'yearly' && plan?.has_free_domain ? ['Domínio Grátis (1º ano)'] : []),
     ...(plan?.max_contracts > 0 ? [`Até ${plan.max_contracts} contratos ativos`] : []),
@@ -3012,6 +3114,17 @@ const AdminConfig: React.FC = () => {
   ];
   const currentPlanFeatureList = currentPlanDetails ? getPlanHighlights(currentPlanDetails) : [];
   const displayPlanName = currentPlanDetails?.name || (rawPlan ? rawPlan.toUpperCase() : 'PLANO PADRÃO');
+  const normalizePlanSlug = (value: string) =>
+    value
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  const activePlanSlug = normalizePlanSlug(`${activePlanId} ${currentPlanDetails?.id || ''} ${currentPlanDetails?.name || ''}`);
+  const isWhatsappAutomationBlocked = activePlanSlug.includes('starter') || activePlanSlug.includes('basic') || activePlanSlug.includes('basico');
+  const selectedWhatsappCreditPackDetails =
+    WHATSAPP_CREDIT_PACKS.find((pack) => pack.id === selectedWhatsappCreditPack) ?? WHATSAPP_CREDIT_PACKS[1];
+  const selectedWhatsappCreditPackPurchase =
+    WHATSAPP_CREDIT_PURCHASE_MAP[selectedWhatsappCreditPack] ?? WHATSAPP_CREDIT_PURCHASE_MAP['25'];
 
   const getUsagePercentage = (used: number, max: number) => {
     if (!max || max <= 0) return 0;
@@ -4420,15 +4533,48 @@ const AdminConfig: React.FC = () => {
                 </div>
               </div>
 
+              {/* Sub-Navbar de Assinaturas */}
+              <div className="mt-8 mb-6 flex items-center gap-6 border-b border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setActiveBillingTab('plans')}
+                  className={`pb-3 text-sm font-bold transition-all relative ${
+                    activeBillingTab === 'plans'
+                      ? 'text-brand-600 dark:text-brand-400'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Planos de Assinatura
+                  {activeBillingTab === 'plans' && (
+                    <span className="absolute bottom-0 left-0 w-full h-0.5 bg-brand-600 dark:bg-brand-400 rounded-t-md" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveBillingTab('addons')}
+                  className={`pb-3 text-sm font-bold transition-all relative ${
+                    activeBillingTab === 'addons'
+                      ? 'text-brand-600 dark:text-brand-400'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Módulos & Expansões
+                  {activeBillingTab === 'addons' && (
+                    <span className="absolute bottom-0 left-0 w-full h-0.5 bg-brand-600 dark:bg-brand-400 rounded-t-md" />
+                  )}
+                </button>
+              </div>
+
               {/* Grade de Upgrades */}
-              <div>
-                <h4 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Opções de Upgrade</h4>
-                {loadingPlans ? (
-                  <div className="flex items-center justify-center py-10">
-                    <Icons.RefreshCw size={22} className="animate-spin text-brand-500" />
-                  </div>
-                ) : (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {activeBillingTab === 'plans' && (
+                <div>
+                  <h4 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Opções de Upgrade</h4>
+                  {loadingPlans ? (
+                    <div className="flex items-center justify-center py-10">
+                      <Icons.RefreshCw size={22} className="animate-spin text-brand-500" />
+                    </div>
+                  ) : (
+                <div className="flex gap-6 overflow-x-auto pb-4 snap-x snap-mandatory custom-scrollbar">
                   {plans.map((plan) => {
                     // Só esconde se for o mesmo plano e o mesmo ciclo que ele já paga
                     const planId = String(plan.id || plan.name || '').toLowerCase();
@@ -4439,7 +4585,29 @@ const AdminConfig: React.FC = () => {
                       (isYearly ? true : !!contract?.has_fidelity === acceptFidelity);
                     const planIndex = plans.findIndex((p) => String(p.id || p.name || '').toLowerCase() === planId);
                     const isDowngrade = currentPlanIndex !== -1 && planIndex < currentPlanIndex;
-                    const planFeatureList = getPlanHighlights(plan);
+                    const planFeatureList = Array.isArray(plan?.features) ? plan.features : [];
+                    const planLimitItems = [
+                      {
+                        key: 'users',
+                        icon: Icons.Users,
+                        label: getPlanLimitLabel(getPlanLimitValue(plan, 'users', 'max_users'), 'corretores', 'Corretores não inclusos'),
+                      },
+                      {
+                        key: 'properties',
+                        icon: Icons.Home,
+                        label: getPlanLimitLabel(getPlanLimitValue(plan, 'properties', 'max_properties'), 'imóveis', 'Imóveis não inclusos'),
+                      },
+                      {
+                        key: 'contracts',
+                        icon: Icons.FileSignature,
+                        label: getPlanLimitLabel(getPlanLimitValue(plan, 'contracts', 'max_contracts'), 'contratos ativos', 'Contratos não inclusos'),
+                      },
+                      {
+                        key: 'ai',
+                        icon: Icons.Sparkles,
+                        label: plan?.ia_limit ? String(plan.ia_limit) : 'IA conforme franquia do plano',
+                      },
+                    ];
                     
                     // Verifica se é mudança de ciclo no mesmo plano
                     const isCycleUpgrade = planId === activePlanId && contract?.billing_cycle === 'monthly' && billingCycle === 'yearly';
@@ -4457,9 +4625,9 @@ const AdminConfig: React.FC = () => {
                     return (
                       <div
                         key={plan.id || plan.name}
-                        className={`relative flex flex-col h-full bg-white/60 dark:bg-[#0a0f1c]/60 backdrop-blur-2xl rounded-3xl p-8 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl border border-white/20 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] ${
+                        className={`relative snap-center flex h-full min-h-[600px] min-w-[300px] max-w-[320px] shrink-0 flex-col bg-white/70 dark:bg-[#0a0f1c]/70 backdrop-blur-2xl rounded-3xl p-7 transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl border border-white/30 dark:border-white/5 shadow-[0_8px_30px_rgba(15,23,42,0.08)] ${
                           isPopularPlan
-                            ? 'md:scale-105 border-brand-400/80 dark:border-brand-400/50 ring-2 ring-brand-500/20 shadow-brand-500/20'
+                            ? 'lg:scale-[1.02] border-brand-400/80 dark:border-brand-400/50 ring-2 ring-brand-500/20 shadow-brand-500/20'
                             : ''
                         } ${
                           isCurrentPlan
@@ -4506,23 +4674,36 @@ const AdminConfig: React.FC = () => {
                             )}
                           </div>
                         </div>
+                        <div className="mb-5 space-y-2 rounded-2xl border border-slate-200/70 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                          {planLimitItems.map((item) => {
+                            const PlanLimitIcon = item.icon;
+
+                            return (
+                              <div key={item.key} className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+                                <PlanLimitIcon size={16} className="mt-0.5 shrink-0 text-brand-500" />
+                                <span>{item.label}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+
                         <ul className="space-y-3 mb-8 flex-grow">
-                          {planFeatureList.slice(0, 4).map((feature: string, i: number) => (
+                          {planFeatureList.slice(0, 5).map((feature: string, i: number) => (
                             <li key={i} className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
                               <Icons.Check size={16} className="text-brand-500 shrink-0 mt-0.5" />
                               <span>{feature}</span>
                             </li>
                           ))}
-                          {planFeatureList.length > 4 && (
+                          {planFeatureList.length > 5 && (
                             <li className="text-xs text-brand-600 font-medium pl-6">
-                              + {planFeatureList.length - 4} outras vantagens
+                              + {planFeatureList.length - 5} outras vantagens
                             </li>
                           )}
                         </ul>
                         {isCurrentPlan ? (
                           <button
                             disabled
-                            className="w-full py-3 rounded-xl font-bold border-2 border-brand-500 text-brand-600 dark:text-brand-400 opacity-70 flex items-center justify-center gap-2"
+                            className="mt-auto w-full py-3 rounded-xl font-bold border-2 border-brand-500 text-brand-600 dark:text-brand-400 opacity-70 flex items-center justify-center gap-2"
                           >
                             <Icons.Check size={20} /> Plano Atual
                           </button>
@@ -4530,7 +4711,7 @@ const AdminConfig: React.FC = () => {
                           <button
                             onClick={() => handleUpgrade(plan)}
                             disabled={isLoading}
-                            className="w-full py-3 rounded-xl font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
+                            className="mt-auto w-full py-3 rounded-xl font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
                           >
                              Ativar Fidelidade
                           </button>
@@ -4538,10 +4719,10 @@ const AdminConfig: React.FC = () => {
                           <button
                             onClick={() => handleUpgrade(plan)}
                             disabled={isLoading}
-                            className="w-full py-3 rounded-xl font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
+                            className="mt-auto w-full py-3 rounded-xl font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
                           >
                             {isLoading ? <Icons.Loader2 className="animate-spin" /> : null}
-                            Atualizar Plano
+                            Fazer Upgrade
                           </button>
                         )}
                       </div>
@@ -4550,6 +4731,203 @@ const AdminConfig: React.FC = () => {
                 </div>
                 )}
               </div>
+              )}
+
+              {activeBillingTab === 'addons' && (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 animate-fade-in">
+                  {/* Card do Domínio */}
+                  <div className="relative flex min-h-[500px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-7 shadow-xl shadow-slate-200/70 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/20">
+                    <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand-500 via-brand-400 to-slate-300 dark:to-slate-700" />
+                    <div className="flex items-start justify-between gap-5">
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-[0.24em] text-brand-600 dark:text-brand-400">
+                          Presença premium
+                        </span>
+                        <h3 className="mt-2 text-xl font-black text-slate-900 dark:text-white">
+                          Domínio Personalizado .com.br
+                        </h3>
+                        <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                          Tenha o seu próprio endereço na web e aumente a confiança nos anúncios, contratos e campanhas.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-brand-100 bg-brand-50 p-3 text-brand-600 dark:border-brand-500/20 dark:bg-brand-900/30 dark:text-brand-400">
+                        <Icons.Globe size={26} />
+                      </div>
+                    </div>
+
+                    <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Registro anual</p>
+                      <div className="mt-2 text-3xl font-black text-slate-900 dark:text-white">
+                        R$ 89,90 <span className="text-sm font-medium text-slate-500">/ ano</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 space-y-3">
+                      {[
+                        { id: 'now' as const, label: 'Pagar Agora', helper: 'PIX ou cartão no checkout' },
+                        { id: 'next_invoice' as const, label: 'Próxima Fatura', helper: 'Inclui na renovação do contrato' },
+                      ].map((option) => (
+                        <label
+                          key={option.id}
+                          className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition-all ${
+                            domainAddonPayment === option.id
+                              ? 'border-brand-400 bg-brand-50 text-brand-700 shadow-sm dark:border-brand-500/50 dark:bg-brand-900/20 dark:text-brand-300'
+                              : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="domain_payment"
+                            className="sr-only"
+                            checked={domainAddonPayment === option.id}
+                            onChange={() => setDomainAddonPayment(option.id)}
+                          />
+                          <span
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                              domainAddonPayment === option.id ? 'border-brand-600 bg-brand-600' : 'border-slate-300 dark:border-slate-600'
+                            }`}
+                          >
+                            {domainAddonPayment === option.id && <span className="h-2 w-2 rounded-full bg-white" />}
+                          </span>
+                          <span>
+                            <span className="block text-sm font-black">{option.label}</span>
+                            <span className="block text-xs text-slate-500 dark:text-slate-400">{option.helper}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleBuyAddon('domain', 89.9, 'Registro de Dominio Anual')}
+                      disabled={
+                        isBuyingAddon === 'domain' ||
+                        contract?.domain_status === 'pending' ||
+                        contract?.domain_status === 'active'
+                      }
+                      className="mt-auto w-full rounded-2xl bg-slate-950 px-4 py-4 text-sm font-black text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+                    >
+                      {isBuyingAddon === 'domain' ? <Loader2 size={16} className="mx-auto animate-spin" /> : 'Adicionar ao Contrato'}
+                    </button>
+                  </div>
+
+                  {/* Card de Créditos WhatsApp */}
+                  <div className="relative flex min-h-[500px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-7 shadow-xl shadow-slate-200/70 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/20">
+                    <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 via-brand-400 to-slate-300 dark:to-slate-700" />
+                    <div className="flex items-start justify-between gap-5">
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-400">
+                          Cobrança automatizada
+                        </span>
+                        <h3 className="mt-2 text-xl font-black text-slate-900 dark:text-white">
+                          Automação Financeira WhatsApp (Oficial)
+                        </h3>
+                        <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                          Adicione créditos para o sistema enviar cobranças e confirmações de pagamento via API Oficial da Meta.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-emerald-600 dark:border-emerald-500/20 dark:bg-emerald-900/30 dark:text-emerald-400">
+                        <Icons.MessageCircle size={26} />
+                      </div>
+                    </div>
+
+                    <div className="mt-7 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {WHATSAPP_CREDIT_PACKS.map((pack) => {
+                        const isSelectedPack = selectedWhatsappCreditPack === pack.id;
+
+                        return (
+                          <button
+                            key={pack.id}
+                            type="button"
+                            onClick={() => setSelectedWhatsappCreditPack(pack.id)}
+                            aria-pressed={isSelectedPack}
+                            className={`relative rounded-2xl border p-4 text-left transition-all ${
+                              isSelectedPack
+                                ? 'border-emerald-400 bg-emerald-50 shadow-sm dark:border-emerald-500/50 dark:bg-emerald-900/20'
+                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            {pack.highlight && (
+                              <span className="mb-2 inline-flex rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white dark:bg-white dark:text-slate-900">
+                                {pack.highlight}
+                              </span>
+                            )}
+                            <span className="block text-sm font-black text-slate-900 dark:text-white">{pack.label}</span>
+                            <span className="mt-1 block text-xs font-bold text-emerald-600 dark:text-emerald-400">{pack.price}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Pacote selecionado</span>
+                        <span className="text-sm font-black text-slate-900 dark:text-white">{selectedWhatsappCreditPackDetails.price}</span>
+                      </div>
+                      <p className="mt-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        {selectedWhatsappCreditPackDetails.label}
+                      </p>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {[
+                        { id: 'now' as const, label: 'Pagar Agora' },
+                        { id: 'next_invoice' as const, label: 'Próxima Fatura' },
+                      ].map((option) => (
+                        <label
+                          key={option.id}
+                          className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition-all ${
+                            whatsappAddonPayment === option.id
+                              ? 'border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-500/50 dark:bg-emerald-900/20 dark:text-emerald-300'
+                              : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="whatsapp_payment"
+                            className="sr-only"
+                            checked={whatsappAddonPayment === option.id}
+                            onChange={() => setWhatsappAddonPayment(option.id)}
+                          />
+                          <span
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                              whatsappAddonPayment === option.id ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300 dark:border-slate-600'
+                            }`}
+                          >
+                            {whatsappAddonPayment === option.id && <span className="h-2 w-2 rounded-full bg-white" />}
+                          </span>
+                          <span className="text-sm font-black">{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    {isWhatsappAutomationBlocked && (
+                      <div className="mt-6 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-500/30 dark:bg-amber-900/20 dark:text-amber-200">
+                        <AlertTriangle size={20} className="mt-0.5 shrink-0" />
+                        <p className="text-sm font-bold">
+                          Estes pacotes de automação funcionam apenas nos planos Profissional ou superior.
+                        </p>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleBuyAddon(
+                          'whatsapp',
+                          selectedWhatsappCreditPackPurchase.priceValue,
+                          selectedWhatsappCreditPackPurchase.description,
+                          selectedWhatsappCreditPackPurchase.credits
+                        )
+                      }
+                      disabled={isWhatsappAutomationBlocked || isBuyingAddon === 'whatsapp'}
+                      className="mt-auto w-full rounded-2xl bg-emerald-600 px-4 py-4 text-sm font-black text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+                    >
+                      {isBuyingAddon === 'whatsapp' ? <Loader2 size={16} className="mx-auto animate-spin" /> : 'Adicionar Recorrência'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="bg-white dark:bg-dark-card rounded-2xl border border-gray-200 dark:border-dark-border p-6">
