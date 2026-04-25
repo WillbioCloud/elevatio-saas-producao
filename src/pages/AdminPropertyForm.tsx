@@ -1236,7 +1236,7 @@ const AdminPropertyForm: React.FC = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-sm">
+        <div className="bg-white p-4 md:p-6 rounded-3xl border border-slate-100 shadow-sm">
           <div className="flex items-center gap-2 mb-6 text-slate-800">
             <CurrentStepIcon size={20} className={isStrategyStep ? 'text-amber-600' : 'text-brand-600'} />
             <h2 className="font-bold text-xl">{STEP_META[step].label}</h2>
@@ -1472,7 +1472,7 @@ const AdminPropertyForm: React.FC = () => {
 
           {step === 'details' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div>
                   <label htmlFor="bedrooms" className="block text-sm font-bold text-slate-600 mb-2">Quartos</label>
                   <input id="bedrooms" name="bedrooms" type="number" min={0} value={formData.bedrooms} onChange={(e) => handleInput('bedrooms', e.target.value === '' ? '' : Number(e.target.value))} placeholder="Ex: 0" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none" />
@@ -1790,7 +1790,7 @@ const AdminPropertyForm: React.FC = () => {
                   <label htmlFor="neighborhood" className="block text-sm font-bold text-slate-600 mb-2">Bairro</label>
                   <input id="neighborhood" name="neighborhood" value={formData.neighborhood} onChange={(e) => handleInput('neighborhood', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label htmlFor="city" className="block text-sm font-bold text-slate-600 mb-2">Cidade</label>
                     <input id="city" name="city" value={formData.city} onChange={(e) => handleInput('city', e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none" />

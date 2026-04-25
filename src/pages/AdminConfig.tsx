@@ -3333,7 +3333,7 @@ const AdminConfig: React.FC = () => {
       </div>
 
       {/* Abas Principais de Configuração (Design Premium) */}
-      <div className="flex overflow-x-auto ev-main-scroll gap-2 p-1.5 bg-slate-200/50 dark:bg-[#0a0f1c]/50 backdrop-blur-md rounded-2xl w-fit border border-slate-300/50 dark:border-white/5 shadow-inner">
+      <div className="flex overflow-x-auto custom-scrollbar ev-main-scroll snap-x whitespace-nowrap gap-2 p-1.5 pb-2 bg-slate-200/50 dark:bg-[#0a0f1c]/50 backdrop-blur-md rounded-2xl w-fit max-w-full border border-slate-300/50 dark:border-white/5 shadow-inner">
         {[
           { id: 'profile', label: 'Perfil', icon: Icons.User },
           { id: 'company', label: 'Minha Empresa', icon: Icons.Building2, ownerOnly: true },
@@ -3354,7 +3354,7 @@ const AdminConfig: React.FC = () => {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as ConfigTab)}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all shrink-0 ${
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all shrink-0 snap-start ${
               activeTab === tab.id 
                 ? 'bg-white dark:bg-brand-600 text-brand-600 dark:text-white shadow-md' 
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-white/5'
@@ -4331,7 +4331,7 @@ const AdminConfig: React.FC = () => {
             <>
               {/* Card do Plano Atual */}
               <div className="bg-gradient-to-r from-brand-600 to-brand-800 rounded-3xl p-[1px] shadow-xl shadow-brand-900/10">
-                <div className="bg-white/10 backdrop-blur-md rounded-[22px] p-6 md:p-8">
+                <div className="bg-white/10 backdrop-blur-md rounded-[22px] p-4 md:p-6">
                   <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
                     <div className="w-full text-white">
                     <div className="flex items-center gap-3 mb-2">
@@ -4544,7 +4544,7 @@ const AdminConfig: React.FC = () => {
 
                       <div>
                         <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/60">Ferramentas do CRM</p>
-                        <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                           {crmModules.map((module) => (
                             <div
                               key={module.key}
@@ -4981,7 +4981,7 @@ const AdminConfig: React.FC = () => {
 
       {avatarImageToCrop && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+          <div className="w-[95vw] sm:w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-slate-800">
               <div>
                 <h3 className="text-lg font-black text-slate-900 dark:text-white">Recortar foto de perfil</h3>
@@ -5065,7 +5065,7 @@ const AdminConfig: React.FC = () => {
         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in overflow-y-auto">
 
           {/* Main Wrapper (Gradient Background) */}
-          <div className="w-full max-w-[409px] bg-gradient-to-b from-[#DFE3FF] to-[#E7EEF9] dark:from-slate-800 dark:to-slate-900 rounded-[40px] shadow-2xl relative p-4 flex flex-col gap-4 my-8">
+          <div className="w-[95vw] sm:w-full max-w-[409px] max-h-[90vh] overflow-y-auto bg-gradient-to-b from-[#DFE3FF] to-[#E7EEF9] dark:from-slate-800 dark:to-slate-900 rounded-[40px] shadow-2xl relative p-4 flex flex-col gap-4 my-8">
 
             <button
               onClick={() => setSelectedTeamMember(null)}
@@ -5140,7 +5140,7 @@ const AdminConfig: React.FC = () => {
             <div className="bg-white dark:bg-slate-800 rounded-[30px] p-6 shadow-sm">
               <p className="text-[11px] uppercase tracking-widest font-bold text-slate-400 mb-4">Métricas de CRM (Este Mês)</p>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-3 text-center border border-blue-100 dark:border-blue-800/50">
                   <div className="flex justify-center mb-1"><Icons.MessageCircle size={16} className="text-blue-500" /></div>
                   <p className="text-xl font-black text-blue-700 dark:text-blue-400">12</p>
@@ -5186,7 +5186,7 @@ const AdminConfig: React.FC = () => {
       {/* Modal de Cancelamento */}
       {isCancelModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-dark-card w-full max-w-md rounded-2xl p-6 shadow-2xl">
+          <div className="bg-white dark:bg-dark-card w-[95vw] sm:w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6 shadow-2xl">
             <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Cancelar Assinatura</h3>
             
             {contract?.has_fidelity && contract?.fidelity_end_date && new Date() < new Date(contract.fidelity_end_date) && (
@@ -6053,7 +6053,7 @@ const AdminConfig: React.FC = () => {
                     <p className="text-xs text-slate-500 mb-4">
                       Selecione um vídeo cinematográfico para o topo do site. Ao selecionar, o vídeo sobrepõe a imagem estática. Passe o mouse para pré-visualizar.
                     </p>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {[
                         { id: '', label: 'Sem Vídeo (Usar Imagem)' },
                         { id: 'https://res.cloudinary.com/dxplpg36m/video/upload/v1774895674/V%C3%ADdeo_Imobili%C3%A1rio_Cinematogr%C3%A1fico_de_Im%C3%B3vel_Planejado_xjaxsv.mp4', label: 'Imóvel Planejado' },
@@ -6161,7 +6161,7 @@ const AdminConfig: React.FC = () => {
           )}
 
           {siteSubTab === 'social' && (
-            <div className="bg-white dark:bg-dark-card rounded-3xl border border-slate-200 dark:border-dark-border p-6 md:p-8 shadow-sm animate-in fade-in slide-in-from-bottom-2">
+            <div className="bg-white dark:bg-dark-card rounded-3xl border border-slate-200 dark:border-dark-border p-4 md:p-6 shadow-sm animate-in fade-in slide-in-from-bottom-2">
               <h3 className="text-xl font-serif font-bold text-slate-800 dark:text-white mb-2">Redes Sociais</h3>
               <p className="text-sm text-slate-500 mb-6">Cole os links completos para exibir os ícones no rodapé do site.</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -6618,7 +6618,7 @@ const AdminConfig: React.FC = () => {
       {isSignModalOpen && (
         <>
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-            <div className="relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_40px_120px_-44px_rgba(15,23,42,0.42)] backdrop-blur">
+            <div className="relative flex max-h-[90vh] w-[95vw] sm:w-full max-w-6xl flex-col overflow-y-auto overflow-x-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_40px_120px_-44px_rgba(15,23,42,0.42)] backdrop-blur">
               <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 px-5 py-5 sm:px-8">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.26em] text-emerald-500">Assinatura Oficial</p>
@@ -6848,7 +6848,7 @@ const AdminConfig: React.FC = () => {
 
           {showSignatureQrCode ? (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/65 p-4 backdrop-blur-sm">
-              <div className="relative w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-2xl animate-in zoom-in-95">
+              <div className="relative w-[95vw] sm:w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-8 text-center shadow-2xl animate-in zoom-in-95">
                 <button
                   type="button"
                   onClick={() => setShowSignatureQrCode(false)}
@@ -6874,7 +6874,7 @@ const AdminConfig: React.FC = () => {
 
           {isSignatureCameraOpen ? (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/90 p-4 backdrop-blur-sm">
-              <div className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-black shadow-2xl animate-in zoom-in-95">
+              <div className="relative w-[95vw] sm:w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-black shadow-2xl animate-in zoom-in-95">
                 <div className="relative aspect-[3/4] bg-slate-800 sm:aspect-video">
                   <video ref={signatureVideoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
                   <button
@@ -6967,7 +6967,7 @@ const AdminConfig: React.FC = () => {
               : `+ ${formatCurrency(primaryPrice)} /ano`;
           return (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 backdrop-blur-xl p-4">
-              <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in">
+              <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-2xl w-[95vw] sm:w-full max-w-2xl overflow-y-auto overflow-x-hidden flex flex-col max-h-[90vh] animate-fade-in">
                 <div className="p-6 border-b border-slate-200/60 dark:border-white/10 bg-white/60 dark:bg-slate-900/60 flex justify-between items-center">
                   <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
                     <Icons.ShoppingCart className="text-brand-500" /> Resumo do Pedido
@@ -7281,7 +7281,7 @@ const AdminConfig: React.FC = () => {
       {/* Modal Instrucional de Ativação do Asaas */}
       {showAsaasModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-4 animate-fade-in backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl w-[95vw] sm:w-full max-w-2xl overflow-y-auto overflow-x-hidden shadow-2xl flex flex-col max-h-[90vh]">
             
             <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
               <h3 className="text-xl font-black text-slate-900 dark:text-white">Ativar Gateway Avançado (Asaas)</h3>
@@ -7384,7 +7384,7 @@ const AdminConfig: React.FC = () => {
 
       {isDetailsModalOpen && currentPlanDetails && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-dark-card w-full max-w-md rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
+          <div className="bg-white dark:bg-dark-card w-[95vw] sm:w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10">
             <div className="bg-brand-900 p-6 text-white relative">
               <button
                 onClick={() => setIsDetailsModalOpen(false)}
@@ -7429,7 +7429,7 @@ const AdminConfig: React.FC = () => {
 
       {cropModalOpen && cropImageSrc && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
+          <div className="flex max-h-[90vh] w-[95vw] sm:w-full max-w-3xl flex-col overflow-y-auto rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
             <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-slate-800">
               <h3 className="font-bold text-slate-900 dark:text-white">
                 Ajustar Imagem ({cropType === 'hero' ? 'Capa' : cropType === 'favicon' ? 'Favicon' : 'Logo'})

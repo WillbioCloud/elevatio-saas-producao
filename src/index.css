@@ -21,7 +21,7 @@ html, body {
 }
 
 body {
-@apply bg-background text-foreground antialiased font-sans;
+@apply bg-background text-foreground antialiased font-sans text-[14px];
 }
 
 .font-signature {

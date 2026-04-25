@@ -684,8 +684,8 @@ export default function AdminTasks() {
         </div>
       )}
 
-      <div className="flex flex-1 gap-6 overflow-hidden">
-        <div className="flex-1 overflow-x-auto custom-scrollbar pr-2 flex gap-4 h-full">
+      <div className="flex flex-1 gap-6 overflow-hidden min-w-0">
+        <div className="flex-1 min-w-0 flex gap-4 md:gap-6 overflow-x-auto pb-6 pt-2 custom-scrollbar snap-x snap-mandatory md:snap-none min-h-[60vh] md:h-[calc(100vh-220px)] items-start">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -756,7 +756,7 @@ export default function AdminTasks() {
           </DndContext>
         </div>
 
-        <div className="w-[280px] shrink-0 border-l border-slate-100 pl-6 flex flex-col overflow-y-auto custom-scrollbar pb-6">
+        <div className="hidden lg:flex w-[280px] shrink-0 border-l border-slate-100 pl-6 flex-col overflow-y-auto custom-scrollbar pb-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-slate-800">
               {currentMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
@@ -1124,10 +1124,10 @@ function KanbanColumn({
 
   return (
     <div
-      className={`flex flex-col min-w-[270px] max-w-[270px] shrink-0 rounded-xl p-2 h-full transition-all duration-200 ${
+      className={`flex-none w-[85vw] sm:w-[320px] shrink-0 snap-center md:snap-align-none max-h-full flex flex-col bg-slate-50 dark:bg-slate-900/50 rounded-2xl md:rounded-3xl border border-slate-200 dark:border-slate-800 transition-all duration-200 ${
         isDropTarget
-          ? 'bg-brand-50/80 ring-1 ring-brand-200 shadow-inner'
-          : 'bg-slate-50/50'
+          ? 'ring-2 ring-brand-300 shadow-inner'
+          : ''
       }`}
     >
       <div className="flex items-center gap-2 mb-3 px-2 py-1">
@@ -1161,7 +1161,7 @@ function KanbanColumn({
                 <p className="mb-1 text-[9px] font-black uppercase tracking-[0.18em] text-brand-500">
                   Soltar em {title}
                 </p>
-                <h4 className="text-sm font-bold leading-snug text-slate-700">
+                <h4 className="text-xs md:text-sm font-bold leading-snug text-slate-700">
                   {cleanTaskTitle(dropPreviewTask.title)}
                 </h4>
               </div>
@@ -1275,7 +1275,7 @@ function TaskCard({
       ref={cardRef}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
-      className={`bg-white border rounded-xl p-3 flex items-start gap-3 transition-all duration-200 overflow-hidden ${
+      className={`bg-white border rounded-xl p-3 md:p-4 flex items-start gap-3 transition-all duration-200 overflow-hidden ${
         isOverlay
           ? 'shadow-2xl scale-105 rotate-2 cursor-grabbing border-slate-200'
           : isSpotlighted
@@ -1306,7 +1306,7 @@ function TaskCard({
       )}
       <div className="flex-1 min-w-0 pointer-events-none select-none">
         <h4
-          className={`text-sm font-bold leading-snug transition-all ${
+          className={`text-xs md:text-sm font-bold leading-snug transition-all ${
             isCompleted ? 'line-through text-slate-400' : 'text-slate-800'
           } ${isExpanded ? 'mb-2' : ''}`}
         >

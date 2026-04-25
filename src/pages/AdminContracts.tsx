@@ -703,7 +703,7 @@ const AdminContracts: React.FC = () => {
       </div>
 
       {/* FILTROS TIPO PILL */}
-      <div className="flex flex-wrap gap-2 mb-6 bg-slate-100/50 dark:bg-slate-800/30 p-1.5 rounded-2xl w-fit">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4 mb-6 bg-slate-100/50 dark:bg-slate-800/30 p-1.5 rounded-2xl w-full sm:w-fit">
         {[
           { id: 'all', label: 'Todos os Contratos', icon: Icons.Layout },
           { id: 'sale', label: 'Vendas', icon: Icons.Home },
@@ -716,7 +716,7 @@ const AdminContracts: React.FC = () => {
             <button
               key={filter.id}
               onClick={() => setActiveFilter(filter.id as 'all' | 'sale' | 'rent' | 'admin')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeFilter === filter.id ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 border-transparent'}`}
+              className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all w-full sm:w-auto ${activeFilter === filter.id ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 border-transparent'}`}
             >
               <FilterIcon size={16} /> {filter.label}
             </button>
@@ -726,8 +726,8 @@ const AdminContracts: React.FC = () => {
 
       {/* TABELA UNIFICADA GLASSMORPHISM */}
       <div className="bg-white/60 dark:bg-[#0a0f1c]/60 backdrop-blur-2xl rounded-3xl border border-white/20 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left whitespace-nowrap">
+        <div className="overflow-x-auto w-full custom-scrollbar pb-2">
+          <table className="w-full min-w-[800px] md:min-w-full text-left whitespace-nowrap">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-white/[0.02] border-b border-slate-100/50 dark:border-white/5 text-[10px] uppercase tracking-widest text-slate-400 font-bold">
                 <th className="p-5">Status / Tipo</th>

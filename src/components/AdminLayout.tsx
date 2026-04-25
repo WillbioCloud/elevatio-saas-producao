@@ -97,18 +97,6 @@ const getOverdueDays = (dueDate: string | null | undefined) => {
 const getPaymentDueTimestamp = (payment: AsaasPaymentLinkCandidate) =>
   parseLocalDate(payment.dueDate)?.getTime() ?? Number.MAX_SAFE_INTEGER;
 
-const getTrialDaysLeft = (trialEndsAt: string | null | undefined) => {
-  if (!trialEndsAt) return null;
-
-  const trialEnd = new Date(trialEndsAt);
-  if (Number.isNaN(trialEnd.getTime())) return null;
-
-  const diff = trialEnd.getTime() - Date.now();
-  if (diff < 0) return null;
-
-  return Math.max(0, Math.ceil(diff / DAY_IN_MS));
-};
-
 const isTrialLikeStatus = (status: string) =>
   !status || status === 'trial' || status === 'trialing' || status === 'pending';
 
@@ -142,7 +130,7 @@ const resolveBillingWarningDueDate = (
 
 const AdminLayout: React.FC = () => {
   const { user, signOut, refreshUser } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -163,6 +151,7 @@ const AdminLayout: React.FC = () => {
     trialEndsAt: user?.company?.trial_ends_at ?? null,
     planStatus: user?.company?.plan_status ?? null,
   });
+  const [trialTimeLeft, setTrialTimeLeft] = useState<{ days: number; hours: number; minutes: number } | null>(null);
   const [dismissedUntil, setDismissedUntil] = useState<number>(() => {
     const saved = localStorage.getItem(`hideBillingWarning_${user?.company_id}`);
     const parsed = saved ? parseInt(saved, 10) : 0;
@@ -370,6 +359,30 @@ const AdminLayout: React.FC = () => {
       isMounted = false;
     };
   }, [role, user?.company_id, user?.company?.plan_status, user?.company?.trial_ends_at]);
+
+  useEffect(() => {
+    if (!trialInfo.trialEndsAt) {
+      setTrialTimeLeft(null);
+      return;
+    }
+    const trialEnd = new Date(trialInfo.trialEndsAt).getTime();
+
+    const updateTimer = () => {
+      const diff = trialEnd - Date.now();
+      if (diff <= 0) {
+        setTrialTimeLeft(null);
+        return;
+      }
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / 1000 / 60) % 60);
+      setTrialTimeLeft({ days, hours, minutes });
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 60000);
+    return () => clearInterval(interval);
+  }, [trialInfo.trialEndsAt]);
 
   useEffect(() => {
     if (!user?.company_id) {
@@ -722,14 +735,12 @@ const AdminLayout: React.FC = () => {
   const billingGraceBlockText = billingGraceWarning
     ? `${billingGraceWarning.daysUntilBlock} ${billingGraceWarning.daysUntilBlock === 1 ? 'dia' : 'dias'}`
     : '';
-  const trialDaysLeft = getTrialDaysLeft(trialInfo.trialEndsAt);
   const normalizedTrialStatus = normalizeBillingStatus(trialInfo.planStatus);
-  const shouldShowTrialBadge = trialDaysLeft !== null && isTrialLikeStatus(normalizedTrialStatus);
-  const trialRemainingPercent = trialDaysLeft === null ? 0 : Math.min(100, Math.round((trialDaysLeft / 7) * 100));
-  const trialDaysLabel =
-    trialDaysLeft === 0
-      ? 'Termina hoje'
-      : `${trialDaysLeft} ${trialDaysLeft === 1 ? 'dia restante' : 'dias restantes'}`;
+  const shouldShowTrialBadge = trialTimeLeft !== null && isTrialLikeStatus(normalizedTrialStatus);
+  const totalTrialMinutes = 7 * 24 * 60;
+  const remainingTrialMinutes = trialTimeLeft ? (trialTimeLeft.days * 24 * 60) + (trialTimeLeft.hours * 60) + trialTimeLeft.minutes : 0;
+  const trialRemainingPercent = Math.min(100, Math.max(0, (remainingTrialMinutes / totalTrialMinutes) * 100));
+  const trialDaysLabel = trialTimeLeft ? `${trialTimeLeft.days}d ${trialTimeLeft.hours}h ${trialTimeLeft.minutes}m` : 'Expirado';
 
   return (
     <BillingGuard>
@@ -744,7 +755,7 @@ const AdminLayout: React.FC = () => {
         onMouseEnter={() => setIsSidebarCollapsed(false)}
         onMouseLeave={() => setIsSidebarCollapsed(true)}
         className={`hidden md:flex flex-col relative z-30 transition-all duration-300 shrink-0 bg-gradient-to-b from-[#0c1445] via-[#0f2460] to-[#0c1f55] border-none ${
-          isSidebarCollapsed ? 'w-[76px]' : 'w-[260px]'
+          isSidebarCollapsed ? 'w-[76px]' : 'w-[240px]'
         }`}
       >
         <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-sky-500/10 blur-3xl pointer-events-none" />
@@ -1037,29 +1048,29 @@ const AdminLayout: React.FC = () => {
               type="button"
               onClick={() => navigate('/admin/config?tab=subscription')}
               title={isSidebarCollapsed ? `Trial: ${trialDaysLabel}` : undefined}
-              className={`mb-3 w-full overflow-hidden rounded-xl border border-amber-400/20 bg-amber-400/10 text-left text-amber-100 transition-all hover:border-amber-300/40 hover:bg-amber-400/15 ${
+              className={`mb-3 w-full overflow-hidden rounded-xl border border-orange-500/30 bg-orange-500/20 text-left transition-all hover:border-orange-500/50 hover:bg-orange-500/30 ${
                 isSidebarCollapsed ? 'flex h-11 items-center justify-center px-0' : 'p-3'
               }`}
             >
               {isSidebarCollapsed ? (
                 <div className="flex flex-col items-center justify-center leading-none">
-                  <Icons.Clock size={16} className="text-amber-300" />
-                  <span className="mt-0.5 text-[10px] font-black">{trialDaysLeft ?? 0}d</span>
+                  <Icons.Clock size={16} className="text-orange-400" />
+                  <span className="mt-0.5 text-[10px] font-black text-orange-300">{trialTimeLeft?.days ?? 0}d</span>
                 </div>
               ) : (
                 <div className="animate-in fade-in duration-300">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-300/15 text-amber-300">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500/20 text-orange-400">
                       <Icons.Clock size={16} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">Trial ativo</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-orange-300">Trial Ativo</p>
                       <p className="truncate text-xs font-bold text-white">{trialDaysLabel}</p>
                     </div>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-black/20">
                     <div
-                      className="h-full rounded-full bg-amber-300 transition-all duration-500"
+                      className="h-full rounded-full bg-orange-500 transition-all duration-1000"
                       style={{ width: `${trialRemainingPercent}%` }}
                     />
                   </div>
@@ -1093,20 +1104,6 @@ const AdminLayout: React.FC = () => {
           </div>
 
           <button
-            type="button"
-            onClick={() => setIsChangelogModalOpen(true)}
-            title={isSidebarCollapsed ? 'Novidades v1.0.0' : undefined}
-            className={`mb-3 flex w-full items-center justify-center rounded-lg border border-slate-700 bg-slate-900/70 py-2 text-xs font-black text-slate-400 transition-all hover:border-sky-400/30 hover:bg-sky-400/10 hover:text-sky-200 ${
-              isSidebarCollapsed ? 'flex-col gap-0.5 px-0' : 'gap-2 px-3'
-            }`}
-          >
-            <Icons.Bug size={14} className="shrink-0" />
-            <span className={isSidebarCollapsed ? 'text-[10px] leading-none' : 'whitespace-nowrap'}>
-              v1.0.0
-            </span>
-          </button>
-
-          <button
             onClick={handleLogout}
             title={isSidebarCollapsed ? 'Sair do Sistema' : undefined}
             className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-slate-800 hover:bg-red-500/10 hover:text-red-400 text-slate-400 text-xs font-bold transition-all border border-slate-700 hover:border-red-500/20 ${
@@ -1120,7 +1117,7 @@ const AdminLayout: React.FC = () => {
       </aside>
 
       <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-slate-950 md:rounded-l-[2rem] shadow-[-10px_0_40px_rgba(0,0,0,0.4)] relative z-20 transition-colors duration-300">
-        <header className="h-16 px-4 md:px-8 flex items-center justify-between border-b border-slate-200 dark:border-slate-800/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md shrink-0 relative z-30">
+        <header className="h-14 px-4 md:px-6 flex items-center justify-between border-b border-slate-200 dark:border-slate-800/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md shrink-0 relative z-30">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
@@ -1200,26 +1197,14 @@ const AdminLayout: React.FC = () => {
             <CrmNotificationsMenu />
 
             <button
-              onClick={toggleTheme}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
-              aria-label="Alternar tema"
-              title= "Alternar tema claro/escuro"
+              type="button"
+              onClick={() => setIsChangelogModalOpen(true)}
+              className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-400 hover:text-brand-600 hover:border-brand-200 hover:bg-brand-50 transition-all shadow-sm"
+              title="Novidades do Sistema"
             >
-              {theme === 'dark' ? <Icons.Sun size={18} /> : <Icons.Moon size={18} />}
+              <Icons.Bug size={14} />
+              <span>v1.0.0</span>
             </button>
-
-            <div className="hidden md:flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-              <div className="h-9 w-9 overflow-hidden rounded-full border-2 border-slate-200 bg-slate-100">
-                {user?.avatar_url ? (
-                  <img src={user.avatar_url} alt={user?.name || 'Perfil'} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-500">
-                    {userInitial}
-                  </div>
-                )}
-              </div>
-              <span className="text-xs font-semibold text-slate-600 max-w-[120px] truncate">{user?.name || 'Perfil'}</span>
-            </div>
           </div>
         </header>
 
@@ -1257,182 +1242,88 @@ const AdminLayout: React.FC = () => {
           </div>
         )}
 
+        {/* Menu Mobile (Drawer) */}
         {isMobileMenuOpen && (
-          <div className="md:hidden absolute top-[70px] left-0 right-0 bg-white border-b border-slate-100 shadow-xl z-50 p-4 max-h-[calc(100vh-70px)] overflow-y-auto custom-scrollbar flex flex-col gap-2 animate-in fade-in slide-in-from-top-4 duration-200">
-            {/* 1. Itens Padrões */}
-            {visibleMenuItems.map((item) => (
-              <React.Fragment key={item.path}>
-                <a
-                  href={item.path}
-                  onClick={(e) => handleSmartNavigation(e, item.path)}
-                  className={`
-                    ${getMobileItemOrder(item.path)} flex items-center gap-3 px-4 py-3 rounded-lg
-                    ${isSmartNavigationActive(item.path) ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
-                  `}
+          <div className="md:hidden fixed inset-0 z-[100] flex">
+            {/* Overlay escuro */}
+            <div 
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in" 
+              onClick={() => setIsMobileMenuOpen(false)} 
+            />
+            
+            {/* Gaveta lateral que desliza da esquerda */}
+            <div className="relative w-[280px] max-w-[80vw] h-full bg-white dark:bg-slate-950 shadow-2xl flex flex-col animate-in slide-in-from-left duration-300">
+              <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <img src="/logo/logo.png" alt="Elevatio Vendas" className="h-6 w-auto object-contain" />
+                  <span className="font-serif font-bold text-slate-800 dark:text-white">Elevatio</span>
+                </div>
+                <button 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg dark:hover:bg-slate-800"
                 >
-                  <item.icon size={20} />
-                  {item.label}
-                </a>
-                {item.path === '/admin/imoveis' && (
-                  <a
-                    href="/admin/chaves"
-                    onClick={(e) => handleSmartNavigation(e, '/admin/chaves')}
-                    className={`
-                      order-8 flex items-center gap-3 px-4 py-3 rounded-lg
-                      ${isSmartNavigationActive('/admin/chaves') ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
-                    `}
-                  >
-                    <Icons.Key size={20} />
-                    Chaves
+                  <Icons.X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-1 custom-scrollbar">
+                {visibleMenuItems.map((item) => (
+                  <React.Fragment key={item.path}>
+                    <a
+                      href={item.path}
+                      onClick={(e) => handleSmartNavigation(e, item.path)}
+                      className={`
+                        ${getMobileItemOrder(item.path)} flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm
+                        ${isSmartNavigationActive(item.path) ? 'bg-brand-50 text-brand-700 font-bold dark:bg-brand-500/20 dark:text-brand-300' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-900'}
+                      `}
+                    >
+                      <item.icon size={18} />
+                      {item.label}
+                    </a>
+                  </React.Fragment>
+                ))}
+
+                {/* Submenus e outros bot?es da gaveta */}
+                {isOwner && (
+                  <a href="/admin/financeiro" onClick={(e) => handleSmartNavigation(e, '/admin/financeiro')} className="order-4 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
+                    <Icons.Wallet size={18} /> Financeiro
                   </a>
                 )}
-              </React.Fragment>
-            ))}
-
-            {/* 2. Menu Contratos (Mobile) */}
-            <div className="space-y-1 order-3">
-              <div className={`flex items-center justify-between rounded-lg ${location.pathname.includes('/admin/contratos') ? 'bg-brand-50' : 'hover:bg-slate-50'}`}>
-                <a
-                  href="/admin/contratos"
-                  onClick={(e) => handleSmartNavigation(e, '/admin/contratos')}
-                  className={`flex-1 flex items-center gap-3 px-4 py-3 font-medium ${location.pathname.includes('/admin/contratos') ? 'text-brand-700 font-bold' : 'text-slate-600'}`}
-                >
-                  <Icons.FileText size={20} />
-                  Contratos
+                <a href="/admin/clientes" onClick={(e) => handleSmartNavigation(e, '/admin/clientes')} className="order-7 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
+                  <Icons.Users size={18} /> Clientes
                 </a>
-                <button onClick={() => setIsContractsMenuOpen(!isContractsMenuOpen)} className="p-3 text-slate-500">
-                  <Icons.ChevronDown size={16} className={`transition-transform duration-200 ${isContractsMenuOpen ? 'rotate-180' : ''}`} />
-                </button>
               </div>
-              {isContractsMenuOpen && (
-                <div className="pl-12 pr-4 py-2 space-y-3 border-l-2 border-slate-100 ml-6 animate-fade-in">
-                  <NavLink to="/admin/contratos?tab=geral" onClick={() => setIsMobileMenuOpen(false)} className="block text-sm text-slate-600 hover:text-brand-600">Visão Geral</NavLink>
-                  <NavLink to="/admin/contratos?tab=vendas" onClick={() => setIsMobileMenuOpen(false)} className="block text-sm text-slate-600 hover:text-brand-600">Vendas (Recebíveis)</NavLink>
-                  <NavLink to="/admin/contratos?tab=alugueis" onClick={() => setIsMobileMenuOpen(false)} className="block text-sm text-slate-600 hover:text-brand-600">Locações Ativas</NavLink>
-                </div>
-              )}
-            </div>
 
-            {isOwner && (
-              <a
-                href="/admin/financeiro"
-                onClick={(e) => handleSmartNavigation(e, '/admin/financeiro')}
-                className={`
-                  order-4 flex items-center gap-3 px-4 py-3 rounded-lg
-                  ${isSmartNavigationActive('/admin/financeiro') ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
-                `}
-              >
-                <Icons.Wallet size={20} />
-                Financeiro
-              </a>
-            )}
-
-            {/* 3. Menu Funil de Vendas (Mobile) */}
-            <div className="space-y-1 order-5">
-              <div className={`flex items-center justify-between rounded-lg ${location.pathname.includes('/admin/leads') ? 'bg-brand-50' : 'hover:bg-slate-50'}`}>
-                <a
-                  href="/admin/leads?funnel=geral"
-                  onClick={(e) => handleSmartNavigation(e, '/admin/leads')}
-                  className={`flex-1 flex items-center gap-3 px-4 py-3 font-medium ${location.pathname.includes('/admin/leads') ? 'text-brand-700 font-bold' : 'text-slate-600'}`}
-                >
-                  <Icons.Filter size={20} />
-                  Funil de Vendas
-                </a>
-                <button onClick={() => setIsFunnelMenuOpen(!isFunnelMenuOpen)} className="p-3 text-slate-500">
-                  <Icons.ChevronDown size={16} className={`transition-transform duration-200 ${isFunnelMenuOpen ? 'rotate-180' : ''}`} />
-                </button>
-              </div>
-              {isFunnelMenuOpen && (
-                <div className="pl-12 pr-4 py-2 space-y-3 border-l-2 border-slate-100 ml-6 animate-fade-in">
-                  {isAdmin && <NavLink to="/admin/leads?funnel=pre_atendimento" onClick={() => setIsMobileMenuOpen(false)} className="block text-sm text-slate-600 hover:text-brand-600">Pré-Atendimento</NavLink>}
-                  <NavLink to="/admin/leads?funnel=atendimento" onClick={() => setIsMobileMenuOpen(false)} className="block text-sm text-slate-600 hover:text-brand-600">Atendimento</NavLink>
-                  <NavLink to="/admin/leads?funnel=proposta" onClick={() => setIsMobileMenuOpen(false)} className="block text-sm text-slate-600 hover:text-brand-600">Propostas</NavLink>
-                  <NavLink to="/admin/leads?funnel=venda_ganha" onClick={() => setIsMobileMenuOpen(false)} className="block text-sm text-slate-600 hover:text-brand-600">Vendas Ganhas</NavLink>
-                  <NavLink to="/admin/leads?funnel=perdido" onClick={() => setIsMobileMenuOpen(false)} className="block text-sm text-slate-600 hover:text-brand-600">Perdidos</NavLink>
-                </div>
-              )}
-            </div>
-
-            <a
-              href="/admin/clientes"
-              onClick={(e) => handleSmartNavigation(e, '/admin/clientes')}
-              className={`
-                order-7 flex items-center gap-3 px-4 py-3 rounded-lg
-                ${isSmartNavigationActive('/admin/clientes') ? 'bg-brand-50 text-brand-700 font-bold' : 'text-slate-600 hover:bg-slate-50'}
-              `}
-            >
-              <Icons.Users size={20} />
-              Clientes
-            </a>
-
-            {/* 4. Rodapé Mobile (Usuário e Sair) */}
-            <div className="pt-4 border-t border-slate-100 mt-2 space-y-2 pb-4">
-              {shouldShowTrialBadge && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigate('/admin/config?tab=subscription');
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className="mx-4 mb-3 flex w-[calc(100%-2rem)] items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-amber-800"
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
-                    <Icons.Clock size={17} />
+              {/* Rodap? do Mobile Drawer */}
+              <div className="border-t border-slate-100 dark:border-slate-800 p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 overflow-hidden rounded-full border-2 border-slate-200 bg-slate-100 shrink-0">
+                    {user?.avatar_url ? (
+                      <img src={user?.avatar_url} alt="Perfil" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-500">{userInitial}</div>
+                    )}
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-widest">Trial ativo</p>
-                    <p className="truncate text-sm font-bold">{trialDaysLabel}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{user?.name || user?.email}</p>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">{roleLabel}</p>
                   </div>
-                </button>
-              )}
-
-              <div className="flex items-center gap-3 px-4 py-2">
-                <div className="h-9 w-9 overflow-hidden rounded-full border-2 border-slate-200 bg-slate-100">
-                  {user?.avatar_url ? (
-                    <img src={user.avatar_url} alt={user?.name || 'Perfil'} className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-xs font-bold text-slate-500">
-                      {userInitial}
-                    </div>
-                  )}
                 </div>
-                <div>
-                  <p className="text-sm font-bold text-slate-700">{user?.name || user?.email}</p>
-                  <p className="text-xs text-slate-500">{roleLabel}</p>
+                <div className="flex gap-2">
+                  <button onClick={handleOpenWebsite} className="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+                    <Icons.Globe size={14} /> Site
+                  </button>
+                  <button onClick={handleLogout} className="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg bg-red-50 text-red-600 hover:bg-red-100">
+                    <Icons.LogOut size={14} /> Sair
+                  </button>
                 </div>
-              </div>
-              <div className="flex items-center justify-between px-4 mt-2">
-                <button
-                  className="text-slate-400 hover:text-brand-400 transition-colors flex items-center justify-center p-2 rounded-md hover:bg-slate-100"
-                  onClick={handleOpenWebsite}
-                  title="Abrir site da imobiliária"
-                >
-                  <Icons.Globe size={20} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsChangelogModalOpen(true);
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black text-slate-500 transition-colors hover:bg-sky-50 hover:text-sky-600"
-                >
-                  <Icons.Bug size={14} />
-                  v1.0.0
-                </button>
-                <button onClick={handleLogout} className="text-red-500 hover:bg-red-50 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
-                  <Icons.LogOut size={16} /> Sair
-                </button>
               </div>
             </div>
           </div>
         )}
-
-        {/* Padding reduzido para ganhar tela (p-3 md:p-5) */}
-        <div className="flex-1 overflow-y-auto p-3 md:p-5 custom-scrollbar">
-          {/* Largura dinâmica: se a sidebar fecha, o conteúdo expande ainda mais (1600px vs 1300px) */}
-          <div className={`w-full mx-auto pb-10 transition-all duration-300 ${isSidebarCollapsed ? 'max-w-[1600px]' : 'max-w-[1300px]'}`}>
-            
+        {/* Padding e max-width refinados para desktop 100% */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
+          <div className="w-full mx-auto pb-10 transition-all duration-300 max-w-7xl">
             <Outlet key={refreshKey} />
           </div>
         </div>

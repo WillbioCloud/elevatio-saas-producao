@@ -144,8 +144,8 @@ const DroppableColumn = ({
   return (
     <div
       ref={setNodeRef}
-      className={`flex-shrink-0 w-80 flex flex-col h-full rounded-2xl transition-colors duration-300 overflow-visible ${
-        isOver ? 'bg-slate-200/70 ring-2 ring-brand-400 ring-inset' : 'bg-slate-100/80'
+      className={`flex-none w-[85vw] sm:w-[320px] shrink-0 snap-center md:snap-align-none flex flex-col md:h-full max-h-full bg-slate-50 dark:bg-slate-900/50 rounded-2xl md:rounded-3xl border border-slate-200 dark:border-slate-800 transition-colors duration-300 overflow-visible ${
+        isOver ? 'bg-slate-100 ring-2 ring-brand-400 ring-inset' : ''
       }`}
     >
       {/* Header da Coluna */}
@@ -202,7 +202,7 @@ const LeadCard = ({
     <div
       onClick={onClick}
       className={`
-        bg-white p-4 rounded-xl border border-slate-200 group relative transition-all duration-200
+        bg-white p-3 md:p-4 rounded-xl border border-slate-200 group relative transition-all duration-200
         ${
           isOverlay
             ? 'shadow-2xl scale-105 rotate-2 cursor-grabbing ring-2 ring-brand-500 z-50'
@@ -1310,8 +1310,8 @@ const AdminLeads: React.FC = () => {
       </div>
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
-          <div className="flex h-full gap-6 min-w-max px-1">
+        <div className="flex-1 min-h-0">
+          <div className="flex gap-4 md:gap-6 overflow-x-auto pb-6 pt-2 custom-scrollbar snap-x snap-mandatory md:snap-none min-h-[60vh] md:h-[calc(100vh-220px)] items-start">
             {currentColumns.map((statusName) => (
               <DroppableColumn
                 key={statusName}

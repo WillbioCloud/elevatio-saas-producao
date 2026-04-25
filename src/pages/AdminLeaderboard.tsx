@@ -60,7 +60,7 @@ export default function AdminLeaderboard() {
 
       {/* PAINEL PRESCRITIVO DO CORRETOR */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 to-[#0a0f1c] p-6 shadow-xl">
+        <div className="relative flex min-h-[220px] flex-col justify-between overflow-hidden rounded-2xl md:rounded-3xl bg-gradient-to-br from-slate-900 to-[#0a0f1c] p-4 md:p-6 shadow-xl">
           <div className="absolute -right-4 -top-4 opacity-10">
             <Icons.Award size={140} />
           </div>
@@ -79,7 +79,7 @@ export default function AdminLeaderboard() {
                 </div>
               )}
               <div>
-                <h3 className="text-xl font-black text-white">{me.name}</h3>
+                <h3 className="text-lg md:text-xl font-black text-white">{me.name}</h3>
                 <div
                   className={`mt-1 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-bold ${myLevelInfo.currentLevel.bg} ${myLevelInfo.currentLevel.color}`}
                 >
@@ -113,7 +113,7 @@ export default function AdminLeaderboard() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+        <div className="rounded-2xl md:rounded-3xl border border-slate-200 bg-white p-4 md:p-6 shadow-sm lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="flex items-center gap-2 text-base font-black uppercase tracking-tight text-slate-800">
               <Icons.Target className="text-brand-500" /> Próximas Ações de Alto Valor
@@ -159,8 +159,8 @@ export default function AdminLeaderboard() {
       {/* ÁREA INFERIOR: TABELA + RADAR/MISSÕES */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {/* COLUNA ESQUERDA: Tabela do Campeonato (Ocupa 2/3 da tela) */}
-        <div className="xl:col-span-2 bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+        <div className="xl:col-span-2 bg-white rounded-2xl md:rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+          <div className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between">
             <h3 className="font-black text-slate-800 text-lg flex items-center gap-2">
               <Icons.List size={20} className="text-brand-600" /> Classificação Geral
             </h3>
@@ -170,19 +170,19 @@ export default function AdminLeaderboard() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200">
-                  <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-widest w-16 text-center">
+                  <th className="p-3 md:p-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest w-16 text-center">
                     Pos
                   </th>
-                  <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                  <th className="p-3 md:p-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
                     Corretor
                   </th>
-                  <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">
+                  <th className="p-3 md:p-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">
                     Pontos
                   </th>
-                  <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">
+                  <th className="p-3 md:p-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">
                     Negócios
                   </th>
-                  <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">
+                  <th className="p-3 md:p-4 text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center">
                     % Conv.
                   </th>
                 </tr>
@@ -207,24 +207,24 @@ export default function AdminLeaderboard() {
                         key={agent.id}
                         className={`transition-colors hover:bg-slate-50 ${isMe ? 'bg-brand-50/30' : ''}`}
                       >
-                        <td className="py-4 px-6 text-center">
+                        <td className="p-3 md:p-4 text-center">
                           {index === 0 ? (
-                            <span className="inline-flex w-8 h-8 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 font-black text-sm shadow-sm border border-yellow-200">
+                            <span className="inline-flex w-7 h-7 md:w-8 md:h-8 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 font-black text-xs md:text-sm shadow-sm border border-yellow-200">
                               1º
                             </span>
                           ) : index === 1 ? (
-                            <span className="inline-flex w-8 h-8 items-center justify-center rounded-full bg-slate-200 text-slate-600 font-black text-sm shadow-sm border border-slate-300">
+                            <span className="inline-flex w-7 h-7 md:w-8 md:h-8 items-center justify-center rounded-full bg-slate-200 text-slate-600 font-black text-xs md:text-sm shadow-sm border border-slate-300">
                               2º
                             </span>
                           ) : index === 2 ? (
-                            <span className="inline-flex w-8 h-8 items-center justify-center rounded-full bg-amber-100 text-amber-700 font-black text-sm shadow-sm border border-amber-200">
+                            <span className="inline-flex w-7 h-7 md:w-8 md:h-8 items-center justify-center rounded-full bg-amber-100 text-amber-700 font-black text-xs md:text-sm shadow-sm border border-amber-200">
                               3º
                             </span>
                           ) : (
                             <span className="text-slate-500 font-bold">{index + 1}º</span>
                           )}
                         </td>
-                        <td className="py-4 px-6">
+                        <td className="p-3 md:p-4">
                           <div className="flex items-center gap-3">
                             {agent.avatar_url ? (
                               <img
@@ -237,8 +237,8 @@ export default function AdminLeaderboard() {
                                 {getAvatarInitial(agent.name)}
                               </div>
                             )}
-                            <div>
-                              <p className={`font-bold text-sm ${isMe ? 'text-brand-700' : 'text-slate-800'}`}>
+                            <div className="min-w-0">
+                              <p className={`truncate font-bold text-xs md:text-sm ${isMe ? 'text-brand-700' : 'text-slate-800'}`}>
                                 {agent.name}{' '}
                                 {isMe && (
                                   <span className="text-[10px] bg-brand-100 text-brand-600 px-1.5 py-0.5 rounded ml-2 uppercase border border-brand-200">
@@ -250,13 +250,13 @@ export default function AdminLeaderboard() {
                             </div>
                           </div>
                         </td>
-                        <td className="py-4 px-6 text-center">
+                        <td className="p-3 md:p-4 text-center">
                           <span className="font-black text-slate-800 text-lg">{agent.score}</span>
                         </td>
-                        <td className="py-4 px-6 text-center">
+                        <td className="p-3 md:p-4 text-center">
                           <span className="font-bold text-slate-600">{agent.deals}</span>
                         </td>
-                        <td className="py-4 px-6 text-center">
+                        <td className="p-3 md:p-4 text-center">
                           <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-600 font-bold text-xs border border-emerald-100">
                             {agent.conversion}%
                           </span>
@@ -273,7 +273,7 @@ export default function AdminLeaderboard() {
         {/* COLUNA DIREITA: Radar e Missões (Ocupa 1/3 da tela) */}
         <div className="space-y-6">
           {/* CARD: Missões da Rodada */}
-          <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-3xl p-6 shadow-md text-white relative overflow-hidden">
+          <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-md text-white relative overflow-hidden">
             <div className="absolute -right-6 -bottom-6 opacity-20">
               <Icons.Target size={120} />
             </div>
@@ -317,7 +317,7 @@ export default function AdminLeaderboard() {
           </div>
 
           {/* CARD: Radar da Liga (Live Feed) */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 flex flex-col h-[400px]">
+          <div className="bg-white rounded-2xl md:rounded-3xl border border-slate-200 shadow-sm p-4 md:p-6 flex flex-col h-[400px]">
             <h3 className="text-base font-black text-slate-800 flex items-center gap-2 mb-4 tracking-tight">
               <Icons.Activity className="text-rose-500" /> Radar ao Vivo
             </h3>
@@ -332,7 +332,7 @@ export default function AdminLeaderboard() {
                 activities.map((act) => (
                   <div key={act.id} className="flex gap-3 items-start animate-fade-in">
                     <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                      className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
                         act.value.includes('-') ? 'bg-rose-100 text-rose-500' : 'bg-emerald-100 text-emerald-600'
                       }`}
                     >

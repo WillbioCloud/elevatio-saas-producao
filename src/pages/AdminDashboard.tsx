@@ -533,12 +533,12 @@ const AdminDashboard: React.FC = () => {
   };
 
   // --- CLASSES CSS PREMIUM COMPARTILHADAS ---
-  const glassCardClasses = "h-full bg-white/80 dark:bg-[#0a0f1c]/80 p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col justify-between transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]";
+  const glassCardClasses = "h-full bg-white/80 dark:bg-[#0a0f1c]/80 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-sm dark:shadow-none flex flex-col justify-between transition-all hover:shadow-md";
 
   const renderWidgetContent = (id: string) => {
     switch(id) {
       case 'vgvTotal': return (
-        <div className="h-full bg-gradient-to-br from-[#0c1445] via-[#0f2460] to-[#1a3a7a] p-6 rounded-3xl text-white shadow-[0_8px_30px_rgba(12,20,69,0.3)] flex flex-col justify-between relative overflow-hidden">
+        <div className="h-full bg-gradient-to-br from-[#0c1445] via-[#0f2460] to-[#1a3a7a] p-4 md:p-5 rounded-2xl md:rounded-3xl text-white shadow-[0_8px_30px_rgba(12,20,69,0.3)] flex flex-col justify-between relative overflow-hidden">
           <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full bg-sky-400/20 blur-2xl pointer-events-none"></div>
           <div className="relative z-10">
             <div className="flex justify-between items-start mb-4">
@@ -547,7 +547,7 @@ const AdminDashboard: React.FC = () => {
             </div>
             <div className="text-sky-100/70 text-sm mb-1 flex items-center font-medium">VGV Total <InfoTooltip text="Soma de todas as vendas fechadas." /></div>
           </div>
-          <h3 className="text-3xl font-bold font-serif tracking-tight relative z-10">{leadsLoading ? <InlineLoading /> : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(stats.vgvTotal)}</h3>
+          <h3 className="text-2xl md:text-3xl font-bold font-serif tracking-tight relative z-10">{leadsLoading ? <InlineLoading /> : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(stats.vgvTotal)}</h3>
         </div>
       );
       case 'vgvAnual': return (
@@ -559,7 +559,7 @@ const AdminDashboard: React.FC = () => {
             </div>
             <div className="text-slate-500 dark:text-slate-400 text-sm mb-1 flex items-center font-medium">VGV Anual <InfoTooltip text="Valor Geral de Vendas do ano atual." /></div>
           </div>
-          <h3 className="text-3xl font-bold font-serif tracking-tight text-slate-800 dark:text-white">{leadsLoading ? <InlineLoading /> : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(stats.vgvAnnual)}</h3>
+          <h3 className="text-2xl md:text-3xl font-bold font-serif tracking-tight text-slate-800 dark:text-white">{leadsLoading ? <InlineLoading /> : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(stats.vgvAnnual)}</h3>
         </div>
       );
       case 'portfolioVenda': return (
@@ -570,7 +570,7 @@ const AdminDashboard: React.FC = () => {
             </div>
             <div className="text-slate-500 dark:text-slate-400 text-sm mb-1 flex items-center font-medium">Portfólio de Venda <InfoTooltip text="Imóveis ativos para venda." /></div>
           </div>
-          <h3 className="text-3xl font-bold font-serif tracking-tight text-slate-800 dark:text-white">{propsLoading ? <InlineLoading /> : `${stats.salePortfolioCount} `}{!propsLoading && <span className="text-base font-sans font-medium text-slate-400">Imóveis</span>}</h3>
+          <h3 className="text-2xl md:text-3xl font-bold font-serif tracking-tight text-slate-800 dark:text-white">{propsLoading ? <InlineLoading /> : `${stats.salePortfolioCount} `}{!propsLoading && <span className="text-base font-sans font-medium text-slate-400">Imóveis</span>}</h3>
         </div>
       );
       case 'portfolioAluguel': return (
@@ -581,28 +581,28 @@ const AdminDashboard: React.FC = () => {
             </div>
             <div className="text-slate-500 dark:text-slate-400 text-sm mb-1 flex items-center font-medium">Portfólio de Aluguel <InfoTooltip text="Imóveis ativos para locação." /></div>
           </div>
-          <h3 className="text-3xl font-bold font-serif tracking-tight text-slate-800 dark:text-white">{propsLoading ? <InlineLoading /> : `${stats.rentPortfolioCount} `}{!propsLoading && <span className="text-base font-sans font-medium text-slate-400">Imóveis</span>}</h3>
+          <h3 className="text-2xl md:text-3xl font-bold font-serif tracking-tight text-slate-800 dark:text-white">{propsLoading ? <InlineLoading /> : `${stats.rentPortfolioCount} `}{!propsLoading && <span className="text-base font-sans font-medium text-slate-400">Imóveis</span>}</h3>
         </div>
       );
       case 'gamification-stats': return (
-        <div className="h-full rounded-3xl border border-slate-200 bg-gradient-to-br from-brand-50 to-white p-6 shadow-sm dark:border-slate-800 dark:from-brand-950/20 dark:to-slate-900">
-          <h3 className="mb-6 flex items-center gap-2 font-bold text-slate-800 dark:text-white">
+        <div className="h-5/6 rounded-2xl md:rounded-3xl border border-slate-200 bg-gradient-to-br from-brand-50 to-white p-3 md:p-4 shadow-sm dark:border-slate-800 dark:from-brand-950/20 dark:to-slate-900">
+          <h3 className="mb-4 flex items-center gap-2 font-bold text-slate-800 dark:text-white">
             <Icons.Trophy size={20} className="text-brand-500" />
             Meu Desempenho
           </h3>
           <div className="flex h-full flex-col items-center justify-center text-center">
-            <div className="relative mb-4">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-brand-500 bg-white text-3xl shadow-lg dark:border-brand-400 dark:bg-slate-800">
+            <div className="relative mb-3">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-brand-500 bg-white text-2xl shadow-lg dark:border-brand-400 dark:bg-slate-800">
                 {userGamification.level > 10 ? '👑' : userGamification.level > 5 ? '⭐' : '🚀'}
               </div>
               <div className="absolute -bottom-2 -right-2 rounded-full border-2 border-white bg-slate-900 px-2 py-0.5 text-xs font-bold text-white dark:border-slate-800">
                 Lvl {userGamification.level}
               </div>
             </div>
-            <h4 className="text-xl font-black text-slate-900 dark:text-white">{userGamification.xp} XP</h4>
+            <h4 className="text-lg md:text-xl font-black text-slate-900 dark:text-white">{userGamification.xp} XP</h4>
             <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Pontuação Total</p>
 
-            <div className="mt-6 w-full rounded-2xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <div className="mt-4 w-full rounded-2xl border border-slate-100 bg-white p-3 md:p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-bold text-slate-600 dark:text-slate-300">Meu Ranking Geral</span>
                 <span className="text-lg font-black text-brand-600 dark:text-brand-400">
@@ -614,16 +614,16 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'recent-activity': return (
-        <div className="h-full rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h3 className="mb-6 flex items-center gap-2 font-bold text-slate-800 dark:text-white">
+        <div className="h-5/6 rounded-2xl md:rounded-3xl border border-slate-200 bg-white p-3 md:p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h3 className="mb-4 flex items-center gap-2 font-bold text-slate-800 dark:text-white">
             <Icons.Activity size={20} className="text-brand-500" />
             Feed da Equipe
           </h3>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {recentActivities.map((act) => (
-              <div key={act.id} className="flex items-start gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
-                  <Icons.Zap size={16} />
+              <div key={act.id} className="flex items-start gap-2.5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                  <Icons.Zap size={14} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm leading-snug text-slate-600 dark:text-slate-300">
@@ -644,9 +644,9 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'funil': return (
-        <div className="h-full bg-white/80 dark:bg-[#0a0f1c]/80 p-4 md:p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
-          <h3 className="text-lg font-bold font-serif text-slate-800 dark:text-white mb-4 flex items-center">Funil de Vendas <InfoTooltip text="Conversão de leads." />{leadsLoading && <span className="ml-2"><InlineLoading /></span>}</h3>
-          <div className="flex-1 h-[250px] w-full overflow-x-auto overflow-y-hidden custom-scrollbar pb-2">
+        <div className="h-5/6 bg-white/80 dark:bg-[#0a0f1c]/80 p-3 md:p-4 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
+          <h3 className="text-sm md:text-base font-bold font-serif text-slate-800 dark:text-white mb-3 flex items-center">Funil de Vendas <InfoTooltip text="Conversão de leads." />{leadsLoading && <span className="ml-2"><InlineLoading /></span>}</h3>
+          <div className="flex-1 h-[170px] md:h-[210px] w-full overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
             {leadsLoading ? <div className="flex h-full items-center justify-center"><InlineLoading /></div> : (
               <div className="min-w-[400px] h-full">
                 <ChartContainer config={chartConfig} className="h-full w-full">
@@ -663,9 +663,9 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'agenda': return (
-        <div className="h-full bg-white/80 dark:bg-[#0a0f1c]/80 p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
+        <div className="h-full bg-white/80 dark:bg-[#0a0f1c]/80 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-bold font-serif text-slate-800 dark:text-white">Minha Agenda</h3>
+            <h3 className="text-base md:text-lg font-bold font-serif text-slate-800 dark:text-white">Minha Agenda</h3>
             <span className="text-[10px] font-bold uppercase tracking-widest bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 px-3 py-1 rounded-full">Próximas</span>
           </div>
           <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar max-h-[300px] pr-2">
@@ -682,7 +682,7 @@ const AdminDashboard: React.FC = () => {
       );
       case 'financeiroAdmin': return (
         <div className="h-full grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
-          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 p-5 md:p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none relative overflow-hidden flex flex-col transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
+          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none relative overflow-hidden flex flex-col transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
             {!canAccessGamification && (
               <div className="absolute inset-0 bg-white/60 dark:bg-[#0a0f1c]/60 z-20 flex flex-col items-center justify-center text-center p-6">
                 <div className="w-12 h-12 md:w-16 md:h-16 bg-white dark:bg-[#0c1445] border border-slate-100 dark:border-white/10 rounded-2xl flex items-center justify-center text-slate-400 dark:text-slate-300 mb-3 md:mb-4 shadow-xl">
@@ -695,7 +695,7 @@ const AdminDashboard: React.FC = () => {
             <div className={!canAccessGamification ? 'opacity-30 pointer-events-none select-none flex-1 flex flex-col justify-between' : 'flex-1 flex flex-col justify-between'}>
               <div>
                 <div className="flex items-center gap-2 mb-3 text-slate-400 dark:text-slate-500"><Icons.Trophy size={18} className="text-amber-500" /> <h3 className="font-bold text-slate-700 dark:text-slate-300 uppercase text-[10px] md:text-xs tracking-widest">Top Corretor (VGV)</h3></div>
-                <p className="text-2xl md:text-3xl font-bold font-serif text-slate-800 dark:text-white mt-1 md:mt-2 truncate" title={adminStats.topBroker.name}>{adminStats.topBroker.name}</p>
+                <p className="text-xl md:text-2xl font-bold font-serif text-slate-800 dark:text-white mt-1 md:mt-2 truncate" title={adminStats.topBroker.name}>{adminStats.topBroker.name}</p>
                 <p className="text-xs md:text-sm font-bold text-amber-500 mt-1">{adminStats.topBroker.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
               </div>
               <div className="mt-4 md:mt-6 pt-4 border-t border-slate-100 dark:border-white/5 flex justify-between items-end gap-2">
@@ -709,7 +709,7 @@ const AdminDashboard: React.FC = () => {
               </div>
             </div>
           </div>
-          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 p-5 md:p-6 rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none relative overflow-hidden flex flex-col transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
+          <div className="bg-white/80 dark:bg-[#0a0f1c]/80 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none relative overflow-hidden flex flex-col transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
             {!canAccessFinance && (
               <div className="absolute inset-0 bg-white/60 dark:bg-[#0a0f1c]/60 z-20 flex flex-col items-center justify-center text-center p-6">
                 <div className="w-12 h-12 md:w-16 md:h-16 bg-white dark:bg-[#0c1445] border border-slate-100 dark:border-white/10 rounded-2xl flex items-center justify-center text-slate-400 dark:text-slate-300 mb-3 md:mb-4 shadow-xl">
@@ -723,7 +723,7 @@ const AdminDashboard: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2 mb-3 text-slate-400 dark:text-slate-500"><Icons.Wallet size={18} className="text-emerald-500" /> <h3 className="font-bold text-slate-700 dark:text-slate-300 uppercase text-[10px] md:text-xs tracking-widest">Recebimentos Mês</h3></div>
                 <div className="flex flex-wrap items-end gap-2 mt-1 md:mt-2">
-                  <p className="text-2xl md:text-3xl font-bold font-serif text-emerald-600 dark:text-emerald-400 leading-none">{adminStats.recebidoMes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                  <p className="text-xl md:text-2xl font-bold font-serif text-emerald-600 dark:text-emerald-400 leading-none">{adminStats.recebidoMes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                 </div>
                 <p className="text-xs md:text-sm font-medium text-slate-500 dark:text-slate-400 mt-2">A receber: {adminStats.aReceberMes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
               </div>
@@ -862,7 +862,8 @@ const AdminDashboard: React.FC = () => {
       )}
 
       {/* GRID DE WIDGETS INTELIGENTE (TETRIS) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-6" style={{ gridAutoFlow: 'dense' }}>
+      <div className="mt-4 md:mt-6 rounded-[28px] border border-slate-200/70 bg-slate-100/80 p-3 md:p-4 lg:p-5 dark:border-white/5 dark:bg-[#060b16]">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6" style={{ gridAutoFlow: 'dense' }}>
         {layout.filter(w => w.visible).map((w) => {
           const config = WIDGET_CONFIG.find(c => c.id === w.id);
           if (!config || (config.adminOnly && !isAdmin)) return null;
@@ -888,6 +889,7 @@ const AdminDashboard: React.FC = () => {
             </div>
           );
         })}
+        </div>
       </div>
 
     </div>

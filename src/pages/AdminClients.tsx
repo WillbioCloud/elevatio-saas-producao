@@ -210,7 +210,7 @@ export default function AdminClients() {
   );
 
   return (
-    <div className="p-6 max-w-7xl mx-auto font-['DM_Sans'] antialiased animate-in fade-in duration-500">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto font-['DM_Sans'] antialiased animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Carteira de Clientes</h1>
@@ -243,8 +243,8 @@ export default function AdminClients() {
             <h3 className="text-lg font-semibold text-slate-900">Nenhum cliente encontrado</h3>
           </div>
         ) : (
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-left text-sm whitespace-nowrap">
+          <div className="overflow-x-auto w-full custom-scrollbar pb-2">
+            <table className="w-full min-w-[800px] md:min-w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-slate-50/80 border-b border-slate-200">
                 <tr>
                   <th className="px-6 py-4 font-semibold text-slate-600">Cliente</th>

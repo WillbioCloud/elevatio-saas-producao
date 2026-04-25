@@ -467,8 +467,8 @@ export default function AdminFinance() {
 
       {/* TABELA DE COBRANÇAS */}
       <div className="bg-white dark:bg-dark-card rounded-3xl border border-slate-200 dark:border-dark-border shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-200 dark:border-dark-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex bg-slate-100 dark:bg-dark-bg p-1 rounded-xl">
+        <div className="p-6 border-b border-slate-200 dark:border-dark-border flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-3 md:gap-4">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4 bg-slate-100 dark:bg-dark-bg p-1 rounded-xl w-full sm:w-auto">
             <button
               onClick={() => setActiveTab('recebimentos')}
               className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
@@ -490,30 +490,30 @@ export default function AdminFinance() {
               Repasses (Proprietários)
             </button>
           </div>
-          <button onClick={() => setIsModalOpen(true)} className="bg-brand-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-brand-700 transition-colors flex items-center gap-2">
+          <button onClick={() => setIsModalOpen(true)} className="bg-brand-600 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-brand-700 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto">
             <Icons.Plus size={16} /> Nova Cobrança
           </button>
         </div>
 
         {/* BARRA DE PESQUISA E FILTROS */}
         {activeTab === 'recebimentos' && (
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white dark:bg-dark-card p-4 rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm">
-            <div className="relative flex-1 w-full">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4 items-stretch sm:items-center justify-between bg-white dark:bg-dark-card p-4 rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm">
+            <div className="relative w-full sm:flex-1">
               <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
               <input
                 type="text"
                 placeholder="Buscar por inquilino ou descrição..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-white/5 focus:ring-2 focus:ring-brand-500 outline-none"
+                className="w-full sm:w-auto sm:min-w-[320px] md:min-w-[420px] pl-10 pr-4 py-2 rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-white/5 focus:ring-2 focus:ring-brand-500 outline-none"
               />
             </div>
-            <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 md:gap-4 w-full sm:w-auto">
               <span className="text-sm font-medium text-slate-500 hidden md:block">Status:</span>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full md:w-auto px-4 py-2 rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-white/5 focus:ring-2 focus:ring-brand-500 outline-none text-slate-700 dark:text-slate-300"
+                className="w-full sm:w-auto px-4 py-2 rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-white/5 focus:ring-2 focus:ring-brand-500 outline-none text-slate-700 dark:text-slate-300"
               >
                 <option value="todos">Todos</option>
                 <option value="pendente">Pendentes</option>
@@ -535,8 +535,8 @@ export default function AdminFinance() {
             </div>
 
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+              <div className="overflow-x-auto w-full custom-scrollbar pb-2">
+                <table className="w-full min-w-[800px] md:min-w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50 dark:bg-slate-800/50">
                       <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Origem / Venc. Original</th>
@@ -638,8 +638,8 @@ export default function AdminFinance() {
                 </div>
               </div>
               <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-100 dark:border-dark-border shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
+                <div className="overflow-x-auto w-full custom-scrollbar pb-2">
+                  <table className="w-full min-w-[800px] md:min-w-full text-left text-sm">
                     <thead className="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 font-medium border-b border-slate-100 dark:border-dark-border">
                       <tr>
                         <th className="p-4">Descrição</th>

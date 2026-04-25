@@ -450,7 +450,7 @@ export default function AdminSupport() {
 
   return (
     <div className="h-[calc(100vh-8rem)] max-w-7xl mx-auto flex flex-col animate-fade-in">
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mb-6 flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Suporte Técnico</h2>
           <p className="mt-1 text-sm text-slate-500">
@@ -467,8 +467,8 @@ export default function AdminSupport() {
         </button>
       </div>
 
-      <div className="flex flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex w-full flex-col border-r border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50 md:w-80">
+      <div className="flex flex-col md:flex-row h-[calc(100vh-100px)] gap-4 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex w-full md:w-[350px] lg:w-[400px] shrink-0 h-[40vh] md:h-full overflow-y-auto flex-col border-b border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50 md:border-b-0 md:border-r">
           <div className="border-b border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -544,7 +544,7 @@ export default function AdminSupport() {
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col bg-white dark:bg-slate-900">
+        <div className="flex-1 h-[60vh] md:h-full flex flex-col min-w-0 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           {isCreating ? (
             <div className="max-w-2xl animate-fade-in p-8">
               <h3 className="mb-6 text-xl font-bold text-slate-800 dark:text-white">Abrir Novo Chamado</h3>
@@ -697,7 +697,7 @@ export default function AdminSupport() {
                 </div>
               </div>
 
-              <div className="border-t border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+              <div className="border-t border-slate-200 bg-white p-3 md:p-4 dark:border-slate-800 dark:bg-slate-900">
                 {selectedTicket.status === 'Resolvido' ? (
                   selectedTicket.supportRating != null ? (
                     <div className="flex flex-col items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-center dark:border-emerald-900/30 dark:bg-emerald-900/10">
@@ -803,7 +803,7 @@ export default function AdminSupport() {
                       >
                         <Smile size={18} />
                       </button>
-                      <div className="relative flex-1">
+                      <div className="relative flex-1 min-w-0">
                         <input
                           type="text"
                           placeholder="Escreva a sua resposta..."
@@ -821,7 +821,7 @@ export default function AdminSupport() {
                         <button
                           onClick={() => void handleSendReply()}
                           disabled={isUploadingImage || !replyText.trim()}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-brand-600 hover:text-brand-700 disabled:opacity-50"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 shrink-0 p-2 text-brand-600 hover:text-brand-700 disabled:opacity-50"
                         >
                           <Send size={18} />
                         </button>
