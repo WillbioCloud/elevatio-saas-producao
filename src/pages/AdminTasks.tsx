@@ -26,6 +26,7 @@ import { Icons } from '../components/Icons';
 import { processVisitFeedback } from '../services/ai';
 import type { Lead, Task } from '../types';
 import Loading from '../components/Loading';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 
 type TaskStatus = 'pendente' | 'concluida';
 type ColumnId = 'atrasadas' | 'hoje' | 'proximas' | 'concluida';
@@ -580,6 +581,8 @@ export default function AdminTasks() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)] animate-fade-in font-sans text-slate-800">
+      <WelcomeBalloon pageId="tasks" icon="CheckSquare" title="Organização é Tudo" description="Visitas, ligações, reuniões... não deixe nenhum cliente esfriar. Arraste suas tarefas diárias neste Kanban e mantenha sua mente livre." />
+
       <div className="mb-6 shrink-0">
         <div className="w-full">
           <div className="flex items-center justify-between mb-4">

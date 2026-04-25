@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Lead, LeadStatus, Property } from '../types';
 import { Icons } from '../components/Icons';
 import LeadDetailsSidebar from '../components/LeadDetailsSidebar';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useLeads } from '../hooks/useLeads';
@@ -1250,6 +1251,13 @@ const AdminLeads: React.FC = () => {
 
   return (
     <div className="h-[calc(100vh-2rem)] flex flex-col animate-fade-in">
+      <WelcomeBalloon
+        pageId="leads"
+        icon="Kanban"
+        title="O seu Motor de Vendas"
+        description="Este é o seu funil Kanban. Arraste seus clientes pelas etapas até o fechamento. Negócios parados esfriam, então mantenha os cards sempre em movimento!"
+      />
+
       <div className="mb-6 flex flex-col lg:flex-row justify-between lg:items-center gap-4 shrink-0">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full lg:w-auto">
           <div>

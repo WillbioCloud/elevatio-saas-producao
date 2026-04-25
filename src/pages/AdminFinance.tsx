@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import InvoiceModal from '../components/InvoiceModal';
 import { useToast } from '../contexts/ToastContext';
 import UpgradePromo from '../components/UpgradePromo';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 
 export default function AdminFinance() {
   const { user } = useAuth();
@@ -403,6 +404,8 @@ export default function AdminFinance() {
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8 animate-fade-in">
+      <WelcomeBalloon pageId="finance" icon="Wallet" title="O Seu Caixa" description="Acompanhe todas as faturas geradas, boletos pagos e gerencie os repasses de comissão da sua equipe. Tudo sincronizado automaticamente com o Asaas." />
+
       {/* CABEÇALHO */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>

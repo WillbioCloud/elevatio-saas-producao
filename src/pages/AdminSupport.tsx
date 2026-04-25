@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { cn } from '../lib/utils';
 import Loading from '../components/Loading';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 
 type Priority = 'Alta' | 'Média' | 'Baixa';
 type Status = 'Aberto' | 'Pendente' | 'Resolvido';
@@ -450,6 +451,8 @@ export default function AdminSupport() {
 
   return (
     <div className="h-[calc(100vh-8rem)] max-w-7xl mx-auto flex flex-col animate-fade-in">
+      <WelcomeBalloon pageId="support" icon="LifeBuoy" title="Central de Ajuda" description="Estamos aqui por você! Abra chamados técnicos, tire dúvidas ou dê sugestões. Nosso time de suporte resolverá tudo num piscar de olhos." />
+
       <div className="mb-6 flex flex-col items-stretch justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Suporte Técnico</h2>

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 
 type KeyProperty = {
   id: string;
@@ -105,6 +106,8 @@ export default function AdminKeys() {
 
   return (
     <div className="animate-fade-in">
+      <WelcomeBalloon pageId="keys" icon="Key" title="Controle de Chaves" description="Fim da bagunça! Saiba exatamente se a chave do imóvel está na imobiliária, com o proprietário ou no bolso de algum corretor." />
+
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="flex items-center gap-3 text-3xl font-black text-slate-900 dark:text-white">

@@ -16,6 +16,7 @@ import { getPlanConfig } from '../config/plans';
 import Loading from '../components/Loading';
 import DashboardCalendar from '../components/DashboardCalendar';
 import OnboardingChecklist from '../components/OnboardingChecklist';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 import {
   Tooltip,
   TooltipContent,
@@ -751,6 +752,12 @@ const AdminDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in pb-10">
+      <WelcomeBalloon
+        pageId="dashboard"
+        icon="LayoutDashboard"
+        title="Bem-vindo ao seu Império!"
+        description="Este é o seu centro de comando. Aqui você acompanha seu VGV, o desempenho da equipe e as métricas vitais da sua imobiliária em tempo real."
+      />
       
       {/* HEADER E PAINEL DE WIDGETS */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative">

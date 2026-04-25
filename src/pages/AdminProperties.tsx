@@ -9,6 +9,7 @@ import { usePlanLimits } from '../hooks/usePlanLimits';
 import { TOOLTIPS } from '../constants/tooltips';
 import PropertyPreviewModal from '../components/PropertyPreviewModal';
 import SignatureManagerModal from '../components/SignatureManagerModal';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -502,6 +503,12 @@ const AdminProperties: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-fade-in pb-20">
+      <WelcomeBalloon
+        pageId="properties"
+        icon="Building2"
+        title="Seu Portfólio de Imóveis"
+        description="Cadastre as propriedades aqui. Quanto mais ricas as informações e fotos, mais fácil será para a Inteligência Artificial gerar descrições e para os clientes comprarem."
+      />
       
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">

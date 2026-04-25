@@ -16,6 +16,7 @@ import FidelityTermsModal from '../components/FidelityTermsModal';
 import BillingPortalModal from '../components/BillingPortalModal';
 import IntegrationsManager from '../components/IntegrationsManager';
 import WhatsAppManager from '../components/WhatsAppManager';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 import { uploadCompanyAsset } from '../lib/storage';
 import { GlassCard } from '../components/ui/GlassCard';
 import {
@@ -3327,6 +3328,13 @@ const AdminConfig: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      <WelcomeBalloon
+        pageId="config"
+        icon="Settings"
+        title="O Coração do Sistema"
+        description="Configure a sua logomarca, convide seus corretores, defina sua chave PIX para recebimentos e ajuste a sua vitrine de imóveis pública."
+      />
+
       <div>
         <h1 className="text-2xl font-serif font-bold text-slate-800 dark:text-white">Configurações</h1>
         <p className="text-sm text-gray-500 dark:text-slate-400">Gerencie seu perfil, empresa, segurança e equipe.</p>

@@ -4,6 +4,7 @@ import Loading from '../components/Loading';
 import { useAuth } from '../contexts/AuthContext';
 import { useLeaderboard } from '../hooks/useLeaderboard';
 import { getLevelInfo } from '../services/gamification';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 
 const getAvatarInitial = (name?: string | null) => (name?.trim().charAt(0) || 'C').toUpperCase();
 
@@ -38,6 +39,8 @@ export default function AdminLeaderboard() {
 
   return (
     <div className="animate-fade-in space-y-6 pb-12">
+      <WelcomeBalloon pageId="leaderboard" icon="Trophy" title="Ranking de Campeões" description="A gamificação que acelera as vendas! Corretores que atendem rápido e fecham contratos ganham pontos, sobem de nível e dominam o pódio." />
+
       {/* HEADER DA TEMPORADA */}
       <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-center sm:justify-between">
         <div>

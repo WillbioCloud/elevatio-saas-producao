@@ -6,6 +6,7 @@ import SaleContractModal from '../components/SaleContractModal';
 import RentContractModal from '../components/RentContractModal';
 import AdministrativeContractModal from '../components/AdministrativeContractModal';
 import SignatureManagerModal from '../components/SignatureManagerModal';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { appendSignatureManifest, injectSignatureStamps } from '../utils/contractGenerator';
@@ -583,6 +584,8 @@ const AdminContracts: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in pb-10">
+      <WelcomeBalloon pageId="contracts" icon="FileText" title="Gestão de Contratos" description="Adeus papelada! Gere contratos de venda, locação e intermediação em 1 clique, e envie para assinatura digital com validade jurídica." />
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight">Central de Contratos</h1>

@@ -5,6 +5,7 @@ import { Icons } from '../components/Icons';
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '../../components/ui/chart';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 
 const CHART_COLORS: Record<string, string> = {
   Casa: '#3b82f6',
@@ -183,6 +184,8 @@ const AdminAnalytics: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
+      <WelcomeBalloon pageId="analytics" icon="PieChart" title="Inteligência de Dados" description="Tome decisões baseadas em números. Veja a conversão da sua equipe, os imóveis mais visitados e de onde vêm os seus melhores leads." />
+
       <div>
         <h1 className="text-3xl font-serif font-bold text-slate-800">Relatórios e Análises</h1>
         <p className="text-slate-500">Métricas de acesso, interesses e atividade da equipe.</p>

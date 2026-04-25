@@ -1,102 +1,64 @@
-import { useEffect, useRef, useState } from 'react';
-import { Lightbulb } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Icons } from '../Icons';
+import { useOnboarding } from '../../hooks/useOnboarding';
 
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-
-interface WelcomeBalloonProps {
-  id: string;
+type WelcomeBalloonProps = {
+  pageId: string;
   title: string;
-  description: string;
-  position: string;
-}
+  description: React.ReactNode;
+  icon: keyof typeof Icons;
+};
 
-export function WelcomeBalloon({ id, title, description, position }: WelcomeBalloonProps) {
-  const [isMounted, setIsMounted] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
-  const closeTimerRef = useRef<number | null>(null);
+export default function WelcomeBalloon({ pageId, title, description, icon: IconName }: WelcomeBalloonProps) {
+  const { state, loading, markAsVisited } = useOnboarding();
+  const Icon = Icons[IconName] || Icons.Info;
+
+  const isOpen = !loading && !state.visited[pageId];
 
   useEffect(() => {
-    const storageKey = `seen_balloon_${id}`;
-
-    try {
-      if (localStorage.getItem(storageKey)) {
-        setIsVisible(false);
-        setIsMounted(false);
-        return;
-      }
-    } catch {
-      // If storage is blocked, still show the hint for the current session.
-    }
-
-    setIsMounted(true);
-    const showTimer = window.setTimeout(() => setIsVisible(true), 20);
-
-    return () => {
-      window.clearTimeout(showTimer);
-
-      if (closeTimerRef.current) {
-        window.clearTimeout(closeTimerRef.current);
-      }
-    };
-  }, [id]);
+    // Não marca como visitado automaticamente ao abrir, apenas ao clicar em "Começar"
+  }, []);
 
   const handleClose = () => {
-    const storageKey = `seen_balloon_${id}`;
-
-    try {
-      localStorage.setItem(storageKey, 'true');
-    } catch {
-      // Storage may be unavailable in restricted browsing modes.
-    }
-
-    setIsVisible(false);
-    closeTimerRef.current = window.setTimeout(() => setIsMounted(false), 300);
+    markAsVisited(pageId);
   };
 
-  if (!isMounted) {
-    return null;
-  }
-
   return (
-    <aside
-      role="status"
-      aria-live="polite"
-      className={cn(
-        'fixed z-[60] w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-amber-200/80 bg-white p-4 text-slate-900 shadow-2xl ring-1 ring-amber-100 transition-opacity duration-300 ease-out',
-        'dark:border-amber-400/30 dark:bg-slate-950 dark:text-slate-50 dark:ring-amber-400/20',
-        isVisible ? 'opacity-100' : 'opacity-0',
-        position
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
+          >
+            <div className="bg-gradient-to-r from-brand-600 to-brand-400 h-32 w-full absolute top-0 left-0" />
+            <div className="relative pt-20 px-8 pb-8 flex flex-col items-center text-center">
+              <div className="w-20 h-20 bg-white dark:bg-slate-900 rounded-2xl shadow-xl flex items-center justify-center mb-6 border-4 border-white dark:border-slate-900 relative z-10">
+                <Icon size={40} className="text-brand-500" />
+              </div>
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-4 tracking-tight">{title}</h2>
+              <div className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed mb-8">
+                {description}
+              </div>
+              <button
+                onClick={handleClose}
+                className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3.5 px-6 rounded-xl transition-all shadow-sm hover:shadow-md active:scale-[0.98]"
+              >
+                Incrível, vamos começar!
+              </button>
+            </div>
+          </motion.div>
+        </div>
       )}
-    >
-      <div className="flex gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
-          <Lightbulb className="h-5 w-5" aria-hidden="true" />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase text-amber-700 dark:text-amber-300">
-            Dica
-          </p>
-          <h3 className="mt-1 text-base font-semibold leading-tight">{title}</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {description}
-          </p>
-
-          <div className="mt-4 flex justify-end">
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleClose}
-              className="bg-amber-500 text-slate-950 hover:bg-amber-400"
-            >
-              Ok, entendi
-            </Button>
-          </div>
-        </div>
-      </div>
-    </aside>
+    </AnimatePresence>
   );
 }
-
-export default WelcomeBalloon;

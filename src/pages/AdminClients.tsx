@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Icons } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
+import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 
 const UFs = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
 const ORGAOS = ['SSP', 'Detran', 'Polícia Federal', 'Cartório Civil', 'OAB', 'CREA', 'CRM'];
@@ -211,6 +212,8 @@ export default function AdminClients() {
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto font-['DM_Sans'] antialiased animate-in fade-in duration-500">
+      <WelcomeBalloon pageId="clients" icon="Users" title="Sua Carteira de Clientes" description="Gerencie proprietários e compradores. Tenha o histórico completo de contratos, assinaturas pendentes e dados de contato num só lugar." />
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Carteira de Clientes</h1>
