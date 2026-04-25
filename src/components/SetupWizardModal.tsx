@@ -47,6 +47,8 @@ const normalizePlanFromNav = (value: unknown): PlanType | undefined => {
 const sanitizeNewDomainLabel = (value: string) =>
   value
     .toLowerCase()
+    .normalize('NFD') // Separa a letra do acento (ex: 'ó' vira 'o' + '´')
+    .replace(/[\u0300-\u036f]/g, '') // Remove apenas os acentos
     .replace(/[^a-z0-9-]/g, '')
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');
