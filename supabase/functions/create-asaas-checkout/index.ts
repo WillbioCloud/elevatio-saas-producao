@@ -20,6 +20,11 @@ const normalizeString = (value: unknown) => {
   return value.trim()
 }
 
+const normalizeWhatsappCredits = (value: unknown) => {
+  const numericValue = Number(value)
+  return Number.isFinite(numericValue) ? Math.max(0, Math.trunc(numericValue)) : 0
+}
+
 const buildSubscriptionDiscount = (coupon: Record<string, any> | null, baseValue: number) => {
   if (!coupon) return null
 
@@ -92,7 +97,7 @@ serve(async (req) => {
 
     const { data: planRecord, error: planError } = await supabaseAdmin
       .from('saas_plans')
-      .select('id, name, price_monthly, price_yearly, price')
+      .select('id, name, price_monthly, price_yearly, price, whatsapp_credits')
       .ilike('name', planName)
       .eq('active', true)
       .maybeSingle()
@@ -280,6 +285,33 @@ serve(async (req) => {
       .eq('id', companyId)
 
     if (companyUpdateError) throw companyUpdateError
+
+    const normalizedCompanyPlanStatus = normalizeString(company.plan_status).toLowerCase()
+    const hasActiveTrialWindow = typeof company.trial_ends_at === 'string'
+      && company.trial_ends_at
+      && !Number.isNaN(new Date(company.trial_ends_at).getTime())
+      && new Date(company.trial_ends_at) > new Date()
+    const isInitialTrialProvisioning =
+      !company.asaas_subscription_id
+      && (
+        normalizedCompanyPlanStatus === 'trial'
+        || normalizedCompanyPlanStatus === 'trialing'
+        || hasActiveTrialWindow
+      )
+    const currentWhatsappCredits = Number(company.whatsapp_credits ?? 0)
+    const initialWhatsappCredits = normalizeWhatsappCredits(planRecord.whatsapp_credits)
+
+    if (
+      isInitialTrialProvisioning
+      && (!Number.isFinite(currentWhatsappCredits) || currentWhatsappCredits <= 0)
+    ) {
+      const { error: whatsappCreditsError } = await supabaseAdmin
+        .from('companies')
+        .update({ whatsapp_credits: initialWhatsappCredits })
+        .eq('id', companyId)
+
+      if (whatsappCreditsError) throw whatsappCreditsError
+    }
 
     if (couponRecord?.id) {
       const couponLinkUpdate: Record<string, unknown> = { applied_coupon_id: couponRecord.id }

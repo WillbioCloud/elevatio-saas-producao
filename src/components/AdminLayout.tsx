@@ -31,10 +31,22 @@ type BillingGraceWarning = {
   daysUntilBlock: number;
 };
 
+type BillingWarning = {
+  dueDate: string;
+  daysLeft: number;
+  isOverdue: boolean;
+};
+
 type AsaasPaymentLinkCandidate = {
   status?: string | null;
   dueDate?: string | null;
   invoiceUrl?: string | null;
+};
+
+type BillingProtectionWindow = {
+  planStatus: string | null;
+  trialEndsAt: string | null;
+  contractEndDate: string | null;
 };
 
 type TrialSidebarInfo = {
@@ -64,7 +76,7 @@ const parseLocalDate = (value: string | null | undefined) => {
   return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
 };
 
-const getOverdueDays = (dueDate: string | null | undefined) => {
+const getDaysUntilDate = (dueDate: string | null | undefined) => {
   const parsedDueDate = parseLocalDate(dueDate);
   if (!parsedDueDate) return null;
 
@@ -72,7 +84,14 @@ const getOverdueDays = (dueDate: string | null | undefined) => {
   today.setHours(0, 0, 0, 0);
   parsedDueDate.setHours(0, 0, 0, 0);
 
-  return Math.max(0, Math.floor((today.getTime() - parsedDueDate.getTime()) / DAY_IN_MS));
+  return Math.ceil((parsedDueDate.getTime() - today.getTime()) / DAY_IN_MS);
+};
+
+const getOverdueDays = (dueDate: string | null | undefined) => {
+  const daysUntilDue = getDaysUntilDate(dueDate);
+  if (daysUntilDue === null || daysUntilDue > 0) return null;
+
+  return Math.abs(daysUntilDue);
 };
 
 const getPaymentDueTimestamp = (payment: AsaasPaymentLinkCandidate) =>
@@ -93,6 +112,34 @@ const getTrialDaysLeft = (trialEndsAt: string | null | undefined) => {
 const isTrialLikeStatus = (status: string) =>
   !status || status === 'trial' || status === 'trialing' || status === 'pending';
 
+const hasActiveDateWindow = (value: string | null | undefined) => {
+  const daysUntilDate = getDaysUntilDate(value);
+  return daysUntilDate !== null && daysUntilDate >= 0;
+};
+
+const hasActiveTrialProtection = (
+  planStatus: string | null | undefined,
+  trialEndsAt: string | null | undefined
+) => {
+  const normalizedStatus = normalizeBillingStatus(planStatus);
+  return normalizedStatus === 'trial' || normalizedStatus === 'trialing' || hasActiveDateWindow(trialEndsAt);
+};
+
+const resolveBillingWarningDueDate = (
+  billingWindow: BillingProtectionWindow,
+  fallbackDueDate: string | null | undefined
+) => {
+  if (hasActiveDateWindow(billingWindow.trialEndsAt)) {
+    return billingWindow.trialEndsAt;
+  }
+
+  if (hasActiveDateWindow(billingWindow.contractEndDate)) {
+    return billingWindow.contractEndDate;
+  }
+
+  return fallbackDueDate ?? billingWindow.contractEndDate ?? billingWindow.trialEndsAt ?? null;
+};
+
 const AdminLayout: React.FC = () => {
   const { user, signOut, refreshUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -105,7 +152,7 @@ const AdminLayout: React.FC = () => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [contractPlanName, setContractPlanName] = useState(() => user?.company?.plan ?? '');
-  const [billingWarning, setBillingWarning] = useState<{ dueDate: string; daysLeft: number; isOverdue: boolean } | null>(null);
+  const [billingWarning, setBillingWarning] = useState<BillingWarning | null>(null);
   const [billingGraceWarning, setBillingGraceWarning] = useState<BillingGraceWarning | null>(null);
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
   const [isOpeningPaymentLink, setIsOpeningPaymentLink] = useState(false);
@@ -345,11 +392,22 @@ const AdminLayout: React.FC = () => {
 
     const checkPastDueGrace = async () => {
       try {
-        const [{ data: company, error: companyError }, { data: payment, error: paymentError }] = await Promise.all([
+        const [
+          { data: company, error: companyError },
+          { data: contract, error: contractError },
+          { data: payment, error: paymentError },
+        ] = await Promise.all([
           supabase
             .from('companies')
-            .select('plan_status')
+            .select('plan_status, trial_ends_at')
             .eq('id', user.company_id)
+            .maybeSingle(),
+          supabase
+            .from('saas_contracts')
+            .select('end_date')
+            .eq('company_id', user.company_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
             .maybeSingle(),
           supabase
             .from('saas_payments')
@@ -362,19 +420,32 @@ const AdminLayout: React.FC = () => {
         ]);
 
         if (companyError) throw companyError;
+        if (contractError) throw contractError;
         if (paymentError) throw paymentError;
         if (!isMounted) return;
 
-        const overdueDays = getOverdueDays(payment?.due_date ?? null);
+        const billingWindow: BillingProtectionWindow = {
+          planStatus: company?.plan_status ?? null,
+          trialEndsAt: company?.trial_ends_at ?? null,
+          contractEndDate: contract?.end_date ?? null,
+        };
+
+        if (hasActiveTrialProtection(billingWindow.planStatus, billingWindow.trialEndsAt)) {
+          setBillingGraceWarning(null);
+          return;
+        }
+
+        const referenceDueDate = resolveBillingWarningDueDate(billingWindow, payment?.due_date ?? null);
+        const overdueDays = getOverdueDays(referenceDueDate);
 
         if (
           normalizeBillingStatus(company?.plan_status) === 'past_due' &&
-          payment?.due_date &&
+          referenceDueDate &&
           overdueDays !== null &&
           overdueDays <= PAST_DUE_GRACE_DAYS
         ) {
           setBillingGraceWarning({
-            dueDate: payment.due_date,
+            dueDate: referenceDueDate,
             daysOverdue: overdueDays,
             daysUntilBlock: Math.max(1, PAST_DUE_GRACE_DAYS + 1 - overdueDays),
           });
@@ -400,35 +471,68 @@ const AdminLayout: React.FC = () => {
   }, [role, user?.company_id]);
 
   useEffect(() => {
-    if (!user?.company_id || role !== 'owner') return;
+    if (!user?.company_id || role !== 'owner') {
+      setBillingWarning(null);
+      return;
+    }
 
     let isMounted = true;
 
     const checkBilling = async () => {
       try {
-        const { data, error } = await supabase
-          .from('saas_payments')
-          .select('due_date, status')
-          .eq('company_id', user.company_id)
-          .in('status', ['PENDING', 'OVERDUE', 'pending', 'overdue'])
-          .order('due_date', { ascending: true })
-          .limit(1)
-          .maybeSingle();
+        const [
+          { data: company, error: companyError },
+          { data: contract, error: contractError },
+          { data: payment, error: paymentError },
+        ] = await Promise.all([
+          supabase
+            .from('companies')
+            .select('plan_status, trial_ends_at')
+            .eq('id', user.company_id)
+            .maybeSingle(),
+          supabase
+            .from('saas_contracts')
+            .select('end_date')
+            .eq('company_id', user.company_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from('saas_payments')
+            .select('due_date, status')
+            .eq('company_id', user.company_id)
+            .in('status', ['PENDING', 'OVERDUE', 'pending', 'overdue'])
+            .order('due_date', { ascending: true })
+            .limit(1)
+            .maybeSingle(),
+        ]);
 
-        if (error) throw error;
+        if (companyError) throw companyError;
+        if (contractError) throw contractError;
+        if (paymentError) throw paymentError;
         if (!isMounted) return;
 
-        if (data) {
-          const today = new Date();
-          const due = new Date(data.due_date);
-          const diffTime = due.getTime() - today.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const billingWindow: BillingProtectionWindow = {
+          planStatus: company?.plan_status ?? null,
+          trialEndsAt: company?.trial_ends_at ?? null,
+          contractEndDate: contract?.end_date ?? null,
+        };
 
+        if (hasActiveTrialProtection(billingWindow.planStatus, billingWindow.trialEndsAt)) {
+          setBillingWarning(null);
+          return;
+        }
+
+        const referenceDueDate = resolveBillingWarningDueDate(billingWindow, payment?.due_date ?? null);
+        const diffDays = getDaysUntilDate(referenceDueDate);
+        const normalizedPaymentStatus = normalizeBillingStatus(payment?.status);
+
+        if (payment && referenceDueDate && diffDays !== null) {
           if (diffDays <= 5) {
             setBillingWarning({
-              dueDate: data.due_date,
+              dueDate: referenceDueDate,
               daysLeft: diffDays,
-              isOverdue: diffDays < 0 || data.status.toUpperCase() === 'OVERDUE',
+              isOverdue: diffDays < 0 || (normalizedPaymentStatus === 'overdue' && diffDays <= 0),
             });
           } else {
             setBillingWarning(null);
@@ -438,6 +542,7 @@ const AdminLayout: React.FC = () => {
         }
       } catch (err) {
         console.error('Erro ao checar pagamentos do SaaS', err);
+        if (isMounted) setBillingWarning(null);
       }
     };
 

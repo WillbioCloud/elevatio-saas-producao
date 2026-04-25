@@ -77,6 +77,11 @@ const formatCpfCnpj = (value: string) => {
     .slice(0, 18);
 };
 
+const normalizeWhatsappCredits = (value: unknown) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? Math.max(0, Math.trunc(numericValue)) : 0;
+};
+
 export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) {
   const { user } = useAuth();
   const location = useLocation();
@@ -205,6 +210,23 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
       const trialEnds = new Date();
       trialEnds.setDate(trialEnds.getDate() + 7);
 
+      const { data: planRecord, error: planError } = await supabase
+        .from('saas_plans')
+        .select('id, whatsapp_credits')
+        .ilike('name', formData.plan)
+        .eq('active', true)
+        .maybeSingle();
+
+      if (planError) {
+        throw new Error('Erro ao carregar o plano selecionado: ' + planError.message);
+      }
+
+      if (!planRecord?.id) {
+        throw new Error('Plano selecionado nao encontrado. Atualize a pagina e tente novamente.');
+      }
+
+      const initialWhatsappCredits = normalizeWhatsappCredits(planRecord.whatsapp_credits);
+
       const slug = formData.companyName
         .toLowerCase()
         .replace(/[^a-z0-9]/g, '-')
@@ -232,6 +254,7 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
         template: formData.template,
         plan_status: 'trial',
         plan: formData.plan,
+        whatsapp_credits: initialWhatsappCredits,
         trial_ends_at: trialEnds.toISOString(),
         // SALVANDO O DOMINIO DIRETAMENTE NA CRIACAO (Fim das falhas parciais!)
         domain: selectedProductionDomain,
@@ -266,17 +289,10 @@ export default function SetupWizardModal({ onComplete }: SetupWizardModalProps) 
           throw new Error('Erro ao vincular perfil de administrador: ' + profileError.message);
         }
 
-        // Busca o UUID real do plano selecionado na nova tabela saas_plans
-        const { data: planRecord } = await supabase
-          .from('saas_plans')
-          .select('id')
-          .ilike('name', formData.plan)
-          .maybeSingle();
-
         const { error: contractError } = await supabase.from('saas_contracts').insert([
           {
             company_id: newCompany.id,
-            plan_id: planRecord?.id || null,
+            plan_id: planRecord.id,
             plan_name: formData.plan,
             status: 'pending',
             start_date: new Date().toISOString(),

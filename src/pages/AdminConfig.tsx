@@ -1102,6 +1102,7 @@ const AdminConfig: React.FC = () => {
   const [checkoutCoupon, setCheckoutCoupon] = useState('');
   const [validatedCoupon, setValidatedCoupon] = useState<CheckoutCoupon | null>(null);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [isRemovingCoupon, setIsRemovingCoupon] = useState(false);
   // --- ESTADOS DO DOMÍNIO SECUNDÁRIO INTELIGENTE ---
   const [autoSecondaryDomain, setAutoSecondaryDomain] = useState('');
   const [isCheckingSecondary, setIsCheckingSecondary] = useState(false);
@@ -1128,6 +1129,26 @@ const AdminConfig: React.FC = () => {
         : '',
     []
   );
+
+  const handleRemoveCoupon = async () => {
+    if (!user?.company_id) return;
+    setIsRemovingCoupon(true);
+    try {
+      const { error } = await supabase
+        .from('companies')
+        .update({ applied_coupon_id: null })
+        .eq('id', user.company_id);
+
+      if (error) throw error;
+
+      // Atualiza o estado local para sumir com o banner na hora
+      setTenant(prev => prev ? { ...prev, applied_coupon_id: null } : prev);
+    } catch (err: any) {
+      console.error('Erro ao remover cupom:', err.message);
+    } finally {
+      setIsRemovingCoupon(false);
+    }
+  };
 
   useEffect(() => {
     setProfileAvatarUrl(user?.avatar_url || '');
@@ -4362,10 +4383,18 @@ const AdminConfig: React.FC = () => {
                       )}
                       {tenant?.applied_coupon_id && (
                         <div className="mt-2 flex items-center gap-2 px-3 py-1 bg-brand-500/20 backdrop-blur-sm rounded-full border border-brand-300/30 w-fit">
-                          <Icons.Tag size={14} className="text-brand-300" />
-                          <span className="text-[10px] font-bold text-white uppercase tracking-wider">
+                          <CheckCircle2 size={14} className="text-brand-600 dark:text-brand-300" />
+                          <span className="text-[10px] font-bold text-brand-800 dark:text-brand-200 uppercase tracking-wider">
                             Cupom de Desconto Ativo
                           </span>
+                          <button
+                            onClick={handleRemoveCoupon}
+                            disabled={isRemovingCoupon}
+                            className="ml-2 flex items-center justify-center rounded-full p-1 text-brand-600 transition-colors hover:bg-brand-500/30 disabled:opacity-50 dark:text-brand-300"
+                            title="Remover Cupom"
+                          >
+                            {isRemovingCoupon ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
+                          </button>
                         </div>
                       )}
                     </div>

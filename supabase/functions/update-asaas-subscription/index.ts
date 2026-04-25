@@ -6,6 +6,11 @@ const normalizeString = (value: unknown) => {
   return value.trim()
 }
 
+const normalizeWhatsappCredits = (value: unknown) => {
+  const numericValue = Number(value)
+  return Number.isFinite(numericValue) ? Math.max(0, Math.trunc(numericValue)) : 0
+}
+
 const buildSubscriptionDiscount = (coupon: Record<string, any> | null, baseValue: number) => {
   if (!coupon) return null
 
@@ -125,12 +130,13 @@ serve(async (req) => {
 
     const { data: planRecord } = await supabase
       .from('saas_plans')
-      .select('id, has_free_domain, price_monthly, price_yearly, price')
+      .select('id, has_free_domain, price_monthly, price_yearly, price, whatsapp_credits')
       .ilike('name', planName)
       .maybeSingle()
 
     const plan_id = planRecord?.id || null
     const has_free_domain = planRecord?.has_free_domain || false
+    const initialWhatsappCredits = normalizeWhatsappCredits(planRecord?.whatsapp_credits)
 
     let couponRecord: Record<string, any> | null = null
     let shouldPersistCoupon = false
@@ -473,6 +479,28 @@ serve(async (req) => {
     const companyUpdate: Record<string, unknown> = {
       plan: planName,
       asaas_subscription_id: newSubscriptionId,
+    }
+
+    const normalizedCompanyPlanStatus = normalizeString(company.plan_status).toLowerCase()
+    const hasActiveTrialWindow = typeof company.trial_ends_at === 'string'
+      && company.trial_ends_at
+      && !Number.isNaN(new Date(company.trial_ends_at).getTime())
+      && new Date(company.trial_ends_at) > new Date()
+    const isInitialTrialProvisioning =
+      !company.asaas_subscription_id
+      && !contract?.subscription_id
+      && (
+        normalizedCompanyPlanStatus === 'trial'
+        || normalizedCompanyPlanStatus === 'trialing'
+        || hasActiveTrialWindow
+      )
+    const currentWhatsappCredits = Number(company.whatsapp_credits ?? 0)
+
+    if (
+      isInitialTrialProvisioning
+      && (!Number.isFinite(currentWhatsappCredits) || currentWhatsappCredits <= 0)
+    ) {
+      companyUpdate.whatsapp_credits = initialWhatsappCredits
     }
 
     if (normalizedSecondaryDomain) {

@@ -17,6 +17,7 @@ type BillingSnapshot = {
   company: BillingCompany | null;
   status: string | null;
   periodEnd: string | null;
+  trialEndsAt: string | null;
   planName: string | null;
   pastDueOverdueDays?: number | null;
   isPastDueWithinGrace?: boolean;
@@ -54,7 +55,10 @@ const getOverdueDays = (dueDate: string | null | undefined) => {
   today.setHours(0, 0, 0, 0);
   parsedDueDate.setHours(0, 0, 0, 0);
 
-  return Math.max(0, Math.floor((today.getTime() - parsedDueDate.getTime()) / DAY_IN_MS));
+  const diffDays = Math.floor((today.getTime() - parsedDueDate.getTime()) / DAY_IN_MS);
+  if (diffDays < 0) return null;
+
+  return diffDays;
 };
 
 const isFutureDate = (value: string | null) => {
@@ -96,7 +100,8 @@ const fetchFreshBillingSnapshot = async (companyId: string): Promise<BillingSnap
         }
       : null,
     status: toOptionalString(company?.plan_status) ?? toOptionalString(contract?.status),
-    periodEnd: toOptionalString(company?.trial_ends_at) ?? toOptionalString(contract?.end_date),
+    periodEnd: toOptionalString(contract?.end_date) ?? toOptionalString(company?.trial_ends_at),
+    trialEndsAt: toOptionalString(company?.trial_ends_at),
     planName: toOptionalString(contract?.plan_name) ?? toOptionalString(company?.plan),
   };
 };
@@ -174,6 +179,7 @@ export default function BillingGuard({ children }: { children: React.ReactNode }
             },
             status: 'unknown',
             periodEnd: null,
+            trialEndsAt: user.company?.trial_ends_at ?? null,
             planName: user.company?.plan ?? null,
           });
         }
@@ -203,6 +209,10 @@ export default function BillingGuard({ children }: { children: React.ReactNode }
   const normalizedStatus = useMemo(
     () => normalizeStatus(billingSnapshot?.status ?? null),
     [billingSnapshot?.status]
+  );
+  const hasActiveTrialWindow = useMemo(
+    () => isFutureDate(billingSnapshot?.trialEndsAt ?? null),
+    [billingSnapshot?.trialEndsAt]
   );
 
   // 1. Splash Screen de Carregamento de Workspace
@@ -305,8 +315,11 @@ export default function BillingGuard({ children }: { children: React.ReactNode }
 
   // Status permitidos: active, trialing/trial, ou cancelado com dias sobrando.
   const isTrialValid =
-    (normalizedStatus === 'trialing' || normalizedStatus === 'trial') &&
-    (!billingSnapshot.periodEnd || isFutureDate(billingSnapshot.periodEnd));
+    hasActiveTrialWindow ||
+    (
+      (normalizedStatus === 'trialing' || normalizedStatus === 'trial') &&
+      (!billingSnapshot.periodEnd || isFutureDate(billingSnapshot.periodEnd))
+    );
 
   const isAllowed =
     normalizedStatus === 'active' ||
