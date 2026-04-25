@@ -4,7 +4,7 @@
 > **Supabase Project ID:** `udqychpxnbdaxlorbhyw`
 > **Região:** `sa-east-1` (São Paulo)
 > **PostgreSQL:** 17.6
-> **Última atualização deste documento:** 14/04/2026
+> **Última atualização deste documento:** 25/04/2026
 
 ---
 
@@ -36,14 +36,14 @@ super_admin > owner > admin > manager > corretor
 
 ---
 
-## 2. TABELAS — 31 TABELAS TOTAIS
+## 2. TABELAS — 36 TABELAS TOTAIS
 
 ### 2.1 Tabelas de Negócio (multi-tenant)
 
 ---
 
 #### `companies` — Tenant raiz
-**RLS:** ✅ | **Linhas:** 3
+**RLS:** ✅ | **Linhas:** 7
 
 | Coluna | Tipo | Notas |
 |---|---|---|
@@ -53,7 +53,7 @@ super_admin > owner > admin > manager > corretor
 | `subdomain` | text UNIQUE | Subdomínio do site público |
 | `domain` | text | Domínio customizado principal |
 | `domain_secondary` | text | Domínio secundário |
-| `domain_status` | text | `pending\|active\|error` |
+| `domain_status` | text | `pending\|active\|error\|expired` |
 | `domain_secondary_status` | text | `pending\|active\|error\|idle` |
 | `domain_type` | text | `new\|existing` |
 | `email` | text | Email de contato |
@@ -61,7 +61,7 @@ super_admin > owner > admin > manager > corretor
 | `cpf_cnpj` | text | Documento fiscal |
 | `document` | text | Documento alternativo |
 | `plan` | text | Nome do plano atual (default `'free'`) |
-| `plan_status` | text | `trial\|active\|canceled\|overdue` (default `'trial'`) |
+| `plan_status` | text | `trial\|active\|past_due\|canceled\|overdue` (default `'trial'`) |
 | `trial_ends_at` | timestamptz | Fim do período de trial |
 | `active` | boolean | Empresa ativa (default `true`) |
 | `template` | text | Slug do template de site escolhido |
@@ -70,16 +70,17 @@ super_admin > owner > admin > manager > corretor
 | `admin_signature_url` | text | Assinatura do administrador para contratos |
 | `payment_api_key` | text | ⚠️ Chave de API do gateway do tenant (SENSÍVEL) |
 | `payment_gateway` | text | Gateway usado (default `'asaas'`) |
-| `use_asaas` | boolean | Habilita cobrança via Asaas para clientes |
+| `use_asaas` | boolean | Habilita cobrança via Asaas para clientes (default `false`) |
 | `asaas_customer_id` | text | ID do customer no Asaas (assinatura do plano) |
 | `asaas_subscription_id` | text | ID da assinatura do plano no Asaas |
-| `finance_config` | jsonb | Configurações financeiras extras |
+| `finance_config` | jsonb | Configurações financeiras extras (default `{}`) |
 | `default_commission` | numeric | Comissão padrão da imobiliária (default 10%) |
 | `broker_commission` | numeric | % da comissão que vai ao corretor (default 30%) |
-| `manual_discount_value` | numeric | Valor de desconto manual |
+| `manual_discount_value` | numeric | Valor de desconto manual (default 0) |
 | `manual_discount_type` | text | `percentage\|fixed\|free` |
 | `applied_coupon_id` | uuid FK→saas_coupons | Cupom ativo |
-| `coupon_start_date` | date | Data de início do cupom |
+| `coupon_start_date` | timestamptz | Data de início do cupom |
+| `whatsapp_credits` | int | Créditos de WhatsApp (default 0) |
 | `created_by` | uuid | `auth.uid()` de quem criou |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
@@ -105,7 +106,7 @@ super_admin > owner > admin > manager > corretor
 ---
 
 #### `profiles` — Usuários do sistema
-**RLS:** ✅ | **Linhas:** 5
+**RLS:** ✅ | **Linhas:** 8
 
 | Coluna | Tipo | Notas |
 |---|---|---|
@@ -123,7 +124,8 @@ super_admin > owner > admin > manager > corretor
 | `xp_points` | int | Pontos de experiência (default 0) |
 | `level` | int | Nível gamificação (default 1) |
 | `level_title` | text | (default `'Corretor Júnior'`) |
-| `distribution_rules` | jsonb | Regras de distribuição automática de leads |
+| `distribution_rules` | jsonb | Regras de distribuição automática de leads (default `{"types":[],"enabled":false}`) |
+| `onboarding_state` | jsonb | Estado do onboarding (default `{"visited":{},"checklist":["create-company"]}`) |
 | `last_assigned_at` | timestamptz | |
 | `last_sign_in_at` | timestamptz | |
 | `last_seen` | timestamptz | |
@@ -171,6 +173,7 @@ super_admin > owner > admin > manager > corretor
 | `slug` | text UNIQUE | |
 | `iptu` | numeric | |
 | `condominium` | numeric | |
+| `condominium_id` | text | |
 | `video_url` | text | |
 | `seo_title` | text | |
 | `seo_description` | text | |
@@ -181,7 +184,10 @@ super_admin > owner > admin > manager > corretor
 | `owner_signature_url` | text | |
 | `owner_signature_at` | timestamptz | |
 | `strategic_weight` | numeric | (default 1.0) |
-| `priority_level` | text | `padrao\|prioritario\|urgente` |
+| `priority_level` | text | `padrao\|prioritario\|urgente` (default `'padrao'`) |
+| `property_registration` | text | Matrícula |
+| `property_registry_office` | text | Cartório |
+| `property_municipal_registration` | text | |
 | `owner_name` | text | ⚠️ Dados pessoais sensíveis |
 | `owner_phone` | text | ⚠️ |
 | `owner_email` | text | ⚠️ |
@@ -193,18 +199,14 @@ super_admin > owner > admin > manager > corretor
 | `owner_profession` | text | |
 | `owner_marital_status` | text | |
 | `owner_address` | text | |
+| `owner_pix_key` | text | ⚠️ Chave PIX do proprietário |
+| `owner_pix_type` | text | |
 | `owner_spouse_name` | text | |
 | `owner_spouse_document` | text | |
 | `owner_spouse_rg` | text | |
 | `owner_spouse_rg_org` | text | |
 | `owner_spouse_rg_uf` | text | |
 | `owner_spouse_cpf` | text | |
-| `owner_pix_key` | text | ⚠️ Chave PIX do proprietário |
-| `owner_pix_type` | text | |
-| `property_registration` | text | Matrícula |
-| `property_registry_office` | text | Cartório |
-| `property_municipal_registration` | text | |
-| `condominium_id` | text | |
 | `created_at` | timestamptz | |
 
 > ⚠️ Todos os campos `owner_*` são dados pessoais sensíveis expostos publicamente pela policy `Imoveis publicos`.
@@ -226,7 +228,12 @@ super_admin > owner > admin > manager > corretor
 | `phone` | text | |
 | `message` | text | |
 | `source` | text | Origem do lead (default `'Site'`) |
-| `funnel_step` | text | `pre_atendimento\|atendimento\|proposta\|venda_ganha\|perdido` |
+| `external_source` | text | |
+| `external_lead_id` | text | |
+| `campaign_id` | text | |
+| `form_id` | text | |
+| `is_property_specific` | boolean | (default `false`) |
+| `funnel_step` | text | `pre_atendimento\|atendimento\|proposta\|venda_ganha\|perdido` (default `'pre_atendimento'`) |
 | `stage_updated_at` | timestamptz | |
 | `value` | numeric | Valor estimado |
 | `deal_value` | float8 | Valor real do negócio |
@@ -234,18 +241,22 @@ super_admin > owner > admin > manager > corretor
 | `payment_method` | text | |
 | `contract_date` | date | |
 | `probability` | int | % (default 20) |
+| `score` | int | (default 50) |
 | `lead_score` | int | Score calculado (default 0) |
-| `behavioral_score` | int | |
-| `source_quality` | text | `frio\|morno\|quente` |
+| `score_visit` | int | (default 0) |
+| `score_favorite` | int | (default 0) |
+| `score_whatsapp` | int | (default 0) |
+| `behavioral_score` | int | (default 0) |
+| `source_quality` | text | `frio\|morno\|quente` (default `'frio'`) |
 | `loss_reason` | text | |
 | `proposal_notes` | text | |
 | `budget` | numeric | |
 | `desired_type` | text | |
 | `desired_bedrooms` | int | |
 | `desired_location` | text | |
-| `interested_properties` | jsonb | Array de IDs de imóveis |
-| `navigation_data` | jsonb | Dados de navegação no site |
-| `metadata` | jsonb | |
+| `interested_properties` | jsonb | Array de IDs de imóveis (default `[]`) |
+| `navigation_data` | jsonb | Dados de navegação no site (default `[]`) |
+| `metadata` | jsonb | (default `{}`) |
 | `cpf` | text | |
 | `rg` | text | |
 | `rg_org` | text | |
@@ -273,7 +284,7 @@ super_admin > owner > admin > manager > corretor
 ---
 
 #### `contracts` — Contratos
-**RLS:** ✅ | **Linhas:** 39
+**RLS:** ✅ | **Linhas:** 71
 
 | Coluna | Tipo | Notas |
 |---|---|---|
@@ -283,6 +294,7 @@ super_admin > owner > admin > manager > corretor
 | `client_id` | uuid FK→leads | |
 | `property_id` | uuid FK→properties | |
 | `broker_id` | uuid FK→profiles | |
+| `created_by` | uuid FK→auth.users | |
 | `type` | text | `sale\|rent` |
 | `status` | text | `pending\|active\|canceled\|archived\|finished` (default `'draft'`) |
 | `keys_status` | text | Status das chaves (default `'na_imobiliaria'`) |
@@ -295,7 +307,7 @@ super_admin > owner > admin > manager > corretor
 | `sale_financing_bank` | text | |
 | `sale_is_cash` | boolean | |
 | `sale_payment_method` | text | |
-| `sale_consortium_value` | numeric | |
+| `sale_consortium_value` | numeric | (default 0) |
 | `has_permutation` | boolean | |
 | `permutation_details` | text | |
 | `permutation_value` | numeric | |
@@ -320,7 +332,7 @@ super_admin > owner > admin > manager > corretor
 ---
 
 #### `installments` — Parcelas
-**RLS:** ✅ | **Linhas:** 0
+**RLS:** ✅ | **Linhas:** 222
 
 | Coluna | Tipo | Notas |
 |---|---|---|
@@ -361,7 +373,7 @@ super_admin > owner > admin > manager > corretor
 ---
 
 #### `contract_signatures` — Assinaturas eletrônicas
-**RLS:** ✅ | **Linhas:** 44
+**RLS:** ✅ | **Linhas:** 193
 
 | Coluna | Tipo | Notas |
 |---|---|---|
@@ -403,13 +415,14 @@ super_admin > owner > admin > manager > corretor
 ---
 
 #### `notifications` — Notificações do CRM
-**RLS:** ✅ | **Linhas:** 84
+**RLS:** ✅ | **Linhas:** 124
 
 | Coluna | Tipo | Notas |
 |---|---|---|
 | `id` | uuid PK | |
 | `company_id` | uuid FK→companies | |
 | `user_id` | uuid FK→profiles | |
+| `sender_id` | uuid FK→profiles | |
 | `title` | text | |
 | `message` | text | |
 | `content` | text | |
@@ -418,70 +431,72 @@ super_admin > owner > admin > manager > corretor
 | `link` | text | |
 | `created_at` | timestamptz | |
 
-> ⚠️ Policy `Update de notificacoes`: `qual: true, roles: public` — qualquer anônimo pode modificar qualquer notificação.
-> ⚠️ Policy `Leitura de notificacoes`: `qual: true, roles: public` — leitura pública de todas as notificações.
-
 ---
 
-#### `settings` — Configurações operacionais do tenant
-**RLS:** ✅ | **Linhas:** 1
-
-| Coluna | Tipo | Notas |
-|---|---|---|
-| `id` | int PK | Default 1 (uma row por tenant) |
-| `company_id` | uuid FK→companies | |
-| `company_name` | text | |
-| `auto_distribution` | boolean | |
-| `route_to_central` | boolean | |
-| `central_whatsapp` | text | |
-| `central_user_id` | uuid FK→profiles | |
-| `permissions` | jsonb | Permissões dos corretores |
-| `kanban_config` | jsonb | Configuração dos cards por etapa do funil |
-
-**permissions JSONB:**
-```json
-{
-  "atendentes_can_assign_leads": true,
-  "brokers_can_edit_properties": false,
-  "brokers_can_create_properties": false
-}
-```
-
----
-
-#### `tasks` — Tarefas e agenda
-**RLS:** ✅ | **Linhas:** 2
+#### `tasks` — Tarefas do CRM
+**RLS:** ✅ | **Linhas:** 55
 
 | Coluna | Tipo | Notas |
 |---|---|---|
 | `id` | uuid PK | |
 | `company_id` | uuid FK→companies | |
-| `user_id` | uuid FK→auth.users | |
 | `lead_id` | uuid FK→leads | |
+| `user_id` | uuid FK→profiles | |
 | `title` | text | |
 | `description` | text | |
-| `type` | text | `call\|visit\|meeting\|other` |
-| `status` | text | `pending\|completed\|canceled` |
-| `completed` | boolean | |
+| `type` | text | (default `'call'`) |
+| `priority` | text | (default `'media'`) |
 | `due_date` | timestamptz | |
+| `completed` | boolean | |
+| `status` | text | (default `'pending'`) |
 | `created_at` | timestamptz | |
-
-> ⚠️ Bug no frontend: `AdminTasks.tsx` usa `toDateString()` sem normalizar timezone.
 
 ---
 
-#### `timeline_events` — Log de atividades do CRM
-**RLS:** ✅ | **Linhas:** 29
+#### `timeline_events` — Histórico do lead
+**RLS:** ✅ | **Linhas:** 89
 
 | Coluna | Tipo | Notas |
 |---|---|---|
 | `id` | uuid PK | |
 | `company_id` | uuid FK→companies | |
 | `lead_id` | uuid FK→leads | |
-| `created_by` | uuid | `auth.uid()` |
+| `created_by` | uuid FK→profiles | (default `auth.uid()`) |
 | `type` | text | |
 | `description` | text | |
-| `metadata` | jsonb | |
+| `metadata` | jsonb | (default `{}`) |
+| `created_at` | timestamptz | |
+
+---
+
+#### `settings` — Configurações da empresa
+**RLS:** ✅ | **Linhas:** 3
+
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `id` | int PK | `nextval('settings_id_seq')` |
+| `company_id` | uuid FK→companies UNIQUE | |
+| `central_user_id` | uuid FK→profiles | |
+| `company_name` | text | (default `'TR Imóveis'`) |
+| `auto_distribution` | boolean | (default `false`) |
+| `route_to_central` | boolean | (default `true`) |
+| `central_whatsapp` | text | (default `''`) |
+| `kanban_config` | jsonb | Subetapas do kanban por coluna |
+| `permissions` | jsonb | `{"atendentes_can_assign_leads":true,"brokers_can_edit_properties":false,"brokers_can_create_properties":false}` |
+
+---
+
+#### `site_visits` — Analytics do site público
+**RLS:** ✅ | **Linhas:** 0
+
+> ⚠️ Sem `company_id` — analytics misturadas entre tenants (bug M5).
+
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `id` | uuid PK | |
+| `page` | text | |
+| `session_id` | text | |
+| `device_id` | text | |
 | `created_at` | timestamptz | |
 
 ---
@@ -489,24 +504,112 @@ super_admin > owner > admin > manager > corretor
 #### `message_templates` — Templates de mensagem
 **RLS:** ✅ | **Linhas:** 0
 
+Colunas: `id`, `user_id` FK→auth.users, `title`, `content`, `active` boolean, `created_at`.
+
+---
+
+#### `lead_interests` — Interesses do lead
+**RLS:** ✅ | **Linhas:** 0
+
+Colunas: `id`, `lead_id` FK→leads, `property_id` FK→properties, `created_at`.
+
+---
+
+#### `lead_matches` — Matching lead × imóvel
+**RLS:** ✅ | **Linhas:** 0
+
+Colunas: `id`, `lead_id` FK→leads, `property_id` FK→properties, `match_score` int, `match_reason` text, `created_at`.
+
+---
+
+#### `lead_source_integrations` — Integrações de captação de leads ⭐ NOVA
+**RLS:** ✅ | **Linhas:** 0
+
 | Coluna | Tipo | Notas |
 |---|---|---|
 | `id` | uuid PK | |
-| `user_id` | uuid FK→auth.users | Scoped por usuário, não por empresa |
-| `title` | text | |
-| `content` | text | |
-| `active` | boolean | |
+| `company_id` | uuid FK→companies | |
+| `provider` | text | Ex: `facebook`, `rd_station` |
+| `name` | text | Nome da integração |
+| `status` | text | (default `'draft'`) |
+| `webhook_secret` | text | |
+| `verify_token` | text | |
+| `is_active` | boolean | (default `false`) |
+| `last_lead_received_at` | timestamptz | |
 | `created_at` | timestamptz | |
 
 ---
 
-#### `lead_interests` / `lead_matches` / `site_visits`
+#### `lead_source_mappings` — Mapeamento de formulários/anúncios ⭐ NOVA
+**RLS:** ✅ | **Linhas:** 0
 
-**lead_interests** (RLS ✅, 0 linhas): Relação N:N entre leads e imóveis de interesse. Colunas: `id`, `lead_id` FK→leads, `property_id` FK→properties, `created_at`.
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `id` | uuid PK | |
+| `company_id` | uuid FK→companies | |
+| `integration_id` | uuid FK→lead_source_integrations | |
+| `property_id` | uuid FK→properties | Imóvel vinculado |
+| `assigned_user_id` | uuid FK→profiles | Corretor pré-atribuído |
+| `external_object_id` | text | ID externo (form_id, ad_id) |
+| `external_object_type` | text | Tipo do objeto externo |
+| `lead_mode` | text | (default `'generic'`) |
+| `label` | text | |
+| `created_at` | timestamptz | |
 
-**lead_matches** (RLS ✅, 0 linhas): Compatibilidade lead/imóvel calculada por IA. Colunas: `id`, `lead_id`, `property_id`, `match_score` int, `match_reason` text, `created_at`.
+---
 
-**site_visits** (RLS ✅, 0 linhas): Analytics do site público. Colunas: `id`, `page`, `session_id`, `device_id`, `created_at`. ⚠️ Sem `company_id` — analytics de todos os tenants misturadas.
+#### `external_lead_events` — Log de eventos externos ⭐ NOVA
+**RLS:** ✅ | **Linhas:** 0
+
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `id` | uuid PK | |
+| `company_id` | uuid FK→companies | |
+| `provider` | text | |
+| `external_lead_id` | text | |
+| `raw_payload` | jsonb | Payload bruto recebido |
+| `status` | text | |
+| `error_message` | text | |
+| `created_at` | timestamptz | |
+
+---
+
+#### `whatsapp_instances` — Instâncias WhatsApp ⭐ NOVA
+**RLS:** ✅ | **Linhas:** 0
+
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `id` | uuid PK | |
+| `company_id` | uuid FK→companies | |
+| `user_id` | uuid FK→profiles | |
+| `instance_name` | text UNIQUE | |
+| `instance_token` | text | |
+| `connection_status` | text | (default `'disconnected'`) |
+| `qr_code` | text | |
+| `phone_number` | text | |
+| `profile_name` | text | |
+| `profile_picture_url` | text | |
+| `last_ping_at` | timestamptz | |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
+
+---
+
+#### `whatsapp_message_logs` — Log de mensagens WhatsApp ⭐ NOVA
+**RLS:** ✅ | **Linhas:** 0
+
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `id` | uuid PK | |
+| `company_id` | uuid FK→companies | |
+| `to_phone` | text | |
+| `template_name` | text | |
+| `message_id` | text | |
+| `status` | text | (default `'sent'`) |
+| `payload` | jsonb | |
+| `error_message` | text | |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
 
 ---
 
@@ -529,7 +632,7 @@ Colunas: `id`, `user_id` FK→profiles, `badge_id` FK→badges, `earned_at`.
 ---
 
 #### `gamification_events` — Eventos de XP
-**RLS:** ❌ **SEM RLS** | **Linhas:** 4
+**RLS:** ❌ **SEM RLS** | **Linhas:** 7
 
 | Coluna | Tipo | Notas |
 |---|---|---|
@@ -568,26 +671,26 @@ Colunas: `id`, `season_id`, `user_id`, `season_points` int, `deals_closed` int, 
 #### `saas_plans` — Planos disponíveis
 **RLS:** ✅ | **Linhas:** 6
 
-Campos booleanos de features: `has_funnel`, `has_pipeline`, `has_gamification`, `has_erp`, `has_site`, `has_portals`, `has_email_auto`, `has_api`, `has_free_domain`. Campos de limite: `max_properties`, `max_users`, `max_photos`, `max_contracts`. Outros: `price`, `name` UNIQUE, `description`, `icon`, `badge`, `is_popular`, `support_level`, `ia_limit`, `aura_access`, `features` jsonb.
+Campos booleanos de features: `has_funnel`, `has_pipeline`, `has_gamification`, `has_erp`, `has_site`, `has_portals`, `has_email_auto`, `has_api`, `has_free_domain`. Campos de limite: `max_properties`, `max_users`, `max_photos`, `max_contracts`. Preços: `price`, `price_monthly` (default 0), `price_yearly` (default 0). Outros: `name` UNIQUE, `description`, `icon`, `badge`, `is_popular`, `support_level`, `ia_limit`, `aura_access`, `features` jsonb, `active` boolean, `whatsapp_credits` int (default 0).
 
 ---
 
 #### `saas_contracts` — Assinaturas das imobiliárias
-**RLS:** ✅ | **Linhas:** 2
+**RLS:** ✅ | **Linhas:** 5
 
 Colunas: `id`, `company_id` FK→companies, `plan_id` FK→saas_plans, `plan_name`, `status`, `billing_cycle` (`monthly\|annual`), `price`, `discount_value`, `discount_type`, `start_date`, `end_date`, `has_fidelity`, `fidelity_end_date`, `cancel_reason`, `canceled_at`, `customer_id` (Asaas), `subscription_id` (Asaas), `domain_status`, `domain_renewal_date`, `created_at`.
 
 ---
 
 #### `saas_payments` — Histórico de pagamentos do SaaS
-**RLS:** ✅ | **Linhas:** 0
+**RLS:** ✅ | **Linhas:** 12
 
-Colunas: `id`, `company_id`, `amount`, `status`, `asaas_payment_id`, `reference_month`, `due_date`, `paid_at`, `created_at`.
+Colunas: `id`, `company_id`, `amount`, `status`, `asaas_payment_id` UNIQUE, `reference_month`, `due_date`, `paid_at`, `created_at`.
 
 ---
 
 #### `saas_coupons` — Cupons de desconto
-**RLS:** ✅ | **Linhas:** 2
+**RLS:** ✅ | **Linhas:** 3
 
 Colunas: `id`, `code` UNIQUE, `discount_type` (`percentage\|fixed\|free`), `discount_value`, `duration_months`, `max_uses`, `used_count`, `active`, `created_at`.
 
@@ -596,7 +699,7 @@ Colunas: `id`, `code` UNIQUE, `discount_type` (`percentage\|fixed\|free`), `disc
 ---
 
 #### `saas_notifications` — Alertas do painel super_admin
-**RLS:** ✅ | **Linhas:** 4
+**RLS:** ✅ | **Linhas:** 17
 
 Colunas: `id`, `title`, `message`, `type`, `is_read`, `link`, `created_at`.
 
@@ -614,16 +717,16 @@ Templates: `luxury`, `modern`, `basico`, `classic`, `minimalist`.
 ---
 
 #### `saas_tickets` — Tickets de suporte
-**RLS:** ✅ | **Linhas:** 0
+**RLS:** ✅ | **Linhas:** 3
 
 | Coluna | Tipo | Notas |
 |---|---|---|
 | `id` | uuid PK | |
 | `company_id` | uuid FK→companies | |
 | `subject` | text | |
-| `priority` | text | (default `'Média'`) |
-| `status` | text | `Aberto\|Em Atendimento\|Resolvido\|Fechado` |
-| `support_rating` | int | Avaliação do suporte |
+| `priority` | text | `Alta\|Média\|Baixa` (default `'Média'`) |
+| `status` | text | `Aberto\|Pendente\|Resolvido\|Fechado` |
+| `support_rating` | int | Avaliação 1–5 |
 | `support_feedback` | text | |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | Auto-atualizado por trigger |
@@ -631,16 +734,16 @@ Templates: `luxury`, `modern`, `basico`, `classic`, `minimalist`.
 ---
 
 #### `saas_ticket_messages` — Mensagens dos tickets
-**RLS:** ✅ | **Linhas:** 0
+**RLS:** ✅ | **Linhas:** 11
 
-Colunas: `id`, `ticket_id` FK→saas_tickets, `sender_type` (`tenant\|support`), `message`, `created_at`.
+Colunas: `id`, `ticket_id` FK→saas_tickets, `sender_type` (`client\|admin`), `message`, `created_at`.
 
 ---
 
 #### `system_reviews` — Avaliações da plataforma
-**RLS:** ✅ | **Linhas:** 0
+**RLS:** ✅ | **Linhas:** 2
 
-Colunas: `id`, `company_id`, `user_id`, `rating` int (1–5), `comment`, `is_public` boolean (default false), `created_at`.
+Colunas: `id`, `company_id` FK→companies, `user_id` FK→auth.users, `rating` int (1–5), `comment`, `is_public` boolean (default false), `created_at`.
 
 ---
 
@@ -765,26 +868,32 @@ Scoped por `company_id` via subquery em profiles. Adequadamente isolados.
 
 ---
 
-## 6. EDGE FUNCTIONS (16 ativas)
+## 6. EDGE FUNCTIONS (22 ativas)
 
 | Slug | Versão | JWT | Descrição |
 |---|---|---|---|
-| `create-asaas-checkout` | v12 | ❌ | Cria checkout de assinatura SaaS |
-| `asaas-webhook` | v7 | ❌ | Recebe eventos do Asaas (plataforma) |
-| `get-asaas-payment-link` | v8 | ❌ | Link de pagamento de fatura |
-| `update-asaas-subscription` | v24 | ✅ | Upgrade/downgrade de plano |
-| `cancel-asaas-subscription` | v1 | ❌ | Cancela assinatura |
-| `reactivate-asaas-subscription` | v2 | ❌ | Reativa assinatura |
-| `get-asaas-portal-link` | v1 | ❌ | Portal self-service do cliente |
-| `delete-tenant` | v5 | ❌ | Hard delete multi-step de imobiliária |
-| `list-asaas-payments` | v7 | ❌ | Lista cobranças de empresa no Asaas |
-| `zap-feed` | v1 | ✅ | Exporta imóveis em XML para portais |
-| `generate-charge` | v1 | ✅ | Gera cobrança para clientes das imobiliárias |
-| `generate-asaas-charge` | v6 | ❌ | Cria boleto/PIX para inquilino/comprador |
-| `tenant-webhook` | v1 | ❌ | Webhook Asaas para imobiliárias; atualiza installments/invoices |
-| `delete-property-images` | v1 | ✅ | Remove imagens do Storage ao deletar imóvel |
-| `og-imovel` | v8 | ❌ | Gera Open Graph tags dinâmicas para SEO |
-| `check-domain` | v5 | ❌ | Verifica status de domínio customizado |
+| `create-asaas-checkout` | v34 | ❌ | Cria checkout de assinatura SaaS |
+| `asaas-webhook` | v30 | ❌ | Recebe eventos do Asaas (plataforma) |
+| `get-asaas-payment-link` | v29 | ❌ | Link de pagamento de fatura |
+| `update-asaas-subscription` | v62 | ❌ | Upgrade/downgrade de plano |
+| `cancel-asaas-subscription` | v20 | ❌ | Cancela assinatura |
+| `reactivate-asaas-subscription` | v26 | ❌ | Reativa assinatura |
+| `get-asaas-portal-link` | v18 | ✅ | Portal self-service do cliente |
+| `delete-tenant` | v21 | ❌ | Hard delete multi-step de imobiliária |
+| `list-asaas-payments` | v25 | ❌ | Lista cobranças de empresa no Asaas |
+| `zap-feed` | v17 | ✅ | Exporta imóveis em XML para portais |
+| `generate-charge` | v17 | ✅ | Gera cobrança para clientes das imobiliárias |
+| `generate-asaas-charge` | v22 | ❌ | Cria boleto/PIX para inquilino/comprador |
+| `tenant-webhook` | v17 | ❌ | Webhook Asaas para imobiliárias; atualiza installments/invoices |
+| `delete-property-images` | v17 | ✅ | Remove imagens do Storage ao deletar imóvel |
+| `og-imovel` | v24 | ❌ | Gera Open Graph tags dinâmicas para SEO |
+| `check-domain` | v21 | ❌ | Verifica status de domínio customizado |
+| `manage-vercel-domain` | v14 | ❌ | Gerencia domínios customizados no Vercel ⭐ NOVA |
+| `ingest-external-lead` | v9 | ❌ | Ingesta leads de integrações externas ⭐ NOVA |
+| `manage-whatsapp` | v9 | ✅ | Gerencia instâncias WhatsApp ⭐ NOVA |
+| `create-asaas-addon` | v7 | ❌ | Cria add-on/crédito avulso no Asaas ⭐ NOVA |
+| `send-whatsapp-official` | v17 | ❌ | Envia mensagens via WhatsApp Business API oficial ⭐ NOVA |
+| `meta-whatsapp-webhook` | v4 | ❌ | Recebe webhooks da Meta/WhatsApp ⭐ NOVA |
 
 ---
 
@@ -821,6 +930,7 @@ Scoped por `company_id` via subquery em profiles. Adequadamente isolados.
 | `20260308024437` | `fix_rls_multitenant_isolation` | Correção de isolamento multi-tenant nas policies |
 | `20260308235321` | `add_site_data_to_companies` | Adiciona coluna `site_data` jsonb à tabela companies |
 | `20260409020319` | `add_owner_role_full_permissions` | Adiciona role owner; corrige is_admin(); cria is_owner(), get_auth_role(), get_auth_company_id() |
+| `20260419043552` | `fix_billing_rls_and_constraints` | Corrige RLS de billing e constraints de banco |
 
 ---
 
