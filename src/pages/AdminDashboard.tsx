@@ -1,5 +1,14 @@
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useCallback, useMemo, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  Responsive,
+  WidthProvider,
+  type Layout,
+  type LayoutItem,
+  type ResponsiveLayouts,
+} from 'react-grid-layout/legacy';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { Bar, BarChart, CartesianGrid, LabelList, XAxis } from "recharts";
 import {
   ChartConfig,
@@ -23,6 +32,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../../components/ui/tooltip';
+
+const ResponsiveGridLayout = WidthProvider(Responsive);
 
 const InfoTooltip = ({ text }: { text: string }) => (
   <TooltipProvider delayDuration={200}>
@@ -52,6 +63,19 @@ type DashboardLayoutItem = {
   visible: boolean;
 };
 
+type DashboardBreakpoint = 'lg' | 'md' | 'sm' | 'xs' | 'xxs';
+
+type DashboardGridLayouts = ResponsiveLayouts<DashboardBreakpoint>;
+
+type WidgetLayoutPreset = Pick<LayoutItem, 'x' | 'y' | 'w' | 'h' | 'minW' | 'minH' | 'maxW' | 'maxH'>;
+
+type WidgetConfig = {
+  id: string;
+  label: string;
+  adminOnly: boolean;
+  layout: WidgetLayoutPreset;
+};
+
 type RecentActivity = {
   id: string;
   action?: string | null;
@@ -64,22 +88,23 @@ const InlineLoading: React.FC = () => (
   <Icons.Loader2 size={18} className="inline-block animate-spin text-slate-400" />
 );
 
-// CONFIGURAÇÃO DOS WIDGETS (Tamanhos e Permissões)
-const WIDGET_CONFIG = [
-  { id: 'vgvTotal', label: 'VGV Total (Histórico)', size: 'col-span-1 md:col-span-2 lg:col-span-1', adminOnly: true },
-  { id: 'vgvAnual', label: 'VGV Anual', size: 'col-span-1 md:col-span-2 lg:col-span-1', adminOnly: false },
-  { id: 'portfolioVenda', label: 'Portfólio de Vendas', size: 'col-span-1 md:col-span-2 lg:col-span-1', adminOnly: false },
-  { id: 'portfolioAluguel', label: 'Portfólio de Aluguel', size: 'col-span-1 md:col-span-2 lg:col-span-1', adminOnly: false },
-  { id: 'funil', label: 'Funil de Vendas (Gráfico)', size: 'col-span-1 lg:col-span-2', adminOnly: false },
-  { id: 'agenda', label: 'Minha Agenda', size: 'col-span-1 lg:col-span-2', adminOnly: false },
-  { id: 'financeiroAdmin', label: 'Caixa e Top Corretor', size: 'col-span-1 lg:col-span-2', adminOnly: true },
-  { id: 'calendario', label: 'Calendário de Campanhas', size: 'col-span-1 lg:col-span-2', adminOnly: true },
-];
+const DASHBOARD_BREAKPOINTS = { lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 } satisfies Record<DashboardBreakpoint, number>;
+const DASHBOARD_COLS = { lg: 4, md: 2, sm: 1, xs: 1, xxs: 1 } satisfies Record<DashboardBreakpoint, number>;
+const DASHBOARD_BREAKPOINT_ORDER: DashboardBreakpoint[] = ['lg', 'md', 'sm', 'xs', 'xxs'];
 
-WIDGET_CONFIG.splice(4, 0,
-  { id: 'gamification-stats', label: 'Meu Desempenho (Gamificação)', size: 'col-span-1 md:col-span-1 lg:col-span-1', adminOnly: false },
-  { id: 'recent-activity', label: 'Feed da Equipe', size: 'col-span-1 md:col-span-1 lg:col-span-1', adminOnly: false },
-);
+// Configuração dos widgets e layout-base desktop (lg).
+const WIDGET_CONFIG: WidgetConfig[] = [
+  { id: 'vgvTotal', label: 'VGV Total (Histórico)', adminOnly: true, layout: { x: 0, y: 0, w: 1, h: 2, minW: 1, minH: 2 } },
+  { id: 'vgvAnual', label: 'VGV Anual', adminOnly: false, layout: { x: 1, y: 0, w: 1, h: 2, minW: 1, minH: 2 } },
+  { id: 'portfolioVenda', label: 'Portfólio de Vendas', adminOnly: false, layout: { x: 2, y: 0, w: 1, h: 2, minW: 1, minH: 2 } },
+  { id: 'portfolioAluguel', label: 'Portfólio de Aluguel', adminOnly: false, layout: { x: 3, y: 0, w: 1, h: 2, minW: 1, minH: 2 } },
+  { id: 'gamification-stats', label: 'Meu Desempenho (Gamificação)', adminOnly: false, layout: { x: 0, y: 2, w: 1, h: 3, minW: 1, minH: 2 } },
+  { id: 'recent-activity', label: 'Feed da Equipe', adminOnly: false, layout: { x: 1, y: 2, w: 1, h: 3, minW: 1, minH: 2 } },
+  { id: 'funil', label: 'Funil de Vendas (Gráfico)', adminOnly: false, layout: { x: 2, y: 2, w: 2, h: 3, minW: 1, minH: 2 } },
+  { id: 'agenda', label: 'Minha Agenda', adminOnly: false, layout: { x: 0, y: 5, w: 2, h: 3, minW: 1, minH: 2 } },
+  { id: 'financeiroAdmin', label: 'Caixa e Top Corretor', adminOnly: true, layout: { x: 2, y: 5, w: 2, h: 3, minW: 1, minH: 2 } },
+  { id: 'calendario', label: 'Calendário de Campanhas', adminOnly: true, layout: { x: 0, y: 8, w: 2, h: 4, minW: 1, minH: 3 } },
+];
 
 // Define widgets prioritários para corretores/imobiliária
 const DEFAULT_WIDGETS = [
@@ -105,13 +130,129 @@ const syncLayoutWithConfig = (savedLayout?: DashboardLayoutItem[] | null): Dashb
   }
 
   const allowedIds = new Set(WIDGET_CONFIG.map((widget) => widget.id));
-  const normalizedSaved = savedLayout.filter((item) => allowedIds.has(item.id));
+  const normalizedSaved = savedLayout
+    .filter((item) => allowedIds.has(item.id))
+    .map((item) => ({ id: item.id, visible: Boolean(item.visible) }));
   const missingItems = defaultLayout.filter(
     (item) => !normalizedSaved.some((savedItem) => savedItem.id === item.id),
   );
 
   return [...normalizedSaved, ...missingItems];
 };
+
+const isStaticGridBreakpoint = (breakpoint: DashboardBreakpoint) => breakpoint === 'xs' || breakpoint === 'xxs';
+
+const getDashboardBreakpointFromWidth = (width: number): DashboardBreakpoint => {
+  if (width >= DASHBOARD_BREAKPOINTS.lg) return 'lg';
+  if (width >= DASHBOARD_BREAKPOINTS.md) return 'md';
+  if (width >= DASHBOARD_BREAKPOINTS.sm) return 'sm';
+  if (width >= DASHBOARD_BREAKPOINTS.xs) return 'xs';
+  return 'xxs';
+};
+
+const getInitialDashboardBreakpoint = (): DashboardBreakpoint => {
+  if (typeof window === 'undefined') return 'lg';
+  return getDashboardBreakpointFromWidth(window.innerWidth);
+};
+
+const toFiniteGridNumber = (value: unknown, fallback: number) => (
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback
+);
+
+const withBreakpointInteraction = (item: LayoutItem, breakpoint: DashboardBreakpoint): LayoutItem => {
+  if (isStaticGridBreakpoint(breakpoint)) {
+    return { ...item, static: true, isDraggable: false, isResizable: false };
+  }
+
+  const { static: _static, isDraggable: _isDraggable, isResizable: _isResizable, ...interactiveItem } = item;
+  return interactiveItem;
+};
+
+const normalizeLayoutItem = (item: LayoutItem, breakpoint: DashboardBreakpoint): LayoutItem => {
+  const cols = DASHBOARD_COLS[breakpoint];
+  const minW = Math.min(Math.max(1, toFiniteGridNumber(item.minW, 1)), cols);
+  const minH = Math.max(1, toFiniteGridNumber(item.minH, 1));
+  const maxW = Math.min(Math.max(minW, toFiniteGridNumber(item.maxW, cols)), cols);
+  const w = Math.min(Math.max(minW, Math.round(toFiniteGridNumber(item.w, minW))), maxW);
+  const h = Math.max(minH, Math.round(toFiniteGridNumber(item.h, minH)));
+  const x = Math.min(Math.max(0, Math.round(toFiniteGridNumber(item.x, 0))), Math.max(cols - w, 0));
+  const y = Math.max(0, Math.round(toFiniteGridNumber(item.y, 0)));
+
+  return withBreakpointInteraction({ ...item, x, y, w, h, minW, minH, maxW }, breakpoint);
+};
+
+const buildDesktopLayout = (): Layout => (
+  WIDGET_CONFIG.map((widget) => normalizeLayoutItem({ i: widget.id, ...widget.layout }, 'lg'))
+);
+
+const buildResponsiveStackedLayout = (breakpoint: DashboardBreakpoint): Layout => {
+  const cols = DASHBOARD_COLS[breakpoint];
+  let cursorX = 0;
+  let cursorY = 0;
+  let rowHeight = 0;
+
+  return WIDGET_CONFIG.map((widget) => {
+    const preferredWidth = breakpoint === 'md' ? widget.layout.w : 1;
+    const w = Math.min(Math.max(1, preferredWidth), cols);
+    const h = Math.max(widget.layout.minH ?? 2, widget.layout.h);
+
+    if (cursorX + w > cols) {
+      cursorX = 0;
+      cursorY += rowHeight;
+      rowHeight = 0;
+    }
+
+    const item = normalizeLayoutItem(
+      { i: widget.id, x: cursorX, y: cursorY, w, h, minW: 1, minH: widget.layout.minH ?? 1 },
+      breakpoint,
+    );
+
+    cursorX += w;
+    rowHeight = Math.max(rowHeight, h);
+
+    return item;
+  });
+};
+
+const getDefaultGridLayouts = (): DashboardGridLayouts => ({
+  lg: buildDesktopLayout(),
+  md: buildResponsiveStackedLayout('md'),
+  sm: buildResponsiveStackedLayout('sm'),
+  xs: buildResponsiveStackedLayout('xs'),
+  xxs: buildResponsiveStackedLayout('xxs'),
+});
+
+const isLayoutItem = (item: unknown): item is LayoutItem => (
+  Boolean(item)
+  && typeof item === 'object'
+  && 'i' in item
+  && typeof (item as LayoutItem).i === 'string'
+);
+
+const syncGridLayoutsWithConfig = (savedLayouts?: unknown): DashboardGridLayouts => {
+  const defaultLayouts = getDefaultGridLayouts();
+  const allowedIds = new Set(WIDGET_CONFIG.map((widget) => widget.id));
+  const savedLayoutsRecord = savedLayouts && typeof savedLayouts === 'object' && !Array.isArray(savedLayouts)
+    ? savedLayouts as Partial<Record<DashboardBreakpoint, unknown>>
+    : {};
+
+  return DASHBOARD_BREAKPOINT_ORDER.reduce<DashboardGridLayouts>((nextLayouts, breakpoint) => {
+    const defaultLayout = defaultLayouts[breakpoint] ?? [];
+    const savedLayout = Array.isArray(savedLayoutsRecord[breakpoint])
+      ? (savedLayoutsRecord[breakpoint] as unknown[]).filter((item): item is LayoutItem => isLayoutItem(item) && allowedIds.has(item.i))
+      : [];
+
+    nextLayouts[breakpoint] = defaultLayout.map((defaultItem) => {
+      const savedItem = savedLayout.find((item) => item.i === defaultItem.i);
+      return normalizeLayoutItem(savedItem ? { ...defaultItem, ...savedItem } : defaultItem, breakpoint);
+    });
+
+    return nextLayouts;
+  }, {});
+};
+
+const getDashboardLayoutStorageKey = (userId: string) => `dashboard_layout_${userId}`;
+const getDashboardGridStorageKey = (userId: string) => `dashboard_grid_layout_${userId}`;
 
 const getRecentActivityName = (profiles: RecentActivity['profiles']) => {
   if (Array.isArray(profiles)) {
@@ -173,30 +314,44 @@ const AdminDashboard: React.FC = () => {
 
   // Motor de Layout Inteligente (Salva no LocalStorage)
   const [layout, setLayout] = useState<DashboardLayoutItem[]>(() => getDefaultLayout());
+  const [gridLayouts, setGridLayouts] = useState<DashboardGridLayouts>(() => getDefaultGridLayouts());
+  const [activeBreakpoint, setActiveBreakpoint] = useState<DashboardBreakpoint>(() => getInitialDashboardBreakpoint());
 
   const [showCustomizer, setShowCustomizer] = useState(false);
-  const [draggedWidget, setDraggedWidget] = useState<string | null>(null);
-  const [dragOverWidget, setDragOverWidget] = useState<string | null>(null);
-  const [dragSource, setDragSource] = useState<'dashboard' | 'sidebar' | null>(null);
   const [contractStatus, setContractStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.id) return;
 
-    const storageKey = `dashboard_layout_${user.id}`;
+    const layoutStorageKey = getDashboardLayoutStorageKey(user.id);
+    const gridStorageKey = getDashboardGridStorageKey(user.id);
 
     try {
-      const savedLayout = localStorage.getItem(storageKey);
+      const savedLayout = localStorage.getItem(layoutStorageKey);
       const parsedLayout = savedLayout ? JSON.parse(savedLayout) as DashboardLayoutItem[] : null;
       const nextLayout = syncLayoutWithConfig(parsedLayout);
 
       setLayout(nextLayout);
-      localStorage.setItem(storageKey, JSON.stringify(nextLayout));
+      localStorage.setItem(layoutStorageKey, JSON.stringify(nextLayout));
     } catch (error) {
       console.warn('Layout do dashboard inválido. Resetando para o padrão.', error);
       const nextLayout = getDefaultLayout();
       setLayout(nextLayout);
-      localStorage.setItem(storageKey, JSON.stringify(nextLayout));
+      localStorage.setItem(layoutStorageKey, JSON.stringify(nextLayout));
+    }
+
+    try {
+      const savedGridLayout = localStorage.getItem(gridStorageKey);
+      const parsedGridLayout = savedGridLayout ? JSON.parse(savedGridLayout) : null;
+      const nextGridLayouts = syncGridLayoutsWithConfig(parsedGridLayout);
+
+      setGridLayouts(nextGridLayouts);
+      localStorage.setItem(gridStorageKey, JSON.stringify(nextGridLayouts));
+    } catch (error) {
+      console.warn('Grid do dashboard inválido. Resetando para o padrão.', error);
+      const nextGridLayouts = getDefaultGridLayouts();
+      setGridLayouts(nextGridLayouts);
+      localStorage.setItem(gridStorageKey, JSON.stringify(nextGridLayouts));
     }
   }, [user?.id]);
 
@@ -401,8 +556,10 @@ const AdminDashboard: React.FC = () => {
   }, [user?.id]);
 
   const stats = useMemo(() => {
-    const myLeads = isAdmin ? leads : leads.filter((l: any) => l.assigned_to === user?.id);
-    const myProperties = isAdmin ? properties : properties.filter((p) => p.agent_id === user?.id);
+    const companyLeads = leads.filter((l: any) => l.company_id === user?.company_id);
+    const companyProperties = properties.filter((p: any) => p.company_id === user?.company_id);
+    const myLeads = isAdmin ? companyLeads : companyLeads.filter((l: any) => l.assigned_to === user?.id);
+    const myProperties = isAdmin ? companyProperties : companyProperties.filter((p: any) => p.agent_id === user?.id);
 
     // Normaliza status e converte valores numéricos com segurança
     const closedLeads = myLeads.filter((l) => {
@@ -414,24 +571,24 @@ const AdminDashboard: React.FC = () => {
     const vgvTotal = closedLeads.reduce((acc, lead) => acc + (Number(lead.deal_value) || 0), 0);
 
     const annualLeads = closedLeads.filter((l) => {
-      const dateStr = l.updated_at || l.created_at || new Date().toISOString();
+      const leadRecord = l as any;
+      const dateStr = leadRecord.updated_at || leadRecord.created_at || new Date().toISOString();
       return new Date(dateStr).getFullYear() === currentYear;
     });
     const vgvAnnual = annualLeads.reduce((acc, lead) => acc + (Number(lead.deal_value) || 0), 0);
 
-    // Normaliza os tipos de listagem (venda/locação) e status do imóvel
     const salePortfolioCount = myProperties.filter((p) => {
-      const type = (p.listing_type || p.transaction_type || '').toLowerCase();
-      const status = (p.status || '').toLowerCase();
-      const isActive = status === 'active' || status === 'ativo' || status === 'disponível' || status === 'disponivel';
-      return (type === 'sale' || type === 'venda') && isActive;
+      const propertyRecord = p as any;
+      const type = String(propertyRecord.listing_type || propertyRecord.transaction_type || '').toLowerCase();
+      const isInactive = ['inactive', 'inativo', 'sold', 'vendido', 'rented', 'alugado', 'archived', 'arquivado', 'draft', 'rascunho'].includes(String(p.status || '').toLowerCase());
+      return (type === 'sale' || type === 'venda') && !isInactive;
     }).length;
 
     const rentPortfolioCount = myProperties.filter((p) => {
-      const type = (p.listing_type || p.transaction_type || '').toLowerCase();
-      const status = (p.status || '').toLowerCase();
-      const isActive = status === 'active' || status === 'ativo' || status === 'disponível' || status === 'disponivel';
-      return (type === 'rent' || type === 'locação' || type === 'locacao' || type === 'aluguel') && isActive;
+      const propertyRecord = p as any;
+      const type = String(propertyRecord.listing_type || propertyRecord.transaction_type || '').toLowerCase();
+      const isInactive = ['inactive', 'inativo', 'sold', 'vendido', 'rented', 'alugado', 'archived', 'arquivado', 'draft', 'rascunho'].includes(String(p.status || '').toLowerCase());
+      return (type.includes('rent') || type.includes('locaç') || type.includes('locac') || type.includes('aluguel')) && !isInactive;
     }).length;
 
     const funnel = {
@@ -450,7 +607,7 @@ const AdminDashboard: React.FC = () => {
     };
 
     return { vgvTotal, vgvAnnual, salePortfolioCount, rentPortfolioCount, funnel };
-  }, [leads, properties, isAdmin, user?.id, currentYear]);
+  }, [leads, properties, isAdmin, user?.id, user?.company_id, currentYear]);
 
   const chartConfig = {
     visitors: { label: 'Leads' },
@@ -469,77 +626,56 @@ const AdminDashboard: React.FC = () => {
     { step: 'perdido', label: 'Perdido', visitors: stats.funnel.perdido, fill: 'var(--color-perdido)' },
   ];
 
-  // AÇÕES DE LAYOUT (Arrastar, Soltar, Ocultar)
   const toggleWidgetVisibility = (id: string) => {
     setLayout(prev => {
       const newLayout = prev.map(w => w.id === id ? { ...w, visible: !w.visible } : w);
-      localStorage.setItem(`dashboard_layout_${user?.id}`, JSON.stringify(newLayout));
+      if (user?.id) {
+        localStorage.setItem(getDashboardLayoutStorageKey(user.id), JSON.stringify(newLayout));
+      }
       return newLayout;
     });
   };
 
-  const handleDragStart = (e: React.DragEvent, id: string, source: 'dashboard' | 'sidebar') => {
-    setDraggedWidget(id);
-    setDragSource(source);
-    e.dataTransfer.effectAllowed = 'move';
-  };
+  const handleGridLayoutChange = useCallback((_currentLayout: Layout, allLayouts: DashboardGridLayouts) => {
+    const nextGridLayouts = syncGridLayoutsWithConfig(allLayouts);
+    const serializedNextGridLayouts = JSON.stringify(nextGridLayouts);
 
-  const handleDrop = (e: React.DragEvent, targetId: string, targetArea: 'dashboard' | 'sidebar') => {
-    e.preventDefault();
-    setDragOverWidget(null);
-    if (!draggedWidget || draggedWidget === targetId) {
-      setDraggedWidget(null);
-      setDragSource(null);
-      return;
+    setGridLayouts((currentGridLayouts) => (
+      JSON.stringify(currentGridLayouts) === serializedNextGridLayouts ? currentGridLayouts : nextGridLayouts
+    ));
+
+    if (user?.id) {
+      localStorage.setItem(getDashboardGridStorageKey(user.id), serializedNextGridLayouts);
     }
+  }, [user?.id]);
 
-    setLayout(prev => {
-      let newLayout = [...prev];
-      const draggedIdx = newLayout.findIndex(w => w.id === draggedWidget);
-      const targetIdx = newLayout.findIndex(w => w.id === targetId);
+  const visibleWidgets = useMemo(() => (
+    layout
+      .filter((item) => item.visible)
+      .map((item) => WIDGET_CONFIG.find((widget) => widget.id === item.id))
+      .filter((widget): widget is WidgetConfig => Boolean(widget) && (!widget.adminOnly || isAdmin))
+  ), [layout, isAdmin]);
 
-      // Drag de sidebar para dashboard: adicionar widget na posição
-      if (dragSource === 'sidebar' && targetArea === 'dashboard') {
-        if (draggedIdx === -1) {
-          // Adiciona widget na posição do drop
-          newLayout.splice(targetIdx, 0, { id: draggedWidget, visible: true });
-        } else {
-          // Já existe, só reordena e garante visível
-          const [movedItem] = newLayout.splice(draggedIdx, 1);
-          newLayout.splice(targetIdx, 0, { ...movedItem, visible: true });
-        }
-      }
-      // Drag de dashboard para sidebar: oculta widget
-      else if (dragSource === 'dashboard' && targetArea === 'sidebar') {
-        if (draggedIdx !== -1) {
-          newLayout[draggedIdx] = { ...newLayout[draggedIdx], visible: false };
-        }
-      }
-      // Drag dentro do dashboard: reordena
-      else if (dragSource === 'dashboard' && targetArea === 'dashboard') {
-        if (draggedIdx !== -1) {
-          const [movedItem] = newLayout.splice(draggedIdx, 1);
-          newLayout.splice(targetIdx, 0, movedItem);
-        }
-      }
-      localStorage.setItem(`dashboard_layout_${user?.id}`, JSON.stringify(newLayout));
-      return newLayout;
-    });
-    setDraggedWidget(null);
-    setDragSource(null);
-  };
+  const hiddenWidgets = useMemo(() => (
+    WIDGET_CONFIG.filter((widget) => {
+      if (widget.adminOnly && !isAdmin) return false;
+      return !(layout.find((item) => item.id === widget.id)?.visible ?? false);
+    })
+  ), [layout, isAdmin]);
+
+  const isMobileGrid = isStaticGridBreakpoint(activeBreakpoint);
 
   const handleActivatePlan = () => {
     navigate('/admin/config');
   };
 
   // --- CLASSES CSS PREMIUM COMPARTILHADAS ---
-  const glassCardClasses = "h-full bg-white/80 dark:bg-[#0a0f1c]/80 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-sm dark:shadow-none flex flex-col justify-between transition-all hover:shadow-md";
+  const glassCardClasses = "h-full w-full bg-white/80 dark:bg-[#0a0f1c]/80 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-sm dark:shadow-none flex flex-col justify-between transition-all hover:shadow-md";
 
   const renderWidgetContent = (id: string) => {
     switch(id) {
       case 'vgvTotal': return (
-        <div className="h-full bg-gradient-to-br from-[#0c1445] via-[#0f2460] to-[#1a3a7a] p-4 md:p-5 rounded-2xl md:rounded-3xl text-white shadow-[0_8px_30px_rgba(12,20,69,0.3)] flex flex-col justify-between relative overflow-hidden">
+        <div className="h-full w-full bg-gradient-to-br from-[#0c1445] via-[#0f2460] to-[#1a3a7a] p-4 md:p-5 rounded-2xl md:rounded-3xl text-white shadow-[0_8px_30px_rgba(12,20,69,0.3)] flex flex-col justify-between relative overflow-hidden">
           <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full bg-sky-400/20 blur-2xl pointer-events-none"></div>
           <div className="relative z-10">
             <div className="flex justify-between items-start mb-4">
@@ -586,12 +722,12 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'gamification-stats': return (
-        <div className="h-5/6 rounded-2xl md:rounded-3xl border border-slate-200 bg-gradient-to-br from-brand-50 to-white p-3 md:p-4 shadow-sm dark:border-slate-800 dark:from-brand-950/20 dark:to-slate-900">
+        <div className="h-full w-full rounded-2xl md:rounded-3xl border border-slate-200 bg-gradient-to-br from-brand-50 to-white p-3 md:p-4 shadow-sm dark:border-slate-800 dark:from-brand-950/20 dark:to-slate-900 flex flex-col">
           <h3 className="mb-4 flex items-center gap-2 font-bold text-slate-800 dark:text-white">
             <Icons.Trophy size={20} className="text-brand-500" />
             Meu Desempenho
           </h3>
-          <div className="flex h-full flex-col items-center justify-center text-center">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center text-center">
             <div className="relative mb-3">
               <div className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-brand-500 bg-white text-2xl shadow-lg dark:border-brand-400 dark:bg-slate-800">
                 {userGamification.level > 10 ? '👑' : userGamification.level > 5 ? '⭐' : '🚀'}
@@ -615,12 +751,12 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'recent-activity': return (
-        <div className="h-5/6 rounded-2xl md:rounded-3xl border border-slate-200 bg-white p-3 md:p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="h-full w-full rounded-2xl md:rounded-3xl border border-slate-200 bg-white p-3 md:p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 flex flex-col">
           <h3 className="mb-4 flex items-center gap-2 font-bold text-slate-800 dark:text-white">
             <Icons.Activity size={20} className="text-brand-500" />
             Feed da Equipe
           </h3>
-          <div className="space-y-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 custom-scrollbar">
             {recentActivities.map((act) => (
               <div key={act.id} className="flex items-start gap-2.5">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
@@ -645,9 +781,9 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'funil': return (
-        <div className="h-5/6 bg-white/80 dark:bg-[#0a0f1c]/80 p-3 md:p-4 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
+        <div className="h-full w-full bg-white/80 dark:bg-[#0a0f1c]/80 p-3 md:p-4 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
           <h3 className="text-sm md:text-base font-bold font-serif text-slate-800 dark:text-white mb-3 flex items-center">Funil de Vendas <InfoTooltip text="Conversão de leads." />{leadsLoading && <span className="ml-2"><InlineLoading /></span>}</h3>
-          <div className="flex-1 h-[170px] md:h-[210px] w-full overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
+          <div className="min-h-0 flex-1 w-full overflow-x-auto overflow-y-hidden custom-scrollbar pb-1">
             {leadsLoading ? <div className="flex h-full items-center justify-center"><InlineLoading /></div> : (
               <div className="min-w-[400px] h-full">
                 <ChartContainer config={chartConfig} className="h-full w-full">
@@ -664,12 +800,12 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'agenda': return (
-        <div className="h-full bg-white/80 dark:bg-[#0a0f1c]/80 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
+        <div className="h-full w-full bg-white/80 dark:bg-[#0a0f1c]/80 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none flex flex-col">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-base md:text-lg font-bold font-serif text-slate-800 dark:text-white">Minha Agenda</h3>
             <span className="text-[10px] font-bold uppercase tracking-widest bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 px-3 py-1 rounded-full">Próximas</span>
           </div>
-          <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar max-h-[300px] pr-2">
+          <div className="min-h-0 flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
             {tasksLoading ? <div className="flex justify-center py-4"><Loading /></div> : tasks.length === 0 ? (
               <div className="text-center py-8 text-slate-400"><Icons.CheckCircle size={32} className="mx-auto mb-2 opacity-30" /><p className="font-medium text-sm">Tudo em dia!</p></div>
             ) : tasks.map((task) => (
@@ -682,7 +818,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'financeiroAdmin': return (
-        <div className="h-full grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+        <div className="h-full w-full grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
           <div className="bg-white/80 dark:bg-[#0a0f1c]/80 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-slate-200/60 dark:border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none relative overflow-hidden flex flex-col transition-all hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
             {!canAccessGamification && (
               <div className="absolute inset-0 bg-white/60 dark:bg-[#0a0f1c]/60 z-20 flex flex-col items-center justify-center text-center p-6">
@@ -742,7 +878,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       );
       case 'calendario': return (
-        <div className="h-full bg-white/80 dark:bg-[#0a0f1c]/80 rounded-3xl border border-slate-200/60 dark:border-white/5 overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none">
+        <div className="h-full w-full bg-white/80 dark:bg-[#0a0f1c]/80 rounded-3xl border border-slate-200/60 dark:border-white/5 overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-none">
           <DashboardCalendar />
         </div>
       );
@@ -785,58 +921,54 @@ const AdminDashboard: React.FC = () => {
               <button onClick={() => setShowCustomizer(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white"><Icons.X size={18}/></button>
             </div>
             <div className="overflow-y-auto flex-1 pr-1 custom-scrollbar">
-              {WIDGET_CONFIG.map(widget => {
-                if (widget.adminOnly && !isAdmin) return null;
-                const isVisible = layout.find(w => w.id === widget.id)?.visible ?? false;
-                if (isVisible) return null; // Só mostra widgets ocultos
-                return (
-                  <div
-                    key={widget.id}
-                    className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-800 mb-3 bg-slate-50/60 dark:bg-white/5 cursor-grab"
-                    draggable
-                    onDragStart={e => handleDragStart(e, widget.id, 'sidebar')}
-                    onDragOver={e => { e.preventDefault(); setDragOverWidget(widget.id); }}
-                    onDrop={e => handleDrop(e, widget.id, 'sidebar')}
-                  >
-                    <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800">
-                      {widget.id === 'vgvTotal' && <Icons.TrendingUp size={22} className="text-sky-400" />}
-                      {widget.id === 'vgvAnual' && <Icons.CalendarCheck size={22} className="text-sky-600 dark:text-sky-400" />}
-                      {widget.id === 'portfolioVenda' && <Icons.Home size={22} className="text-emerald-600 dark:text-emerald-400" />}
-                      {widget.id === 'portfolioAluguel' && <Icons.Building size={22} className="text-indigo-600 dark:text-indigo-400" />}
-                      {widget.id === 'funil' && <Icons.BarChart2 size={22} className="text-fuchsia-500" />}
-                      {widget.id === 'agenda' && <Icons.Calendar size={22} className="text-cyan-500" />}
-                      {widget.id === 'financeiroAdmin' && <Icons.Wallet size={22} className="text-emerald-500" />}
-                      {widget.id === 'calendario' && <Icons.Calendar size={22} className="text-slate-500" />}
-                      {widget.id === 'gamification-stats' && <Icons.Trophy size={22} className="text-amber-500" />}
-                      {widget.id === 'recent-activity' && <Icons.Activity size={22} className="text-brand-500" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-slate-700 dark:text-white text-sm truncate">{widget.label}</div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        {widget.id === 'vgvTotal' && 'Soma de todas as vendas fechadas.'}
-                        {widget.id === 'vgvAnual' && 'VGV do ano atual.'}
-                        {widget.id === 'portfolioVenda' && 'Imóveis ativos para venda.'}
-                        {widget.id === 'portfolioAluguel' && 'Imóveis ativos para locação.'}
-                        {widget.id === 'funil' && 'Conversão de leads.'}
-                        {widget.id === 'agenda' && 'Suas tarefas e compromissos.'}
-                        {widget.id === 'financeiroAdmin' && 'Recebimentos, leads e top corretor.'}
-                        {widget.id === 'calendario' && 'Campanhas e eventos.'}
-                        {widget.id === 'gamification-stats' && 'Seu desempenho na gamificação.'}
-                        {widget.id === 'recent-activity' && 'Atividades recentes da equipe.'}
-                      </div>
-                    </div>
-                    <span className="ml-2 px-3 py-1 rounded-lg font-bold text-xs bg-brand-500 text-white">Arraste para adicionar</span>
+              {hiddenWidgets.length === 0 && (
+                <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-sm font-medium text-slate-400 dark:border-slate-700 dark:text-slate-500">
+                  Todos os widgets disponíveis já estão no dashboard.
+                </div>
+              )}
+
+              {hiddenWidgets.map(widget => (
+                <div
+                  key={widget.id}
+                  className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-800 mb-3 bg-slate-50/60 dark:bg-white/5"
+                >
+                  <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800">
+                    {widget.id === 'vgvTotal' && <Icons.TrendingUp size={22} className="text-sky-400" />}
+                    {widget.id === 'vgvAnual' && <Icons.CalendarCheck size={22} className="text-sky-600 dark:text-sky-400" />}
+                    {widget.id === 'portfolioVenda' && <Icons.Home size={22} className="text-emerald-600 dark:text-emerald-400" />}
+                    {widget.id === 'portfolioAluguel' && <Icons.Building size={22} className="text-indigo-600 dark:text-indigo-400" />}
+                    {widget.id === 'funil' && <Icons.BarChart2 size={22} className="text-fuchsia-500" />}
+                    {widget.id === 'agenda' && <Icons.Calendar size={22} className="text-cyan-500" />}
+                    {widget.id === 'financeiroAdmin' && <Icons.Wallet size={22} className="text-emerald-500" />}
+                    {widget.id === 'calendario' && <Icons.Calendar size={22} className="text-slate-500" />}
+                    {widget.id === 'gamification-stats' && <Icons.Trophy size={22} className="text-amber-500" />}
+                    {widget.id === 'recent-activity' && <Icons.Activity size={22} className="text-brand-500" />}
                   </div>
-                );
-              })}
-              {/* Área de drop para remover widgets da dashboard */}
-              <div
-                className="mt-6 flex items-center justify-center h-16 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl text-slate-400 dark:text-slate-500 text-xs font-bold"
-                onDragOver={e => { e.preventDefault(); setDragOverWidget('sidebar-drop'); }}
-                onDrop={e => handleDrop(e, 'sidebar-drop', 'sidebar')}
-              >
-                Arraste aqui para remover widget
-              </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-slate-700 dark:text-white text-sm truncate">{widget.label}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                      {widget.id === 'vgvTotal' && 'Soma de todas as vendas fechadas.'}
+                      {widget.id === 'vgvAnual' && 'VGV do ano atual.'}
+                      {widget.id === 'portfolioVenda' && 'Imóveis ativos para venda.'}
+                      {widget.id === 'portfolioAluguel' && 'Imóveis ativos para locação.'}
+                      {widget.id === 'funil' && 'Conversão de leads.'}
+                      {widget.id === 'agenda' && 'Suas tarefas e compromissos.'}
+                      {widget.id === 'financeiroAdmin' && 'Recebimentos, leads e top corretor.'}
+                      {widget.id === 'calendario' && 'Campanhas e eventos.'}
+                      {widget.id === 'gamification-stats' && 'Seu desempenho na gamificação.'}
+                      {widget.id === 'recent-activity' && 'Atividades recentes da equipe.'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleWidgetVisibility(widget.id)}
+                    className="ml-2 inline-flex items-center gap-1 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-brand-600"
+                  >
+                    <Icons.Plus size={14} />
+                    Adicionar
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -870,33 +1002,40 @@ const AdminDashboard: React.FC = () => {
 
       {/* GRID DE WIDGETS INTELIGENTE (TETRIS) */}
       <div className="mt-4 md:mt-6 rounded-[28px] border border-slate-200/70 bg-slate-100/80 p-3 md:p-4 lg:p-5 dark:border-white/5 dark:bg-[#060b16]">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6" style={{ gridAutoFlow: 'dense' }}>
-        {layout.filter(w => w.visible).map((w) => {
-          const config = WIDGET_CONFIG.find(c => c.id === w.id);
-          if (!config || (config.adminOnly && !isAdmin)) return null;
-
-          return (
-            <div
-              key={w.id}
-              className={`${config.size} relative group cursor-pointer transition-transform duration-200`}
-              draggable
-              onDragStart={(e) => handleDragStart(e, w.id, 'dashboard')}
-              onDragOver={(e) => { e.preventDefault(); setDragOverWidget(w.id); }}
-              onDragLeave={() => setDragOverWidget(null)}
-              onDrop={(e) => handleDrop(e, w.id, 'dashboard')}
-            >
-              {/* Indicador visual de arraste */}
-              <div className={`h-full transition-all duration-300 ${dragOverWidget === w.id ? 'scale-[1.02] ring-4 ring-brand-500/50 rounded-2xl' : ''} ${draggedWidget === w.id ? 'opacity-40' : 'opacity-100'}`}>
-                {/* Ícone para agarrar */}
-                <div className="absolute top-4 right-4 z-20 cursor-pointer rounded-lg bg-slate-100/80 p-1.5 text-slate-400 opacity-0 shadow-sm transition-all hover:text-brand-500 group-hover:opacity-100 dark:bg-slate-700/80">
-                  <Icons.GripHorizontal size={16} />
-                </div>
-                {renderWidgetContent(w.id)}
+        <ResponsiveGridLayout
+          className="dashboard-grid-layout"
+          layouts={gridLayouts}
+          breakpoints={DASHBOARD_BREAKPOINTS}
+          cols={DASHBOARD_COLS}
+          rowHeight={96}
+          margin={[16, 16]}
+          containerPadding={[0, 0]}
+          compactType="vertical"
+          preventCollision={false}
+          isBounded
+          isDraggable={!isMobileGrid}
+          isResizable={!isMobileGrid}
+          resizeHandles={['se']}
+          draggableCancel=".dashboard-grid-no-drag, button, a, input, textarea, select"
+          onBreakpointChange={(breakpoint) => setActiveBreakpoint(breakpoint as DashboardBreakpoint)}
+          onLayoutChange={handleGridLayoutChange}
+        >
+          {visibleWidgets.map((widget) => (
+            <div key={widget.id} className="group">
+              <div className="relative h-full w-full">
+                <button
+                  type="button"
+                  aria-label={`Ocultar ${widget.label}`}
+                  className="dashboard-grid-no-drag absolute right-3 top-3 z-20 rounded-lg bg-white/85 p-1.5 text-slate-400 opacity-100 shadow-sm transition-all hover:text-rose-500 md:opacity-0 md:group-hover:opacity-100 dark:bg-slate-800/85"
+                  onClick={() => toggleWidgetVisibility(widget.id)}
+                >
+                  <Icons.X size={14} />
+                </button>
+                {renderWidgetContent(widget.id)}
               </div>
             </div>
-          );
-        })}
-        </div>
+          ))}
+        </ResponsiveGridLayout>
       </div>
 
     </div>
