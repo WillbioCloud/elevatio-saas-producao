@@ -35,7 +35,6 @@ type CompanyProfile = {
   use_asaas?: boolean | null;
   default_commission?: number;
   broker_commission?: number;
-  payment_api_key?: string | null;
   manual_discount_value?: number | null;
   manual_discount_type?: 'fixed' | 'percentage' | null;
   plan_status?: string | null;
@@ -127,8 +126,9 @@ const normalizeCompanyPermissions = (permissions: unknown): CompanyPermissions =
   };
 };
 
+// 🚨 REMOVIDA A payment_api_key DAQUI PARA NÃO QUEBRAR O LOGIN!
 const COMPANY_PROFILE_SELECT =
-  'name, plan, subdomain, domain, domain_secondary, domain_status, domain_secondary_status, template, document, logo_url, admin_signature_url, site_data, finance_config, use_asaas, default_commission, broker_commission, payment_api_key, manual_discount_value, manual_discount_type, plan_status, trial_ends_at';
+  'name, plan, subdomain, domain, domain_secondary, domain_status, domain_secondary_status, template, document, logo_url, admin_signature_url, site_data, finance_config, use_asaas, default_commission, broker_commission, manual_discount_value, manual_discount_type, plan_status, trial_ends_at';
 
 const buildFallbackUser = (supabaseUser: User): UserWithRole => {
   const metadata = (supabaseUser.user_metadata as Record<string, unknown> | undefined) ?? {};
@@ -188,12 +188,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ...DEFAULT_COMPANY_PERMISSIONS,
   });
   
-  // Refs para controle de montagem e estado atual (evita dependências circulares)
   const isMounted = useRef(true);
   const currentUserRef = useRef<UserWithRole | null>(null);
   const currentSessionRef = useRef<Session | null>(null);
 
-  // Mantém o ref sincronizado com o state
   useEffect(() => {
     currentUserRef.current = user;
   }, [user]);
@@ -202,20 +200,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     currentSessionRef.current = session;
   }, [session]);
 
-  // --- PERMISSOES GLOBAIS ---
-  // isAdmin: Pode ver o CRM todo (Dono, Gerente, Admin e Super Admin do SaaS)
   const isAdmin = useMemo(
     () => ['owner', 'admin', 'manager', 'super_admin'].includes(user?.role ?? ''),
     [user?.role]
   );
 
-  // isOwner: Poderes administrativos e financeiros (Dono e Super Admin)
   const isOwner = useMemo(
     () => ['owner', 'super_admin'].includes(user?.role ?? ''),
     [user?.role]
   );
 
-  // isManager: Gestao operacional (Gerentes, Admins e Donos)
   const isManager = useMemo(
     () => ['manager', 'admin', 'owner', 'super_admin'].includes(user?.role ?? ''),
     [user?.role]
@@ -225,7 +219,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const hasPermission = useCallback(
     (permissionName: string) => {
-      if (isOwner) return true; // Dono sempre pode tudo
+      if (isOwner) return true; 
       const permissions = companyPermissions ?? DEFAULT_COMPANY_PERMISSIONS;
       return !!permissions[permissionName as keyof CompanyPermissions];
     },
@@ -250,7 +244,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (error) {
           if (!isAbortError(error)) {
-            console.warn('Falha ao carregar permissÃµes da empresa:', error.message);
+            console.warn('Falha ao carregar permissões da empresa:', error.message);
           }
           if (!isCancelled) {
             setCompanyPermissions({ ...DEFAULT_COMPANY_PERMISSIONS });
@@ -264,7 +258,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (error) {
         if (!isAbortError(error)) {
-          console.warn('Falha ao carregar permissÃµes da empresa:', error);
+          console.warn('Falha ao carregar permissões da empresa:', error);
         }
         if (!isCancelled) {
           setCompanyPermissions({ ...DEFAULT_COMPANY_PERMISSIONS });
@@ -296,7 +290,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user?.company_id]);
 
-  // Busca dados do perfil
   const fetchProfileData = useCallback(async (currentSession: Session): Promise<UserWithRole> => {
     if (!currentSession.user) return buildFallbackUser(currentSession.user);
 
@@ -368,7 +361,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Aplica a sessão ao estado (Lógica Principal)
   const applySession = useCallback(async (currentSession: Session | null, forceUpdate = false) => {
     if (!isMounted.current) return;
 
@@ -379,10 +371,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // --- CORREÇÃO CRÍTICA DO LOOP ---
-    // Se já temos um usuário carregado e o ID é o mesmo da nova sessão,
-    // significa que é apenas um refresh de token (mudança de aba, etc).
-    // NÃO recarregamos o perfil para evitar piscar a tela ou loop.
     if (!forceUpdate && currentUserRef.current?.id === currentSession.user.id) {
       if (currentSessionRef.current?.access_token === currentSession.access_token) {
         setLoading(false);
@@ -390,15 +378,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       console.log('Sessão renovada (Token Refresh). Mantendo estado do usuário.');
-      setSession(currentSession); // Apenas atualiza o token novo
+      setSession(currentSession); 
       setLoading(false);
       return; 
     }
 
-    // Se chegou aqui, é um login novo ou troca de usuário real
     setSession(currentSession);
 
-    // Busca dados completos primeiro, DEPOIS atualiza o state para evitar falhas de company_id
     const fullUser = await fetchProfileData(currentSession);
 
     if (isMounted.current) {
@@ -465,7 +451,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initializeAuth();
 
-    // Variável de controle para impedir o Deadlock (Race Condition) no Chrome/Android
     let isFirstListenerEvent = true;
 
     const {
@@ -473,8 +458,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!isActive) return;
 
-      // BLOQUEIO ANTI-DEADLOCK: O Supabase dispara o listener imediatamente ao ser registrado.
-      // Ignoramos esse primeiro disparo porque o `initializeAuth` já está carregando os dados com segurança.
       if (isFirstListenerEvent) {
         console.log(`🚨 [DEBUG] Ignorando evento inicial do listener (${event}) para evitar deadlock.`);
         isFirstListenerEvent = false;
@@ -515,7 +498,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshUser = async () => {
     if (!session) return;
     const { data } = await supabase.auth.refreshSession();
-    // Aqui usamos forceUpdate = true porque o usuário pediu explicitamente para atualizar
     if (data.session) await applySession(data.session, true);
   };
 
@@ -540,18 +522,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     metaData?: Record<string, unknown>
   ) => {
     try {
-      // Validação básica antes de enviar pro Supabase
       if (!email || !email.includes('@')) {
         return { error: { message: 'Formato de e-mail inválido.' } };
       }
 
       const { error } = await supabase.auth.signUp({
-        email: email.trim(), // .trim() remove espaços acidentais
+        email: email.trim(),
         password,
         options: {
           data: {
             name: name.trim(),
-            role: 'owner', // Todo novo cadastro via Landing Page nasce como Dono
+            role: 'owner',
             ...metaData,
           },
           emailRedirectTo: `${window.location.origin}/admin/login`,
