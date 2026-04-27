@@ -216,24 +216,43 @@ serve(async (req) => {
     if (couponRecord && !subscriptionDiscount) throw new Error('Tipo de cupom inválido.')
 
     // ===========================================================
-    // PATCH B: Reserva otimista de cupom — prevenir race condition em max_uses
-    // Antes de criar a assinatura, deletar assinaturas PENDING antigas
-    // deste customer para evitar acúmulo de fantasmas.
+    // PATCH B: Limpeza de assinaturas e faturas antigas
+    // Antes de criar a nova assinatura, limpamos assinaturas ativas
+    // e faturas pendentes para não acumular cobranças duplicadas no cliente.
     // ===========================================================
     if (customerId) {
+      // 1. Deletar faturas (payments) PENDENTES antigas
+      const orphanPaymentsRes = await fetch(
+        `${ASAAS_URL}/payments?customer=${customerId}&status=PENDING&limit=100`,
+        { headers: { 'Content-Type': 'application/json', 'access_token': ASAAS_API_KEY! } }
+      )
+      if (orphanPaymentsRes.ok) {
+        const orphanPaymentsData = await orphanPaymentsRes.json()
+        if (Array.isArray(orphanPaymentsData?.data)) {
+          for (const payment of orphanPaymentsData.data) {
+            await fetch(`${ASAAS_URL}/payments/${payment.id}`, {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json', 'access_token': ASAAS_API_KEY! }
+            })
+            console.log(`[CHECKOUT] Fatura pendente antiga deletada: ${payment.id}`)
+          }
+        }
+      }
+
+      // 2. Deletar assinaturas (subscriptions) ATIVAS antigas
       const orphanSubsRes = await fetch(
-        `${ASAAS_URL}/subscriptions?customer=${customerId}&status=PENDING&limit=100`,
+        `${ASAAS_URL}/subscriptions?customer=${customerId}&status=ACTIVE&limit=100`,
         { headers: { 'Content-Type': 'application/json', 'access_token': ASAAS_API_KEY! } }
       )
       if (orphanSubsRes.ok) {
         const orphanSubsData = await orphanSubsRes.json()
         if (Array.isArray(orphanSubsData?.data)) {
-          for (const orphanSub of orphanSubsData.data) {
-            await fetch(`${ASAAS_URL}/subscriptions/${orphanSub.id}`, {
+          for (const sub of orphanSubsData.data) {
+            await fetch(`${ASAAS_URL}/subscriptions/${sub.id}`, {
               method: 'DELETE',
               headers: { 'Content-Type': 'application/json', 'access_token': ASAAS_API_KEY! }
             })
-            console.log(`[CHECKOUT] Assinatura órfã deletada: ${orphanSub.id}`)
+            console.log(`[CHECKOUT] Assinatura antiga deletada: ${sub.id}`)
           }
         }
       }
