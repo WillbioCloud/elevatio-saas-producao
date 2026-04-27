@@ -10,10 +10,22 @@ import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { appendSignatureManifest, injectSignatureStamps } from '../utils/contractGenerator';
+import {
+  hasPendingWitnessSignature,
+  hasRejectedEffectiveSignature,
+  isContractEffectivelySigned,
+  type ContractSignatureLike,
+} from '../utils/contractSignatures';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../../components/ui/tooltip';
 
-interface ContractSignatureRow {
+interface ContractSignatureRow extends ContractSignatureLike {
+  id?: string | null;
   contract_id: string | null;
-  status: 'pending' | 'signed' | 'rejected' | null;
 }
 
 interface ContractSignatureSummary {
@@ -21,6 +33,7 @@ interface ContractSignatureSummary {
   pending_signatures_count: number;
   signed_signatures_count: number;
   rejected_signatures_count: number;
+  contract_signatures: ContractSignatureRow[];
 }
 
 type ContractWithSignatureState = any & ContractSignatureSummary;
@@ -41,12 +54,28 @@ const isAdministrativeContract = (contract: ContractWithSignatureState) =>
 const formatBRL = (value: number) =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-const EMPTY_SIGNATURE_SUMMARY: ContractSignatureSummary = {
+const createEmptySignatureSummary = (): ContractSignatureSummary => ({
   signatures_count: 0,
   pending_signatures_count: 0,
   signed_signatures_count: 0,
   rejected_signatures_count: 0,
-};
+  contract_signatures: [],
+});
+
+const PendingWitnessSignatureAlert = () => (
+  <TooltipProvider delayDuration={200}>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center" aria-label="Liberado, mas aguardando assinatura das testemunhas">
+          <Icons.AlertTriangle size={14} className="text-yellow-500" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="center" className="max-w-xs border-none bg-slate-900 text-center text-white shadow-xl">
+        <span className="text-xs">Liberado, mas aguardando assinatura das testemunhas</span>
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+);
 
 const AdminContracts: React.FC = () => {
   const navigate = useNavigate();
@@ -80,9 +109,10 @@ const AdminContracts: React.FC = () => {
         *,
         lead:leads!contracts_lead_id_fkey(*),
         property:properties(*),
-        broker:profiles!contracts_broker_id_fkey(*)
+        broker:profiles!contracts_broker_id_fkey(*),
+        contract_signatures(id, status, signer_role)
       `);
-    let signaturesQuery = supabase.from('contract_signatures').select('contract_id, status');
+    let signaturesQuery = supabase.from('contract_signatures').select('id, contract_id, status, signer_role');
     
     if (!isSuperAdmin && user.company_id) {
       contractsQuery = contractsQuery.eq('company_id', user.company_id);
@@ -105,11 +135,10 @@ const AdminContracts: React.FC = () => {
               return accumulator;
             }
 
-            const currentSummary = accumulator[signature.contract_id] ?? {
-              ...EMPTY_SIGNATURE_SUMMARY,
-            };
+            const currentSummary = accumulator[signature.contract_id] ?? createEmptySignatureSummary();
 
             currentSummary.signatures_count += 1;
+            currentSummary.contract_signatures.push(signature);
 
             if (signature.status === 'signed') {
               currentSummary.signed_signatures_count += 1;
@@ -133,7 +162,7 @@ const AdminContracts: React.FC = () => {
         setContracts(
           validContracts.map((contract) => ({
             ...contract,
-            ...(signatureSummaryByContract[contract.id] ?? EMPTY_SIGNATURE_SUMMARY),
+            ...(signatureSummaryByContract[contract.id] ?? createEmptySignatureSummary()),
           }))
         );
       }
@@ -341,7 +370,7 @@ const AdminContracts: React.FC = () => {
   const chartData = useMemo(() => {
     const statusCounts = displayedContracts.reduce((acc: any, c) => {
       if (c.status !== 'archived') {
-        const isSigned = c.signed_signatures_count === c.signatures_count && c.signatures_count > 0;
+        const isSigned = isContractEffectivelySigned(c.contract_signatures);
         const status = isSigned ? 'signed' : c.status;
         acc[status] = (acc[status] || 0) + 1;
       }
@@ -400,7 +429,7 @@ const AdminContracts: React.FC = () => {
     try {
       const { data: fullContract, error } = await supabase
         .from('contracts')
-        .select('*')
+        .select('*, contract_signatures(id, status, signer_role)')
         .eq('id', contract.id)
         .single();
 
@@ -467,12 +496,15 @@ const AdminContracts: React.FC = () => {
   };
 
   const getSignatureState = (contract: ContractWithSignatureState) => {
+    const signatures = (contract.contract_signatures ?? []) as ContractSignatureLike[];
     const signaturesCount = Number(contract.signatures_count ?? 0);
     const pendingSignaturesCount = Number(contract.pending_signatures_count ?? 0);
     const signedSignaturesCount = Number(contract.signed_signatures_count ?? 0);
     const rejectedSignaturesCount = Number(contract.rejected_signatures_count ?? 0);
     const hasSignatures = signaturesCount > 0;
-    const isFullySigned = hasSignatures && pendingSignaturesCount === 0;
+    const isEffectivelySigned = isContractEffectivelySigned(signatures);
+    const hasPendingWitness = isEffectivelySigned && hasPendingWitnessSignature(signatures);
+    const hasRejectedSignature = hasRejectedEffectiveSignature(signatures);
 
     return {
       signaturesCount,
@@ -480,7 +512,9 @@ const AdminContracts: React.FC = () => {
       signedSignaturesCount,
       rejectedSignaturesCount,
       hasSignatures,
-      isFullySigned,
+      isEffectivelySigned,
+      hasPendingWitness,
+      hasRejectedSignature,
     };
   };
 
@@ -508,20 +542,20 @@ const AdminContracts: React.FC = () => {
       );
     }
 
-    const hasRejectedSignature = signatureState.rejectedSignaturesCount > 0;
+    const hasRejectedSignature = signatureState.hasRejectedSignature;
     const badgeClasses = hasRejectedSignature
       ? 'border-red-200 bg-red-50 text-red-700'
-      : signatureState.isFullySigned
+      : signatureState.isEffectivelySigned
         ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
         : 'border-amber-200 bg-amber-50 text-amber-700';
     const statusLabel = hasRejectedSignature
       ? 'Assinatura recusada'
-      : signatureState.isFullySigned
+      : signatureState.isEffectivelySigned
         ? 'Assinado'
         : 'Pendente de Assinatura';
     const StatusIcon = hasRejectedSignature
       ? Icons.AlertTriangle
-      : signatureState.isFullySigned
+      : signatureState.isEffectivelySigned
         ? Icons.CheckCircle2
         : Icons.Clock;
 
@@ -530,6 +564,7 @@ const AdminContracts: React.FC = () => {
         <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeClasses}`}>
           <StatusIcon size={13} />
           <span>{statusLabel}</span>
+          {signatureState.hasPendingWitness && <PendingWitnessSignatureAlert />}
         </div>
         <span className="text-xs text-slate-500 dark:text-slate-400">
           {signatureState.signedSignaturesCount}/{signatureState.signaturesCount} assinaturas
@@ -539,7 +574,7 @@ const AdminContracts: React.FC = () => {
           onClick={() => handleOpenSignatureManager(contract.id, contract.company_id)}
           className="text-xs font-semibold text-brand-600 transition-colors hover:text-brand-700"
         >
-          {signatureState.isFullySigned ? 'Ver assinaturas' : 'Gerenciar'}
+          {signatureState.isEffectivelySigned ? 'Ver assinaturas' : 'Gerenciar'}
         </button>
       </div>
     );
@@ -550,15 +585,15 @@ const AdminContracts: React.FC = () => {
       return null;
     }
 
-    const { isFullySigned } = getSignatureState(contract);
+    const { isEffectivelySigned } = getSignatureState(contract);
 
     return (
       <button
         type="button"
         onClick={() => void handleApproveContract(contract.id)}
-        disabled={!isFullySigned}
+        disabled={!isEffectivelySigned}
         className="rounded-lg border border-slate-200 bg-white p-2 text-emerald-600 shadow-sm transition-colors hover:bg-emerald-50 dark:border-dark-border dark:bg-dark-card dark:hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:border-amber-100 disabled:bg-amber-50 disabled:text-amber-400 disabled:hover:bg-amber-50"
-        title={!isFullySigned ? 'Aguardando assinaturas do cliente' : 'Aprovar Contrato'}
+        title={!isEffectivelySigned ? 'Aguardando assinaturas do cliente' : 'Aprovar Contrato'}
       >
         <Icons.CheckCircle size={16} />
       </button>

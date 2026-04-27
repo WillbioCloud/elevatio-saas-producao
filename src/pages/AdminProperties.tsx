@@ -11,6 +11,17 @@ import PropertyPreviewModal from '../components/PropertyPreviewModal';
 import SignatureManagerModal from '../components/SignatureManagerModal';
 import WelcomeBalloon from '../components/ui/WelcomeBalloon';
 import {
+  hasPendingWitnessSignature,
+  isContractEffectivelySigned,
+  type ContractSignatureLike,
+} from '../utils/contractSignatures';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../../components/ui/tooltip';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -44,11 +55,33 @@ const InfoTooltip = ({ text }: { text: string }) => (
   </div>
 );
 
+type PropertyWithLegalSignature = Property & {
+  company_id?: string | null;
+  intermediation_contract_id?: string | null;
+  intermediation_contract_signatures?: ContractSignatureLike[];
+  has_pending_witness_signature?: boolean;
+};
+
+const PendingWitnessSignatureAlert = () => (
+  <TooltipProvider delayDuration={200}>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center" aria-label="Liberado, mas aguardando assinatura das testemunhas">
+          <Icons.AlertTriangle size={13} className="text-yellow-500" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="center" className="max-w-xs border-none bg-slate-900 text-center text-white shadow-xl">
+        <span className="text-xs">Liberado, mas aguardando assinatura das testemunhas</span>
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+);
+
 const AdminProperties: React.FC = () => {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
 
-  const [properties, setProperties] = useState<Property[]>([]);
+  const [properties, setProperties] = useState<PropertyWithLegalSignature[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('Todos');
@@ -102,18 +135,60 @@ const AdminProperties: React.FC = () => {
       if (error) throw error;
 
       if (data) {
-        const formattedData: Property[] = data.map((item: any) => ({
-          ...item,
-          location: item.location || {
-            city: item.city || '',
-            neighborhood: item.neighborhood || '',
-            state: item.state || '',
-            address: item.address || ''
-          },
-          agent: Array.isArray(item.profiles) ? item.profiles[0] : item.profiles,
-          images: item.images || [],
-          features: item.features || []
-        }));
+        const propertyIds = data.map((item: any) => item.id).filter(Boolean);
+        const intermediationByPropertyId = new Map<string, any>();
+
+        if (propertyIds.length > 0) {
+          let contractsQuery = supabase
+            .from('contracts')
+            .select(`
+              id,
+              property_id,
+              status,
+              contract_signatures(id, status, signer_role)
+            `)
+            .in('property_id', propertyIds)
+            .eq('contract_data->>document_type', 'intermediacao')
+            .order('created_at', { ascending: false });
+
+          if (user?.role !== 'super_admin' && user?.company_id) {
+            contractsQuery = contractsQuery.eq('company_id', user.company_id);
+          }
+
+          const { data: intermediationContracts, error: contractsError } = await contractsQuery;
+          if (contractsError) throw contractsError;
+
+          (intermediationContracts || []).forEach((contract: any) => {
+            if (contract.property_id && !intermediationByPropertyId.has(contract.property_id)) {
+              intermediationByPropertyId.set(contract.property_id, contract);
+            }
+          });
+        }
+
+        const formattedData: PropertyWithLegalSignature[] = data.map((item: any) => {
+          const intermediationContract = intermediationByPropertyId.get(item.id);
+          const contractSignatures = (intermediationContract?.contract_signatures || []) as ContractSignatureLike[];
+          const isEffectivelySigned = intermediationContract
+            ? isContractEffectivelySigned(contractSignatures)
+            : item.has_intermediation_signed === true;
+
+          return {
+            ...item,
+            has_intermediation_signed: isEffectivelySigned,
+            intermediation_contract_id: intermediationContract?.id ?? null,
+            intermediation_contract_signatures: contractSignatures,
+            has_pending_witness_signature: isEffectivelySigned && hasPendingWitnessSignature(contractSignatures),
+            location: item.location || {
+              city: item.city || '',
+              neighborhood: item.neighborhood || '',
+              state: item.state || '',
+              address: item.address || ''
+            },
+            agent: Array.isArray(item.profiles) ? item.profiles[0] : item.profiles,
+            images: item.images || [],
+            features: item.features || []
+          };
+        });
         setProperties(formattedData);
       }
     } catch (error) {
@@ -215,7 +290,7 @@ const AdminProperties: React.FC = () => {
   const handleQuickSignature = async (propertyId: string, companyId: string) => {
     const { data } = await supabase
       .from('contracts')
-      .select('id')
+      .select('id, contract_signatures(id, status, signer_role)')
       .eq('property_id', propertyId)
       .eq('contract_data->>document_type', 'intermediacao')
       .order('created_at', { ascending: false })
@@ -702,6 +777,7 @@ const AdminProperties: React.FC = () => {
                     const isUnavailable = isPropertyUnavailable(property);
                     const isSaleSold = listingType === 'sale' && isUnavailable;
                     const hasSignedIntermediation = property.has_intermediation_signed === true;
+                    const hasPendingWitness = property.has_pending_witness_signature === true;
                     const statusButtonLabel = isRent
                       ? isUnavailable
                         ? 'Reativar Imóvel / Disponibilizar'
@@ -749,8 +825,9 @@ const AdminProperties: React.FC = () => {
                                 hasSignedIntermediation
                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                   : 'bg-amber-50 text-amber-700 border-amber-200'
-                              }`}>
+                              } inline-flex items-center gap-1`}>
                                 {hasSignedIntermediation ? '✓ Documentado' : '⚠ Sem Assinatura'}
+                                {hasSignedIntermediation && hasPendingWitness && <PendingWitnessSignatureAlert />}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 mt-1">
@@ -817,6 +894,7 @@ const AdminProperties: React.FC = () => {
                             hasSignedIntermediation ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
                           }`}>
                             {hasSignedIntermediation ? '✓ OK' : '⚠ Pendente'}
+                            {hasSignedIntermediation && hasPendingWitness && <PendingWitnessSignatureAlert />}
                           </span>
                           {!hasSignedIntermediation && (
                             <button

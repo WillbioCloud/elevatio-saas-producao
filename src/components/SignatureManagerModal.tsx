@@ -118,7 +118,6 @@ export default function SignatureManagerModal({
     }
   }, [contractId]);
 
-  // Listener em tempo real APENAS para atualizar a UI (Notificacoes agora sao globais)
   useEffect(() => {
     if (!contractId) return;
 
@@ -127,13 +126,17 @@ export default function SignatureManagerModal({
       .on(
         'postgres_changes',
         {
-          event: '*', // Escuta INSERT, UPDATE e DELETE
+          event: '*', 
           schema: 'public',
           table: 'contract_signatures',
           filter: `contract_id=eq.${contractId}`
         },
-        () => {
-          // Apenas recarrega a tabela visual quando houver alteracao
+        (payload: any) => {
+          // Se o status acabou de mudar para 'signed', dispara a notificação
+          if (payload.eventType === 'UPDATE' && payload.new.status === 'signed' && payload.old.status !== 'signed') {
+            addToast(`${payload.new.signer_name} assinou o documento!`, 'success');
+          }
+          
           void loadSignatures();
         }
       )
@@ -320,6 +323,60 @@ export default function SignatureManagerModal({
     }
   };
 
+  const renderSignatureCard = (sig: SignatureRecord) => (
+    <div key={sig.id} className="group flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 transition-colors sm:flex-row sm:items-center">
+      <div className="flex gap-4 items-center">
+        <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${sig.status === 'signed' ? 'bg-emerald-100 text-emerald-600' : sig.status === 'rejected' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+          {sig.status === 'signed' ? <Icons.Check size={20} /> : sig.status === 'rejected' ? <Icons.X size={20} /> : <Icons.Clock size={20} />}
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-slate-900">{sig.signer_name}</span>
+            <Badge variant="secondary" className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] uppercase font-bold text-slate-600 border border-slate-200">
+              {sig.signer_role}
+            </Badge>
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">{sig.signer_email}</p>
+          {sig.status === 'signed' && sig.signed_at && (
+            <p className="mt-1 text-[11px] font-medium text-emerald-600">
+              Assinado em {formatSignedDate(sig.signed_at)}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Badge
+          variant={sig.status === 'signed' ? 'default' : sig.status === 'rejected' ? 'destructive' : 'secondary'}
+          className={
+            sig.status === 'signed' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none' :
+            sig.status === 'rejected' ? 'bg-red-100 text-red-700 hover:bg-red-100 border-none' :
+            'bg-amber-100 text-amber-700 hover:bg-amber-100 border-none'
+          }
+        >
+          {sig.status === 'signed' ? 'Assinado' : sig.status === 'rejected' ? 'Recusado' : 'Pendente'}
+        </Badge>
+
+        <button
+          onClick={() => handleDeleteSignature(sig.id)}
+          className="text-slate-400 hover:text-red-500 transition-colors p-1"
+          title="Remover Signatário"
+        >
+          <Icons.Trash size={18} />
+        </button>
+
+        {sig.status === 'pending' && (
+          <Button variant="outline" size="sm" className="h-8 gap-2 hover:bg-slate-50" onClick={() => void copyToClipboard(sig.token)}>
+            <Icons.Copy size={14} /> Copiar Link
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
+  const mainSigners = signatures.filter(sig => sig.signer_role?.toLowerCase() !== 'testemunha');
+  const witnessSigners = signatures.filter(sig => sig.signer_role?.toLowerCase() === 'testemunha');
+
   return (
     <div className="fixed inset-0 z-[99999] overflow-y-auto font-['DM_Sans'] antialiased">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
@@ -447,58 +504,35 @@ export default function SignatureManagerModal({
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {signatures.map((sig) => (
-                      <div key={sig.id} className="group flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 transition-colors sm:flex-row sm:items-center">
-                        <div className="flex gap-4 items-center">
-                          <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${sig.status === 'signed' ? 'bg-emerald-100 text-emerald-600' : sig.status === 'rejected' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-                            {sig.status === 'signed' ? <Icons.Check size={20} /> : sig.status === 'rejected' ? <Icons.X size={20} /> : <Icons.Clock size={20} />}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-slate-900">{sig.signer_name}</span>
-                              <Badge variant="secondary" className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] uppercase font-bold text-slate-600 border border-slate-200">
-                                {sig.signer_role}
-                              </Badge>
-                            </div>
-                            <p className="text-xs text-slate-500 mt-0.5">{sig.signer_email}</p>
-                            {sig.status === 'signed' && sig.signed_at && (
-                              <p className="mt-1 text-[11px] font-medium text-emerald-600">
-                                Assinado em {formatSignedDate(sig.signed_at)}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          <Badge
-                            variant={sig.status === 'signed' ? 'default' : sig.status === 'rejected' ? 'destructive' : 'secondary'}
-                            className={
-                              sig.status === 'signed' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none' :
-                              sig.status === 'rejected' ? 'bg-red-100 text-red-700 hover:bg-red-100 border-none' :
-                              'bg-amber-100 text-amber-700 hover:bg-amber-100 border-none'
-                            }
-                          >
-                            {sig.status === 'signed' ? 'Assinado' : sig.status === 'rejected' ? 'Recusado' : 'Pendente'}
-                          </Badge>
-
-                          <button
-                            onClick={() => handleDeleteSignature(sig.id)}
-                            className="text-slate-400 hover:text-red-500 transition-colors p-1"
-                            title="Remover Signatário"
-                          >
-                            <Icons.Trash size={18} />
-                          </button>
-
-                          {sig.status === 'pending' && (
-                            <Button variant="outline" size="sm" className="h-8 gap-2 hover:bg-slate-50" onClick={() => void copyToClipboard(sig.token)}>
-                              <Icons.Copy size={14} /> Copiar Link
-                            </Button>
-                          )}
-                        </div>
+                  <>
+                    <div className="mb-6">
+                      <div className="flex flex-wrap items-center gap-2 mb-3">
+                        <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Signatários Principais</h4>
+                        <span className="text-xs font-medium bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400 px-2 py-0.5 rounded-full">Obrigatórios para liberação</span>
                       </div>
-                    ))}
-                  </div>
+                      <div className="space-y-3">
+                        {mainSigners.length > 0 ? (
+                          mainSigners.map((sig) => renderSignatureCard(sig))
+                        ) : (
+                          <p className="text-sm text-slate-500 italic">Nenhum signatário principal adicionado.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mb-4">
+                      <div className="flex flex-wrap items-center gap-2 mb-3">
+                        <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">Testemunhas</h4>
+                        <span className="text-xs font-medium bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 px-2 py-0.5 rounded-full">Secundários</span>
+                      </div>
+                      <div className="space-y-3">
+                        {witnessSigners.length > 0 ? (
+                          witnessSigners.map((sig) => renderSignatureCard(sig))
+                        ) : (
+                          <p className="text-sm text-slate-500 italic">Nenhuma testemunha adicionada.</p>
+                        )}
+                      </div>
+                    </div>
+                  </>
                 )}
               </section>
 

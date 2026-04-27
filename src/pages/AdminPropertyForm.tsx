@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import heic2any from 'heic2any';
 import { supabase } from '../lib/supabase';
@@ -13,6 +13,17 @@ import { addXp } from '../services/gamification';
 import { generatePropertyDescription } from '../services/ai';
 import { uploadCompanyAsset } from '../lib/storage';
 import { appendSignatureManifest, injectSignatureStamps } from '../utils/contractGenerator';
+import {
+  hasPendingWitnessSignature,
+  isContractEffectivelySigned,
+  type ContractSignatureLike,
+} from '../utils/contractSignatures';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../../components/ui/tooltip';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -40,9 +51,32 @@ const LocationMarker = ({ position, setPosition }: { position: any, setPosition:
   return position === null ? null : <Marker position={position}></Marker>;
 };
 
+const PendingWitnessSignatureAlert = () => (
+  <TooltipProvider delayDuration={200}>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center" aria-label="Liberado, mas aguardando assinatura das testemunhas">
+          <Icons.AlertTriangle size={13} className="text-yellow-500" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="center" className="max-w-xs border-none bg-slate-900 text-center text-white shadow-xl">
+        <span className="text-xs">Liberado, mas aguardando assinatura das testemunhas</span>
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+);
+
 interface ImageItem {
   id: string;
   url: string;
+}
+
+interface ExistingContractState {
+  id: string;
+  status: string;
+  signatures: ContractSignatureLike[];
+  isEffectivelySigned: boolean;
+  hasPendingWitnessSignature: boolean;
 }
 
 interface FormState {
@@ -312,7 +346,7 @@ const AdminPropertyForm: React.FC = () => {
   const [showContractModal, setShowContractModal] = useState(false);
   const [legalServiceType, setLegalServiceType] = useState<'intermediation' | 'administration'>('intermediation');
   const [showSignatureManager, setShowSignatureManager] = useState(false);
-  const [existingContract, setExistingContract] = useState<{ id: string; status: string } | null>(null);
+  const [existingContract, setExistingContract] = useState<ExistingContractState | null>(null);
   const [originalAgentId, setOriginalAgentId] = useState<string | null>(null);
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
   const [tenant, setTenant] = useState<TenantRecord | null>(null);
@@ -349,6 +383,32 @@ const AdminPropertyForm: React.FC = () => {
     }
     return true;
   }, [formData, images.length, step]);
+
+  const buildExistingContractState = useCallback((contractData: any): ExistingContractState => {
+    const signatures = (contractData.contract_signatures || []) as ContractSignatureLike[];
+    const isEffectivelySigned = isContractEffectivelySigned(signatures);
+
+    return {
+      id: contractData.id,
+      status: isEffectivelySigned ? 'signed' : contractData.status,
+      signatures,
+      isEffectivelySigned,
+      hasPendingWitnessSignature: isEffectivelySigned && hasPendingWitnessSignature(signatures),
+    };
+  }, []);
+
+  const refreshExistingIntermediationContract = useCallback(async (propertyId: string) => {
+    const { data: contractData } = await supabase
+      .from('contracts')
+      .select('id, status, contract_signatures(id, status, signer_role)')
+      .eq('property_id', propertyId)
+      .eq('contract_data->>document_type', 'intermediacao')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    setExistingContract(contractData ? buildExistingContractState(contractData) : null);
+  }, [buildExistingContractState]);
 
   useEffect(() => {
     if (formData.listing_type !== 'rent' && legalServiceType === 'administration') {
@@ -478,30 +538,11 @@ const AdminPropertyForm: React.FC = () => {
       }));
       setImages(existingImages);
 
-      const { data: contractData } = await supabase
-        .from('contracts')
-        .select('id, status')
-        .eq('property_id', id)
-        .eq('contract_data->>document_type', 'intermediacao')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (contractData) {
-        const { data: signatures } = await supabase
-          .from('contract_signatures')
-          .select('status')
-          .eq('contract_id', contractData.id);
-
-        const isSigned = signatures?.some((sig: any) => sig.status === 'signed');
-        setExistingContract({ id: contractData.id, status: isSigned ? 'signed' : contractData.status });
-      } else {
-        setExistingContract(null);
-      }
+      await refreshExistingIntermediationContract(id);
     };
 
     loadProperty();
-  }, [id, isEditing, user?.id, isAdmin, addToast, navigate]);
+  }, [id, isEditing, user?.id, isAdmin, addToast, navigate, refreshExistingIntermediationContract]);
 
   useEffect(() => {
     const fetchAgents = async () => {
@@ -1076,7 +1117,7 @@ const AdminPropertyForm: React.FC = () => {
 
       const { data: contractData, error } = await supabase
         .from('contracts')
-        .select('*')
+        .select('*, contract_signatures(id, status, signer_role)')
         .eq('id', existingContract.id)
         .single();
 
@@ -2127,8 +2168,9 @@ const AdminPropertyForm: React.FC = () => {
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">Gerador de Contratos</h3>
                   {existingContract && (
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${existingContract.status === 'signed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                      {existingContract.status === 'signed' ? 'Assinado' : 'Pendente de Assinatura'}
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full ${existingContract.isEffectivelySigned ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {existingContract.isEffectivelySigned ? 'Assinado' : 'Pendente de Assinatura'}
+                      {existingContract.hasPendingWitnessSignature && <PendingWitnessSignatureAlert />}
                     </span>
                   )}
                 </div>
@@ -2427,21 +2469,7 @@ const AdminPropertyForm: React.FC = () => {
         onSuccess={() => {
           setShowContractModal(false);
           if (id) {
-            supabase
-              .from('contracts')
-              .select('id, status')
-              .eq('property_id', id)
-              .eq('contract_data->>document_type', 'intermediacao')
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle()
-              .then(async ({ data }) => {
-                if (data) {
-                  const { data: signatures } = await supabase.from('contract_signatures').select('status').eq('contract_id', data.id);
-                  const isSigned = signatures?.some((sig: any) => sig.status === 'signed');
-                  setExistingContract({ id: data.id, status: isSigned ? 'signed' : data.status });
-                }
-              });
+            void refreshExistingIntermediationContract(id);
           }
         }}
         propertyId={id || ''}
@@ -2483,21 +2511,7 @@ const AdminPropertyForm: React.FC = () => {
           onClose={() => {
             setShowSignatureManager(false);
             if (id) {
-              supabase
-                .from('contracts')
-                .select('id, status')
-                .eq('property_id', id)
-                .eq('contract_data->>document_type', 'intermediacao')
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle()
-                .then(async ({ data }) => {
-                  if (data) {
-                    const { data: signatures } = await supabase.from('contract_signatures').select('status').eq('contract_id', data.id);
-                    const isSigned = signatures?.some((sig: any) => sig.status === 'signed');
-                    setExistingContract({ id: data.id, status: isSigned ? 'signed' : data.status });
-                  }
-                });
+              void refreshExistingIntermediationContract(id);
             }
           }}
           initialSigner={{
