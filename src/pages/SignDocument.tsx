@@ -959,7 +959,7 @@ export default function SignDocument() {
           <div className="mx-auto max-w-[840px] rounded-[28px] border border-slate-200 bg-slate-100/80 p-3 sm:p-5">
             <div className="mx-auto min-h-[1123px] w-full max-w-[794px] rounded-sm bg-white p-6 shadow-[0_30px_70px_-36px_rgba(15,23,42,0.35)] sm:p-10">
               <div
-                className="contract-preview text-slate-900"
+                className="contract-preview text-slate-900 w-full overflow-hidden break-words [&_*]:max-w-full [&_table]:block [&_table]:overflow-x-auto [&_img]:h-auto whitespace-pre-wrap"
                 dangerouslySetInnerHTML={{ __html: contractHtml }}
               />
             </div>

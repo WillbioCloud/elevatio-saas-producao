@@ -176,6 +176,8 @@ export default function SignatureManagerModal({
         suggestions.push({ contract_id: contractId, signer_name: cData.owner_name, signer_email: cData.owner_email || '', signer_role: 'Proprietário', status: 'pending' });
       } else if (cData.landlord_name) {
         suggestions.push({ contract_id: contractId, signer_name: cData.landlord_name, signer_email: cData.landlord_email || '', signer_role: 'Locador', status: 'pending' });
+      } else if (cData.seller_name) {
+        suggestions.push({ contract_id: contractId, signer_name: cData.seller_name, signer_email: cData.seller_email || '', signer_role: 'Vendedor', status: 'pending' });
       }
 
       // NUNCA sugere Locatário/Comprador se for contrato administrativo (ex: Captação)

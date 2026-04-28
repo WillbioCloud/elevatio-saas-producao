@@ -51,6 +51,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
 
   const [contractDetails, setContractDetails] = useState({
     buyer_document: '',
+    buyer_email: '',
     buyer_rg: '',
     buyer_profession: '',
     buyer_marital_status: '',
@@ -59,6 +60,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     buyer_spouse_document: '',
     buyer_spouse_profession: '',
     seller_document: '',
+    seller_email: '',
     seller_rg: '',
     seller_profession: '',
     seller_marital_status: '',
@@ -176,6 +178,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         setContractDetails((prev) => ({
           ...prev,
           buyer_document: selectedLead.cpf || '',
+          buyer_email: selectedLead.email || '',
           buyer_rg: selectedLead.rg || '',
           buyer_profession: selectedLead.profissao || '',
           buyer_marital_status: selectedLead.estado_civil || '',
@@ -203,6 +206,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         setContractDetails(prev => ({
           ...prev,
           seller_document: selectedProp.owner_cpf || selectedProp.owner_document || '',
+          seller_email: selectedProp.owner_email || '',
           seller_rg: sellerRg,
           seller_profession: selectedProp.owner_profession || '',
           seller_marital_status: selectedProp.owner_marital_status || '',
@@ -402,13 +406,15 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     setLoading(true);
     try {
       const selectedPropertyData = properties.find(p => p.id === formData.property_id);
+      const selectedLeadForSave = selectedLeadRecord;
+      const selectedPropForSave = selectedPropertyData;
       const contractDataObj = {
         representation_type: formData.representation_type,
 
         // DADOS DO COMPRADOR
         buyer_name: contractClientRecord?.name || '',
         buyer_phone: contractClientRecord?.phone || '',
-        buyer_email: contractClientRecord?.email || '',
+        buyer_email: contractDetails.buyer_email || contractClientRecord?.email || selectedLeadForSave?.email || '',
         buyer_document: contractDetails.buyer_document,
         buyer_rg: contractDetails.buyer_rg,
         buyer_profession: contractDetails.buyer_profession,
@@ -423,7 +429,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         // DADOS DO VENDEDOR
         seller_name: selectedPropertyData?.owner_name || 'Proprietário Atual',
         seller_phone: selectedPropertyData?.owner_phone || '',
-        seller_email: selectedPropertyData?.owner_email || '',
+        seller_email: contractDetails.seller_email || selectedPropertyData?.owner_email || selectedPropForSave?.owner_email || '',
         seller_document: contractDetails.seller_document,
         seller_rg: contractDetails.seller_rg,
         seller_profession: contractDetails.seller_profession,
@@ -489,6 +495,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
     try {
       const selectedLeadForSave = leads.find((lead) => lead.id === formData.lead_id);
       const selectedPropForSave = properties.find((property) => property.id === formData.property_id);
+      const selectedPropertyData = selectedPropForSave;
       const selectedTemplate = customTemplates.find(t => `custom_${t.id}` === documentType);
       const resolvedClientId = formData.client_id || formData.lead_id || null;
       const contractDataObj = {
@@ -497,7 +504,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         // DADOS DO COMPRADOR
         buyer_name: selectedLeadForSave?.name || '',
         buyer_phone: selectedLeadForSave?.phone || '',
-        buyer_email: selectedLeadForSave?.email || '',
+        buyer_email: contractDetails.buyer_email || contractClientRecord?.email || selectedLeadForSave?.email || '',
         buyer_document: contractDetails.buyer_document,
         buyer_rg: contractDetails.buyer_rg,
         buyer_profession: contractDetails.buyer_profession,
@@ -512,7 +519,7 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
         // DADOS DO VENDEDOR
         seller_name: selectedPropForSave?.owner_name || 'Proprietário Atual',
         seller_phone: selectedPropForSave?.owner_phone || '',
-        seller_email: selectedPropForSave?.owner_email || '',
+        seller_email: contractDetails.seller_email || selectedPropertyData?.owner_email || selectedPropForSave?.owner_email || '',
         seller_document: contractDetails.seller_document,
         seller_rg: contractDetails.seller_rg,
         seller_profession: contractDetails.seller_profession,
@@ -762,6 +769,10 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                         <input type="text" value={contractDetails.buyer_profession} onChange={e => setContractDetails({ ...contractDetails, buyer_profession: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
                       </div>
                       <div className="col-span-2">
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">E-mail do Comprador</label>
+                        <input type="email" value={contractDetails.buyer_email} onChange={e => setContractDetails({ ...contractDetails, buyer_email: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
+                      </div>
+                      <div className="col-span-2">
                         <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">Endereço</label>
                         <input type="text" value={contractDetails.buyer_address} onChange={e => setContractDetails({ ...contractDetails, buyer_address: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
                       </div>
@@ -812,6 +823,10 @@ const SaleContractModal: React.FC<SaleContractModalProps> = ({ isOpen, onClose, 
                       <div>
                         <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">Profissão</label>
                         <input type="text" value={contractDetails.seller_profession} onChange={e => setContractDetails({ ...contractDetails, seller_profession: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">E-mail do Vendedor</label>
+                        <input type="email" value={contractDetails.seller_email} onChange={e => setContractDetails({ ...contractDetails, seller_email: e.target.value })} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100" />
                       </div>
                       <div className="col-span-2">
                         <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 tracking-wide dark:text-slate-400">Endereço</label>
